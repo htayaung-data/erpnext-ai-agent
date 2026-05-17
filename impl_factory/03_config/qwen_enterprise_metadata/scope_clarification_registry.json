@@ -1,0 +1,757 @@
+{
+  "contract_version": "1.2",
+  "description": "Scope and family specific ambiguity coverage for the governed scope access model.",
+  "allowed_family_ids": [
+    "master_data_lookup",
+    "entity_detail",
+    "transaction_listing",
+    "ranking_analytics",
+    "aging",
+    "inventory_snapshot",
+    "product_profitability",
+    "followup_boundary",
+    "clarification"
+  ],
+  "allowed_ambiguity_classes": [
+    "entity_match",
+    "projection_request",
+    "time_scope",
+    "document_reference",
+    "profile_basis",
+    "unsupported_route",
+    "followup_scope"
+  ],
+  "allowed_template_groups": [
+    "master_data_lookup_clarification",
+    "entity_detail_clarification",
+    "transaction_listing_clarification",
+    "followup_boundary_clarification",
+    "unsupported_scope_clarification",
+    "shared_clarification"
+  ],
+  "clarification_templates": [
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "capability_ambiguity",
+      "question_templates": {
+        "default": "Which area would you like me to analyze?",
+        "with_options": "Which area would you like me to analyze: {supported_options}?"
+      },
+      "response_templates": {
+        "repeat_with_options": "I still need you to choose the business area before I continue: {supported_options}.",
+        "meta_with_options": "I'm waiting for you to choose the business area before I continue: {supported_options}.",
+        "empty_ack_with_options": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_with_options": "I'll pause here rather than guess the business area. When you come back, please choose one of these directly: {supported_options}."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "report_ambiguity",
+      "question_templates": {
+        "default": "Which report would you like me to use?",
+        "with_options": "Which report would you like me to use: {supported_options}?",
+        "financial_views": "Which financial view would you like to see: {supported_options}?"
+      },
+      "response_templates": {
+        "repeat_with_options": "I still need you to choose the report before I continue: {supported_options}.",
+        "meta_with_options": "I'm waiting for you to choose the report before I continue: {supported_options}.",
+        "empty_ack_with_options": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_with_options": "I'll pause here rather than guess the report. When you come back, please choose one of these directly: {supported_options}."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "time_scope_missing",
+      "question_templates": {
+        "default": "Which period would you like me to use for this?",
+        "kpi_value_period_missing": "I can calculate {lookup_label}, but I still need the business period."
+      },
+      "list_heading_templates": {
+        "default": "Choose one:"
+      },
+      "response_templates": {
+        "repeat_with_options": "I still need the time period before I continue: {supported_options}.",
+        "meta_with_options": "I'm waiting for the time period before I continue: {supported_options}.",
+        "empty_ack_with_options": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_with_options": "I'll pause here rather than guess the period. When you come back, please choose one of these directly: {supported_options}."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "filter_missing",
+      "question_templates": {
+        "default": "I can help with that, but I need one more detail before I run it. Which specific scope would you like me to use?"
+      },
+      "response_templates": {
+        "repeat_default": "I still need the specific scope before I continue.",
+        "meta_default": "I'm waiting for the specific scope before I continue.",
+        "empty_ack_default": "I still need the specific scope before I continue.",
+        "fallback_stop_default": "I'll pause here rather than guess the specific scope. When you come back, please restate it directly."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "capability_missing",
+      "question_templates": {
+        "default": "Which business area would you like me to focus on: {supported_options}?"
+      },
+      "response_templates": {
+        "repeat_with_options": "I still need you to choose the business area before I continue: {supported_options}.",
+        "meta_with_options": "I'm waiting for you to choose the business area before I continue: {supported_options}.",
+        "empty_ack_with_options": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_with_options": "I'll pause here rather than guess the business area. When you come back, please choose one of these directly: {supported_options}."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "request_underspecified",
+      "question_templates": {
+        "default": "I can help with that, but I need one more detail before I proceed. Could you clarify the metric, scope, or period you want?"
+      },
+      "response_templates": {
+        "repeat_default": "I still need one more detail before I continue. Please clarify the metric, scope, or period you want.",
+        "meta_default": "I'm waiting for one more detail before I continue. Please clarify the metric, scope, or period you want.",
+        "empty_ack_default": "I still need one more detail before I continue. Please clarify the metric, scope, or period you want.",
+        "fallback_stop_default": "I'll pause here rather than guess the missing detail. When you come back, please restate the metric, scope, or period you want."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "validation_clarification",
+      "question_templates": {
+        "default": "I need one more detail before I can answer this confidently."
+      },
+      "response_templates": {
+        "repeat_default": "I still need one more detail before I can answer this confidently.",
+        "meta_default": "I'm waiting for one more detail before I can answer this confidently.",
+        "empty_ack_default": "I still need one more detail before I can answer this confidently.",
+        "fallback_stop_default": "I'll pause here rather than guess the missing detail. When you come back, please restate the question with the extra detail you want me to use."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "time_scope_clarification",
+      "question_templates": {
+        "default": "I couldn't confirm the right period for that answer. Would you like me to try a different time scope?"
+      },
+      "response_templates": {
+        "repeat_with_options": "I still need the time period before I continue: {supported_options}.",
+        "meta_with_options": "I'm waiting for the time period before I continue: {supported_options}.",
+        "empty_ack_with_options": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_with_options": "I'll pause here rather than guess the period. When you come back, please choose one of these directly: {supported_options}."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "generic_clarification",
+      "question_templates": {
+        "default": "I need one more detail before I continue. Could you clarify the area or time period you want?"
+      },
+      "response_templates": {
+        "repeat_default": "I still need one more detail before I continue. Could you clarify the area or time period you want?",
+        "meta_default": "I'm waiting for one more detail before I continue. Could you clarify the area or time period you want?",
+        "empty_ack_default": "I still need one more detail before I continue. Could you clarify the area or time period you want?",
+        "fallback_stop_default": "I'll pause here rather than guess the missing detail. When you come back, please restate the area or time period you want."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "governed_kpi_definition_ambiguity",
+      "question_templates": {
+        "default": "{lookup_label} is not a single governed KPI here yet. Please choose the approved basis first.",
+        "kpi_value_with_period": "I can calculate {lookup_label} for {period_phrase} ({period_start} to {period_end}), but I need the approved basis first.",
+        "kpi_value_default": "I can calculate {lookup_label}, but I need the approved basis first."
+      },
+      "list_heading_templates": {
+        "default": "Choose one:"
+      },
+      "response_templates": {
+        "repeat_with_options": "I still need you to choose the approved basis before I continue: {supported_options}.",
+        "meta_with_options": "I'm waiting for you to choose the approved basis before I continue: {supported_options}.",
+        "empty_ack_with_options": "I still need one of these approved bases before I continue: {supported_options}.",
+        "fallback_stop_with_options": "I'll pause here rather than guess the approved basis. When you come back, please choose one of these directly: {supported_options}.",
+        "repeat_default": "I still need you to choose the approved basis before I continue.",
+        "meta_default": "I'm waiting for you to choose the approved basis before I continue.",
+        "empty_ack_default": "I still need the approved basis before I continue.",
+        "fallback_stop_default": "I'll pause here rather than guess the approved basis. When you come back, please choose it directly."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "composite_family_variation",
+      "question_templates": {
+        "default": "I need one more approved variation before I continue.",
+        "primary_sort_metric_with_period": "I can rank {subject_label_plural} for {period_start} to {period_end}, but I still need the primary metric.",
+        "primary_sort_metric_default": "I can rank {subject_label_plural}, but I still need the primary metric.",
+        "basis": "I can rank {subject_label_plural} by {primary_metric_phrase}, but I still need the approved basis.",
+        "scope": "I can rank {subject_label_plural} by {primary_metric_phrase}{basis_suffix}, but I still need the business period."
+      },
+      "list_heading_templates": {
+        "default": "Choose one:"
+      },
+      "response_templates": {
+        "repeat_with_options": "I still need one of these choices before I continue: {supported_options}.",
+        "meta_with_options": "I'm waiting for one of these choices before I continue: {supported_options}.",
+        "empty_ack_with_options": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_with_options": "I'll pause here rather than guess. When you come back, please choose one of these directly: {supported_options}.",
+        "repeat_default": "I still need one more approved choice before I continue.",
+        "meta_default": "I'm waiting for one more approved choice before I continue.",
+        "empty_ack_default": "I still need one more approved choice before I continue.",
+        "fallback_stop_default": "I'll pause here rather than guess. When you come back, please choose the approved option directly."
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "customer_tenure_basis_missing",
+      "question_templates": {
+        "default": "I can calculate customer tenure for {entity_label}, but I need the date basis first."
+      },
+      "list_heading_templates": {
+        "default": "Choose one:"
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "customer_operational_document_missing",
+      "question_templates": {
+        "default": "I can help with that for {entity_label}, but I need the exact sales document or date basis first."
+      },
+      "list_heading_templates": {
+        "default": "Choose one:"
+      }
+    },
+    {
+      "template_group": "unsupported_scope_clarification",
+      "reason_type": "master_data_scope_unsupported",
+      "question_templates": {
+        "default": "Please tell me which master-data group you want to see.",
+        "requested_and_supported": "I can list {supported_options} right now. I can't open {requested_label} as a list yet.",
+        "requested_only": "I can't open {requested_label} as a list right now.",
+        "supported_only": "I can list {supported_options} right now. Which one would you like?"
+      },
+      "response_templates": {
+        "repeat_requested_and_supported": "I still can't open {requested_label} as a list. Please choose one of these instead: {supported_options}.",
+        "meta_requested_and_supported": "I'm still waiting for you to choose one of these instead of {requested_label}: {supported_options}.",
+        "empty_ack_requested_and_supported": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_requested_and_supported": "I'll pause here rather than guess. When you come back, please choose one of these instead: {supported_options}.",
+        "repeat_supported_only": "I still need you to choose one of these: {supported_options}.",
+        "meta_supported_only": "I'm waiting for you to choose one of these: {supported_options}.",
+        "empty_ack_supported_only": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_supported_only": "I'll pause here rather than guess. When you come back, please choose one of these directly: {supported_options}.",
+        "repeat_requested_only": "I still can't open {requested_label} as a list right now.",
+        "meta_requested_only": "I'm still blocked on {requested_label} as a list right now.",
+        "empty_ack_requested_only": "I still can't open {requested_label} as a list right now.",
+        "fallback_stop_requested_only": "I'll pause here since {requested_label} isn't available as a list right now."
+      }
+    },
+    {
+      "template_group": "unsupported_scope_clarification",
+      "reason_type": "transaction_listing_surface_unsupported",
+      "question_templates": {
+        "default": "Which document list would you like to see?",
+        "requested_and_supported": "I can't show {requested_label} as a list right now. I can show {supported_options} instead. Which one would you like?",
+        "requested_only": "I can't show {requested_label} as a list right now.",
+        "supported_only": "I can show {supported_options}. Which one would you like?"
+      },
+      "response_templates": {
+        "repeat_requested_and_supported": "I still can't show {requested_label} as a list. Please choose one of these instead: {supported_options}.",
+        "meta_requested_and_supported": "I'm still waiting for you to choose one of these instead of {requested_label}: {supported_options}.",
+        "empty_ack_requested_and_supported": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_requested_and_supported": "I'll pause here rather than guess. When you come back, please choose one of these instead: {supported_options}.",
+        "repeat_supported_only": "I still need you to choose one of these document lists: {supported_options}.",
+        "meta_supported_only": "I'm waiting for you to choose one of these document lists: {supported_options}.",
+        "empty_ack_supported_only": "I still need one of these choices before I continue: {supported_options}.",
+        "fallback_stop_supported_only": "I'll pause here rather than guess. When you come back, please choose one of these document lists directly: {supported_options}.",
+        "repeat_requested_only": "I still can't show {requested_label} as a list right now.",
+        "meta_requested_only": "I'm still blocked on {requested_label} as a list right now.",
+        "empty_ack_requested_only": "I still can't show {requested_label} as a list right now.",
+        "fallback_stop_requested_only": "I'll pause here since {requested_label} isn't available as a list right now."
+      }
+    }
+  ],
+  "entries": [
+    {
+      "scope_id": "customer_master",
+      "family_id": "master_data_lookup",
+      "supported_ambiguity_classes": [
+        "entity_match",
+        "projection_request"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "master_data_lookup_clarification",
+      "clarification_notes": "Clarify candidate matches and requested projection when needed."
+    },
+    {
+      "scope_id": "customer_master",
+      "family_id": "entity_detail",
+      "supported_ambiguity_classes": [
+        "entity_match",
+        "profile_basis"
+      ],
+      "required_basis_slots": [
+        "entity_key"
+      ],
+      "required_event_slots": [],
+      "clarification_template_group": "entity_detail_clarification",
+      "clarification_notes": "Clarify which customer or which lifecycle basis is intended."
+    },
+    {
+      "scope_id": "customer_master",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify when a follow-up should preserve lookup scope versus expand detail."
+    },
+    {
+      "scope_id": "customer_master",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "entity_match",
+        "projection_request"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "master_data_lookup_clarification",
+      "clarification_notes": "Shared clarification support for customer lookup and profile requests."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "master_data_lookup",
+      "supported_ambiguity_classes": [
+        "entity_match",
+        "projection_request"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "master_data_lookup_clarification",
+      "clarification_notes": "Clarify supplier candidate matches and requested projection when needed."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "entity_detail",
+      "supported_ambiguity_classes": [
+        "entity_match"
+      ],
+      "required_basis_slots": [
+        "entity_key"
+      ],
+      "required_event_slots": [],
+      "clarification_template_group": "entity_detail_clarification",
+      "clarification_notes": "Clarify which supplier is intended when the name match is ambiguous."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up stays on the resolved supplier context."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "entity_match"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "master_data_lookup_clarification",
+      "clarification_notes": "Shared clarification support for supplier lookup and supplier profile requests."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "master_data_lookup",
+      "supported_ambiguity_classes": [
+        "entity_match",
+        "projection_request"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "master_data_lookup_clarification",
+      "clarification_notes": "Clarify item candidate matches and requested projection when needed."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "entity_detail",
+      "supported_ambiguity_classes": [
+        "entity_match"
+      ],
+      "required_basis_slots": [
+        "entity_key"
+      ],
+      "required_event_slots": [],
+      "clarification_template_group": "entity_detail_clarification",
+      "clarification_notes": "Clarify which item is intended when the item identifier is ambiguous."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up stays on the resolved item context or narrows the directory projection."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "entity_match",
+        "projection_request"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "master_data_lookup_clarification",
+      "clarification_notes": "Shared clarification support for item lookup and item profile requests."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "transaction_listing",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Clarify period, projection, or document target when a sales-invoice listing request is incomplete."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "entity_detail",
+      "supported_ambiguity_classes": [
+        "document_reference"
+      ],
+      "required_basis_slots": [
+        "entity_key"
+      ],
+      "required_event_slots": [],
+      "clarification_template_group": "entity_detail_clarification",
+      "clarification_notes": "Clarify which invoice is intended for detail."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request",
+        "time_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up changes projection only or restates time scope."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Shared clarification support for sales invoice listing and detail."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "transaction_listing",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Clarify period, projection, or document target when a purchase-invoice listing request is incomplete."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "entity_detail",
+      "supported_ambiguity_classes": [
+        "document_reference"
+      ],
+      "required_basis_slots": [
+        "entity_key"
+      ],
+      "required_event_slots": [],
+      "clarification_template_group": "entity_detail_clarification",
+      "clarification_notes": "Clarify which purchase invoice is intended for detail."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request",
+        "time_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up changes projection only or restates time scope."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Shared clarification support for purchase-invoice listing and detail."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "transaction_listing",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Clarify period, projection, or document target when a delivery-note listing request is incomplete."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "entity_detail",
+      "supported_ambiguity_classes": [
+        "document_reference"
+      ],
+      "required_basis_slots": [
+        "entity_key"
+      ],
+      "required_event_slots": [],
+      "clarification_template_group": "entity_detail_clarification",
+      "clarification_notes": "Clarify which delivery note is intended for detail."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request",
+        "time_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up changes projection only or restates time scope."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Shared clarification support for delivery-note listing and detail."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "transaction_listing",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Clarify period, projection, or document target when a sales-order listing request is incomplete."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "entity_detail",
+      "supported_ambiguity_classes": [
+        "document_reference"
+      ],
+      "required_basis_slots": [
+        "entity_key"
+      ],
+      "required_event_slots": [],
+      "clarification_template_group": "entity_detail_clarification",
+      "clarification_notes": "Clarify which sales order is intended for detail."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request",
+        "time_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up changes projection only or restates time scope."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Shared clarification support for sales-order listing and detail."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "transaction_listing",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Clarify period, projection, or document target when a purchase-order listing request is incomplete."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "entity_detail",
+      "supported_ambiguity_classes": [
+        "document_reference"
+      ],
+      "required_basis_slots": [
+        "entity_key"
+      ],
+      "required_event_slots": [],
+      "clarification_template_group": "entity_detail_clarification",
+      "clarification_notes": "Clarify which purchase order is intended for detail."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request",
+        "time_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up changes projection only or restates time scope."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Shared clarification support for purchase-order listing and detail."
+    },
+    {
+      "scope_id": "payment_entry",
+      "family_id": "transaction_listing",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Clarify period, projection, or target when a payment-entry listing request is incomplete."
+    },
+    {
+      "scope_id": "payment_entry",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request",
+        "time_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up changes projection only or restates time scope for payment entries."
+    },
+    {
+      "scope_id": "payment_entry",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "unsupported_route"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "unsupported_scope_clarification",
+      "clarification_notes": "Shared clarification support for payment-entry requests that still fall outside the approved route."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "transaction_listing",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Clarify period, projection, or target when a purchase-receipt listing request is incomplete."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request",
+        "time_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up changes projection only or restates time scope for purchase receipts."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference",
+        "unsupported_route"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Shared clarification support for purchase-receipt listing while document-detail support remains inactive."
+    }
+  ]
+}

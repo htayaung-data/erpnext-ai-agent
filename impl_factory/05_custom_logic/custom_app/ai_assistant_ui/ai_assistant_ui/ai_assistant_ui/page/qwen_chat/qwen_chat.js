@@ -27,9 +27,7 @@
           <div class="qwen-sidebar" style="width: 280px; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; overflow:auto; position:relative;">
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
               <button class="btn btn-sm btn-primary qwen-new-chat">New chat</button>
-            </div>
-            <div style="margin-bottom:10px; padding:8px 10px; border-radius:8px; background: var(--yellow-50); color: var(--text-muted); font-size:12px;">
-              Qwen-Agent read-only prototype. Responses come from the external runtime.
+              <button class="btn btn-sm btn-default qwen-clear-history">Clear history</button>
             </div>
             <div class="qwen-sessions"></div>
           </div>
@@ -49,6 +47,9 @@
       const $sessions = $root.find(".qwen-sessions");
       const $messages = $root.find(".qwen-messages");
       const $input = $root.find(".qwen-input");
+      const $send = $root.find(".qwen-send");
+      const $newChat = $root.find(".qwen-new-chat");
+      const $clearHistory = $root.find(".qwen-clear-history");
 
       function escapeHtml(s) {
         return String(s)
@@ -314,6 +315,22 @@
           $messages.append(renderTypingIndicator());
         }
         $messages.scrollTop($messages.prop("scrollHeight"));
+        syncComposerState();
+      }
+
+      function syncComposerState() {
+        const busy = state.pendingRequests > 0;
+        $input.prop("disabled", busy);
+        $send.prop("disabled", busy);
+        $newChat.prop("disabled", busy);
+        $input.attr("placeholder", busy ? "Qwen is answering..." : "Ask ERP with Qwen…");
+      }
+
+      function showPendingRequestAlert(actionLabel) {
+        frappe.show_alert({
+          message: `Please wait for the current Qwen response to finish before ${actionLabel}.`,
+          indicator: "orange",
+        });
       }
 
       function removePopover() {
@@ -425,6 +442,7 @@
 
       function redrawSessions() {
         $sessions.empty();
+        $clearHistory.prop("disabled", state.pendingRequests > 0 || !state.sessions.length);
         if (!state.sessions.length) {
           $sessions.append(`<div style="opacity:.7; font-size:12px;">No Qwen chats yet.</div>`);
           return;
@@ -453,6 +471,10 @@
           $row.on("click", e => {
             if ($(e.target).closest("button").length) return;
             if ($(e.target).closest("input").length) return;
+            if (state.pendingRequests > 0) {
+              showPendingRequestAlert("switching chats");
+              return;
+            }
             state.session = s.name;
             localStorage.setItem("qwen_chat_session", state.session);
             redrawSessions();
@@ -462,6 +484,10 @@
           $row.find(".qwen-ellipsis").on("click", e => {
             e.preventDefault();
             e.stopPropagation();
+            if (state.pendingRequests > 0) {
+              showPendingRequestAlert("opening chat actions");
+              return;
+            }
             const btn = e.currentTarget;
             if (state.menuOpenFor === s.name && $("#" + MENU_ID).length) {
               removePopover();
@@ -536,6 +562,33 @@
         await loadMessages();
       }
 
+      async function clearHistory() {
+        removePopover();
+        if (state.pendingRequests > 0) {
+          showPendingRequestAlert("clearing chat history");
+          return;
+        }
+        if (!state.sessions.length) {
+          frappe.show_alert({ message: "There is no Qwen chat history to clear.", indicator: "blue" });
+          return;
+        }
+        frappe.confirm("Clear all Qwen chat history for your account? This cannot be undone.", async () => {
+          await frappe.call({
+            method: "ai_assistant_ui.api.clear_qwen_sessions",
+            args: { confirm: 1 },
+          });
+          state.session = null;
+          state.sessions = [];
+          state.messages = [];
+          state.optimisticMessages = [];
+          localStorage.removeItem("qwen_chat_session");
+          redrawSessions();
+          redrawMessages();
+          await createSession();
+          frappe.show_alert({ message: "Qwen chat history cleared.", indicator: "green" });
+        });
+      }
+
       async function loadMessages() {
         if (!state.session) {
           state.messages = [];
@@ -553,6 +606,10 @@
       }
 
       async function sendMessage() {
+        if (state.pendingRequests > 0) {
+          showPendingRequestAlert("sending another message in this chat");
+          return;
+        }
         const text = ($input.val() || "").trim();
         if (!text) return;
         if (!state.session) {
@@ -589,10 +646,15 @@
       }
 
       ensureTypingStyle();
-      $root.find(".qwen-new-chat").on("click", async () => {
+      $newChat.on("click", async () => {
+        if (state.pendingRequests > 0) {
+          showPendingRequestAlert("starting a new chat");
+          return;
+        }
         await createSession();
       });
-      $root.find(".qwen-send").on("click", sendMessage);
+      $clearHistory.on("click", clearHistory);
+      $send.on("click", sendMessage);
       $input.on("keydown", e => {
         if (e.key === "Enter") {
           e.preventDefault();

@@ -1,0 +1,38 @@
+{
+  "type": "qwen_consultant_drilldown_playbook_registry",
+  "contract_version": "1.0",
+  "capability_entity_scopes": {
+    "accounts_receivable_read": "customers",
+    "accounts_payable_read": "suppliers"
+  },
+  "playbooks": [
+    {
+      "playbook_id": "working_capital_side_by_side_pressure",
+      "priority": 10,
+      "required_features": ["working_capital_summary"],
+      "source_family_ids": ["working_capital"],
+      "source_capability_ids": ["working_capital_health_read", "ar_ap_analysis_read"],
+      "allow_composite_grounding": true,
+      "next_action": {
+        "action_id": "compare_ar_ap_pressure_side_by_side",
+        "execution_mode": "current_governed_artifact",
+        "user_prompt": "Would you like me to compare the customer collection pressure and supplier payment pressure side by side next, so we can see which side is driving the cash squeeze?"
+      }
+    },
+    {
+      "playbook_id": "listed_party_overdue_intensity_comparison",
+      "priority": 20,
+      "required_features": ["ranked_parties"],
+      "next_action": {
+        "action_id": "compare_listed_parties_by_overdue_and_intensity",
+        "execution_mode": "current_governed_artifact",
+        "comparison_metrics": ["overdue_amount", "overdue_intensity"],
+        "entity_scope_prompts": {
+          "customers": "Would you like me to compare the listed customers by overdue amount and overdue intensity next, so you can see who needs collection focus first?",
+          "suppliers": "Would you like me to compare the listed suppliers by overdue amount and overdue intensity next, so you can separate cash impact from supplier-relationship urgency?",
+          "parties": "Would you like me to compare the listed parties by overdue amount and overdue intensity next?"
+        }
+      }
+    }
+  ]
+}

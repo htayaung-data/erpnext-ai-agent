@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.capability_adapters import (
@@ -11,17 +11,21 @@ from ai_assistant_ui.qwen_chat.capability_adapters import (
 	supports_local_followup_mode,
 )
 from ai_assistant_ui.qwen_chat.erp_metadata_discovery import get_report_surface_summary
-from ai_assistant_ui.qwen_chat.followup_interpreter import (
-	detect_followup_intent,
-	is_million_transform_intent as _is_million_transform_intent,
-	is_self_contained_business_request as _is_self_contained_business_request,
-)
 from ai_assistant_ui.qwen_chat.metadata import (
 	all_ontology_concepts,
+	capability_contract_identity,
 	capability_default_report_name,
 	capability_report_names,
 	capability_semantic_tags,
+	get_composite_family_spec,
+	governed_self_contained_business_terms,
+	governed_standalone_business_terms,
 	get_frontdoor_intent_spec,
+	list_capability_specs,
+	ontology_detect_concepts,
+	ontology_concept_aliases,
+	ontology_self_contained_prefixes,
+	normalize_followup_mode_for_runtime,
 	report_capability_ids,
 	report_family_report_names,
 	report_semantic_tags,
@@ -29,11 +33,29 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_supported_metrics,
 	resolve_followup_report_switch,
 	resolve_target_report_for_capability,
-	list_capability_specs,
 	supported_ontology_concepts,
 )
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import best_semantic_slot_alias
 from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
+from ai_assistant_ui.qwen_chat.governed_scope_registry import listing_view_for_report_name
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_canonical_key
+from ai_assistant_ui.qwen_chat.entity_detail_clarification import (
+	entity_detail_clarification_signal_spec,
+)
+from ai_assistant_ui.qwen_chat.entity_dimension_support import entity_type_from_dimension
+from ai_assistant_ui.qwen_chat.entity_detail_request_support import (
+	entity_detail_capability_id,
+	resolve_entity_detail_request_interpretation,
+)
+from ai_assistant_ui.qwen_chat.composite_subject_support import (
+	composite_family_from_entity_dimension,
+)
+from ai_assistant_ui.qwen_chat.artifact_reference_support import (
+	master_data_entity_key_label,
+	ranked_entity_key_label,
+	transaction_party_label,
+)
 from ai_assistant_ui.qwen_chat.scope_decision_input import (
 	ScopeDecisionInputContract,
 	build_known_unsupported_scope_decision_input,
@@ -56,6 +78,30 @@ def _safe_json_loads(value: Any) -> Any:
 		return json.loads(text)
 	except Exception:
 		return None
+
+
+def _canonical_capability_identities(
+	capability_ids: List[str] | None,
+	*,
+	scope_id: str = "",
+	report_name: str = "",
+) -> List[str]:
+	values: List[str] = []
+	for capability_id in capability_ids or []:
+		clean = str(capability_id or "").strip()
+		if not clean:
+			continue
+		values.append(
+			str(
+				capability_contract_identity(
+					clean,
+					scope_id=str(scope_id or "").strip(),
+					report_name=str(report_name or "").strip(),
+				)
+				or clean
+			).strip()
+		)
+	return [value for value in dict.fromkeys(values) if value]
 
 
 def detect_language(text: str) -> str:
@@ -81,12 +127,35 @@ def detect_explicit_analysis_request(text: str) -> bool:
 	)
 
 
-def is_million_transform_request(message: str) -> bool:
-	return _is_million_transform_intent(message)
-
-def is_self_contained_business_request(message: str) -> bool:
-	return _is_self_contained_business_request(message)
-
+def _message_looks_like_self_contained_governed_business_query(
+	*,
+	message: str,
+	language: str = "en",
+) -> bool:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return False
+	for term in governed_standalone_business_terms(language):
+		clean = str(term or "").strip().lower()
+		if clean and text == clean:
+			return True
+	for concept_id in ontology_detect_concepts(text, language=language, include_extended=False):
+		if text in ontology_concept_aliases(str(concept_id or "").strip(), language=language):
+			return True
+	prefixes = [
+		str(value or "").strip().lower()
+		for value in ontology_self_contained_prefixes(language)
+		if str(value or "").strip()
+	]
+	if prefixes and not any(text.startswith(prefix) for prefix in prefixes):
+		return False
+	if ontology_detect_concepts(text, language=language, include_extended=False):
+		return True
+	for term in governed_self_contained_business_terms(language):
+		clean = str(term or "").strip().lower()
+		if clean and re.search(rf"(?<!\\w){re.escape(clean)}(?!\\w)", text):
+			return True
+	return False
 
 @dataclass(frozen=True)
 class InteractionContract:
@@ -191,6 +260,48 @@ class ClarificationSignalContract:
 	suggested_options: List[str]
 	internal_reason: str
 	internal_details: Dict[str, Any]
+	candidate_capability_ids: List[str] = field(default_factory=list)
+	canonical_candidate_capability_ids: List[str] = field(default_factory=list)
+
+	def __post_init__(self) -> None:
+		candidates = [
+			str(value or "").strip()
+			for value in list(self.candidate_capability_ids or [])
+			if str(value or "").strip()
+		]
+		if not candidates:
+			details = dict(self.internal_details or {})
+			if isinstance(details.get("capability_candidates"), list):
+				candidates = [
+					str(value or "").strip()
+					for value in details.get("capability_candidates")
+					if str(value or "").strip()
+				]
+		object.__setattr__(self, "candidate_capability_ids", candidates)
+		canonical = list(self.canonical_candidate_capability_ids or [])
+		if not canonical:
+			details = dict(self.internal_details or {})
+			scope_id = str(details.get("scope_id") or "").strip()
+			report_name = str((details.get("report_candidates") or [""])[0] or "").strip()
+			if isinstance(details.get("canonical_capability_candidates"), list):
+				canonical = [
+					str(value or "").strip()
+					for value in details.get("canonical_capability_candidates")
+					if str(value or "").strip()
+				]
+			elif isinstance(details.get("canonical_candidate_capability_ids"), list):
+				canonical = [
+					str(value or "").strip()
+					for value in details.get("canonical_candidate_capability_ids")
+					if str(value or "").strip()
+				]
+			else:
+				canonical = _canonical_capability_identities(
+					details.get("capability_candidates") if isinstance(details.get("capability_candidates"), list) else [],
+					scope_id=scope_id,
+					report_name=report_name,
+				)
+		object.__setattr__(self, "canonical_candidate_capability_ids", canonical)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -201,6 +312,8 @@ class ClarificationSignalContract:
 			"reason_type": self.reason_type,
 			"user_question": self.user_question,
 			"suggested_options": list(self.suggested_options),
+			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"canonical_candidate_capability_ids": list(self.canonical_candidate_capability_ids),
 			"internal_reason": self.internal_reason,
 			"internal_details": dict(self.internal_details),
 			"created_at": _utc_now(),
@@ -224,6 +337,21 @@ class ClarificationReasonContract:
 	suggested_options: List[str]
 	internal_reason: str
 	internal_details: Dict[str, Any]
+	canonical_candidate_capability_ids: List[str] = field(default_factory=list)
+
+	def __post_init__(self) -> None:
+		canonical = list(self.canonical_candidate_capability_ids or [])
+		if not canonical:
+			scope_id = ""
+			if isinstance(self.internal_details, dict):
+				scope_id = str(self.internal_details.get("scope_id") or "").strip()
+			report_name = str((self.candidate_reports or [""])[0] or "").strip()
+			canonical = _canonical_capability_identities(
+				self.candidate_capability_ids,
+				scope_id=scope_id,
+				report_name=report_name,
+			)
+		object.__setattr__(self, "canonical_candidate_capability_ids", canonical)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -240,6 +368,7 @@ class ClarificationReasonContract:
 			"missing_fields": list(self.missing_fields),
 			"ambiguity_flags": list(self.ambiguity_flags),
 			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"canonical_candidate_capability_ids": list(self.canonical_candidate_capability_ids),
 			"candidate_reports": list(self.candidate_reports),
 			"suggested_options": list(self.suggested_options),
 			"internal_reason": self.internal_reason,
@@ -264,6 +393,7 @@ class ClarificationResolutionContract:
 	resolved_slot: Dict[str, Any]
 	clarification_attempt_count: int
 	is_final_attempt: bool
+	internal_details: Dict[str, Any]
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -283,6 +413,194 @@ class ClarificationResolutionContract:
 			"resolved_slot": dict(self.resolved_slot),
 			"clarification_attempt_count": int(max(0, self.clarification_attempt_count)),
 			"is_final_attempt": bool(self.is_final_attempt),
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class EntityReferenceResolutionContract:
+	request_id: str
+	entity_grain: str
+	lookup_mode: str
+	search_text: str
+	resolution_status: str
+	candidate_entities: List[Dict[str, Any]]
+	resolved_entity: Dict[str, Any]
+	reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_entity_reference_resolution_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"entity_grain": self.entity_grain,
+			"lookup_mode": self.lookup_mode,
+			"search_text": self.search_text,
+			"resolution_status": self.resolution_status,
+			"candidate_entities": [dict(item) for item in self.candidate_entities if isinstance(item, dict)],
+			"resolved_entity": dict(self.resolved_entity),
+			"reason": self.reason,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class EntityDetailEvidenceRequestContract:
+	request_id: str
+	entity_type: str
+	entity_question_type: str
+	requested_metrics: List[str]
+	requested_dimensions: List[str]
+	requested_concepts: List[str]
+	basis: str
+	question_shape: str
+	value_mode: str
+	resolved_entity_ref: Dict[str, Any]
+	profile_sections: List[str]
+	clarification_required: bool
+	clarification_reason_type: str
+	clarification_options: List[str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_entity_detail_evidence_request_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"entity_type": self.entity_type,
+			"entity_question_type": self.entity_question_type,
+			"requested_metrics": list(self.requested_metrics),
+			"requested_dimensions": list(self.requested_dimensions),
+			"requested_concepts": list(self.requested_concepts),
+			"basis": self.basis,
+			"question_shape": self.question_shape,
+			"value_mode": self.value_mode,
+			"resolved_entity_ref": dict(self.resolved_entity_ref),
+			"profile_sections": list(self.profile_sections),
+			"clarification_required": bool(self.clarification_required),
+			"clarification_reason_type": self.clarification_reason_type,
+			"clarification_options": list(self.clarification_options),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class SemanticResolutionContract:
+	request_id: str
+	session_id: str
+	intent_class: str
+	primary_business_area: str
+	resolved_slots: Dict[str, str]
+	slot_confidence: Dict[str, float]
+	candidate_family_ids: List[str]
+	candidate_capability_ids: List[str]
+	candidate_reports: List[str]
+	ambiguity_flags: List[str]
+	ambiguity_reason: str
+	resolution_source: Dict[str, str]
+	governed_decision: str
+	governed_reason: str
+	scope_id: str = ""
+	canonical_candidate_capability_ids: List[str] = field(default_factory=list)
+
+	def __post_init__(self) -> None:
+		canonical = list(self.canonical_candidate_capability_ids or [])
+		if not canonical:
+			report_name = str((self.candidate_reports or [""])[0] or "").strip()
+			canonical = _canonical_capability_identities(
+				self.candidate_capability_ids,
+				scope_id=self.scope_id,
+				report_name=report_name,
+			)
+		object.__setattr__(self, "canonical_candidate_capability_ids", canonical)
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_semantic_resolution_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"intent_class": self.intent_class,
+			"primary_business_area": self.primary_business_area,
+			"resolved_slots": {
+				str(key): str(value)
+				for key, value in dict(self.resolved_slots).items()
+				if str(key or "").strip()
+			},
+			"slot_confidence": {
+				str(key): float(value)
+				for key, value in dict(self.slot_confidence).items()
+				if str(key or "").strip()
+			},
+			"candidate_family_ids": [
+				str(value) for value in list(self.candidate_family_ids) if str(value or "").strip()
+			],
+			"candidate_capability_ids": [
+				str(value) for value in list(self.candidate_capability_ids) if str(value or "").strip()
+			],
+			"canonical_candidate_capability_ids": [
+				str(value)
+				for value in list(self.canonical_candidate_capability_ids)
+				if str(value or "").strip()
+			],
+			"candidate_reports": [
+				str(value) for value in list(self.candidate_reports) if str(value or "").strip()
+			],
+			"ambiguity_flags": [
+				str(value) for value in list(self.ambiguity_flags) if str(value or "").strip()
+			],
+			"ambiguity_reason": self.ambiguity_reason,
+			"resolution_source": {
+				str(key): str(value)
+				for key, value in dict(self.resolution_source).items()
+				if str(key or "").strip()
+			},
+			"governed_decision": self.governed_decision,
+			"governed_reason": self.governed_reason,
+			"scope_id": str(self.scope_id or "").strip(),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class FinancialSummaryResolutionContract:
+	request_id: str
+	session_id: str
+	intent_class: str
+	resolved_summary_domains: List[str]
+	resolved_summary_focus: str
+	resolved_summary_metric_family: str
+	resolved_summary_grain: str
+	resolved_time_scope: str
+	decision: str
+	target_intent_class: str
+	target_composite_plan_id: str
+	ambiguity_flags: List[str]
+	ambiguity_reason: str
+	decision_reason: str
+	candidate_capability_ids: List[str]
+	candidate_reports: List[str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_financial_summary_resolution_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"intent_class": self.intent_class,
+			"resolved_summary_domains": list(self.resolved_summary_domains),
+			"resolved_summary_focus": self.resolved_summary_focus,
+			"resolved_summary_metric_family": self.resolved_summary_metric_family,
+			"resolved_summary_grain": self.resolved_summary_grain,
+			"resolved_time_scope": self.resolved_time_scope,
+			"decision": self.decision,
+			"target_intent_class": self.target_intent_class,
+			"target_composite_plan_id": self.target_composite_plan_id,
+			"ambiguity_flags": list(self.ambiguity_flags),
+			"ambiguity_reason": self.ambiguity_reason,
+			"decision_reason": self.decision_reason,
+			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"candidate_reports": list(self.candidate_reports),
 			"created_at": _utc_now(),
 		}
 
@@ -350,6 +668,7 @@ class ERPBusinessReasoningContract:
 	reasoning_scope: str
 	supported_claims: List[Dict[str, Any]]
 	recommendations: List[Dict[str, Any]]
+	offered_next_actions: List[Dict[str, Any]]
 	speculation_flags: List[str]
 	allowed_to_answer: bool
 	reason: str
@@ -373,6 +692,7 @@ class ERPBusinessReasoningContract:
 			"reasoning_scope": self.reasoning_scope,
 			"supported_claims": [dict(item) for item in self.supported_claims if isinstance(item, dict)],
 			"recommendations": [dict(item) for item in self.recommendations if isinstance(item, dict)],
+			"offered_next_actions": [dict(item) for item in self.offered_next_actions if isinstance(item, dict)],
 			"speculation_flags": list(self.speculation_flags),
 			"allowed_to_answer": bool(self.allowed_to_answer),
 			"reason": self.reason,
@@ -527,6 +847,22 @@ class FreshQueryInterpretationContract:
 	ambiguity_flags: List[str]
 	ambiguity_reason: str
 	confidence: float
+	canonical_candidate_capability_ids: List[str] = field(default_factory=list)
+	target_limit: int = 0
+
+	def __post_init__(self) -> None:
+		canonical = list(self.canonical_candidate_capability_ids or [])
+		if not canonical:
+			scope_id = ""
+			if isinstance(self.extracted_slots, dict):
+				scope_id = str(self.extracted_slots.get("scope_id") or "").strip()
+			report_name = str((self.candidate_reports or [""])[0] or "").strip()
+			canonical = _canonical_capability_identities(
+				self.candidate_capability_ids,
+				scope_id=scope_id,
+				report_name=report_name,
+			)
+		object.__setattr__(self, "canonical_candidate_capability_ids", canonical)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -536,10 +872,12 @@ class FreshQueryInterpretationContract:
 			"session_id": self.session_id,
 			"intent_class": self.intent_class,
 			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"canonical_candidate_capability_ids": list(self.canonical_candidate_capability_ids),
 			"candidate_reports": list(self.candidate_reports),
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
 			"requested_time_scope": self.requested_time_scope,
+			"target_limit": int(max(0, self.target_limit or 0)),
 			"requested_presentation": list(self.requested_presentation),
 			"extracted_slots": dict(self.extracted_slots),
 			"ambiguity_flags": list(self.ambiguity_flags),
@@ -563,29 +901,37 @@ class FreshQueryCompilerContract:
 	decision: str
 	clarification_required: bool
 	compiler_reason: str
+	governed_resolution_details: Dict[str, Any]
 	clarification_reason_type: str
 	clarification_details: Dict[str, Any]
+	extracted_slots: Dict[str, Any]
+	canonical_capability_id: str = ""
+	target_limit: int = 0
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
 			"type": "qwen_fresh_query_compiler_contract",
-			"contract_version": "1.0",
+			"contract_version": "1.1",
 			"request_id": self.request_id,
 			"session_id": self.session_id,
 			"capability_id": self.capability_id,
+			"canonical_capability_id": self.canonical_capability_id,
 			"selected_report": self.selected_report,
 			"selected_report_family": self.selected_report_family,
 			"completed_filters": dict(self.completed_filters),
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
 			"requested_time_scope": self.requested_time_scope,
-				"decision": self.decision,
-				"clarification_required": self.clarification_required,
-				"compiler_reason": self.compiler_reason,
-				"clarification_reason_type": self.clarification_reason_type,
-				"clarification_details": dict(self.clarification_details),
-				"created_at": _utc_now(),
-			}
+			"target_limit": int(max(0, self.target_limit or 0)),
+			"decision": self.decision,
+			"clarification_required": self.clarification_required,
+			"compiler_reason": self.compiler_reason,
+			"governed_resolution_details": dict(self.governed_resolution_details),
+			"clarification_reason_type": self.clarification_reason_type,
+			"clarification_details": dict(self.clarification_details),
+			"extracted_slots": dict(self.extracted_slots),
+			"created_at": _utc_now(),
+		}
 
 
 @dataclass(frozen=True)
@@ -597,6 +943,9 @@ class CompiledQueryRequestContract:
 	requested_dimensions: List[str]
 	requested_metrics: List[str]
 	response_policy: Dict[str, Any]
+	extracted_slots: Dict[str, Any]
+	canonical_capability_id: str = ""
+	target_limit: int = 0
 	mode: str = "compiled_read_query"
 
 	def to_payload(self) -> Dict[str, Any]:
@@ -606,11 +955,14 @@ class CompiledQueryRequestContract:
 			"request_id": self.request_id,
 			"mode": self.mode,
 			"capability_id": self.capability_id,
+			"canonical_capability_id": self.canonical_capability_id,
 			"selected_report": self.selected_report,
 			"filters": dict(self.filters),
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
+			"target_limit": int(max(0, self.target_limit or 0)),
 			"response_policy": dict(self.response_policy),
+			"extracted_slots": dict(self.extracted_slots),
 			"created_at": _utc_now(),
 		}
 
@@ -919,6 +1271,156 @@ def build_followup_resolution_contract(
 	)
 
 
+def build_followup_boundary_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	source_family_id: str = "",
+	source_report_name: str = "",
+	grounded_context_domains: List[str] | None = None,
+	requested_domains: List[str] | None = None,
+	structured_followup_modes: List[str] | None = None,
+	structured_business_signals_present: bool = False,
+	grounded_followup_supported: bool = False,
+	self_contained_signal: bool = False,
+	contradictory_payload: bool = False,
+	degraded_message_fallback_allowed: bool = False,
+	degraded_message_fallback_used: bool = False,
+	out_of_scope_signal: bool = False,
+	primary_domain: str = "",
+	domain_affinity: str = "unknown",
+	recommended_boundary_decision: str = "fail_closed_to_reasoning",
+	decision_reason: str = "",
+	resolution_source: Dict[str, str] | None = None,
+) -> FollowUpBoundaryContract:
+	allowed_affinity = {"same_domain", "partial_overlap", "disjoint", "unknown"}
+	allowed_decisions = {"stay_grounded", "force_fresh_query", "fail_closed_to_reasoning"}
+	clean_affinity = str(domain_affinity or "unknown").strip() or "unknown"
+	if clean_affinity not in allowed_affinity:
+		clean_affinity = "unknown"
+	clean_decision = str(recommended_boundary_decision or "fail_closed_to_reasoning").strip() or "fail_closed_to_reasoning"
+	if clean_decision not in allowed_decisions:
+		clean_decision = "fail_closed_to_reasoning"
+	return FollowUpBoundaryContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		source_family_id=str(source_family_id or "").strip(),
+		source_report_name=str(source_report_name or "").strip(),
+		grounded_context_domains=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (grounded_context_domains or [])
+				if str(value or "").strip()
+			)
+		),
+		requested_domains=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (requested_domains or [])
+				if str(value or "").strip()
+			)
+		),
+		structured_followup_modes=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (structured_followup_modes or [])
+				if str(value or "").strip()
+			)
+		),
+		structured_business_signals_present=bool(structured_business_signals_present),
+		grounded_followup_supported=bool(grounded_followup_supported),
+		self_contained_signal=bool(self_contained_signal),
+		contradictory_payload=bool(contradictory_payload),
+		degraded_message_fallback_allowed=bool(degraded_message_fallback_allowed),
+		degraded_message_fallback_used=bool(degraded_message_fallback_used),
+		out_of_scope_signal=bool(out_of_scope_signal),
+		primary_domain=str(primary_domain or "").strip(),
+		domain_affinity=clean_affinity,
+		recommended_boundary_decision=clean_decision,
+		decision_reason=str(decision_reason or "").strip(),
+		resolution_source={
+			str(key): str(value)
+			for key, value in dict(resolution_source or {}).items()
+			if str(key or "").strip()
+		},
+	)
+
+
+def build_recent_focus_affordance_contract(
+	*,
+	request_id: str,
+	focus_kind: str,
+	focus_grain: str,
+	focus_label: str = "",
+	source_family: str = "",
+	source_capability: str = "",
+	source_report: str = "",
+	allowed_action_classes: List[str] | None = None,
+	allowed_local_followup_modes: List[str] | None = None,
+	allowed_requery_followup_modes: List[str] | None = None,
+	deictic_reference_allowed: bool = False,
+	explicit_named_reference_allowed: bool = False,
+	supports_cross_family_followup: bool = False,
+	listing_supported: bool = False,
+	detail_supported: bool = False,
+	listing_detail_support_status: str = "",
+	reference_terms: Dict[str, List[str]] | None = None,
+	reason: str = "",
+) -> RecentFocusAffordanceContract:
+	clean_reference_terms = {}
+	for key, values in dict(reference_terms or {}).items():
+		clean_key = str(key or "").strip()
+		if not clean_key:
+			continue
+		clean_values = list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (values or [])
+				if str(value or "").strip()
+			)
+		)
+		if clean_values:
+			clean_reference_terms[clean_key] = clean_values
+	return RecentFocusAffordanceContract(
+		request_id=str(request_id or "").strip(),
+		focus_kind=str(focus_kind or "").strip(),
+		focus_grain=str(focus_grain or "").strip(),
+		focus_label=str(focus_label or "").strip(),
+		source_family=str(source_family or "").strip(),
+		source_capability=str(source_capability or "").strip(),
+		source_report=str(source_report or "").strip(),
+		allowed_action_classes=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (allowed_action_classes or [])
+				if str(value or "").strip()
+			)
+		),
+		allowed_local_followup_modes=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (allowed_local_followup_modes or [])
+				if str(value or "").strip()
+			)
+		),
+		allowed_requery_followup_modes=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (allowed_requery_followup_modes or [])
+				if str(value or "").strip()
+			)
+		),
+		deictic_reference_allowed=bool(deictic_reference_allowed),
+		explicit_named_reference_allowed=bool(explicit_named_reference_allowed),
+		supports_cross_family_followup=bool(supports_cross_family_followup),
+		listing_supported=bool(listing_supported),
+		detail_supported=bool(detail_supported),
+		listing_detail_support_status=str(listing_detail_support_status or "").strip(),
+		reference_terms=clean_reference_terms,
+		reason=str(reason or "").strip(),
+	)
+
+
 def clone_followup_resolution(
 	resolution: FollowUpResolution,
 	*,
@@ -1078,12 +1580,123 @@ class GroundedTurnContext:
 
 
 @dataclass(frozen=True)
+class FollowUpBoundaryContract:
+	request_id: str
+	session_id: str
+	source_family_id: str
+	source_report_name: str
+	grounded_context_domains: List[str]
+	requested_domains: List[str]
+	structured_followup_modes: List[str]
+	structured_business_signals_present: bool
+	grounded_followup_supported: bool
+	self_contained_signal: bool
+	contradictory_payload: bool
+	degraded_message_fallback_allowed: bool
+	degraded_message_fallback_used: bool
+	out_of_scope_signal: bool
+	primary_domain: str
+	domain_affinity: str
+	recommended_boundary_decision: str
+	decision_reason: str
+	resolution_source: Dict[str, str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_followup_boundary_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"source_family_id": self.source_family_id,
+			"source_report_name": self.source_report_name,
+			"grounded_context_domains": list(self.grounded_context_domains),
+			"requested_domains": list(self.requested_domains),
+			"structured_followup_modes": list(self.structured_followup_modes),
+			"structured_business_signals_present": bool(self.structured_business_signals_present),
+			"grounded_followup_supported": bool(self.grounded_followup_supported),
+			"self_contained_signal": bool(self.self_contained_signal),
+			"contradictory_payload": bool(self.contradictory_payload),
+			"degraded_message_fallback_allowed": bool(self.degraded_message_fallback_allowed),
+			"degraded_message_fallback_used": bool(self.degraded_message_fallback_used),
+			"out_of_scope_signal": bool(self.out_of_scope_signal),
+			"primary_domain": str(self.primary_domain or "").strip(),
+			"domain_affinity": self.domain_affinity,
+			"recommended_boundary_decision": self.recommended_boundary_decision,
+			"decision_reason": self.decision_reason,
+			"resolution_source": {
+				str(key): str(value)
+				for key, value in dict(self.resolution_source).items()
+				if str(key or "").strip()
+			},
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class RecentFocusAffordanceContract:
+	request_id: str
+	focus_kind: str
+	focus_grain: str
+	focus_label: str
+	source_family: str
+	source_capability: str
+	source_report: str
+	allowed_action_classes: List[str]
+	allowed_local_followup_modes: List[str]
+	allowed_requery_followup_modes: List[str]
+	deictic_reference_allowed: bool
+	explicit_named_reference_allowed: bool
+	supports_cross_family_followup: bool
+	listing_supported: bool
+	detail_supported: bool
+	listing_detail_support_status: str
+	reference_terms: Dict[str, List[str]]
+	reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_recent_focus_affordance_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"focus_kind": self.focus_kind,
+			"focus_grain": self.focus_grain,
+			"focus_label": self.focus_label,
+			"source_family": self.source_family,
+			"source_capability": self.source_capability,
+			"source_report": self.source_report,
+			"allowed_action_classes": list(self.allowed_action_classes),
+			"allowed_local_followup_modes": list(self.allowed_local_followup_modes),
+			"allowed_requery_followup_modes": list(self.allowed_requery_followup_modes),
+			"deictic_reference_allowed": bool(self.deictic_reference_allowed),
+			"explicit_named_reference_allowed": bool(self.explicit_named_reference_allowed),
+			"supports_cross_family_followup": bool(self.supports_cross_family_followup),
+			"listing_supported": bool(self.listing_supported),
+			"detail_supported": bool(self.detail_supported),
+			"listing_detail_support_status": self.listing_detail_support_status,
+			"reference_terms": {
+				str(key): list(values)
+				for key, values in dict(self.reference_terms or {}).items()
+				if str(key or "").strip() and list(values or [])
+			},
+			"reason": self.reason,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class ArtifactContinuationContract:
 	request_id: str
 	source_family_id: str
 	source_capability_id: str
 	source_report: str
 	source_artifact_type: str
+	source_composite_family_id: str
+	source_composite_family_label: str
+	source_composite_subject_alias: str
+	source_composite_basis: str
+	source_composite_primary_metric_id: str
+	source_composite_secondary_metric_ids: List[str]
+	source_composite_time_scope: str
 	source_dimension: str
 	source_metric_key: str
 	source_requested_columns: List[str]
@@ -1121,6 +1734,13 @@ class ArtifactContinuationContract:
 			"source_capability_id": self.source_capability_id,
 			"source_report": self.source_report,
 			"source_artifact_type": self.source_artifact_type,
+			"source_composite_family_id": self.source_composite_family_id,
+			"source_composite_family_label": self.source_composite_family_label,
+			"source_composite_subject_alias": self.source_composite_subject_alias,
+			"source_composite_basis": self.source_composite_basis,
+			"source_composite_primary_metric_id": self.source_composite_primary_metric_id,
+			"source_composite_secondary_metric_ids": list(self.source_composite_secondary_metric_ids),
+			"source_composite_time_scope": self.source_composite_time_scope,
 			"source_dimension": self.source_dimension,
 			"source_metric_key": self.source_metric_key,
 			"source_requested_columns": list(self.source_requested_columns),
@@ -1245,6 +1865,45 @@ class ArtifactEnrichmentCompatibilityContract:
 
 
 @dataclass(frozen=True)
+class FinalAnswerAuthorityContract:
+	request_id: str
+	session_id: str
+	authority_source: str
+	evidence_scope: str
+	selected_artifact_id: str
+	selected_report_family: str
+	selected_row_reference: str
+	policy_boundary: str
+	answer_mode: str
+	renderer_owner: str
+	authority_complete: bool
+	preflight_status: str
+	missing_fields: List[str]
+	authority_reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_final_answer_authority_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"authority_source": self.authority_source,
+			"evidence_scope": self.evidence_scope,
+			"selected_artifact_id": self.selected_artifact_id,
+			"selected_report_family": self.selected_report_family,
+			"selected_row_reference": self.selected_row_reference,
+			"policy_boundary": self.policy_boundary,
+			"answer_mode": self.answer_mode,
+			"renderer_owner": self.renderer_owner,
+			"authority_complete": bool(self.authority_complete),
+			"preflight_status": self.preflight_status,
+			"missing_fields": list(self.missing_fields),
+			"authority_reason": self.authority_reason,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class AuditEnvelope:
 	request_id: str
 	session_id: str
@@ -1261,6 +1920,7 @@ class AuditEnvelope:
 	validation_status: str
 	validation_errors: List[str]
 	answer_chars: int
+	final_answer_authority: Dict[str, Any] = field(default_factory=dict)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -1281,6 +1941,7 @@ class AuditEnvelope:
 			"validation_status": self.validation_status,
 			"validation_errors": self.validation_errors,
 			"answer_chars": self.answer_chars,
+			"final_answer_authority": dict(self.final_answer_authority),
 			"created_at": _utc_now(),
 		}
 
@@ -1361,12 +2022,292 @@ class FrontDoorIntentGateContract:
 
 
 @dataclass(frozen=True)
+class CompoundRequestAssessmentContract:
+	request_id: str
+	status: str
+	segments: List[str]
+	suggested_options: List[str]
+	clarification_required: bool
+	reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_compound_request_assessment_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"status": self.status,
+			"segments": list(self.segments),
+			"suggested_options": list(self.suggested_options),
+			"clarification_required": bool(self.clarification_required),
+			"reason": self.reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class MultiStepExecutionPlanContract:
+	request_id: str
+	plan_id: str
+	relationship_type: str
+	entry_step_id: str
+	step_count: int
+	steps: List[Dict[str, Any]]
+	interruption_policy: Dict[str, Any]
+	clarification_policy: Dict[str, Any]
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_multi_step_execution_plan_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"plan_id": self.plan_id,
+			"plan_kind": "multi_step_execution",
+			"relationship_type": self.relationship_type,
+			"entry_step_id": self.entry_step_id,
+			"step_count": int(max(0, self.step_count)),
+			"steps": [dict(step or {}) for step in self.steps if isinstance(step, dict) and step],
+			"interruption_policy": dict(self.interruption_policy),
+			"clarification_policy": dict(self.clarification_policy),
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class MultiStepExecutionStateContract:
+	request_id: str
+	execution_id: str
+	plan_id: str
+	state: str
+	current_step_id: str
+	current_step_index: int
+	current_step_status: str
+	completed_step_ids: List[str]
+	remaining_step_ids: List[str]
+	last_completed_step_id: str
+	waiting_step_id: str
+	interruption_reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_multi_step_execution_state_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"execution_id": self.execution_id,
+			"plan_id": self.plan_id,
+			"state": self.state,
+			"current_step_id": self.current_step_id,
+			"current_step_index": int(max(0, self.current_step_index)),
+			"current_step_status": self.current_step_status,
+			"completed_step_ids": list(self.completed_step_ids),
+			"remaining_step_ids": list(self.remaining_step_ids),
+			"last_completed_step_id": self.last_completed_step_id,
+			"waiting_step_id": self.waiting_step_id,
+			"interruption_reason": self.interruption_reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class MultiStepStepResultIntegrationContract:
+	request_id: str
+	execution_id: str
+	plan_id: str
+	source_step_id: str
+	source_step_index: int
+	result_kind: str
+	result_request_id: str
+	update_recent_focus: bool
+	recent_focus_source_request_id: str
+	carryover_classes: List[str]
+	result_handle: Dict[str, Any]
+	interruption_policy: Dict[str, Any]
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_multi_step_step_result_integration_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"execution_id": self.execution_id,
+			"plan_id": self.plan_id,
+			"source_step_id": self.source_step_id,
+			"source_step_index": int(max(0, self.source_step_index)),
+			"result_kind": self.result_kind,
+			"result_request_id": self.result_request_id,
+			"update_recent_focus": bool(self.update_recent_focus),
+			"recent_focus_source_request_id": self.recent_focus_source_request_id,
+			"carryover_classes": list(self.carryover_classes),
+			"result_handle": dict(self.result_handle),
+			"interruption_policy": dict(self.interruption_policy),
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ConversationControlDecisionContract:
+	request_id: str
+	decision_class: str
+	decision_action: str
+	target_state_class: str
+	resolved_business_message: str
+	resolved_focus_target: Dict[str, Any]
+	resolved_sequence_target: Dict[str, Any]
+	clear_pending_clarification: bool
+	clear_active_sequence: bool
+	update_recent_focus: bool
+	preserve_prior_branch: bool
+	confidence: float
+	reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_conversation_control_decision_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"decision_class": self.decision_class,
+			"decision_action": self.decision_action,
+			"target_state_class": self.target_state_class,
+			"resolved_business_message": self.resolved_business_message,
+			"resolved_focus_target": dict(self.resolved_focus_target),
+			"resolved_sequence_target": dict(self.resolved_sequence_target),
+			"clear_pending_clarification": bool(self.clear_pending_clarification),
+			"clear_active_sequence": bool(self.clear_active_sequence),
+			"update_recent_focus": bool(self.update_recent_focus),
+			"preserve_prior_branch": bool(self.preserve_prior_branch),
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"reason": self.reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ConversationControlEvidenceContract:
+	request_id: str
+	evidence_class: str
+	action_id: str
+	evidence_strength: str
+	raw_message: str
+	normalized_message: str
+	matched_surface_form: str
+	embedded_business_message: str
+	reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_conversation_control_evidence_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"evidence_class": self.evidence_class,
+			"action_id": self.action_id,
+			"evidence_strength": self.evidence_strength,
+			"raw_message": self.raw_message,
+			"normalized_message": self.normalized_message,
+			"matched_surface_form": self.matched_surface_form,
+			"embedded_business_message": self.embedded_business_message,
+			"reason": self.reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class PriorBranchRestoreContract:
+	request_id: str
+	target_branch_kind: str
+	target_branch_label: str
+	target_request_id: str
+	target_family: str
+	target_scope: Dict[str, Any]
+	restore_mode: str
+	resumable: bool
+	clear_current_pending_clarification: bool
+	clear_current_active_sequence: bool
+	preserve_time_context: bool
+	preserve_scope: bool
+	preserve_entity_dimension: bool
+	reason: str
+	confidence: float
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_prior_branch_restore_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"target_branch_kind": self.target_branch_kind,
+			"target_branch_label": self.target_branch_label,
+			"target_request_id": self.target_request_id,
+			"target_family": self.target_family,
+			"target_scope": dict(self.target_scope),
+			"restore_mode": self.restore_mode,
+			"resumable": bool(self.resumable),
+			"clear_current_pending_clarification": bool(self.clear_current_pending_clarification),
+			"clear_current_active_sequence": bool(self.clear_current_active_sequence),
+			"preserve_time_context": bool(self.preserve_time_context),
+			"preserve_scope": bool(self.preserve_scope),
+			"preserve_entity_dimension": bool(self.preserve_entity_dimension),
+			"reason": self.reason,
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class MasterDataFrontDoorAssessmentContract:
+	request_id: str
+	status: str
+	scope_id: str
+	entity_grain: str
+	request_mode: str
+	lookup_projection: str
+	lookup_search_text: str
+	capability_id: str
+	report_name: str
+	allowed_lookup_modes: List[str]
+	supported_entity_grains: List[str]
+	ambiguity_reason_type: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_master_data_frontdoor_assessment_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"status": self.status,
+			"scope_id": self.scope_id,
+			"entity_grain": self.entity_grain,
+			"request_mode": self.request_mode,
+			"lookup_projection": self.lookup_projection,
+			"lookup_search_text": self.lookup_search_text,
+			"capability_id": self.capability_id,
+			"report_name": self.report_name,
+			"allowed_lookup_modes": list(self.allowed_lookup_modes),
+			"supported_entity_grains": list(self.supported_entity_grains),
+			"ambiguity_reason_type": self.ambiguity_reason_type,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class CompiledExecutionAuditContract:
 	request_id: str
 	session_id: str
 	execution_mode: str
 	compiler_decision: str
 	compiler_reason: str
+	governed_resolution_details: Dict[str, Any]
 	capability_id: str
 	selected_report: str
 	governed_family_id: str
@@ -1394,12 +2335,13 @@ class CompiledExecutionAuditContract:
 	def to_payload(self) -> Dict[str, Any]:
 		return {
 			"type": "qwen_compiled_execution_audit_contract",
-			"contract_version": "1.0",
+			"contract_version": "1.1",
 			"request_id": self.request_id,
 			"session_id": self.session_id,
 			"execution_mode": self.execution_mode,
 			"compiler_decision": self.compiler_decision,
 			"compiler_reason": self.compiler_reason,
+			"governed_resolution_details": dict(self.governed_resolution_details),
 			"capability_id": self.capability_id,
 			"selected_report": self.selected_report,
 			"governed_family_id": self.governed_family_id,
@@ -1495,27 +2437,34 @@ def translate_front_door_intent_gate_contract(
 	if mode == "continue_current_flow":
 		if grounded_context_available:
 			return {
-				"text": "I can continue the current ERP context. Ask for more details, another view, or a new governed query.",
+				"text": "I can continue the current ERP context. Ask for more details, another view, or a new ERP question.",
 				"suggested_prompts": [
 					"Give me more details",
 					"Show another view",
 					"Start a new query",
 				],
-			}
+		}
 		return {
-			"text": "There is no current governed result to continue yet. Ask a new ERP question and I can start from there.",
+			"text": "There is no previous ERP answer to continue from yet. Ask a new ERP question and I can start from there.",
 			"suggested_prompts": [
 				"Show me sales trend",
 				"Analyze inventory",
 				"Give me the financial statement",
 			],
 		}
+	if mode == "clarification_signal":
+		return {
+			"text": "",
+			"suggested_prompts": [],
+		}
 	text_by_intent = {
-		"greeting": "I can help with governed ERP reports and follow-up analysis. What would you like to look at?",
-		"thanks": "You're welcome. If you want, I can continue the current ERP analysis or start a new governed query.",
-		"acknowledgement": "Okay. When you're ready, ask for the next ERP view or a new governed query.",
+		"greeting": "I can help with ERP reports and follow-up analysis. What would you like to look at?",
+		"thanks": "You're welcome. If you want, I can continue the current ERP analysis or start a new ERP question.",
+		"acknowledgement": "Okay. When you're ready, ask for the next ERP view or a new ERP question.",
 		"closure_signoff": "Understood. Feel free to come back anytime, and we can pick up from a new ERP question or continue from there.",
-		"low_signal_non_business": "I’m ready when you want to continue with an ERP question or follow-up.",
+		"governed_kpi_definition": "I can explain governed KPI definitions and approved formula bases from the active business-definition registry.",
+		"low_signal_non_business": "That request is outside this ERP/business assistant. I’m ready when you want to return to the current ERP analysis or continue with an ERP question or follow-up.",
+		"master_data_grain_clarification": "",
 		"route_onward": "",
 	}
 	return {
@@ -1531,6 +2480,7 @@ def build_front_door_intent_gate_contract(
 	confidence: float,
 	grounded_context_available: bool = False,
 	reason: str = "",
+	response_payload_override: Dict[str, Any] | None = None,
 ) -> FrontDoorIntentGateContract:
 	intent = str(intent_class or "").strip() or "route_onward"
 	spec = get_frontdoor_intent_spec(intent)
@@ -1553,6 +2503,8 @@ def build_front_door_intent_gate_contract(
 		response_mode=response_mode,
 		grounded_context_available=grounded_context_available,
 	)
+	if isinstance(response_payload_override, dict) and response_payload_override:
+		response_payload = dict(response_payload_override)
 	return FrontDoorIntentGateContract(
 		request_id=str(request_id or "").strip(),
 		intent_class=intent,
@@ -1562,6 +2514,315 @@ def build_front_door_intent_gate_contract(
 		response_payload=dict(response_payload),
 		route_target=route_target,
 		reason=final_reason,
+	)
+
+
+def build_compound_request_assessment_contract(
+	*,
+	request_id: str,
+	status: str,
+	segments: List[str] | None = None,
+	suggested_options: List[str] | None = None,
+	clarification_required: bool = False,
+	reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> CompoundRequestAssessmentContract:
+	return CompoundRequestAssessmentContract(
+		request_id=str(request_id or "").strip(),
+		status=str(status or "").strip(),
+		segments=[str(x or "").strip() for x in (segments or []) if str(x or "").strip()],
+		suggested_options=[str(x or "").strip() for x in (suggested_options or []) if str(x or "").strip()],
+		clarification_required=bool(clarification_required),
+		reason=str(reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_multi_step_execution_plan_contract(
+	*,
+	request_id: str,
+	plan_id: str,
+	relationship_type: str,
+	entry_step_id: str,
+	steps: List[Dict[str, Any]] | None = None,
+	interruption_policy: Dict[str, Any] | None = None,
+	clarification_policy: Dict[str, Any] | None = None,
+	internal_details: Dict[str, Any] | None = None,
+) -> MultiStepExecutionPlanContract:
+	normalized_steps: List[Dict[str, Any]] = []
+	for index, raw_step in enumerate(steps or [], start=1):
+		if not isinstance(raw_step, dict):
+			continue
+		step = dict(raw_step)
+		step_id = str(step.get("step_id") or "").strip() or f"step_{index}"
+		step_index = int(max(1, step.get("step_index") or index))
+		normalized_steps.append(
+			{
+				"step_id": step_id,
+				"step_index": step_index,
+				"step_message": str(step.get("step_message") or "").strip(),
+				"step_label": str(step.get("step_label") or "").strip(),
+				"dependency_step_ids": [
+					str(value or "").strip()
+					for value in (step.get("dependency_step_ids") or [])
+					if str(value or "").strip()
+				],
+				"carryover_classes": [
+					str(value or "").strip()
+					for value in (step.get("carryover_classes") or [])
+					if str(value or "").strip()
+				],
+				"interpretation_source": str(step.get("interpretation_source") or "").strip(),
+				"intent_class": str(step.get("intent_class") or "").strip(),
+				"route_target": str(step.get("route_target") or "").strip(),
+				"response_mode": str(step.get("response_mode") or "").strip(),
+				"candidate_capability_ids": [
+					str(value or "").strip()
+					for value in (step.get("candidate_capability_ids") or [])
+					if str(value or "").strip()
+				],
+				"candidate_reports": [
+					str(value or "").strip()
+					for value in (step.get("candidate_reports") or [])
+					if str(value or "").strip()
+				],
+				"requested_dimensions": [
+					str(value or "").strip()
+					for value in (step.get("requested_dimensions") or [])
+					if str(value or "").strip()
+				],
+			}
+		)
+	return MultiStepExecutionPlanContract(
+		request_id=str(request_id or "").strip(),
+		plan_id=str(plan_id or "").strip(),
+		relationship_type=str(relationship_type or "").strip(),
+		entry_step_id=str(entry_step_id or "").strip(),
+		step_count=len(normalized_steps),
+		steps=normalized_steps,
+		interruption_policy=dict(interruption_policy or {}),
+		clarification_policy=dict(clarification_policy or {}),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_multi_step_execution_state_contract(
+	*,
+	request_id: str,
+	execution_id: str,
+	plan_id: str,
+	state: str,
+	current_step_id: str = "",
+	current_step_index: int = 0,
+	current_step_status: str = "",
+	completed_step_ids: List[str] | None = None,
+	remaining_step_ids: List[str] | None = None,
+	last_completed_step_id: str = "",
+	waiting_step_id: str = "",
+	interruption_reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> MultiStepExecutionStateContract:
+	return MultiStepExecutionStateContract(
+		request_id=str(request_id or "").strip(),
+		execution_id=str(execution_id or "").strip(),
+		plan_id=str(plan_id or "").strip(),
+		state=str(state or "").strip(),
+		current_step_id=str(current_step_id or "").strip(),
+		current_step_index=int(max(0, current_step_index or 0)),
+		current_step_status=str(current_step_status or "").strip(),
+		completed_step_ids=[
+			str(value or "").strip()
+			for value in (completed_step_ids or [])
+			if str(value or "").strip()
+		],
+		remaining_step_ids=[
+			str(value or "").strip()
+			for value in (remaining_step_ids or [])
+			if str(value or "").strip()
+		],
+		last_completed_step_id=str(last_completed_step_id or "").strip(),
+		waiting_step_id=str(waiting_step_id or "").strip(),
+		interruption_reason=str(interruption_reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_multi_step_step_result_integration_contract(
+	*,
+	request_id: str,
+	execution_id: str,
+	plan_id: str,
+	source_step_id: str,
+	source_step_index: int,
+	result_kind: str,
+	result_request_id: str,
+	update_recent_focus: bool,
+	recent_focus_source_request_id: str = "",
+	carryover_classes: List[str] | None = None,
+	result_handle: Dict[str, Any] | None = None,
+	interruption_policy: Dict[str, Any] | None = None,
+	internal_details: Dict[str, Any] | None = None,
+) -> MultiStepStepResultIntegrationContract:
+	return MultiStepStepResultIntegrationContract(
+		request_id=str(request_id or "").strip(),
+		execution_id=str(execution_id or "").strip(),
+		plan_id=str(plan_id or "").strip(),
+		source_step_id=str(source_step_id or "").strip(),
+		source_step_index=int(max(0, source_step_index or 0)),
+		result_kind=str(result_kind or "").strip(),
+		result_request_id=str(result_request_id or "").strip(),
+		update_recent_focus=bool(update_recent_focus),
+		recent_focus_source_request_id=str(recent_focus_source_request_id or "").strip(),
+		carryover_classes=[
+			str(value or "").strip()
+			for value in (carryover_classes or [])
+			if str(value or "").strip()
+		],
+		result_handle=dict(result_handle or {}),
+		interruption_policy=dict(interruption_policy or {}),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_conversation_control_decision_contract(
+	*,
+	request_id: str,
+	decision_class: str,
+	decision_action: str,
+	target_state_class: str = "",
+	resolved_business_message: str = "",
+	resolved_focus_target: Dict[str, Any] | None = None,
+	resolved_sequence_target: Dict[str, Any] | None = None,
+	clear_pending_clarification: bool = False,
+	clear_active_sequence: bool = False,
+	update_recent_focus: bool = False,
+	preserve_prior_branch: bool = False,
+	confidence: float = 0.0,
+	reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> ConversationControlDecisionContract:
+	return ConversationControlDecisionContract(
+		request_id=str(request_id or "").strip(),
+		decision_class=str(decision_class or "").strip(),
+		decision_action=str(decision_action or "").strip(),
+		target_state_class=str(target_state_class or "").strip(),
+		resolved_business_message=str(resolved_business_message or "").strip(),
+		resolved_focus_target=dict(resolved_focus_target or {}),
+		resolved_sequence_target=dict(resolved_sequence_target or {}),
+		clear_pending_clarification=bool(clear_pending_clarification),
+		clear_active_sequence=bool(clear_active_sequence),
+		update_recent_focus=bool(update_recent_focus),
+		preserve_prior_branch=bool(preserve_prior_branch),
+		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
+		reason=str(reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_conversation_control_evidence_contract(
+	*,
+	request_id: str,
+	evidence_class: str,
+	action_id: str,
+	evidence_strength: str,
+	raw_message: str,
+	normalized_message: str = "",
+	matched_surface_form: str = "",
+	embedded_business_message: str = "",
+	reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> ConversationControlEvidenceContract:
+	return ConversationControlEvidenceContract(
+		request_id=str(request_id or "").strip(),
+		evidence_class=str(evidence_class or "").strip(),
+		action_id=str(action_id or "").strip(),
+		evidence_strength=str(evidence_strength or "").strip(),
+		raw_message=str(raw_message or "").strip(),
+		normalized_message=str(normalized_message or "").strip(),
+		matched_surface_form=str(matched_surface_form or "").strip(),
+		embedded_business_message=str(embedded_business_message or "").strip(),
+		reason=str(reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_prior_branch_restore_contract(
+	*,
+	request_id: str,
+	target_branch_kind: str = "",
+	target_branch_label: str = "",
+	target_request_id: str = "",
+	target_family: str = "",
+	target_scope: Dict[str, Any] | None = None,
+	restore_mode: str = "",
+	resumable: bool = False,
+	clear_current_pending_clarification: bool = False,
+	clear_current_active_sequence: bool = False,
+	preserve_time_context: bool = False,
+	preserve_scope: bool = False,
+	preserve_entity_dimension: bool = False,
+	reason: str = "",
+	confidence: float = 0.0,
+	internal_details: Dict[str, Any] | None = None,
+) -> PriorBranchRestoreContract:
+	return PriorBranchRestoreContract(
+		request_id=str(request_id or "").strip(),
+		target_branch_kind=str(target_branch_kind or "").strip(),
+		target_branch_label=str(target_branch_label or "").strip(),
+		target_request_id=str(target_request_id or "").strip(),
+		target_family=str(target_family or "").strip(),
+		target_scope=dict(target_scope or {}),
+		restore_mode=str(restore_mode or "").strip(),
+		resumable=bool(resumable),
+		clear_current_pending_clarification=bool(clear_current_pending_clarification),
+		clear_current_active_sequence=bool(clear_current_active_sequence),
+		preserve_time_context=bool(preserve_time_context),
+		preserve_scope=bool(preserve_scope),
+		preserve_entity_dimension=bool(preserve_entity_dimension),
+		reason=str(reason or "").strip(),
+		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_master_data_frontdoor_assessment_contract(
+	*,
+	request_id: str,
+	status: str,
+	scope_id: str = "",
+	entity_grain: str = "",
+	request_mode: str = "",
+	lookup_projection: str = "",
+	lookup_search_text: str = "",
+	capability_id: str = "",
+	report_name: str = "",
+	allowed_lookup_modes: List[str] | None = None,
+	supported_entity_grains: List[str] | None = None,
+	ambiguity_reason_type: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> MasterDataFrontDoorAssessmentContract:
+	return MasterDataFrontDoorAssessmentContract(
+		request_id=str(request_id or "").strip(),
+		status=str(status or "").strip(),
+		scope_id=str(scope_id or "").strip(),
+		entity_grain=str(entity_grain or "").strip(),
+		request_mode=str(request_mode or "").strip(),
+		lookup_projection=str(lookup_projection or "").strip(),
+		lookup_search_text=str(lookup_search_text or "").strip(),
+		capability_id=str(capability_id or "").strip(),
+		report_name=str(report_name or "").strip(),
+		allowed_lookup_modes=[
+			str(value or "").strip()
+			for value in (allowed_lookup_modes or [])
+			if str(value or "").strip()
+		],
+		supported_entity_grains=[
+			str(value or "").strip()
+			for value in (supported_entity_grains or [])
+			if str(value or "").strip()
+		],
+		ambiguity_reason_type=str(ambiguity_reason_type or "").strip(),
+		internal_details=dict(internal_details or {}),
 	)
 
 
@@ -1640,6 +2901,7 @@ def build_clarification_reason_contract(
 	missing_fields: List[str] | None = None,
 	ambiguity_flags: List[str] | None = None,
 	candidate_capability_ids: List[str] | None = None,
+	canonical_candidate_capability_ids: List[str] | None = None,
 	candidate_reports: List[str] | None = None,
 	suggested_options: List[str] | None = None,
 	internal_reason: str = "",
@@ -1657,6 +2919,11 @@ def build_clarification_reason_contract(
 		missing_fields=[str(x or "").strip() for x in (missing_fields or []) if str(x or "").strip()],
 		ambiguity_flags=[str(x or "").strip() for x in (ambiguity_flags or []) if str(x or "").strip()],
 		candidate_capability_ids=[str(x or "").strip() for x in (candidate_capability_ids or []) if str(x or "").strip()],
+		canonical_candidate_capability_ids=[
+			str(x or "").strip()
+			for x in (canonical_candidate_capability_ids or [])
+			if str(x or "").strip()
+		],
 		candidate_reports=[str(x or "").strip() for x in (candidate_reports or []) if str(x or "").strip()],
 		suggested_options=[str(x or "").strip() for x in (suggested_options or []) if str(x or "").strip()],
 		internal_reason=str(internal_reason or "").strip(),
@@ -1680,6 +2947,7 @@ def build_clarification_resolution_contract(
 	resolved_slot: Dict[str, Any] | None = None,
 	clarification_attempt_count: int = 0,
 	is_final_attempt: bool = False,
+	internal_details: Dict[str, Any] | None = None,
 ) -> ClarificationResolutionContract:
 	return ClarificationResolutionContract(
 		request_id=str(request_id or "").strip(),
@@ -1700,6 +2968,7 @@ def build_clarification_resolution_contract(
 		resolved_slot=dict(resolved_slot or {}),
 		clarification_attempt_count=int(max(0, clarification_attempt_count or 0)),
 		is_final_attempt=bool(is_final_attempt),
+		internal_details=dict(internal_details or {}),
 	)
 
 
@@ -1724,6 +2993,190 @@ def build_clarification_response_resolution_contract(
 		confidence=1.0 if str(decision or "").strip() == "resolved_option" else 0.0,
 		reason=reason,
 	)
+
+
+def _entity_detail_capability_id(entity_type: str) -> str:
+	return entity_detail_capability_id(entity_type)
+
+
+def _ordered_unique_values(values: List[str] | None) -> List[str]:
+	ordered: List[str] = []
+	for value in values or []:
+		clean = str(value or "").strip()
+		if clean and clean not in ordered:
+			ordered.append(clean)
+	return ordered
+
+
+def _entity_detail_resolved_entity_ref(artifact_payload: Dict[str, Any]) -> Dict[str, Any]:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	entity_type = str(dimensions.get("entity_type") or "").strip()
+	entity_key = str(dimensions.get("entity_key") or "").strip()
+	entity_label = str(dimensions.get("entity_label") or entity_key).strip()
+	if not entity_type and not entity_key and not entity_label:
+		return {}
+	return {
+		"entity_type": entity_type,
+		"entity_key": entity_key or entity_label,
+		"entity_label": entity_label or entity_key,
+		"resolution_status": "artifact_bound",
+		"resolution_source": "artifact_payload",
+	}
+
+
+def _entity_detail_profile_sections(artifact_payload: Dict[str, Any]) -> List[str]:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+	return [
+		str(key or "").strip()
+		for key, value in sections.items()
+		if str(key or "").strip() and value not in (None, "", [], {})
+	]
+
+
+def build_entity_reference_resolution_contract(
+	*,
+	request_id: str,
+	entity_grain: str = "",
+	lookup_mode: str = "",
+	search_text: str = "",
+	resolution_status: str = "",
+	candidate_entities: List[Dict[str, Any]] | None = None,
+	resolved_entity: Dict[str, Any] | None = None,
+	reason: str = "",
+) -> EntityReferenceResolutionContract:
+	return EntityReferenceResolutionContract(
+		request_id=str(request_id or "").strip(),
+		entity_grain=str(entity_grain or "").strip(),
+		lookup_mode=str(lookup_mode or "").strip(),
+		search_text=str(search_text or "").strip(),
+		resolution_status=str(resolution_status or "").strip(),
+		candidate_entities=[dict(item) for item in (candidate_entities or []) if isinstance(item, dict)],
+		resolved_entity=dict(resolved_entity or {}),
+		reason=str(reason or "").strip(),
+	)
+
+
+def build_entity_detail_evidence_request_contract(
+	*,
+	request_id: str,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+) -> EntityDetailEvidenceRequestContract:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	capability_id = _entity_detail_capability_id(entity_type)
+	requested_metrics = _ordered_unique_values(
+		detect_canonical_keys(
+			raw_message,
+			capability_id=capability_id or None,
+			dimension_or_metric="metric",
+		)
+	)
+	requested_dimensions = _ordered_unique_values(
+		detect_canonical_keys(
+			raw_message,
+			capability_id=capability_id or None,
+			dimension_or_metric="dimension",
+		)
+	)
+	requested_concepts = _ordered_unique_values(
+		[
+			str(value or "").strip()
+			for value in ontology_detect_concepts(raw_message)
+			if str(value or "").strip()
+		]
+	)
+	entity_question_type = ""
+	basis = ""
+	question_shape = ""
+	value_mode = ""
+	resolved_entity_ref = _entity_detail_resolved_entity_ref(artifact)
+	profile_sections = _entity_detail_profile_sections(artifact)
+	clarification_required = False
+	clarification_reason_type = ""
+	clarification_options: List[str] = []
+	request_interpretation = resolve_entity_detail_request_interpretation(
+		entity_type=entity_type,
+		requested_metrics=requested_metrics,
+		requested_dimensions=requested_dimensions,
+		requested_concepts=requested_concepts,
+		artifact_payload=artifact,
+	)
+	requested_metrics = list(request_interpretation.get("requested_metrics") or [])
+	entity_question_type = str(request_interpretation.get("entity_question_type") or "").strip()
+	basis = str(request_interpretation.get("basis") or "").strip()
+	clarification_required = bool(request_interpretation.get("clarification_required"))
+	clarification_reason_type = str(request_interpretation.get("clarification_reason_type") or "").strip()
+	clarification_options = [
+		str(value or "").strip()
+		for value in (request_interpretation.get("clarification_options") or [])
+		if str(value or "").strip()
+	]
+	question_shape = str(request_interpretation.get("question_shape") or "").strip()
+	value_mode = str(request_interpretation.get("value_mode") or "").strip()
+	return EntityDetailEvidenceRequestContract(
+		request_id=str(request_id or "").strip(),
+		entity_type=entity_type,
+		entity_question_type=entity_question_type,
+		requested_metrics=requested_metrics,
+		requested_dimensions=requested_dimensions,
+		requested_concepts=requested_concepts,
+		basis=basis,
+		question_shape=question_shape,
+		value_mode=value_mode,
+		resolved_entity_ref=resolved_entity_ref,
+		profile_sections=profile_sections,
+		clarification_required=clarification_required,
+		clarification_reason_type=clarification_reason_type,
+		clarification_options=clarification_options,
+	)
+
+
+def build_entity_detail_clarification_signal_contract(
+	*,
+	request_id: str,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+	evidence_request_contract: Dict[str, Any] | None = None,
+) -> ClarificationSignalContract | None:
+	if isinstance(evidence_request_contract, dict):
+		evidence_request_payload = dict(evidence_request_contract)
+	else:
+		evidence_request_payload = build_entity_detail_evidence_request_contract(
+			request_id=request_id,
+			raw_message=raw_message,
+			artifact_payload=artifact_payload,
+		).to_payload()
+	if not bool(evidence_request_payload.get("clarification_required")):
+		return None
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or f"this {entity_type or 'entity'}").strip()
+	reason_type = str(evidence_request_payload.get("clarification_reason_type") or "").strip()
+	clarification_spec = entity_detail_clarification_signal_spec(
+		reason_type=reason_type,
+		entity_label=entity_label,
+	)
+	if clarification_spec:
+		return build_clarification_signal_contract(
+			request_id=request_id,
+			stage="artifact_boundary",
+			reason_type=reason_type,
+			user_question=str(clarification_spec.get("user_question") or "").strip(),
+			suggested_options=list(clarification_spec.get("suggested_options") or []),
+			internal_reason=str(clarification_spec.get("internal_reason") or "").strip(),
+			internal_details={
+				"continuation_lane": "artifact_boundary",
+				"continuation_intent_class": "entity_detail_evidence",
+				"resolved_message_by_option": dict(clarification_spec.get("resolved_message_by_option") or {}),
+				"option_aliases_by_option": dict(clarification_spec.get("option_aliases_by_option") or {}),
+			},
+		)
+	return None
 
 
 def build_erp_business_reasoning_activation_contract(
@@ -1785,6 +3238,7 @@ def build_erp_business_reasoning_contract(
 	reasoning_scope: str = "",
 	supported_claims: List[Dict[str, Any]] | None = None,
 	recommendations: List[Dict[str, Any]] | None = None,
+	offered_next_actions: List[Dict[str, Any]] | None = None,
 	speculation_flags: List[str] | None = None,
 	allowed_to_answer: bool = False,
 	reason: str = "",
@@ -1805,6 +3259,7 @@ def build_erp_business_reasoning_contract(
 		reasoning_scope=str(reasoning_scope or "").strip(),
 		supported_claims=[dict(item) for item in (supported_claims or []) if isinstance(item, dict)],
 		recommendations=[dict(item) for item in (recommendations or []) if isinstance(item, dict)],
+		offered_next_actions=[dict(item) for item in (offered_next_actions or []) if isinstance(item, dict)],
 		speculation_flags=[str(x or "").strip() for x in (speculation_flags or []) if str(x or "").strip()],
 		allowed_to_answer=bool(allowed_to_answer),
 		reason=str(reason or "").strip(),
@@ -1954,6 +3409,7 @@ def build_clarification_reason_contract_from_sources(
 			missing_fields=details.get("missing_fields") if isinstance(details.get("missing_fields"), list) else [],
 			ambiguity_flags=details.get("ambiguity_flags") if isinstance(details.get("ambiguity_flags"), list) else [],
 			candidate_capability_ids=details.get("capability_candidates") if isinstance(details.get("capability_candidates"), list) else [],
+			canonical_candidate_capability_ids=details.get("canonical_capability_candidates") if isinstance(details.get("canonical_capability_candidates"), list) else [],
 			candidate_reports=details.get("report_candidates") if isinstance(details.get("report_candidates"), list) else [],
 			suggested_options=details.get("suggested_time_scope_options") if isinstance(details.get("suggested_time_scope_options"), list) else [],
 			internal_reason=str(compiler_reason or "").strip(),
@@ -2006,6 +3462,7 @@ def build_fresh_query_interpretation_contract(
 	requested_dimensions: List[str] | None = None,
 	requested_metrics: List[str] | None = None,
 	requested_time_scope: str = "",
+	target_limit: int = 0,
 	requested_presentation: List[str] | None = None,
 	extracted_slots: Dict[str, Any] | None = None,
 	ambiguity_flags: List[str] | None = None,
@@ -2021,6 +3478,7 @@ def build_fresh_query_interpretation_contract(
 		requested_dimensions=[str(x or "").strip() for x in (requested_dimensions or []) if str(x or "").strip()],
 		requested_metrics=[str(x or "").strip() for x in (requested_metrics or []) if str(x or "").strip()],
 		requested_time_scope=str(requested_time_scope or "").strip(),
+		target_limit=int(max(0, target_limit or 0)),
 		requested_presentation=[str(x or "").strip() for x in (requested_presentation or []) if str(x or "").strip()],
 		extracted_slots=dict(extracted_slots or {}),
 		ambiguity_flags=[str(x or "").strip() for x in (ambiguity_flags or []) if str(x or "").strip()],
@@ -2034,33 +3492,44 @@ def build_fresh_query_compiler_contract(
 	request_id: str,
 	session_id: str,
 	capability_id: str = "",
+	canonical_capability_id: str = "",
 	selected_report: str = "",
 	selected_report_family: str = "",
 	completed_filters: Dict[str, Any] | None = None,
 	requested_dimensions: List[str] | None = None,
 	requested_metrics: List[str] | None = None,
 	requested_time_scope: str = "",
+	target_limit: int = 0,
 	decision: str = "clarify",
 	clarification_required: bool = False,
 	compiler_reason: str = "",
+	governed_resolution_details: Dict[str, Any] | None = None,
 	clarification_reason_type: str = "",
 	clarification_details: Dict[str, Any] | None = None,
+	extracted_slots: Dict[str, Any] | None = None,
 ) -> FreshQueryCompilerContract:
 	return FreshQueryCompilerContract(
 		request_id=request_id,
 		session_id=session_id,
 		capability_id=str(capability_id or "").strip(),
+		canonical_capability_id=str(
+			canonical_capability_id
+			or capability_contract_identity(capability_id, report_name=selected_report)
+		).strip(),
 		selected_report=str(selected_report or "").strip(),
 		selected_report_family=str(selected_report_family or "").strip(),
 		completed_filters=dict(completed_filters or {}),
 		requested_dimensions=[str(x or "").strip() for x in (requested_dimensions or []) if str(x or "").strip()],
 		requested_metrics=[str(x or "").strip() for x in (requested_metrics or []) if str(x or "").strip()],
 		requested_time_scope=str(requested_time_scope or "").strip(),
+		target_limit=int(max(0, target_limit or 0)),
 		decision=str(decision or "clarify").strip(),
 		clarification_required=bool(clarification_required),
 		compiler_reason=str(compiler_reason or "").strip(),
+		governed_resolution_details=dict(governed_resolution_details or {}),
 		clarification_reason_type=str(clarification_reason_type or "").strip(),
 		clarification_details=dict(clarification_details or {}),
+		extracted_slots=dict(extracted_slots or {}),
 	)
 
 
@@ -2069,19 +3538,67 @@ def build_compiled_query_request_contract(
 	request_id: str,
 	capability_id: str,
 	selected_report: str,
+	canonical_capability_id: str = "",
 	filters: Dict[str, Any] | None = None,
 	requested_dimensions: List[str] | None = None,
 	requested_metrics: List[str] | None = None,
+	target_limit: int = 0,
 	response_policy: Dict[str, Any] | None = None,
+	extracted_slots: Dict[str, Any] | None = None,
 ) -> CompiledQueryRequestContract:
 	return CompiledQueryRequestContract(
 		request_id=request_id,
 		capability_id=str(capability_id or "").strip(),
+		canonical_capability_id=str(
+			canonical_capability_id
+			or capability_contract_identity(capability_id, report_name=selected_report)
+		).strip(),
 		selected_report=str(selected_report or "").strip(),
 		filters=dict(filters or {}),
 		requested_dimensions=[str(x or "").strip() for x in (requested_dimensions or []) if str(x or "").strip()],
 		requested_metrics=[str(x or "").strip() for x in (requested_metrics or []) if str(x or "").strip()],
+		target_limit=int(max(0, target_limit or 0)),
 		response_policy=dict(response_policy or {}),
+		extracted_slots=dict(extracted_slots or {}),
+	)
+
+
+def build_financial_summary_resolution_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	intent_class: str = "financial_summary",
+	resolved_summary_domains: List[str] | None = None,
+	resolved_summary_focus: str = "",
+	resolved_summary_metric_family: str = "",
+	resolved_summary_grain: str = "",
+	resolved_time_scope: str = "",
+	decision: str = "clarify",
+	target_intent_class: str = "",
+	target_composite_plan_id: str = "",
+	ambiguity_flags: List[str] | None = None,
+	ambiguity_reason: str = "",
+	decision_reason: str = "",
+	candidate_capability_ids: List[str] | None = None,
+	candidate_reports: List[str] | None = None,
+) -> FinancialSummaryResolutionContract:
+	return FinancialSummaryResolutionContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		intent_class=str(intent_class or "financial_summary").strip() or "financial_summary",
+		resolved_summary_domains=[str(x or "").strip() for x in (resolved_summary_domains or []) if str(x or "").strip()],
+		resolved_summary_focus=str(resolved_summary_focus or "").strip(),
+		resolved_summary_metric_family=str(resolved_summary_metric_family or "").strip(),
+		resolved_summary_grain=str(resolved_summary_grain or "").strip(),
+		resolved_time_scope=str(resolved_time_scope or "").strip(),
+		decision=str(decision or "clarify").strip() or "clarify",
+		target_intent_class=str(target_intent_class or "").strip(),
+		target_composite_plan_id=str(target_composite_plan_id or "").strip(),
+		ambiguity_flags=[str(x or "").strip() for x in (ambiguity_flags or []) if str(x or "").strip()],
+		ambiguity_reason=str(ambiguity_reason or "").strip(),
+		decision_reason=str(decision_reason or "").strip(),
+		candidate_capability_ids=[str(x or "").strip() for x in (candidate_capability_ids or []) if str(x or "").strip()],
+		candidate_reports=[str(x or "").strip() for x in (candidate_reports or []) if str(x or "").strip()],
 	)
 
 
@@ -2309,6 +3826,7 @@ def build_compiled_execution_audit_contract(
 	execution_mode: str = "compiled_first_turn",
 	compiler_decision: str = "",
 	compiler_reason: str = "",
+	governed_resolution_details: Dict[str, Any] | None = None,
 	capability_id: str = "",
 	selected_report: str = "",
 	governed_family_id: str = "",
@@ -2339,6 +3857,7 @@ def build_compiled_execution_audit_contract(
 		execution_mode=str(execution_mode or "compiled_first_turn").strip(),
 		compiler_decision=str(compiler_decision or "").strip(),
 		compiler_reason=str(compiler_reason or "").strip(),
+		governed_resolution_details=dict(governed_resolution_details or {}),
 		capability_id=str(capability_id or "").strip(),
 		selected_report=str(selected_report or "").strip(),
 		governed_family_id=str(governed_family_id or "").strip(),
@@ -2580,6 +4099,10 @@ def build_artifact_enrichment_compatibility_contract(
 		or getattr(continuation_contract, "source_dimension", "")
 		or ""
 	).strip()
+	source_composite_family_id = str(getattr(continuation_contract, "source_composite_family_id", "") or "").strip()
+	source_composite_primary_metric_id = str(
+		getattr(continuation_contract, "source_composite_primary_metric_id", "") or ""
+	).strip()
 	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
 	requested_columns = _clean_string_list(getattr(followup_resolution, "requested_columns", []) or [])
 	required_keys = _canonical_metric_keys(required_metric_keys or [], capability_id=source_capability_id)
@@ -2590,13 +4113,41 @@ def build_artifact_enrichment_compatibility_contract(
 		capability_id=source_capability_id,
 		surface_summary=source_surface,
 	) if source_report and source_capability_id and source_surface else []
+	composite_family_spec = get_composite_family_spec(source_composite_family_id) if source_composite_family_id else {}
+	if len(required_keys) > 1 and _composite_family_can_cover_metric_union(
+		family_spec=composite_family_spec,
+		primary_metric_id=source_composite_primary_metric_id,
+		required_metric_keys=required_keys,
+	):
+		reason = (
+			"The current grounded ranking artifact is single-metric, but a governed composite requery can preserve the "
+			"same ranking scope while adding the requested approved secondary metric."
+		)
+		return ArtifactEnrichmentCompatibilityContract(
+			request_id=str(request_id or "").strip(),
+			source_family_id=source_family_id,
+			source_capability_id=source_capability_id,
+			source_report=source_report,
+			source_dimension=source_dimension,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			required_metric_keys=required_keys,
+			compatibility_status="governed_composite_requery_compatible",
+			compatible=True,
+			target_capability_id=source_capability_id,
+			target_report=source_report,
+			candidate_reports_considered=[source_report] if source_report else [],
+			source_surface_sources=source_surface_sources,
+			source_selector_filters=source_selector_filters,
+			reason=reason,
+		)
 	if len(required_keys) > 1 and (
 		"value_quantity" in source_selector_filters
 		or source_family_id == "ranking_analytics"
 	):
 		reason = (
-			"The current governed ranking path is anchored to one primary metric basis, so it cannot safely combine "
-			"multiple metric bases into one ranking artifact."
+			"The current ranking path is anchored to one primary metric basis, so it cannot safely combine "
+			"multiple metric bases into one ranking result."
 		)
 		return ArtifactEnrichmentCompatibilityContract(
 			request_id=str(request_id or "").strip(),
@@ -2709,12 +4260,12 @@ def build_artifact_enrichment_compatibility_contract(
 		)
 
 	reason = (
-		"The current governed artifact does not expose the requested column or metric, "
-		"and no compatible governed enrichment path was proven inside the current family and capability boundary."
+		"The answer above does not expose the requested column or metric, "
+		"and no compatible enrichment path was proven inside the current report family."
 	)
 	if source_selector_filters and len(required_keys) > 1:
 		reason = (
-			"The current governed report uses a metric-selector surface, so it cannot safely add the requested metric union "
+			"The current ERP report uses a metric-selector surface, so it cannot safely add the requested metric union "
 			"without switching the report basis."
 		)
 	return ArtifactEnrichmentCompatibilityContract(
@@ -2921,8 +4472,8 @@ def build_recovery_contract_from_enrichment_compatibility(
 	reason = str(getattr(compatibility_contract, "reason", "") or "").strip()
 	if not reason:
 		reason = (
-			"The current governed artifact cannot satisfy the requested enrichment safely, "
-			"so recovery must stay within governed requery or clarified target output."
+			"The answer above cannot satisfy the requested enrichment safely, "
+			"so recovery must use a fresh ERP lookup or clarify the target output."
 		)
 	return build_artifact_enrichment_recovery_contract(
 		request_id=request_id,
@@ -2963,8 +4514,8 @@ def build_recovery_contract_from_evidence_boundary(
 	recovery_reason = str(reason or "").strip()
 	if not recovery_reason:
 		recovery_reason = (
-			"The current grounded artifact does not contain direct governed evidence for the requested operational status, "
-			"so the next safe step is to clarify the target output or switch to a governed operational source."
+			"The answer above does not contain direct evidence for the requested operational status, "
+			"so the next safe step is to clarify the target output or switch to an operational source."
 		)
 	return build_artifact_enrichment_recovery_contract(
 		request_id=request_id,
@@ -3056,6 +4607,135 @@ def _artifact_row_count(turn: Dict[str, Any], artifact: Dict[str, Any]) -> int:
 	return 0
 
 
+def _doc_type_to_composite_basis(value: Any) -> str:
+	key = _normalized_key_fallback(value)
+	if key == "sales_order":
+		return "sales_order"
+	if key in {"sales_invoice", "sales_invoice_due"}:
+		return "sales_invoice"
+	return ""
+
+
+def _metric_key_to_composite_metric_id(metric_key: str) -> str:
+	key = _normalized_key_fallback(metric_key)
+	if key in {"sales_amount", "selling_amount", "revenue", "value"}:
+		return "revenue"
+	if key == "quantity":
+		return "quantity"
+	if key == "average_order_value":
+		return "average_order_value"
+	if key == "average_invoice_value":
+		return "average_invoice_value"
+	if key == "average_selling_price":
+		return "average_selling_price"
+	return ""
+
+
+def _derive_composite_context_from_generic_ranking(
+	*,
+	source_family_id: str,
+	source_report: str,
+	source_dimension: str,
+	source_metric_key: str,
+	source_filters: Dict[str, Any],
+) -> Dict[str, str]:
+	if str(source_family_id or "").strip() != "ranking_analytics":
+		return {}
+	if _normalized_key_fallback(source_report) != "sales_analytics":
+		return {}
+	family_id, subject_alias = composite_family_from_entity_dimension(
+		str(source_dimension or source_filters.get("tree_type") or "").strip()
+	)
+	if not family_id:
+		return {}
+	basis = _doc_type_to_composite_basis(source_filters.get("doc_type"))
+	if not basis:
+		return {}
+	primary_metric_id = _metric_key_to_composite_metric_id(
+		str(source_metric_key or source_filters.get("value_quantity") or "").strip()
+	)
+	if not primary_metric_id:
+		return {}
+	family_spec = get_composite_family_spec(family_id)
+	if str(family_spec.get("activation_state") or "").strip() != "active":
+		return {}
+	allowed_primary_metrics = {
+		str(value or "").strip()
+		for value in (family_spec.get("allowed_primary_metrics") or [])
+		if str(value or "").strip()
+	}
+	if primary_metric_id not in allowed_primary_metrics:
+		return {}
+	return {
+		"family_id": family_id,
+		"family_label": str(family_spec.get("label") or "").strip(),
+		"subject_alias": subject_alias,
+		"basis": basis,
+		"primary_metric_id": primary_metric_id,
+	}
+
+
+def _composite_metric_ids_for_required_keys(
+	*,
+	family_spec: Dict[str, Any],
+	required_metric_keys: List[str],
+) -> List[str]:
+	if not isinstance(family_spec, dict) or not family_spec:
+		return []
+	metric_semantic_key_map = (
+		family_spec.get("metric_semantic_key_map")
+		if isinstance(family_spec.get("metric_semantic_key_map"), dict)
+		else {}
+	)
+	out: List[str] = []
+	for required_key in required_metric_keys:
+		clean_required = _normalized_key_fallback(required_key)
+		if not clean_required:
+			continue
+		for metric_id, semantic_keys in metric_semantic_key_map.items():
+			candidate_keys = {
+				_normalized_key_fallback(metric_id),
+				*{
+					_normalized_key_fallback(item)
+					for item in (semantic_keys or [])
+					if str(item or "").strip()
+				},
+			}
+			if clean_required in candidate_keys and str(metric_id or "").strip() not in out:
+				out.append(str(metric_id or "").strip())
+	return out
+
+
+def _composite_family_can_cover_metric_union(
+	*,
+	family_spec: Dict[str, Any],
+	primary_metric_id: str,
+	required_metric_keys: List[str],
+) -> bool:
+	if not isinstance(family_spec, dict) or not family_spec:
+		return False
+	resolved_metric_ids = _composite_metric_ids_for_required_keys(
+		family_spec=family_spec,
+		required_metric_keys=required_metric_keys,
+	)
+	if not resolved_metric_ids:
+		return False
+	primary = str(primary_metric_id or "").strip()
+	if primary and primary not in resolved_metric_ids:
+		return False
+	allowed_secondary_metrics = {
+		str(value or "").strip()
+		for value in (family_spec.get("allowed_secondary_metrics") or [])
+		if str(value or "").strip()
+	}
+	for metric_id in resolved_metric_ids:
+		if metric_id == primary:
+			continue
+		if metric_id not in allowed_secondary_metrics:
+			return False
+	return True
+
+
 def build_artifact_continuation_contract(
 	*,
 	request_id: str,
@@ -3067,6 +4747,7 @@ def build_artifact_continuation_contract(
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
 	artifact_dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 	artifact_period = artifact.get("period") if isinstance(artifact.get("period"), dict) else {}
+	artifact_filters = artifact.get("filters") if isinstance(artifact.get("filters"), dict) else {}
 	filters = turn.get("filters") if isinstance(turn.get("filters"), dict) else {}
 	date_range = turn.get("date_range") if isinstance(turn.get("date_range"), dict) else {}
 	requested_modes = [
@@ -3078,6 +4759,36 @@ def build_artifact_continuation_contract(
 	source_family_id = str(turn.get("artifact_family_id") or artifact.get("family_id") or "").strip()
 	source_capability_id = str((report_capability_ids(source_report) or [""])[0] or "").strip() if source_report else ""
 	source_artifact_type = str(turn.get("artifact_type") or artifact.get("artifact_type") or "").strip()
+	source_composite_family_id = str(
+		artifact_dimensions.get("source_composite_family_id")
+		or artifact_filters.get("composite_family_id")
+		or ""
+	).strip()
+	source_composite_family_label = str(
+		artifact_dimensions.get("source_composite_family_label")
+		or artifact_filters.get("composite_family_label")
+		or ""
+	).strip()
+	source_composite_subject_alias = str(
+		artifact_dimensions.get("source_composite_subject_alias")
+		or artifact_filters.get("composite_subject_alias")
+		or ""
+	).strip()
+	source_composite_basis = str(
+		artifact_dimensions.get("source_composite_basis")
+		or artifact_filters.get("composite_basis")
+		or filters.get("basis")
+		or ""
+	).strip()
+	source_composite_primary_metric_id = str(
+		artifact_dimensions.get("source_composite_primary_metric_id")
+		or artifact_filters.get("composite_primary_metric_id")
+		or ""
+	).strip()
+	source_composite_secondary_metric_ids = _clean_string_list(
+		artifact_dimensions.get("source_composite_secondary_metric_ids")
+		or artifact_filters.get("composite_secondary_metric_ids")
+	)
 	source_dimension = str(
 		artifact_dimensions.get("entity_dimension")
 		or ((turn.get("dimensions") or [""])[0] if isinstance(turn.get("dimensions"), list) else "")
@@ -3105,15 +4816,33 @@ def build_artifact_continuation_contract(
 	source_time_scope = str(
 		artifact_period.get("time_scope")
 		or artifact_period.get("requested_time_scope")
+		or artifact_dimensions.get("source_composite_time_scope")
+		or artifact_filters.get("composite_time_scope")
 		or ""
 	).strip()
+	if not source_composite_family_id:
+		derived_composite_context = _derive_composite_context_from_generic_ranking(
+			source_family_id=source_family_id,
+			source_report=source_report,
+			source_dimension=source_dimension,
+			source_metric_key=source_metric_key,
+			source_filters=filters or artifact_filters,
+		)
+		if derived_composite_context:
+			source_composite_family_id = str(derived_composite_context.get("family_id") or "").strip()
+			source_composite_family_label = str(derived_composite_context.get("family_label") or "").strip()
+			source_composite_subject_alias = str(derived_composite_context.get("subject_alias") or "").strip()
+			source_composite_basis = str(derived_composite_context.get("basis") or "").strip()
+			source_composite_primary_metric_id = str(derived_composite_context.get("primary_metric_id") or "").strip()
+			source_composite_secondary_metric_ids = []
 	preserved_dimension = str(getattr(followup_resolution, "target_dimension", "") or source_dimension or "").strip()
 	preserved_metric_key = str(getattr(followup_resolution, "target_metric", "") or source_metric_key or "").strip()
 	preserved_requested_columns = _clean_string_list(getattr(followup_resolution, "requested_columns", []) or [])
 	if not preserved_requested_columns:
 		preserved_requested_columns = list(source_requested_columns)
+	rank_membership_eligible = source_family_id == "ranking_analytics"
 	preserved_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
-	if not preserved_limit:
+	if not preserved_limit and rank_membership_eligible:
 		preserved_limit = source_limit
 	preserved_sort_direction = str(
 		getattr(followup_resolution, "sort_direction", "")
@@ -3140,7 +4869,7 @@ def build_artifact_continuation_contract(
 	preserve_metric_context = bool(preserve_grounded_context and "metric_refinement" not in mode_set)
 	preserve_projection_shape = bool(
 		preserve_grounded_context
-		and not mode_set.intersection({"column_refinement", "dimension_breakdown", "grouping_change", "time_scope_restatement"})
+		and not mode_set.intersection({"column_refinement", "dimension_breakdown", "grouping_change"})
 	)
 	preserve_date_context = bool(
 		preserve_grounded_context
@@ -3149,6 +4878,7 @@ def build_artifact_continuation_contract(
 	)
 	preserve_rank_membership = bool(
 		preserve_grounded_context
+		and rank_membership_eligible
 		and preserved_limit > 0
 		and not mode_set.intersection({"dimension_breakdown", "grouping_change", "time_scope_restatement"})
 	)
@@ -3159,6 +4889,13 @@ def build_artifact_continuation_contract(
 		source_capability_id=source_capability_id,
 		source_report=source_report,
 		source_artifact_type=source_artifact_type,
+		source_composite_family_id=source_composite_family_id,
+		source_composite_family_label=source_composite_family_label,
+		source_composite_subject_alias=source_composite_subject_alias,
+		source_composite_basis=source_composite_basis,
+		source_composite_primary_metric_id=source_composite_primary_metric_id,
+		source_composite_secondary_metric_ids=source_composite_secondary_metric_ids,
+		source_composite_time_scope=source_time_scope,
 		source_dimension=source_dimension,
 		source_metric_key=source_metric_key,
 		source_requested_columns=source_requested_columns,
@@ -3351,6 +5088,181 @@ def coerce_followup_resolution_from_scope_decision(
 	)
 
 
+_TIME_SCOPE_CORRECTION_ALIASES = (
+	("last_year", ("last year", "previous year", "prior year")),
+	("last_month", ("last month", "previous month", "prior month")),
+	("current_period", ("this month", "current month")),
+	("current_fiscal_year_to_date", ("year to date", "fiscal year to date")),
+	("all_period", ("all time", "overall", "full available time range")),
+)
+
+
+def _time_scope_from_corrected_message(message: str) -> str:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return ""
+	for canonical_scope, aliases in _TIME_SCOPE_CORRECTION_ALIASES:
+		for alias in aliases:
+			escaped_alias = re.escape(alias)
+			if re.search(rf"\b(?:i\s+mean|mean|instead|rather)\s+{escaped_alias}\b", text):
+				return canonical_scope
+	negation_pattern = r"\b(?:not|instead\s+of|rather\s+than)\s+(?:" + "|".join(
+		re.escape(alias)
+		for _canonical_scope, aliases in _TIME_SCOPE_CORRECTION_ALIASES
+		for alias in aliases
+	) + r")\b"
+	cleaned_text = re.sub(negation_pattern, " ", text)
+	if cleaned_text != text:
+		for canonical_scope, aliases in _TIME_SCOPE_CORRECTION_ALIASES:
+			for alias in aliases:
+				if re.search(rf"\b{re.escape(alias)}\b", cleaned_text):
+					return canonical_scope
+	return ""
+
+
+def _infer_followup_requested_time_scope(
+	*,
+	message: str,
+	requested_time_scope: str,
+) -> str:
+	current = str(requested_time_scope or "").strip()
+	if current:
+		return current
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return ""
+	corrected_time_scope = _time_scope_from_corrected_message(message)
+	if corrected_time_scope:
+		return corrected_time_scope
+	semantic_time_scope = best_semantic_slot_alias("time_scope", message) or best_semantic_slot_alias(
+		"requested_time_scope",
+		message,
+	)
+	if semantic_time_scope:
+		return semantic_time_scope
+	if re.search(r"\b(?:this|current)\s+month\b", text):
+		return "current_period"
+	if re.search(r"\b(?:year\s+to\s+date|fiscal\s+year\s+to\s+date)\b", text):
+		return "current_fiscal_year_to_date"
+	if re.search(r"\b(?:all\s+time|overall|full\s+available\s+time\s+range)\b", text):
+		return "all_period"
+	return ""
+
+
+def _message_has_structural_followup_limit(message: str) -> bool:
+	text = str(message or "").strip().lower()
+	if not text:
+		return False
+	match = re.search(r"\b(?:top|last|latest)\s+(\d{1,2})\b", text)
+	if not match:
+		return False
+	return not bool(
+		re.match(
+			r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+			text[match.end():],
+		)
+	)
+
+
+_EXPLICIT_COLUMN_SELECTION_CUE_PATTERN = re.compile(
+	r"\b(column|columns|only|just|keep|include|without)\b",
+	re.IGNORECASE,
+)
+
+
+def _message_slot_value(slot_name: str, message: str) -> str:
+	return best_semantic_slot_alias(slot_name, message)
+
+
+def _message_has_explicit_projection_selection_cue(message: str) -> bool:
+	text = str(message or "").strip().lower()
+	if not text:
+		return False
+	return bool(_EXPLICIT_COLUMN_SELECTION_CUE_PATTERN.search(text))
+
+
+_CONTEXTUAL_DETAIL_FOLLOWUP_PREFIXES = (
+	"tell me more",
+	"show me details",
+	"show details",
+	"give me more info",
+	"give me more information",
+	"show me more",
+	"more detail",
+	"more details",
+)
+
+
+_CONTEXTUAL_DEICTIC_REFERENCE_PATTERN = re.compile(
+	r"\b(?:that|this|it|that\s+one|this\s+one|same\s+one|same\s+record|same\s+document)\b",
+	re.IGNORECASE,
+)
+
+
+def _looks_like_contextual_detail_followup(message: str) -> bool:
+	normalized = " ".join(str(message or "").strip().lower().split())
+	if not normalized:
+		return False
+	if normalized in {"detail", "details", "more detail", "more details"}:
+		return True
+	if not any(normalized.startswith(prefix) for prefix in _CONTEXTUAL_DETAIL_FOLLOWUP_PREFIXES):
+		return False
+	return bool(_CONTEXTUAL_DEICTIC_REFERENCE_PATTERN.search(normalized))
+
+
+def _grounded_turn_has_single_row_contextual_focus(latest_grounded_turn: Dict[str, Any] | None = None) -> bool:
+	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
+	artifact_family_id = str(grounded_turn.get("artifact_family_id") or "").strip()
+	if artifact_family_id != "transaction_listing" and not is_master_data_listing_family(artifact_family_id):
+		return False
+	rows = [row for row in (grounded_turn.get("table_rows") or []) if isinstance(row, dict)]
+	if len(rows) == 1:
+		return True
+	known_documents = grounded_turn.get("known_documents") or []
+	if artifact_family_id == "transaction_listing":
+		document_refs = []
+		for item in known_documents:
+			if isinstance(item, dict):
+				name = str(item.get("name") or item.get("document_name") or item.get("document_id") or "").strip()
+			else:
+				name = str(item or "").strip()
+			if name and name not in document_refs:
+				document_refs.append(name)
+		if len(document_refs) == 1:
+			return True
+	row_count = grounded_turn.get("row_count")
+	try:
+		return int(row_count or 0) == 1
+	except Exception:
+		return False
+
+
+def _looks_like_base_transaction_listing_reask(
+	*,
+	message: str,
+	latest_grounded_turn: Dict[str, Any] | None = None,
+	requested_time_scope: str = "",
+) -> bool:
+	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
+	artifact_family_id = str(grounded_turn.get("artifact_family_id") or "").strip()
+	if artifact_family_id and artifact_family_id != "transaction_listing":
+		return False
+	if str(requested_time_scope or "").strip():
+		return False
+	if _looks_like_contextual_detail_followup(message):
+		return False
+	source_report = str(grounded_turn.get("source_name") or "").strip()
+	source_listing_view = listing_view_for_report_name(source_report)
+	requested_listing_view = _message_slot_value("listing_view", message)
+	if not source_listing_view or not requested_listing_view or requested_listing_view != source_listing_view:
+		return False
+	if _message_has_structural_followup_limit(message):
+		return False
+	if _message_has_explicit_projection_selection_cue(message):
+		return False
+	return True
+
+
 def build_followup_resolution(
 	*,
 	request_id: str,
@@ -3361,12 +5273,12 @@ def build_followup_resolution(
 	allow_heuristic_fallback: bool = True,
 	degraded_reason: str = "",
 ) -> FollowUpResolution:
-	use_heuristic_compatibility = bool(semantic_intent is None or allow_heuristic_fallback)
+	message_language = detect_language(message)
 	if semantic_intent is not None:
 		requested_modes = [
-			"column_refinement" if str(mode or "").strip() == "column_projection" else str(mode or "").strip()
+			normalize_followup_mode_for_runtime(str(mode or "").strip())
 			for mode in (getattr(semantic_intent, "requested_modes", []) or [])
-			if str(mode or "").strip()
+			if normalize_followup_mode_for_runtime(str(mode or "").strip())
 		]
 		target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip()
 		target_limit = int(max(0, getattr(semantic_intent, "target_limit", 0) or 0))
@@ -3381,18 +5293,6 @@ def build_followup_resolution(
 		target_capability_id = str(getattr(semantic_intent, "target_capability_id", "") or "").strip()
 		self_contained = bool(getattr(semantic_intent, "self_contained", False))
 		semantic_reason = str(getattr(semantic_intent, "reason", "") or "").strip()
-	elif allow_heuristic_fallback:
-		intent = detect_followup_intent(message, grounded_turn=latest_grounded_turn)
-		requested_modes = intent.requested_modes
-		target_dimension = intent.target_dimension
-		target_limit = intent.target_limit
-		sort_direction = intent.sort_direction
-		target_metric = intent.target_metric
-		requested_columns = list(intent.requested_columns or [])
-		requested_time_scope = intent.requested_time_scope
-		target_capability_id = ""
-		self_contained = _is_self_contained_business_request(message, grounded_turn=latest_grounded_turn, intent=intent)
-		semantic_reason = ""
 	else:
 		requested_modes = []
 		target_dimension = ""
@@ -3404,86 +5304,118 @@ def build_followup_resolution(
 		target_capability_id = ""
 		self_contained = False
 		semantic_reason = ""
-	compatibility_intent = detect_followup_intent(message, grounded_turn=latest_grounded_turn)
-	if "column_refinement" in requested_modes and not requested_columns:
-		requested_columns = [
-			str(value or "").strip()
-			for value in (getattr(compatibility_intent, "requested_columns", []) or [])
-			if str(value or "").strip()
-		]
-	compatibility_sort_direction = str(getattr(compatibility_intent, "sort_direction", "") or "").strip()
-	if "sort_or_limit" in requested_modes and compatibility_sort_direction:
-		sort_direction = compatibility_sort_direction
-	if "sort_or_limit" in requested_modes and not target_limit:
-		target_limit = int(max(0, getattr(compatibility_intent, "target_limit", 0) or 0))
+	original_requested_time_scope = str(requested_time_scope or "").strip()
+	requested_time_scope = _infer_followup_requested_time_scope(
+		message=message,
+		requested_time_scope=requested_time_scope,
+	)
+	contextual_detail_followup = _looks_like_contextual_detail_followup(message)
+	if (
+		latest_grounded_turn_available
+		and contextual_detail_followup
+		and _grounded_turn_has_single_row_contextual_focus(latest_grounded_turn)
+	):
+		return build_followup_resolution_contract(
+			request_id=request_id,
+			mode="grounded_follow_up",
+			requested_modes=["detail_followup"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope=requested_time_scope,
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="The request is a contextual detail follow-up on a single grounded ERP row and should stay anchored to that focus.",
+		)
+	if latest_grounded_turn_available and _looks_like_base_transaction_listing_reask(
+		message=message,
+		latest_grounded_turn=latest_grounded_turn,
+		requested_time_scope=requested_time_scope,
+	):
+		requested_modes = []
+		target_dimension = ""
+		target_limit = 0
+		sort_direction = ""
+		target_metric = ""
+		requested_columns = []
+		target_capability_id = ""
+		self_contained = True
+		semantic_reason = semantic_reason or "The request restates the base transaction listing and should be treated as a fresh ERP query."
+	requested_modes = list(dict.fromkeys(str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()))
+	requested_mode_set = {
+		str(mode or "").strip()
+		for mode in requested_modes
+		if str(mode or "").strip()
+	}
+	if requested_time_scope and "time_scope_restatement" not in requested_mode_set:
+		requested_modes = list(requested_modes) + ["time_scope_restatement"]
+		requested_mode_set.add("time_scope_restatement")
+	if requested_time_scope and not original_requested_time_scope:
+		if target_limit > 0 and not _message_has_structural_followup_limit(message):
+			target_limit = 0
+		if target_dimension and not requested_mode_set.intersection({"dimension_breakdown", "grouping_change", "filter_refinement"}):
+			target_dimension = ""
+		if not target_limit and not sort_direction and "sort_or_limit" in requested_mode_set:
+			requested_modes = [mode for mode in requested_modes if str(mode or "").strip() != "sort_or_limit"]
+			requested_mode_set.discard("sort_or_limit")
+	non_presentation_requested_modes = {
+		str(mode or "").strip()
+		for mode in (requested_modes or [])
+		if str(mode or "").strip() and str(mode or "").strip() not in {"presentation_transform", "table_presentation", "bullet_presentation"}
+	}
+	explicit_query_shape = bool(
+		target_capability_id
+		or requested_time_scope
+		or target_metric
+		or requested_columns
+		or target_dimension
+		or target_limit
+		or sort_direction
+		or non_presentation_requested_modes
+	)
+	local_projection_or_metric_refinement_requested = bool(
+		{
+			str(mode or "").strip()
+			for mode in (requested_modes or [])
+			if str(mode or "").strip()
+		}.intersection({"column_refinement", "metric_refinement"})
+		and (requested_columns or target_metric)
+	)
+	grounded_turn_payload = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
+	grounded_date_range = grounded_turn_payload.get("date_range") if isinstance(grounded_turn_payload.get("date_range"), dict) else {}
+	grounded_filters = grounded_turn_payload.get("filters") if isinstance(grounded_turn_payload.get("filters"), dict) else {}
+	inherited_date_context_present = bool(
+		str(grounded_date_range.get("from_date") or "").strip()
+		or str(grounded_date_range.get("to_date") or "").strip()
+		or str(grounded_date_range.get("report_date") or "").strip()
+		or str(grounded_filters.get("from_date") or "").strip()
+		or str(grounded_filters.get("to_date") or "").strip()
+		or str(grounded_filters.get("report_date") or "").strip()
+	)
+	message_looks_self_contained_business_query = _message_looks_like_self_contained_governed_business_query(
+		message=message,
+		language=message_language,
+	)
 	presentation_only_request = bool(set(requested_modes).intersection({"presentation_transform", "table_presentation", "bullet_presentation"})) and set(
 		str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()
 	).issubset({"presentation_transform", "table_presentation", "bullet_presentation"})
-	if presentation_only_request:
-		compatibility_dimension = str(getattr(compatibility_intent, "target_dimension", "") or "").strip()
-		compatibility_limit = int(max(0, getattr(compatibility_intent, "target_limit", 0) or 0))
-		compatibility_sort = str(getattr(compatibility_intent, "sort_direction", "") or "").strip()
-		compatibility_metric = str(getattr(compatibility_intent, "target_metric", "") or "").strip()
-		if not compatibility_dimension:
-			target_dimension = ""
-		if not compatibility_limit:
-			target_limit = 0
-		if not compatibility_sort:
-			sort_direction = ""
-		if not compatibility_metric and not requested_columns:
-			target_metric = ""
-	if use_heuristic_compatibility:
-		heuristic_intent = compatibility_intent
-		heuristic_self_contained = _is_self_contained_business_request(
-			message,
-			grounded_turn=latest_grounded_turn,
-			intent=heuristic_intent,
-		)
-		heuristic_local_refinement = bool(
-			set(getattr(heuristic_intent, "requested_modes", []) or []).intersection(
-				{
-					"presentation_transform",
-					"table_presentation",
-					"sort_or_limit",
-					"metric_refinement",
-					"column_refinement",
-					"time_scope_restatement",
-				}
-			)
-		)
-		if heuristic_local_refinement and not heuristic_self_contained:
-			self_contained = False
-			requested_modes = [mode for mode in requested_modes if str(mode or "").strip() != "new_query"]
-			if not target_dimension:
-				target_dimension = str(getattr(heuristic_intent, "target_dimension", "") or "").strip()
-			if not target_limit:
-				target_limit = int(max(0, getattr(heuristic_intent, "target_limit", 0) or 0))
-			if not sort_direction:
-				sort_direction = str(getattr(heuristic_intent, "sort_direction", "") or "").strip()
-		self_contained = bool(self_contained or heuristic_self_contained)
-		if not target_metric:
-			target_metric = str(getattr(heuristic_intent, "target_metric", "") or "").strip()
-		if not requested_columns:
-			requested_columns = [
-				str(value or "").strip()
-				for value in (getattr(heuristic_intent, "requested_columns", []) or [])
-				if str(value or "").strip()
-			]
-		if not requested_time_scope:
-			requested_time_scope = str(getattr(heuristic_intent, "requested_time_scope", "") or "").strip()
-		for mode in getattr(heuristic_intent, "requested_modes", []) or []:
-			clean_mode = str(mode or "").strip()
-			if clean_mode and clean_mode not in requested_modes and clean_mode in {
-				"presentation_transform",
-				"table_presentation",
-				"bullet_presentation",
-				"sort_or_limit",
-				"metric_refinement",
-				"column_refinement",
-				"time_scope_restatement",
-			}:
-				requested_modes.append(clean_mode)
+	if (
+		latest_grounded_turn_available
+		and inherited_date_context_present
+		and not requested_time_scope
+		and not self_contained
+		and not contextual_detail_followup
+		and message_looks_self_contained_business_query
+		and not local_projection_or_metric_refinement_requested
+	):
+		self_contained = True
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
+	grounded_family_id = str(grounded_turn.get("artifact_family_id") or "").strip()
 	local_grounded_modes = {
 		"presentation_transform",
 		"table_presentation",
@@ -3496,6 +5428,8 @@ def build_followup_resolution(
 	if supports_local_followup_mode(grounded_turn, "dimension_breakdown", target_dimension=target_dimension):
 		local_grounded_modes.add("dimension_breakdown")
 	if supports_local_followup_mode(grounded_turn, "sort_or_limit"):
+		local_grounded_modes.add("sort_or_limit")
+	if grounded_family_id == "ranking_analytics":
 		local_grounded_modes.add("sort_or_limit")
 	requested_mode_set = {
 		str(mode or "").strip()
@@ -3512,6 +5446,26 @@ def build_followup_resolution(
 	}
 	target_dimension_present = not target_dimension or str(target_dimension or "").strip().lower() in grounded_dimensions
 	dimension_change_requested = bool(target_dimension) and not target_dimension_present
+	grounded_metric_keys = set(
+		_canonical_metric_keys(
+			[
+				*(
+					grounded_turn.get("metrics")
+					if isinstance(grounded_turn.get("metrics"), list)
+					else []
+				),
+				*(
+					grounded_turn.get("returned_schema")
+					if isinstance(grounded_turn.get("returned_schema"), list)
+					else []
+				),
+			]
+		)
+	)
+	target_metric_keys = _canonical_metric_keys([target_metric]) if target_metric else []
+	target_metric_present = not target_metric or bool(
+		grounded_metric_keys.intersection(target_metric_keys)
+	)
 	presentation_only_request = bool(requested_mode_set) and requested_mode_set.issubset(
 		{"presentation_transform", "table_presentation", "bullet_presentation"}
 	)
@@ -3523,9 +5477,30 @@ def build_followup_resolution(
 		or requested_time_scope
 		or target_capability_id
 	)
-	local_transform_only = (
-		bool(requested_mode_set)
+	semantic_self_contained_grounded_continuation = bool(
+		latest_grounded_turn_available
+		and semantic_intent is not None
+		and self_contained
+		and explicit_query_shape
+		and requested_mode_set
 		and requested_mode_set.issubset(local_grounded_modes)
+		and not target_capability_id
+		and not requested_time_scope
+		and not dimension_change_requested
+		and target_metric_present
+	)
+	if semantic_self_contained_grounded_continuation:
+		self_contained = False
+		semantic_reason = (
+			semantic_reason
+			or "The structured follow-up is compatible with the latest grounded ranking and should preserve that context."
+		)
+	local_requested_mode_set = set(requested_mode_set)
+	if "sort_or_limit" in local_requested_mode_set and not target_limit and not sort_direction:
+		local_requested_mode_set.discard("sort_or_limit")
+	local_transform_only = (
+		bool(local_requested_mode_set)
+		and local_requested_mode_set.issubset(local_grounded_modes)
 		and not dimension_change_requested
 		and not (presentation_only_request and structured_breakout_request)
 	)
@@ -3534,12 +5509,15 @@ def build_followup_resolution(
 	target_report = ""
 	if latest_grounded_turn_available and target_capability_id:
 		target_report = resolve_target_report_for_capability(source_report, target_capability_id)
+	if latest_grounded_turn_available and not target_report and requested_mode_set.intersection({"filter_refinement"}):
+		target_report = source_report
 	if latest_grounded_turn_available and not target_report and requested_time_scope:
 		target_report = source_report
 	requery_requested = bool(
 		target_capability_id
 		or target_report
 		or switch
+		or requested_mode_set.intersection({"filter_refinement"})
 		or dimension_change_requested
 		or requested_time_scope
 		or (
@@ -3548,6 +5526,26 @@ def build_followup_resolution(
 			and bool(requested_mode_set.intersection({"dimension_breakdown", "grouping_change"}))
 		)
 	)
+	if latest_grounded_turn_available and self_contained and (
+		explicit_query_shape or message_looks_self_contained_business_query
+	):
+		return build_followup_resolution_contract(
+			request_id=request_id,
+			mode="new_query",
+			requested_modes=requested_modes,
+			target_dimension=target_dimension,
+			target_limit=target_limit,
+			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=False,
+			self_contained=True,
+			latest_grounded_turn_available=True,
+			reason=semantic_reason or "The request restates a full governed ERP query and should not inherit the prior grounded date context implicitly.",
+		)
 
 	if latest_grounded_turn_available and local_transform_only and not target_capability_id and not requested_time_scope and not self_contained:
 		return build_followup_resolution_contract(
@@ -3643,20 +5641,6 @@ def build_execution_path(
 		)
 
 
-def _entity_type_from_dimension(value: str) -> str:
-	dimension_keys = detect_canonical_keys(str(value or ""), dimension_or_metric="dimension")
-	for key in dimension_keys:
-		if key == "supplier":
-			return "supplier"
-		if key == "customer":
-			return "customer"
-		if key in {"item_code", "item_name"}:
-			return "item"
-		if key == "document_name":
-			return "sales_invoice"
-	return ""
-
-
 def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple[List[Dict[str, Any]], List[str]]:
 	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
 	sections = dict(artifact.get("sections") or {}) if isinstance(artifact.get("sections"), dict) else {}
@@ -3680,14 +5664,19 @@ def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple
 			known_entities.append(payload)
 
 	if family_id == "transaction_listing":
+		document_entity_type = str(
+			dimensions.get("document_entity_type")
+			or dimensions.get("transaction_type")
+			or "sales_invoice"
+		).strip()
 		for row in sections.get("transaction_rows") or []:
 			if not isinstance(row, dict):
 				continue
 			document_name = str(row.get("document_name") or "").strip()
-			customer = str(row.get("customer") or "").strip()
+			customer = transaction_party_label(row)
 			if document_name:
 				known_documents.append(document_name)
-				_append_entity("sales_invoice", document_name)
+				_append_entity(document_entity_type, document_name)
 			if customer:
 				_append_entity("customer", customer)
 	elif family_id == "aging":
@@ -3700,11 +5689,12 @@ def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple
 			if voucher_no:
 				known_documents.append(voucher_no)
 	elif family_id in {"ranking_analytics", "inventory_snapshot"}:
-		entity_type = _entity_type_from_dimension(str(dimensions.get("entity_dimension") or "").strip())
+		entity_type = entity_type_from_dimension(str(dimensions.get("entity_dimension") or "").strip(), include_documents=True)
 		for row in sections.get("ranked_rows") or []:
 			if not isinstance(row, dict):
 				continue
-			_append_entity(entity_type, row.get("entity_name") or row.get("entity"), row.get("entity_code"))
+			entity_key, entity_label = ranked_entity_key_label(row)
+			_append_entity(entity_type, entity_label, entity_key)
 	elif family_id == "product_profitability":
 		for row in sections.get("product_rows") or []:
 			if not isinstance(row, dict):
@@ -3720,6 +5710,30 @@ def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple
 			known_documents.append(entity_key)
 
 	return known_entities[:25], list(dict.fromkeys(known_documents))[:25]
+
+
+def _artifact_matches_runtime_execution(
+	*,
+	artifact_payload: Dict[str, Any] | None,
+	request_id: str,
+	source_name: str,
+) -> bool:
+	artifact = dict(artifact_payload or {})
+	if not artifact:
+		return False
+	artifact_request_id = str(artifact.get("request_id") or "").strip()
+	if artifact_request_id:
+		if artifact_request_id == str(request_id or "").strip():
+			return True
+	artifact_source_name = str(artifact.get("source_name") or artifact.get("title") or "").strip()
+	if artifact_source_name and artifact_source_name == str(source_name or "").strip():
+		return True
+	artifact_reports = {
+		str(item or "").strip()
+		for item in (artifact.get("source_reports") or [])
+		if str(item or "").strip()
+	}
+	return bool(source_name) and str(source_name or "").strip() in artifact_reports
 
 
 def build_grounded_turn_context(
@@ -3762,12 +5776,18 @@ def build_grounded_turn_context(
 	if not isinstance(filters, dict):
 		filters = {}
 
+	source_kind = "report" if tool_name == "erp_fac-generate_report" else "tool"
+	source_name = str(tool_args.get("report_name") or tool_name or "").strip()
 	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
+	if artifact and not _artifact_matches_runtime_execution(
+		artifact_payload=artifact,
+		request_id=request_id,
+		source_name=source_name,
+	):
+		artifact = {}
 	artifact_type = str(artifact.get("artifact_type") or artifact.get("type") or "").strip()
 	artifact_source_name = str(artifact.get("source_name") or artifact.get("title") or "").strip()
 	is_composite_artifact = artifact_type == "normalized_composite_family_artifact"
-	source_kind = "report" if tool_name == "erp_fac-generate_report" else "tool"
-	source_name = str(tool_args.get("report_name") or tool_name or "").strip()
 	if is_composite_artifact:
 		source_kind = "composite_artifact"
 		if artifact_source_name:
@@ -3855,6 +5875,320 @@ def build_grounded_turn_context(
 	)
 
 
+def _authority_clean_dict(value: Any) -> Dict[str, Any]:
+	return dict(value) if isinstance(value, dict) else {}
+
+
+def _authority_clean_list(value: Any) -> List[Any]:
+	return list(value) if isinstance(value, list) else []
+
+
+def _authority_text(value: Any) -> str:
+	return str(value or "").strip()
+
+
+def _authority_first_text(*values: Any) -> str:
+	for value in values:
+		text = _authority_text(value)
+		if text:
+			return text
+	return ""
+
+
+def _authority_sources(
+	*,
+	runtime_trace_payload: Dict[str, Any] | None,
+	authority_context: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+	sources: List[Dict[str, Any]] = []
+	for payload in (authority_context, runtime_trace_payload):
+		clean_payload = _authority_clean_dict(payload)
+		if not clean_payload:
+			continue
+		sources.append(clean_payload)
+		for key in (
+			"visible_context_trace",
+			"context_authority_trace",
+			"semantic_ownership_trace",
+			"trace",
+		):
+			nested = _authority_clean_dict(clean_payload.get(key))
+			if nested:
+				sources.append(nested)
+	return sources
+
+
+def _authority_ledger_from_sources(sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+	for source in sources:
+		ledger = _authority_clean_dict(source.get("semantic_ownership_ledger"))
+		if ledger:
+			return ledger
+	return {}
+
+
+def _authority_boundary_from_sources(sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+	for source in sources:
+		for key in (
+			"knowledge_boundary",
+			"knowledge_boundary_contract",
+			"policy_boundary",
+			"policy_boundary_contract",
+		):
+			boundary = _authority_clean_dict(source.get(key))
+			if boundary:
+				return boundary
+		if _authority_text(source.get("type")) == "qwen_knowledge_boundary_contract":
+			return source
+	return {}
+
+
+def _authority_artifact_from_sources(sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+	for source in sources:
+		for key in (
+			"normalized_family_artifact",
+			"artifact",
+			"selected_artifact",
+			"family_artifact",
+		):
+			artifact = _authority_clean_dict(source.get(key))
+			if artifact:
+				return artifact
+		if _authority_text(source.get("type")) in {
+			"qwen_normalized_family_artifact_contract",
+			"qwen_composite_family_artifact",
+			"qwen_entity_detail_artifact",
+		}:
+			return source
+	return {}
+
+
+def _final_authority_from_ledger(
+	*,
+	interaction_contract: InteractionContract,
+	ledger: Dict[str, Any],
+	default_answer_mode: str,
+) -> Dict[str, Any]:
+	resolved_context = _authority_clean_dict(ledger.get("resolved_context"))
+	authority = _authority_clean_dict(ledger.get("authority"))
+	decision_owners = _authority_clean_dict(ledger.get("decision_owners"))
+	policy_boundary = _authority_first_text(authority.get("policy_boundary"), "none")
+	return {
+		"request_id": interaction_contract.request_id,
+		"session_id": interaction_contract.session_id,
+		"authority_source": _authority_first_text(authority.get("authority_source"), authority.get("evidence_scope")),
+		"evidence_scope": _authority_first_text(authority.get("evidence_scope"), authority.get("authority_source")),
+		"selected_artifact_id": _authority_first_text(resolved_context.get("artifact_id")),
+		"selected_report_family": _authority_first_text(resolved_context.get("report_family")),
+		"selected_row_reference": _authority_first_text(resolved_context.get("row_reference"), "none"),
+		"policy_boundary": policy_boundary,
+		"answer_mode": _authority_first_text(authority.get("answer_mode"), default_answer_mode),
+		"renderer_owner": _authority_first_text(decision_owners.get("renderer"), "unknown_renderer"),
+		"authority_reason": "Final answer authority was inherited from the semantic ownership ledger.",
+	}
+
+
+def _final_authority_from_grounded_turn(
+	*,
+	interaction_contract: InteractionContract,
+	grounded_turn_context: Dict[str, Any],
+	artifact_payload: Dict[str, Any],
+	default_answer_mode: str,
+) -> Dict[str, Any]:
+	grounded = _authority_clean_dict(grounded_turn_context)
+	artifact = _authority_clean_dict(artifact_payload)
+	source_kind = _authority_text(grounded.get("source_kind"))
+	if source_kind in {"report", "composite_artifact"}:
+		authority_source = "governed_erp_report"
+	elif source_kind == "tool":
+		authority_source = "deterministic_tool"
+	elif source_kind == "transform":
+		authority_source = "deterministic_calculation"
+	else:
+		authority_source = source_kind
+	artifact_family_id = _authority_first_text(
+		grounded.get("artifact_family_id"),
+		artifact.get("family_id"),
+		artifact.get("report_family"),
+		grounded.get("source_name"),
+	)
+	return {
+		"request_id": interaction_contract.request_id,
+		"session_id": interaction_contract.session_id,
+		"authority_source": authority_source,
+		"evidence_scope": "grounded_turn_context",
+		"selected_artifact_id": _authority_first_text(
+			artifact.get("artifact_id"),
+			artifact.get("id"),
+			artifact.get("request_id"),
+			grounded.get("trace_request_id"),
+			grounded.get("request_id"),
+		),
+		"selected_report_family": artifact_family_id,
+		"selected_row_reference": "none",
+		"policy_boundary": "none",
+		"answer_mode": default_answer_mode,
+		"renderer_owner": "compiled_family_renderer",
+		"authority_reason": "Final answer authority was grounded by an approved ERP report/tool execution context.",
+	}
+
+
+def _final_authority_from_policy_boundary(
+	*,
+	interaction_contract: InteractionContract,
+	boundary_payload: Dict[str, Any],
+	default_answer_mode: str,
+) -> Dict[str, Any]:
+	boundary = _authority_clean_dict(boundary_payload)
+	policy_boundary = _authority_first_text(
+		boundary.get("knowledge_coverage_state"),
+		boundary.get("user_response_mode"),
+		boundary.get("boundary_status"),
+		default_answer_mode,
+	)
+	return {
+		"request_id": interaction_contract.request_id,
+		"session_id": interaction_contract.session_id,
+		"authority_source": "policy_boundary",
+		"evidence_scope": _authority_first_text(boundary.get("type"), "policy_boundary_contract"),
+		"selected_artifact_id": "",
+		"selected_report_family": _authority_first_text(boundary.get("final_lane"), boundary.get("proposed_lane")),
+		"selected_row_reference": "none",
+		"policy_boundary": policy_boundary,
+		"answer_mode": default_answer_mode,
+		"renderer_owner": "policy_boundary_renderer",
+		"authority_reason": "Final answer authority was bounded by the policy/knowledge boundary contract.",
+	}
+
+
+def _fallback_final_answer_authority(
+	*,
+	interaction_contract: InteractionContract,
+	default_answer_mode: str,
+	execution_path: ExecutionPath,
+) -> Dict[str, Any]:
+	execution_path_name = _authority_text(getattr(execution_path, "path", ""))
+	grounded_required = bool(getattr(execution_path, "grounded_required", True))
+	if not grounded_required:
+		return {
+			"request_id": interaction_contract.request_id,
+			"session_id": interaction_contract.session_id,
+			"authority_source": "execution_path_contract",
+			"evidence_scope": "execution_path_contract",
+			"selected_artifact_id": "",
+			"selected_report_family": execution_path_name,
+			"selected_row_reference": "none",
+			"policy_boundary": default_answer_mode if default_answer_mode != "visible_context_answer" else "none",
+			"answer_mode": default_answer_mode,
+			"renderer_owner": "execution_path_renderer",
+			"authority_reason": "Final answer authority was limited to a non-runtime execution path contract.",
+		}
+	return {
+		"request_id": interaction_contract.request_id,
+		"session_id": interaction_contract.session_id,
+		"authority_source": "",
+		"evidence_scope": "",
+		"selected_artifact_id": "",
+		"selected_report_family": "",
+		"selected_row_reference": "none",
+		"policy_boundary": "missing_authority",
+		"answer_mode": default_answer_mode,
+		"renderer_owner": "unknown_renderer",
+		"authority_reason": "No approved final-answer authority source was available to the audit contract.",
+	}
+
+
+def _complete_final_answer_authority(payload: Dict[str, Any]) -> tuple[bool, List[str], str]:
+	missing: List[str] = []
+	for field_name in ("authority_source", "evidence_scope", "answer_mode", "renderer_owner"):
+		if not _authority_text(payload.get(field_name)):
+			missing.append(field_name)
+	authority_source = _authority_text(payload.get("authority_source"))
+	policy_boundary = _authority_text(payload.get("policy_boundary"))
+	if authority_source == "visible_rendered_table":
+		for field_name in ("selected_artifact_id", "selected_report_family"):
+			if not _authority_text(payload.get(field_name)):
+				missing.append(field_name)
+	elif authority_source == "governed_erp_report":
+		if not _authority_text(payload.get("selected_report_family")):
+			missing.append("selected_report_family")
+	elif authority_source == "policy_boundary":
+		if not policy_boundary or policy_boundary == "none":
+			missing.append("policy_boundary")
+	authority_complete = not missing
+	if not authority_complete:
+		return False, list(dict.fromkeys(missing)), "missing_authority"
+	if authority_source == "policy_boundary" or (policy_boundary and policy_boundary != "none"):
+		return True, [], "bounded"
+	return True, [], "passed"
+
+
+def build_final_answer_authority_contract(
+	*,
+	interaction_contract: InteractionContract,
+	followup_resolution: FollowUpResolution,
+	execution_path: ExecutionPath,
+	runtime_trace_payload: Dict[str, Any] | None,
+	grounded_turn_context: Dict[str, Any] | None,
+	answer_text: str,
+	authority_context: Dict[str, Any] | None = None,
+) -> FinalAnswerAuthorityContract:
+	default_answer_mode = _authority_first_text(followup_resolution.mode, execution_path.path)
+	sources = _authority_sources(
+		runtime_trace_payload=runtime_trace_payload,
+		authority_context=authority_context,
+	)
+	ledger = _authority_ledger_from_sources(sources)
+	boundary_payload = _authority_boundary_from_sources(sources)
+	artifact_payload = _authority_artifact_from_sources(sources)
+	grounded_turn = _authority_clean_dict(grounded_turn_context)
+	if ledger:
+		payload = _final_authority_from_ledger(
+			interaction_contract=interaction_contract,
+			ledger=ledger,
+			default_answer_mode=default_answer_mode,
+		)
+	elif bool(grounded_turn.get("grounded")):
+		payload = _final_authority_from_grounded_turn(
+			interaction_contract=interaction_contract,
+			grounded_turn_context=grounded_turn,
+			artifact_payload=artifact_payload,
+			default_answer_mode=default_answer_mode,
+		)
+	elif boundary_payload:
+		payload = _final_authority_from_policy_boundary(
+			interaction_contract=interaction_contract,
+			boundary_payload=boundary_payload,
+			default_answer_mode=default_answer_mode,
+		)
+	else:
+		payload = _fallback_final_answer_authority(
+			interaction_contract=interaction_contract,
+			default_answer_mode=default_answer_mode,
+			execution_path=execution_path,
+		)
+	authority_complete, missing_fields, preflight_status = _complete_final_answer_authority(payload)
+	if not _authority_text(answer_text):
+		missing_fields = list(dict.fromkeys([*missing_fields, "answer_text"]))
+		authority_complete = False
+		preflight_status = "missing_authority"
+	return FinalAnswerAuthorityContract(
+		request_id=interaction_contract.request_id,
+		session_id=interaction_contract.session_id,
+		authority_source=_authority_text(payload.get("authority_source")),
+		evidence_scope=_authority_text(payload.get("evidence_scope")),
+		selected_artifact_id=_authority_text(payload.get("selected_artifact_id")),
+		selected_report_family=_authority_text(payload.get("selected_report_family")),
+		selected_row_reference=_authority_text(payload.get("selected_row_reference")) or "none",
+		policy_boundary=_authority_text(payload.get("policy_boundary")) or "none",
+		answer_mode=_authority_text(payload.get("answer_mode")) or default_answer_mode,
+		renderer_owner=_authority_text(payload.get("renderer_owner")) or "unknown_renderer",
+		authority_complete=authority_complete,
+		preflight_status=preflight_status,
+		missing_fields=missing_fields,
+		authority_reason=_authority_text(payload.get("authority_reason")),
+	)
+
+
 def build_audit_envelope(
 	*,
 	interaction_contract: InteractionContract,
@@ -3863,6 +6197,7 @@ def build_audit_envelope(
 	runtime_trace_payload: Dict[str, Any] | None,
 	grounded_turn_context: Dict[str, Any] | None,
 	answer_text: str,
+	authority_context: Dict[str, Any] | None = None,
 ) -> AuditEnvelope:
 	trace = runtime_trace_payload if isinstance(runtime_trace_payload, dict) else {}
 	grounded_turn = grounded_turn_context if isinstance(grounded_turn_context, dict) else {}
@@ -3881,6 +6216,15 @@ def build_audit_envelope(
 	source_name = str(grounded_turn.get("source_name") or "").strip()
 	validation_status = str(validation.get("status") or ("pass" if execution_path.path == "local_transform" else "unknown")).strip()
 	validation_errors = validation.get("errors") if isinstance(validation.get("errors"), list) else []
+	final_answer_authority = build_final_answer_authority_contract(
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
+		execution_path=execution_path,
+		runtime_trace_payload=trace,
+		grounded_turn_context=grounded_turn,
+		answer_text=answer_text,
+		authority_context=authority_context,
+	).to_payload()
 	return AuditEnvelope(
 		request_id=interaction_contract.request_id,
 		session_id=interaction_contract.session_id,
@@ -3897,6 +6241,7 @@ def build_audit_envelope(
 		validation_status=validation_status,
 		validation_errors=[str(x or "").strip() for x in validation_errors if str(x or "").strip()],
 		answer_chars=len(str(answer_text or "").strip()),
+		final_answer_authority=final_answer_authority,
 	)
 
 

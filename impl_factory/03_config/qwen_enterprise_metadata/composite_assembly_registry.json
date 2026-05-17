@@ -1,0 +1,110 @@
+{
+  "contract_version": "1.0",
+  "status": "phase3_1_assembly_contracts_active",
+  "description": "Governed composite assembly registry for shared row-assembly policy, join keys, and row-level provenance behavior.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_join_key_fields": [
+    "customer",
+    "item_code"
+  ],
+  "allowed_row_identity_policies": [
+    "customer_name",
+    "item_code",
+    "item_name_prefer_code"
+  ],
+  "allowed_row_merge_policies": [
+    "left_primary_metric"
+  ],
+  "allowed_row_missing_component_policies": [
+    "block_family",
+    "degrade_row_keep_primary"
+  ],
+  "allowed_row_provenance_policies": [
+    "per_row_component_refs"
+  ],
+  "assemblies": [
+    {
+      "assembly_id": "customer_period_commercial_ranking_assembly",
+      "family_id": "customer_commercial_ranking",
+      "component_metric_ids": [
+        "revenue",
+        "quantity",
+        "average_order_value",
+        "average_invoice_value"
+      ],
+      "component_execution_ids": [
+        "customer_sales_order_revenue_period_ranking_execution",
+        "customer_sales_order_quantity_period_ranking_execution",
+        "customer_sales_invoice_revenue_period_ranking_execution",
+        "customer_sales_invoice_quantity_period_ranking_execution",
+        "customer_average_order_value_sales_order_period_ranking_execution",
+        "customer_average_invoice_value_sales_invoice_period_ranking_execution"
+      ],
+      "join_key_schema": [
+        "customer"
+      ],
+      "row_identity_policy": "customer_name",
+      "row_merge_policy": "left_primary_metric",
+      "row_missing_component_policy": "block_family",
+      "row_provenance_policy": "per_row_component_refs",
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "assembly_id": "item_period_commercial_ranking_assembly",
+      "family_id": "product_commercial_ranking",
+      "component_metric_ids": [
+        "revenue",
+        "quantity",
+        "average_selling_price"
+      ],
+      "component_execution_ids": [
+        "item_sales_order_revenue_period_ranking_execution",
+        "item_sales_order_quantity_period_ranking_execution",
+        "item_average_selling_price_sales_order_period_ranking_execution",
+        "item_sales_invoice_revenue_period_ranking_execution",
+        "item_sales_invoice_quantity_period_ranking_execution",
+        "item_average_selling_price_sales_invoice_period_ranking_execution"
+      ],
+      "join_key_schema": [
+        "item_code"
+      ],
+      "row_identity_policy": "item_name_prefer_code",
+      "row_merge_policy": "left_primary_metric",
+      "row_missing_component_policy": "block_family",
+      "row_provenance_policy": "per_row_component_refs",
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "assembly_id": "customer_as_of_risk_ranking_assembly",
+      "family_id": "customer_risk_as_of",
+      "component_metric_ids": [
+        "overdue_amount",
+        "overdue_ratio",
+        "outstanding_amount",
+        "credit_utilization"
+      ],
+      "component_execution_ids": [
+        "customer_overdue_amount_as_of_ranking_execution",
+        "customer_overdue_ratio_as_of_ranking_execution",
+        "credit_utilization_customer_as_of_ranking_execution"
+      ],
+      "join_key_schema": [
+        "customer"
+      ],
+      "row_identity_policy": "customer_name",
+      "row_merge_policy": "left_primary_metric",
+      "row_missing_component_policy": "degrade_row_keep_primary",
+      "row_provenance_policy": "per_row_component_refs",
+      "activation_state": "active",
+      "blocked_reason": ""
+    }
+  ]
+}

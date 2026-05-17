@@ -85,6 +85,61 @@ def _presentation_hints(
 	}
 
 
+def _artifact_narrative_system_prompt(
+	*,
+	family_id: str,
+	source_reports: List[str],
+	response_policy: Dict[str, Any],
+) -> str:
+	answer_style = _clean_text((response_policy or {}).get("answer_style"))
+	implication_allowed = bool((response_policy or {}).get("implication_allowed"))
+	recommendation_allowed = bool((response_policy or {}).get("recommendation_allowed"))
+	direct_answer_first = bool((response_policy or {}).get("direct_answer_first", True))
+	report_names = {_clean_text(item) for item in list(source_reports or []) if _clean_text(item)}
+	rules = [
+		"You are an ERP business assistant narrating a governed artifact.",
+		"Use only facts and explicit derived calculations already present in the governed artifact and support blocks.",
+		"Never expose technical internals such as families, capabilities, contracts, or runtime mechanics.",
+	]
+	if direct_answer_first:
+		rules.append("Lead with the direct business answer before any supporting detail.")
+	if answer_style in {"simple_factual", "operational_list", "followup_refinement"}:
+		rules.append("Keep the wording descriptive and factual. Do not add interpretive business commentary unless it is explicitly requested.")
+	if not implication_allowed:
+		rules.append(
+			"Do not infer causes, customer intent, business health judgments, chronicity, urgency, risk severity, or behavioral patterns from the data."
+		)
+	if not recommendation_allowed:
+		rules.append(
+			"Do not recommend actions, escalation, collections strategy, policy changes, or management decisions."
+		)
+	if family_id == "financial_statement":
+		rules.append(
+			"For financial statements, keep the answer factual unless the response policy explicitly allows analysis."
+		)
+		rules.append(
+			"Use the exact amounts and units already shown in the governed support blocks."
+		)
+		rules.append(
+			"Do not rescale full MMK amounts into abbreviated MMK, MMK million, or rounded shorthand unless that unit is already present in the support blocks or the user explicitly asked for it."
+		)
+		rules.append(
+			"Do not add a 'Business implication' section or interpretive commentary unless the response policy explicitly allows implications."
+		)
+	if family_id == "aging":
+		rules.append(
+			"For aging and customer credit exposure artifacts, describe overdue, current, due, and negative balances only as reported facts or explicit derived percentages."
+		)
+		rules.append(
+			"Do not characterize the balances as chronic issues, short-term delays, collection problems, payment behavior, or credit policy outcomes unless the user explicitly asks for analysis and the artifact proves it."
+		)
+	if "Accounts Receivable Summary" in report_names:
+		rules.append(
+			"Do not mention credit limits, credit holds, or credit policy unless the artifact explicitly includes those fields."
+		)
+	return "\n".join(["Rules:"] + [f"{idx}. {rule}" for idx, rule in enumerate(rules, start=1)]).strip()
+
+
 def build_artifact_narrative_context(
 	*,
 	request_id: str,
@@ -121,6 +176,15 @@ def build_artifact_narrative_context(
 		],
 		"response_policy": response_policy_payload,
 		"presentation_hints": _presentation_hints(support_blocks, response_policy_payload),
+		"system_prompt": _artifact_narrative_system_prompt(
+			family_id=_clean_text(artifact.get("family_id") or rendered.get("family_id")),
+			source_reports=[
+				_clean_text(item)
+				for item in list(rendered.get("source_reports") or artifact.get("source_reports") or [])
+				if _clean_text(item)
+			],
+			response_policy=response_policy_payload,
+		),
 		"validation_payload": validation,
 	}
 

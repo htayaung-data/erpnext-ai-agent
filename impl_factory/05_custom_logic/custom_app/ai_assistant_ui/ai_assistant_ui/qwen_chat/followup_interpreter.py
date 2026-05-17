@@ -1,27 +1,49 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import re
 from typing import Any, Dict, List, Set
 
 from ai_assistant_ui.qwen_chat.metadata import (
+	capability_ontology_concepts,
+	capability_semantic_tags,
 	capability_dimensions_for_report,
+	get_report_family_spec,
 	get_report_spec,
+	load_semantic_resolution_registry,
 	ontology_detect_concepts,
-	ontology_detect_followup_modes,
-	ontology_followup_aliases,
-	ontology_followup_slot_aliases,
-	ontology_self_contained_prefixes,
-	report_family_report_names,
-	report_family_transitional_surface_markers,
+	report_business_family_ids,
+	report_capability_ids,
+	report_approved_followup_modes,
+	report_family_semantic_tags,
 	report_local_followup_adapter,
 	report_family_ontology_concepts,
-	supported_ontology_concepts,
+	report_semantic_tags,
 )
+from ai_assistant_ui.qwen_chat.contracts import (
+	FollowUpBoundaryContract,
+	_message_looks_like_self_contained_governed_business_query,
+	build_followup_boundary_contract,
+)
+from ai_assistant_ui.qwen_chat.entity_reference_resolution import infer_lookup_mode_from_message
+from ai_assistant_ui.qwen_chat.followup_entity_domain_support import (
+	detected_message_entity_domains,
+	entity_detail_context_domains,
+	is_entity_detail_context_family,
+	normalize_entity_grain_alias,
+	ranking_subject_alias_map,
+	subject_alias_from_label,
+)
+from ai_assistant_ui.qwen_chat.governed_scope_registry import (
+	entity_grain_for_report_name,
+	listing_view_for_report_name,
+)
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_surface_family
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
-from ai_assistant_ui.qwen_chat.semantic_aliases import get_aliases
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import semantic_slot_alias_phrases_for_value
 from ai_assistant_ui.qwen_chat.scope_decision_input import (
 	ScopeDecisionInputContract,
+	build_known_unsupported_scope_decision_input,
 	build_scope_decision_input,
 )
 
@@ -30,46 +52,47 @@ def _normalize_text(text: str) -> str:
 	return " ".join(str(text or "").strip().lower().split())
 
 
-def _normalize_key(value: Any) -> str:
-	return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+def _singularize_token(token: str) -> str:
+	clean = str(token or "").strip().lower()
+	if len(clean) > 4 and clean.endswith("ies"):
+		return clean[:-3] + "y"
+	if len(clean) > 3 and clean.endswith("ses"):
+		return clean[:-2]
+	if len(clean) > 3 and clean.endswith("s") and not clean.endswith("ss"):
+		return clean[:-1]
+	return clean
 
 
-def _tokenize(text: str) -> List[str]:
-	return [token for token in re.findall(r"[a-z0-9]+", _normalize_text(text)) if token]
+def _normalize_slot_phrase(text: str) -> str:
+	parts = [
+		_singularize_token(value)
+		for value in str(text or "").strip().lower().replace("/", " ").split()
+		if _singularize_token(value)
+	]
+	return " ".join(parts)
 
 
-def _token_set(text: str) -> Set[str]:
-	return set(_tokenize(text))
+_GOVERNED_DOMAIN_CONCEPTS = {
+	"payable",
+	"receivable",
+	"sales",
+	"product",
+	"inventory",
+	"supplier",
+	"customer",
+}
 
+_PRIMARY_FRESH_QUERY_FALLBACK_CONCEPTS = {
+	"payable",
+	"receivable",
+	"sales",
+	"product",
+	"inventory",
+}
 
-def _contains_alias(text: str, alias: str) -> bool:
-	value = _normalize_text(text)
-	target = _normalize_text(alias)
-	if not value or not target:
-		return False
-	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
-	return bool(re.search(pattern, value))
-
-
-def _starts_with_self_contained_prefix(text: str, language: str) -> bool:
-	value = _normalize_text(text)
-	for prefix in ontology_self_contained_prefixes(language):
-		clean = _normalize_text(prefix)
-		if clean and (value == clean or value.startswith(f"{clean} ")):
-			return True
-	return False
-
-
-@dataclass(frozen=True)
-class FollowUpIntent:
-	requested_modes: List[str]
-	matched_aliases: Dict[str, List[str]]
-	target_dimension: str = ""
-	target_limit: int = 0
-	sort_direction: str = ""
-	target_metric: str = ""
-	requested_columns: List[str] = field(default_factory=list)
-	requested_time_scope: str = ""
+_PRIMARY_FRESH_QUERY_FALLBACK_ALIASES = {
+	"warehouse": "inventory",
+}
 
 
 @dataclass(frozen=True)
@@ -86,17 +109,63 @@ class ArtifactContextSignal:
 @dataclass(frozen=True)
 class MessageSignal:
 	text: str
-	tokens: Set[str]
 	concepts: Set[str]
-	followup_modes: Set[str]
-	dimension_keys: List[str]
-	metric_keys: List[str]
-	target_dimension: str
-	target_limit: int
-	sort_direction: str
-	requested_time_scope: str
-	requested_columns: List[str]
-	presentation_modes: List[str]
+
+
+def _clean_governed_domain_concepts(values: List[str] | Set[str] | tuple[str, ...]) -> Set[str]:
+	return {
+		str(value or "").strip()
+		for value in (values or [])
+		if str(value or "").strip() in _GOVERNED_DOMAIN_CONCEPTS
+	}
+
+
+def _artifact_ranking_subject_alias(
+	grounded_turn: Dict[str, object] | None,
+	artifact_signal: ArtifactContextSignal,
+) -> str:
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	for item in (turn.get("known_entities") or []):
+		if not isinstance(item, dict):
+			continue
+		entity_type = subject_alias_from_label(str(item.get("entity_type") or "").strip())
+		if entity_type:
+			return entity_type
+	for value in (turn.get("dimensions") or []):
+		resolved = subject_alias_from_label(str(value or "").strip())
+		if resolved:
+			return resolved
+	for value in artifact_signal.available_dimensions.values():
+		resolved = subject_alias_from_label(value)
+		if resolved:
+			return resolved
+	return ""
+
+
+def _requested_ranking_subject_alias(message: str, semantic_intent: Any | None) -> str:
+	target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip() if semantic_intent is not None else ""
+	resolved_target = subject_alias_from_label(target_dimension)
+	normalized_message = _normalize_slot_phrase(message)
+	message_resolved = ""
+	if normalized_message:
+		alias_map = ranking_subject_alias_map()
+		matches: List[tuple[int, str]] = []
+		for alias_value, subject_alias in alias_map.items():
+			if not alias_value:
+				continue
+			pattern = f" {alias_value} "
+			search_text = f" {normalized_message} "
+			position = search_text.find(pattern)
+			if position >= 0:
+				matches.append((len(alias_value), subject_alias))
+		if matches:
+			matches.sort(key=lambda item: item[0], reverse=True)
+			message_resolved = matches[0][1]
+	if message_resolved and message_resolved != resolved_target:
+		return message_resolved
+	if resolved_target:
+		return resolved_target
+	return message_resolved
 
 
 def _normalized_dimension_candidates(grounded_turn: Dict[str, object] | None) -> Dict[str, str]:
@@ -139,39 +208,116 @@ def _normalized_metric_candidates(grounded_turn: Dict[str, object] | None) -> Di
 	return candidates
 
 
-def _report_domain_concepts(report_name: str) -> Set[str]:
-	spec = get_report_spec(report_name)
-	values = spec.get("semantic_tags")
-	if not isinstance(values, list):
+def _capability_domain_concepts(capability_id: str) -> Set[str]:
+	target = str(capability_id or "").strip()
+	if not target:
+		return set()
+	return _clean_governed_domain_concepts(
+		list(capability_ontology_concepts(target)) + list(capability_semantic_tags(target))
+	)
+
+
+def _semantic_reason_domain_concepts(semantic_intent: Any) -> Set[str]:
+	if semantic_intent is None:
+		return set()
+	reason = _normalize_text(str(getattr(semantic_intent, "reason", "") or ""))
+	if not reason:
 		return set()
 	return {
-		str(value or "").strip()
-		for value in values
-		if str(value or "").strip() in {"payable", "receivable", "sales", "product", "inventory", "supplier", "customer"}
+		value
+		for value in _clean_governed_domain_concepts(
+			ontology_detect_concepts(reason, language="en", include_extended=False)
+		)
+		if value in _PRIMARY_FRESH_QUERY_FALLBACK_CONCEPTS
 	}
+
+
+def _report_domain_concepts(report_name: str, family_id: str = "") -> Set[str]:
+	out: Set[str] = set()
+	report_value = str(report_name or "").strip()
+	family_value = str(family_id or "").strip()
+	if report_value:
+		out.update(_clean_governed_domain_concepts(report_semantic_tags(report_value)))
+	if family_value:
+		out.update(_clean_governed_domain_concepts(report_family_semantic_tags(family_value)))
+	if out:
+		return out
+	if report_value:
+		for capability_id in report_capability_ids(report_value):
+			out.update(_clean_governed_domain_concepts(capability_semantic_tags(capability_id)))
+	if out:
+		return out
+	if family_value:
+		out.update(_clean_governed_domain_concepts(report_family_ontology_concepts(family_value)))
+	return out
+
+
+def _semantic_requested_domains(
+	semantic_intent: Any,
+	artifact_signal: ArtifactContextSignal,
+) -> Set[str]:
+	if semantic_intent is None:
+		return set()
+	requested_modes = {
+		str(mode or "").strip()
+		for mode in (getattr(semantic_intent, "requested_modes", []) or [])
+		if str(mode or "").strip()
+	}
+	target_capability_id = str(getattr(semantic_intent, "target_capability_id", "") or "").strip()
+	target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip()
+	target_limit = int(getattr(semantic_intent, "target_limit", 0) or 0)
+	sort_direction = str(getattr(semantic_intent, "sort_direction", "") or "").strip()
+	target_metric = str(getattr(semantic_intent, "target_metric", "") or "").strip()
+	requested_columns = list(getattr(semantic_intent, "requested_columns", []) or [])
+	requested_time_scope = str(getattr(semantic_intent, "requested_time_scope", "") or "").strip()
+
+	out = _capability_domain_concepts(target_capability_id)
+	if not out:
+		out.update(_semantic_reason_domain_concepts(semantic_intent))
+	structured_followup_signals = bool(
+		target_capability_id
+		or requested_time_scope
+		or target_metric
+		or requested_columns
+		or (target_dimension and requested_modes.intersection({"dimension_breakdown", "grouping_change"}))
+		or ((target_limit or sort_direction) and "sort_or_limit" in requested_modes)
+	)
+	if not out and structured_followup_signals:
+		out.update(artifact_signal.context_concepts)
+	return out
 
 
 def _artifact_context_signal(grounded_turn: Dict[str, object] | None) -> ArtifactContextSignal:
 	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
-	report_name = str(turn.get("source_name") or "").strip()
 	family_id = str(turn.get("artifact_family_id") or "").strip()
-	value = " ".join(
-		part
-		for part in [
-			report_name,
-			" ".join(str(item or "").strip() for item in (turn.get("dimensions") or []) if str(item or "").strip()),
-			" ".join(str(item or "").strip() for item in (turn.get("metrics") or []) if str(item or "").strip()),
-		]
-		if part
-	)
-	context_concepts = set(ontology_detect_concepts(value))
-	explicit_report_concepts = _report_domain_concepts(report_name)
-	if explicit_report_concepts:
-		context_concepts.update(explicit_report_concepts)
-	for dimension_label in _normalized_dimension_candidates(turn).values():
-		context_concepts.update(ontology_detect_concepts(str(dimension_label or "").strip()))
+	report_name = str(turn.get("source_name") or "").strip()
+	if not family_id and report_name:
+		family_id = str((report_business_family_ids(report_name) or [""])[0] or "").strip()
+	if is_entity_detail_context_family(family_id, turn) and report_name and not report_approved_followup_modes(report_name):
+		candidate_detail_names: List[str] = []
+		for item in (turn.get("known_entities") or []):
+			if not isinstance(item, dict):
+				continue
+			entity_type = normalize_entity_grain_alias(str(item.get("entity_type") or "").strip())
+			if entity_type:
+				candidate_detail_names.append(entity_type.replace("_", " ").title() + " Detail")
+		filter_entity_type = normalize_entity_grain_alias(str((turn.get("filters") or {}).get("entity_type") or "").strip())
+		if filter_entity_type:
+			candidate_detail_names.append(filter_entity_type.replace("_", " ").title() + " Detail")
+		for value in (turn.get("dimensions") or []):
+			clean_value = normalize_entity_grain_alias(str(value or "").strip())
+			if clean_value:
+				candidate_detail_names.append(clean_value.replace("_", " ").title() + " Detail")
+		for candidate_name in candidate_detail_names:
+			if report_approved_followup_modes(candidate_name):
+				report_name = candidate_name
+				break
+	context_concepts = _report_domain_concepts(report_name, family_id)
 	if not context_concepts:
-		context_concepts = set(report_family_ontology_concepts(family_id))
+		for source_report in (turn.get("artifact_source_reports") or []):
+			clean_report = str(source_report or "").strip()
+			if clean_report:
+				context_concepts.update(_report_domain_concepts(clean_report))
 	available_metrics = _normalized_metric_candidates(turn)
 	available_metric_keys: Set[str] = set()
 	for label in available_metrics.values():
@@ -186,448 +332,740 @@ def _artifact_context_signal(grounded_turn: Dict[str, object] | None) -> Artifac
 		available_metric_keys=available_metric_keys,
 	)
 
-
-def _detect_target_dimension(
-	text: str,
-	artifact_signal: ArtifactContextSignal,
-	dimension_keys: List[str],
-	followup_modes: Set[str],
-) -> str:
-	if not artifact_signal.has_grounded_turn:
-		return ""
-	if not dimension_keys:
-		return ""
-	if "dimension_breakdown" not in followup_modes:
-		return ""
-	for key in dimension_keys:
-		label = artifact_signal.available_dimensions.get(_normalize_text(key))
-		if label:
-			return label
-	return ""
-
-
-def _detect_sort_limit_spec(tokens: Set[str], text: str, followup_modes: Set[str]) -> tuple[int, str]:
-	limit = 0
-	direction = ""
-	if "sort_or_limit" not in followup_modes:
-		return 0, ""
-	limit_prefixes = ontology_followup_slot_aliases("sort_or_limit", "limit_prefix")
-	for match in re.finditer(r"\b([a-z]+)\s+(\d+)\b", text):
-		label = str(match.group(1) or "").strip().lower()
-		value = int(match.group(2))
-		for candidate_direction, aliases in limit_prefixes.items():
-			if label in {str(alias or "").strip().lower() for alias in aliases}:
-				limit = value
-				direction = "desc" if candidate_direction == "desc" else "asc"
-				break
-	sort_direction_aliases = ontology_followup_slot_aliases("sort_or_limit", "sort_direction")
-	token_values = {str(token or "").strip().lower() for token in tokens}
-	for candidate_direction, aliases in sort_direction_aliases.items():
-		if token_values & {str(alias or "").strip().lower() for alias in aliases}:
-			direction = "desc" if candidate_direction == "desc" else "asc"
-	return max(0, int(limit)), direction
-
-
-def _detect_requested_time_scope(text: str, followup_modes: Set[str]) -> str:
-	if "time_scope_restatement" not in followup_modes:
-		return ""
-	normalized_text = _normalize_text(text)
-	for scope, aliases in ontology_followup_slot_aliases("time_scope_restatement", "requested_time_scope").items():
-		for alias in aliases:
-			clean = _normalize_text(alias)
-			if clean and (clean == normalized_text or clean in normalized_text):
-				return scope
-	return ""
-
-
-def _detect_presentation_modes(followup_modes: Set[str]) -> List[str]:
-	return [
-		mode
-		for mode in ("presentation_transform", "table_presentation", "bullet_presentation")
-		if mode in followup_modes
-	]
-
-
-def _family_intent_marker_match(text: str, markers: List[str]) -> bool:
-	for marker in markers:
-		if _contains_alias(text, marker):
-			return True
-	return False
-
-
-def _looks_like_ambiguous_family_report_request(
-	*,
-	signal: MessageSignal,
-	artifact_signal: ArtifactContextSignal,
-	parsed: FollowUpIntent,
-) -> bool:
-	if not artifact_signal.has_grounded_turn:
-		return False
-	family_id = str(artifact_signal.family_id or "").strip()
-	if not family_id:
-		return False
-	family_reports = report_family_report_names(family_id)
-	if len(family_reports) <= 1:
-		return False
-	if set(parsed.requested_modes):
-		return False
-	intent_markers = report_family_transitional_surface_markers(family_id)
-	if not _family_intent_marker_match(signal.text, intent_markers):
-		return False
-	family_concepts = set(report_family_ontology_concepts(family_id))
-	if signal.concepts & family_concepts:
-		return False
-	return True
-
-
-def detect_ambiguous_family_report_request(
-	message: str,
-	*,
-	language: str = "en",
-	grounded_turn: Dict[str, object] | None = None,
-) -> Dict[str, Any]:
-	artifact_signal = _artifact_context_signal(grounded_turn)
-	if not artifact_signal.has_grounded_turn:
-		return {}
-	signal = _message_signal(message, language=language, grounded_turn=grounded_turn)
-	parsed = detect_followup_intent(message, language=language, grounded_turn=grounded_turn)
-	if not _looks_like_ambiguous_family_report_request(
-		signal=signal,
-		artifact_signal=artifact_signal,
-		parsed=parsed,
-	):
-		return {}
-	family_id = str(artifact_signal.family_id or "").strip()
-	return {
-		"family_id": family_id,
-		"report_candidates": report_family_report_names(family_id),
-		"reason": "The follow-up refers broadly to a governed multi-report family and does not identify a unique report view.",
-	}
-
-
-def _looks_like_column_projection(tokens: Set[str], followup_modes: Set[str]) -> bool:
-	if not tokens:
-		return False
-	return "column_projection" in followup_modes
-
-
-def _projection_phrase_patterns(language: str = "en") -> List[re.Pattern[str]]:
-	if str(language or "en").strip() != "en":
-		return []
-	return [
-		re.compile(r"\b(?:show|display|include|add|return|give)\b(?:\s+me)?\s+(.+?)\s+\bcolumns?\b(?:\s+only)?\s*$", re.IGNORECASE),
-		re.compile(r"\b(?:show|display|include|add|return|give)\b(?:\s+me)?\s+(.+?)\s+\bonly\b\s*$", re.IGNORECASE),
-		re.compile(r"\b(.+?)\s+\bcolumns?\s+\bonly\b\s*$", re.IGNORECASE),
-	]
-
-
-def _clean_projection_segment(segment: str) -> str:
-	value = str(segment or "").strip().lower()
-	value = re.sub(r"\b(?:the|a|an|just|please|to|give|me|show|display|include|add|return|only)\b", " ", value)
-	value = re.sub(r"\bcolumns?\b", " ", value)
-	value = re.sub(r"\s+", " ", value).strip(" ,./")
-	return value
-
-
-def _split_projection_labels(segment: str) -> List[str]:
-	text = _clean_projection_segment(segment)
-	if not text:
-		return []
-	parts = re.split(r"\s*(?:,|/|&|\band\b)\s*", text)
-	out: List[str] = []
-	for part in parts:
-		clean = _clean_projection_segment(part)
-		if not clean:
-			continue
-		if clean in {"column", "columns"}:
-			continue
-		if clean not in out:
-			out.append(clean)
-	return out
-
-
-def _explicit_projection_columns(text: str, language: str = "en") -> List[str]:
-	value = str(text or "").strip()
-	if not value:
-		return []
-	out: List[str] = []
-	for pattern in _projection_phrase_patterns(language):
-		match = pattern.search(value)
-		if not match:
-			continue
-		for label in _split_projection_labels(str(match.group(1) or "").strip()):
-			if label and label not in out:
-				out.append(label)
-	if out:
-		return out
-	normalized = _normalize_text(value)
-	for alias in ontology_followup_aliases("column_projection", language=language):
-		clean_alias = _normalize_text(alias)
-		if not clean_alias or clean_alias not in normalized:
-			continue
-		before, _, after = normalized.partition(clean_alias)
-		for candidate in [after, before]:
-			for label in _split_projection_labels(candidate):
-				if label and label not in out:
-					out.append(label)
-	return out
-
-
-def _map_requested_columns(
-	artifact_signal: ArtifactContextSignal,
-	dimension_keys: List[str],
-	metric_keys: List[str],
-	projection_like: bool,
-	target_dimension: str,
-) -> List[str]:
-	if not artifact_signal.has_grounded_turn or not projection_like:
-		return []
-	if target_dimension:
-		return []
-	columns: List[str] = []
-	dimension_key_set = set(dimension_keys)
-	if {"item_name", "customer", "supplier"} & dimension_key_set:
-		columns.append("entity")
-	elif "item_code" in dimension_key_set:
-		columns.append("entity")
-	if "item_code" in dimension_key_set and "item_name" not in dimension_key_set:
-		columns.append("entity_code")
-	if "territory" in dimension_key_set:
-		columns.append("territory")
-	compatible_metrics = metric_keys
-	if artifact_signal.available_metric_keys:
-		compatible_metrics = [metric for metric in metric_keys if metric in artifact_signal.available_metric_keys]
-		if not compatible_metrics:
-			compatible_metrics = metric_keys
-	for metric in compatible_metrics:
-		if metric:
-			columns.append(metric)
-	return list(dict.fromkeys([value for value in columns if value]))
-
-
-def _metric_alias_score(metric_key: str, text: str) -> int:
-	best = 0
-	for alias in get_aliases(metric_key):
-		normalized_alias = _normalize_text(alias)
-		if normalized_alias and normalized_alias in text:
-			best = max(best, len(normalized_alias))
-	if metric_key.replace("_", " ") in text:
-		best = max(best, len(metric_key))
-	return best
-
-
-def _select_target_metric(artifact_signal: ArtifactContextSignal, metric_keys: List[str], text: str) -> str:
-	if not metric_keys:
-		return ""
-	compatible_metrics = list(metric_keys)
-	if artifact_signal.available_metric_keys:
-		compatible_metrics = [metric for metric in metric_keys if metric in artifact_signal.available_metric_keys] or list(metric_keys)
-	best_metric = ""
-	best_score = -1
-	for metric in compatible_metrics:
-		score = _metric_alias_score(metric, text)
-		if score > best_score:
-			best_metric = metric
-			best_score = score
-	if best_metric:
-		return best_metric
-	return str(compatible_metrics[0] or "").strip()
-
-
 def _message_signal(
 	message: str,
 	*,
 	language: str = "en",
-	grounded_turn: Dict[str, object] | None = None,
 ) -> MessageSignal:
 	text = _normalize_text(message)
-	tokens = _token_set(text)
-	followup_modes = set(ontology_detect_followup_modes(text, language=language))
-	dimension_keys = detect_canonical_keys(text, dimension_or_metric="dimension")
-	metric_keys = detect_canonical_keys(text, dimension_or_metric="metric")
-	artifact_signal = _artifact_context_signal(grounded_turn)
-	target_dimension = _detect_target_dimension(text, artifact_signal, dimension_keys, followup_modes)
-	target_limit, sort_direction = _detect_sort_limit_spec(tokens, text, followup_modes)
-	requested_time_scope = _detect_requested_time_scope(text, followup_modes)
-	presentation_modes = _detect_presentation_modes(followup_modes)
-	requested_columns = _map_requested_columns(
-		artifact_signal,
-		dimension_keys,
-		metric_keys,
-		projection_like=_looks_like_column_projection(tokens, followup_modes),
-		target_dimension=target_dimension,
-	)
+	detection_text = text.replace("/", " ")
+	concepts = set(ontology_detect_concepts(detection_text, language=language, include_extended=False))
 	return MessageSignal(
 		text=text,
-		tokens=tokens,
-		concepts=set(ontology_detect_concepts(text, language=language)),
-		followup_modes=followup_modes,
-		dimension_keys=dimension_keys,
-		metric_keys=metric_keys,
-		target_dimension=target_dimension,
-		target_limit=target_limit,
-		sort_direction=sort_direction,
-		requested_time_scope=requested_time_scope,
-		requested_columns=requested_columns,
-		presentation_modes=presentation_modes,
+		concepts=concepts,
 	)
 
 
-def detect_followup_intent(message: str, language: str = "en", grounded_turn: Dict[str, object] | None = None) -> FollowUpIntent:
-	text = _normalize_text(message)
-	if not text:
-		return FollowUpIntent(requested_modes=[], matched_aliases={})
-
-	artifact_signal = _artifact_context_signal(grounded_turn)
-	signal = _message_signal(text, language=language, grounded_turn=grounded_turn)
-	requested_modes: List[str] = []
-	matched_aliases: Dict[str, List[str]] = {}
-
-	for mode in signal.presentation_modes:
-		if mode not in requested_modes:
-			requested_modes.append(mode)
-		matched_aliases.setdefault(mode, []).append(mode)
-
-	if signal.target_dimension:
-		requested_modes.append("dimension_breakdown")
-		matched_aliases.setdefault("dimension_breakdown", []).append(signal.target_dimension)
-
-	if signal.target_limit or signal.sort_direction:
-		requested_modes.append("sort_or_limit")
-		sort_matches: List[str] = []
-		if signal.target_limit:
-			sort_matches.append(f"limit:{signal.target_limit}")
-		if signal.sort_direction:
-			sort_matches.append(signal.sort_direction)
-		matched_aliases.setdefault("sort_or_limit", []).extend(sort_matches or ["sort"])
-
-	target_metric = _select_target_metric(artifact_signal, signal.metric_keys, signal.text)
-	requested_columns = list(signal.requested_columns)
-	for raw_label in _explicit_projection_columns(signal.text, language=language):
-		if detect_canonical_keys(raw_label, dimension_or_metric="metric"):
-			continue
-		if detect_canonical_keys(raw_label, dimension_or_metric="dimension"):
-			continue
-		if raw_label not in requested_columns:
-			requested_columns.append(raw_label)
-	if target_metric and requested_columns:
-		requested_columns = [
-			column
-			for column in requested_columns
-			if column not in artifact_signal.available_metric_keys or column == target_metric
-		]
-	if artifact_signal.has_grounded_turn and target_metric:
-		requested_modes.append("metric_refinement")
-		matched_aliases.setdefault("metric_refinement", []).append(target_metric)
-
-	if requested_columns:
-		requested_modes.append("column_refinement")
-		matched_aliases.setdefault("column_refinement", []).extend(requested_columns)
-
-	if signal.requested_time_scope:
-		requested_modes.append("time_scope_restatement")
-		matched_aliases.setdefault("time_scope_restatement", []).append(signal.requested_time_scope)
-
-	return FollowUpIntent(
-		requested_modes=list(dict.fromkeys(requested_modes)),
-		matched_aliases=matched_aliases,
-		target_dimension=signal.target_dimension,
-		target_limit=signal.target_limit,
-		sort_direction=signal.sort_direction,
-		target_metric=target_metric,
-		requested_columns=requested_columns,
-		requested_time_scope=signal.requested_time_scope,
-	)
+def _domain_affinity(requested_domains: Set[str], context_domains: Set[str]) -> str:
+	if not requested_domains or not context_domains:
+		return "unknown"
+	if requested_domains.isdisjoint(context_domains):
+		return "disjoint"
+	if requested_domains.issubset(context_domains) or context_domains.issubset(requested_domains):
+		return "same_domain"
+	return "partial_overlap"
 
 
-def is_million_transform_intent(message: str, intent: FollowUpIntent | None = None) -> bool:
-	parsed = intent or detect_followup_intent(message)
-	return "presentation_transform" in parsed.requested_modes
-
-
-def is_self_contained_business_request(
-	message: str,
-	language: str = "en",
-	intent: FollowUpIntent | None = None,
-	grounded_turn: Dict[str, object] | None = None,
+def _allow_message_domain_fallback(
+	message_concepts: Set[str],
+	artifact_signal: ArtifactContextSignal,
+	*,
+	grounded_followup_supported: bool,
+	semantic_payload_blank_for_domain_fallback: bool = False,
+	contradictory_presentation_hint: bool = False,
 ) -> bool:
-	artifact_signal = _artifact_context_signal(grounded_turn)
-	signal = _message_signal(message, language=language, grounded_turn=grounded_turn)
-	parsed = intent or detect_followup_intent(signal.text, language=language, grounded_turn=grounded_turn)
-	alias_hits = set(signal.dimension_keys) | set(signal.metric_keys)
-	ambiguous_family_report = _looks_like_ambiguous_family_report_request(
-		signal=signal,
-		artifact_signal=artifact_signal,
-		parsed=parsed,
-	)
-	if ambiguous_family_report:
-		return True
-
-	business_signals = bool(signal.concepts or alias_hits)
-	if not business_signals:
+	if not message_concepts:
 		return False
-
-	local_only_modes = {
-		"presentation_transform",
-		"table_presentation",
-		"bullet_presentation",
-		"sort_or_limit",
-		"metric_refinement",
-		"column_refinement",
-		"time_scope_restatement",
-	}
 	if not artifact_signal.has_grounded_turn:
 		return True
+	context_domains = set(artifact_signal.context_concepts)
+	if not grounded_followup_supported:
+		if semantic_payload_blank_for_domain_fallback and not contradictory_presentation_hint:
+			return len(message_concepts) >= 2
+		if not context_domains:
+			return True
+		if len(message_concepts) >= 2:
+			return True
+		return message_concepts.isdisjoint(context_domains)
+	if not context_domains:
+		return True
+	return message_concepts.isdisjoint(context_domains)
 
-	if set(parsed.requested_modes).issubset(local_only_modes):
-		if parsed.requested_modes == ["presentation_transform"]:
-			return False
-		if parsed.requested_modes == ["table_presentation"]:
-			return False
-		if parsed.requested_modes == ["bullet_presentation"]:
-			return False
-		if parsed.requested_modes and not signal.requested_time_scope and not signal.target_dimension and not signal.target_limit:
-			return False
 
-	if signal.concepts and artifact_signal.context_concepts and signal.concepts.isdisjoint(artifact_signal.context_concepts):
+def _grounded_followup_supported_for_artifact(
+	artifact_signal: ArtifactContextSignal,
+	grounded_turn: Dict[str, object] | None,
+) -> bool:
+	report_name = str(artifact_signal.report_name or "").strip()
+	if report_name and report_approved_followup_modes(report_name):
 		return True
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	for source_report in (turn.get("artifact_source_reports") or []):
+		clean_report = str(source_report or "").strip()
+		if clean_report and report_approved_followup_modes(clean_report):
+			return True
+	family_id = str(artifact_signal.family_id or "").strip()
+	return bool(
+		family_id == "financial_statement"
+		or is_entity_detail_context_family(family_id, grounded_turn)
+	)
 
-	if signal.requested_time_scope:
+
+def _semantic_resolution_alias_maps() -> Dict[str, List[Dict[str, Any]]]:
+	value = load_semantic_resolution_registry().get("alias_maps")
+	return value if isinstance(value, dict) else {}
+
+
+def _word_tokens(value: str) -> List[str]:
+	return re.findall(r"[A-Za-z0-9]+", str(value or "").lower())
+
+
+def _token_key(value: str) -> str:
+	return " ".join(_word_tokens(value))
+
+
+def _message_has_grounded_context_anchor(message: str) -> bool:
+	text = _normalize_text(message)
+	if not text:
+		return False
+	return bool(re.search(r"\b(this|that|these|those|it|its|they|their|them)\b", text))
+
+
+def _family_routing_intent_markers(family_id: str) -> Set[str]:
+	spec = get_report_family_spec(family_id)
+	routing_hints = spec.get("routing_hints") if isinstance(spec.get("routing_hints"), dict) else {}
+	intent_markers = routing_hints.get("intent_markers") if isinstance(routing_hints.get("intent_markers"), list) else []
+	return {
+		_normalize_text(value)
+		for value in intent_markers
+		if _normalize_text(value)
+	}
+
+
+def _family_routing_phrase_markers(family_id: str) -> Set[str]:
+	spec = get_report_family_spec(family_id)
+	out: Set[str] = set(_family_routing_intent_markers(family_id))
+	report_names = spec.get("report_names") if isinstance(spec.get("report_names"), list) else []
+	out.update(
+		_normalize_text(value)
+		for value in report_names
+		if _normalize_text(value)
+	)
+	routing_hints = spec.get("routing_hints") if isinstance(spec.get("routing_hints"), dict) else {}
+	ontology_concepts = routing_hints.get("ontology_concepts") if isinstance(routing_hints.get("ontology_concepts"), list) else []
+	out.update(
+		_normalize_text(str(value or "").replace("_", " "))
+		for value in ontology_concepts
+		if _normalize_text(str(value or "").replace("_", " "))
+	)
+	supported_intent_classes = {
+		str(value or "").strip()
+		for value in (spec.get("supported_intent_classes") or [])
+		if str(value or "").strip()
+	}
+	family_resolution_rules = load_semantic_resolution_registry().get("family_resolution_rules")
+	if isinstance(family_resolution_rules, list):
+		alias_maps = _semantic_resolution_alias_maps()
+		for rule in family_resolution_rules:
+			if not isinstance(rule, dict):
+				continue
+			candidate_family_ids = {
+				str(value or "").strip()
+				for value in (rule.get("candidate_family_ids") or [])
+				if str(value or "").strip()
+			}
+			intent_class = str(rule.get("intent_class") or "").strip()
+			if family_id not in candidate_family_ids and intent_class not in supported_intent_classes:
+				continue
+			required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+			for slot_name, canonical_value in required_slots.items():
+				clean_slot_name = str(slot_name or "").strip()
+				clean_canonical_value = str(canonical_value or "").strip()
+				if not clean_slot_name or not clean_canonical_value:
+					continue
+				out.add(_normalize_text(clean_canonical_value.replace("_", " ")))
+				for alias in semantic_slot_alias_phrases_for_value(
+					clean_slot_name,
+					clean_canonical_value,
+					include_canonical=False,
+				):
+					normalized_alias = _normalize_text(alias)
+					if normalized_alias:
+						out.add(normalized_alias)
+	return {value for value in out if value}
+
+
+def _top_level_family_request_breakout_signal(
+	message: str,
+	*,
+	language: str,
+	artifact_signal: ArtifactContextSignal,
+	structured_followup_signals_present: bool,
+	contradictory_presentation_payload: bool,
+) -> bool:
+	if _message_has_grounded_context_anchor(message):
+		return False
+	if not artifact_signal.family_id:
+		return False
+	if structured_followup_signals_present or contradictory_presentation_payload:
+		return False
+	normalized_message = _normalize_text(message)
+	if not normalized_message:
+		return False
+	if _message_looks_like_self_contained_governed_business_query(message=message, language=language):
 		return True
-	if signal.target_dimension and signal.target_dimension not in artifact_signal.available_dimensions.values():
-		return True
-	if (
-		parsed.target_metric
-		and parsed.target_metric not in artifact_signal.available_metric_keys
-		and not set(parsed.requested_modes).issubset(local_only_modes)
-	):
-		return True
-	if _starts_with_self_contained_prefix(signal.text, language) and business_signals:
-		return True
+	message_token_key = _token_key(message)
+	search_text = f" {normalized_message} "
+	for marker in _family_routing_phrase_markers(artifact_signal.family_id):
+		if marker and f" {marker} " in search_text:
+			return True
+		if message_token_key and _token_key(marker) == message_token_key:
+			return True
 	return False
 
 
-def is_safe_local_compatibility_intent(
+def _message_slot_value(slot_name: str, message: str) -> str:
+	normalized_message = _normalize_slot_phrase(message)
+	if not normalized_message:
+		return ""
+	alias_entries = _semantic_resolution_alias_maps().get(str(slot_name or "").strip())
+	if not isinstance(alias_entries, list):
+		return ""
+	for entry in alias_entries:
+		if not isinstance(entry, dict):
+			continue
+		canonical_value = str(entry.get("canonical_value") or "").strip()
+		if not canonical_value:
+			continue
+		aliases = [
+			_normalize_slot_phrase(alias)
+			for alias in (entry.get("aliases") or [])
+			if _normalize_slot_phrase(alias)
+		]
+		for alias in aliases:
+			if alias and alias in normalized_message:
+				return canonical_value
+	return ""
+
+
+def _item_stock_followup_signal(
 	message: str,
-	language: str = "en",
-	grounded_turn: Dict[str, object] | None = None,
+	*,
+	artifact_signal: ArtifactContextSignal,
+	grounded_turn: Dict[str, object] | None,
 ) -> bool:
+	if not is_entity_detail_context_family(artifact_signal.family_id, grounded_turn):
+		return False
+	context_domains = entity_detail_context_domains(grounded_turn)
+	if "product" not in context_domains and "inventory" not in context_domains:
+		return False
+	requested_dimensions = {
+		str(value or "").strip()
+		for value in detect_canonical_keys(
+			message,
+			capability_id="stock_read",
+			dimension_or_metric="dimension",
+		)
+		if str(value or "").strip()
+	}
+	requested_metrics = {
+		str(value or "").strip()
+		for value in detect_canonical_keys(
+			message,
+			capability_id="stock_read",
+			dimension_or_metric="metric",
+		)
+		if str(value or "").strip()
+	}
+	requested_inventory_concepts = {
+		normalize_entity_grain_alias(value)
+		for value in ontology_detect_concepts(message, include_extended=False)
+		if normalize_entity_grain_alias(value) in {"inventory", "item", "product"}
+	}
+	return bool(
+		"warehouse" in requested_dimensions
+		or requested_metrics.intersection({"quantity", "balance_qty", "balance_value"})
+		or "inventory" in requested_inventory_concepts
+	)
+
+
+def _entity_navigation_breakout_signal(
+	message: str,
+	*,
+	artifact_signal: ArtifactContextSignal,
+	grounded_turn: Dict[str, object] | None,
+) -> bool:
+	if _message_has_grounded_context_anchor(message):
+		return False
+	if _item_stock_followup_signal(
+		message,
+		artifact_signal=artifact_signal,
+		grounded_turn=grounded_turn,
+	):
+		return False
+	lookup_mode = str(infer_lookup_mode_from_message(message) or "").strip()
+	if lookup_mode not in {"directory_list", "candidate_resolution", "profile_target"}:
+		return False
+	requested_entity_grain = normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
+	message_domains = detected_message_entity_domains(message)
+	family_id = str(artifact_signal.family_id or "").strip()
+	source_entity_grain = normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
+	if not is_entity_detail_context_family(family_id, grounded_turn) and not is_master_data_surface_family(family_id):
+		return bool(requested_entity_grain or message_domains)
+	if (
+		is_master_data_surface_family(family_id)
+		and requested_entity_grain
+		and source_entity_grain
+		and requested_entity_grain == source_entity_grain
+	):
+		return False
+	if requested_entity_grain:
+		return True
+	if is_master_data_surface_family(family_id) and source_entity_grain == "item" and "item" in message_domains:
+		return False
+	if "item" in message_domains:
+		return True
+	context_domains = entity_detail_context_domains(grounded_turn)
+	return bool(message_domains and message_domains != context_domains)
+
+
+def _same_grain_master_data_followup_signal(
+	message: str,
+	*,
+	artifact_signal: ArtifactContextSignal,
+) -> bool:
+	family_id = str(artifact_signal.family_id or "").strip()
+	if not is_master_data_surface_family(family_id):
+		return False
+	source_entity_grain = normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
+	if not source_entity_grain:
+		return False
+	requested_entity_grain = normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
+	return bool(requested_entity_grain and requested_entity_grain == source_entity_grain)
+
+
+def _degraded_message_fallback_concepts(message_concepts: Set[str]) -> Set[str]:
+	out: Set[str] = set()
+	for value in (message_concepts or set()):
+		clean = str(value or "").strip()
+		if not clean:
+			continue
+		if clean in _PRIMARY_FRESH_QUERY_FALLBACK_CONCEPTS:
+			out.add(clean)
+			continue
+		alias = str(_PRIMARY_FRESH_QUERY_FALLBACK_ALIASES.get(clean) or "").strip()
+		if alias:
+			out.add(alias)
+	return out
+
+
+def _semantic_reason_indicates_creative_non_business_request(semantic_intent: Any) -> bool:
+	if semantic_intent is None:
+		return False
+	requested_modes = {
+		str(mode or "").strip()
+		for mode in (getattr(semantic_intent, "requested_modes", []) or [])
+		if str(mode or "").strip()
+	}
+	if not requested_modes or requested_modes.difference({"presentation_transform", "table_presentation", "bullet_presentation"}):
+		return False
+	target_capability_id = str(getattr(semantic_intent, "target_capability_id", "") or "").strip()
+	requested_time_scope = str(getattr(semantic_intent, "requested_time_scope", "") or "").strip()
+	requested_columns = [str(value or "").strip() for value in (getattr(semantic_intent, "requested_columns", []) or []) if str(value or "").strip()]
+	if target_capability_id or requested_time_scope or requested_columns:
+		return False
+	reason = _normalize_text(str(getattr(semantic_intent, "reason", "") or ""))
+	return "creative" in reason
+
+
+def _reasoning_semantic_result_indicates_creative_non_business_request(reasoning_semantic_result: Any) -> bool:
+	if reasoning_semantic_result is None:
+		return False
+	if str(getattr(reasoning_semantic_result, "status", "") or "").strip() != "accepted":
+		return False
+	intent = getattr(reasoning_semantic_result, "intent", None)
+	if intent is None:
+		return False
+	reason = _normalize_text(str(getattr(intent, "reason", "") or ""))
+	return "creative" in reason
+
+
+def build_followup_boundary_contract_from_context(
+	message: str,
+	*,
+	request_id: str = "",
+	session_id: str = "",
+	language: str = "en",
+	grounded_turn: Dict[str, Any] | None = None,
+	semantic_intent: Any | None = None,
+	reasoning_semantic_result: Any | None = None,
+) -> FollowUpBoundaryContract:
 	artifact_signal = _artifact_context_signal(grounded_turn)
-	if not artifact_signal.has_grounded_turn:
-		return False
-	parsed = detect_followup_intent(message, language=language, grounded_turn=grounded_turn)
-	modes = set(parsed.requested_modes)
-	if not modes:
-		return False
-	if not modes.issubset({"presentation_transform", "table_presentation", "bullet_presentation", "sort_or_limit", "metric_refinement", "column_refinement"}):
-		return False
-	if "sort_or_limit" in modes and not (parsed.target_limit or parsed.sort_direction):
-		return False
-	if "column_refinement" in modes and not list(parsed.requested_columns or []):
-		return False
-	if "time_scope_restatement" in modes:
-		return False
-	return True
+	if is_entity_detail_context_family(artifact_signal.family_id, grounded_turn):
+		artifact_signal = ArtifactContextSignal(
+			has_grounded_turn=artifact_signal.has_grounded_turn,
+			report_name=artifact_signal.report_name,
+			family_id=artifact_signal.family_id,
+			context_concepts=set(artifact_signal.context_concepts).union(entity_detail_context_domains(grounded_turn)),
+			available_dimensions=dict(artifact_signal.available_dimensions),
+			available_metrics=dict(artifact_signal.available_metrics),
+			available_metric_keys=set(artifact_signal.available_metric_keys),
+		)
+	grounded_followup_supported = _grounded_followup_supported_for_artifact(
+		artifact_signal,
+		grounded_turn,
+	)
+	semantic_requested_domains = _semantic_requested_domains(semantic_intent, artifact_signal)
+	semantic_payload_has_structured_signals = False
+	contradictory_presentation_hint = False
+	semantic_requested_mode_set: Set[str] = set()
+	if semantic_intent is not None:
+		semantic_requested_mode_set = {
+			str(mode or "").strip()
+			for mode in (getattr(semantic_intent, "requested_modes", []) or [])
+			if str(mode or "").strip()
+		}
+		target_capability_id = str(getattr(semantic_intent, "target_capability_id", "") or "").strip()
+		target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip()
+		target_limit = int(getattr(semantic_intent, "target_limit", 0) or 0)
+		sort_direction = str(getattr(semantic_intent, "sort_direction", "") or "").strip()
+		target_metric = str(getattr(semantic_intent, "target_metric", "") or "").strip()
+		requested_columns = list(getattr(semantic_intent, "requested_columns", []) or [])
+		requested_time_scope = str(getattr(semantic_intent, "requested_time_scope", "") or "").strip()
+		non_presentation_requested_modes = [
+			mode
+			for mode in semantic_requested_mode_set
+			if mode not in {"presentation_transform", "table_presentation", "bullet_presentation"}
+		]
+		query_like_payload_fields_present = bool(
+			target_capability_id
+			or requested_time_scope
+			or target_metric
+			or requested_columns
+			or target_dimension
+			or target_limit
+			or sort_direction
+		)
+		semantic_payload_has_structured_signals = bool(
+			target_capability_id
+			or requested_time_scope
+			or target_metric
+			or requested_columns
+			or (target_dimension and semantic_requested_mode_set.intersection({"dimension_breakdown", "grouping_change"}))
+			or ((target_limit or sort_direction) and "sort_or_limit" in semantic_requested_mode_set)
+		)
+		contradictory_presentation_hint = bool(semantic_requested_mode_set) and not non_presentation_requested_modes and query_like_payload_fields_present
+	message_concepts: Set[str] = set()
+	degraded_message_fallback_allowed = False
+	degraded_message_fallback_used = False
+	known_uncovered_decision = None
+	requested_domain_source = "semantic_runtime" if semantic_intent is not None else "none"
+	semantic_payload_blank_for_domain_fallback = bool(
+		semantic_intent is not None
+		and not semantic_payload_has_structured_signals
+		and not semantic_requested_mode_set
+	)
+	semantic_payload_allows_degraded_domain_fallback = bool(
+		semantic_intent is None
+		or (
+			semantic_payload_blank_for_domain_fallback
+			and (not artifact_signal.has_grounded_turn or not grounded_followup_supported)
+		)
+		or contradictory_presentation_hint
+	)
+	known_uncovered_decision = build_known_unsupported_scope_decision_input(
+		raw_message=message,
+		context_domains=sorted(artifact_signal.context_concepts),
+	)
+	if known_uncovered_decision is not None:
+		requested_domain_source = "known_uncovered_scope"
+	if not semantic_requested_domains and known_uncovered_decision is None:
+		if semantic_payload_allows_degraded_domain_fallback:
+			signal = _message_signal(message, language=language)
+			candidate_message_concepts = _degraded_message_fallback_concepts(set(signal.concepts))
+			degraded_message_fallback_allowed = _allow_message_domain_fallback(
+				candidate_message_concepts,
+				artifact_signal,
+				grounded_followup_supported=grounded_followup_supported,
+				semantic_payload_blank_for_domain_fallback=semantic_payload_blank_for_domain_fallback,
+				contradictory_presentation_hint=contradictory_presentation_hint,
+			)
+			if degraded_message_fallback_allowed:
+				message_concepts = candidate_message_concepts
+				degraded_message_fallback_used = bool(message_concepts)
+				requested_domain_source = "message_fallback" if semantic_intent is None else "degraded_semantic_message_fallback"
+			elif candidate_message_concepts:
+				requested_domain_source = "message_fallback_denied"
+	known_uncovered_domains = [
+		str(value or "").strip()
+		for value in (getattr(known_uncovered_decision, "requested_domains", []) or [])
+		if str(value or "").strip()
+	]
+	requested_domains = set(
+		known_uncovered_domains
+		or semantic_requested_domains
+		or (
+			message_concepts
+		)
+	)
+	business_signals = bool(requested_domains)
+	has_semantic_intent = semantic_intent is not None
+	semantic_grounded_followup = False
+	self_contained = False
+	contradictory_presentation_payload = False
+	out_of_scope_signal = bool(getattr(known_uncovered_decision, "out_of_scope", False))
+	primary_domain = str(getattr(known_uncovered_decision, "primary_domain", "") or "").strip()
+	structured_followup_modes: List[str] = []
+	structured_followup_signals_present = False
+	target_dimension = ""
+	target_metric = ""
+	if has_semantic_intent:
+		structured_followup_modes = [
+			str(mode or "").strip()
+			for mode in (getattr(semantic_intent, "requested_modes", []) or [])
+			if str(mode or "").strip()
+		]
+		requested_mode_set = set(structured_followup_modes)
+		non_presentation_requested_modes = [
+			mode
+			for mode in structured_followup_modes
+			if mode not in {"presentation_transform", "table_presentation", "bullet_presentation"}
+		]
+		target_capability_id = str(getattr(semantic_intent, "target_capability_id", "") or "").strip()
+		target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip()
+		target_limit = int(getattr(semantic_intent, "target_limit", 0) or 0)
+		sort_direction = str(getattr(semantic_intent, "sort_direction", "") or "").strip()
+		target_metric = str(getattr(semantic_intent, "target_metric", "") or "").strip()
+		requested_columns = list(getattr(semantic_intent, "requested_columns", []) or [])
+		requested_time_scope = str(getattr(semantic_intent, "requested_time_scope", "") or "").strip()
+		query_like_payload_fields_present = bool(
+			target_capability_id
+			or requested_time_scope
+			or target_metric
+			or requested_columns
+			or target_dimension
+			or target_limit
+			or sort_direction
+		)
+		structured_followup_signals_present = bool(
+			target_capability_id
+			or requested_time_scope
+			or target_metric
+			or requested_columns
+			or (target_dimension and requested_mode_set.intersection({"dimension_breakdown", "grouping_change"}))
+			or ((target_limit or sort_direction) and "sort_or_limit" in requested_mode_set)
+		)
+		contradictory_presentation_payload = bool(structured_followup_modes) and not non_presentation_requested_modes and query_like_payload_fields_present
+		self_contained = bool(getattr(semantic_intent, "self_contained", False)) and bool(
+			requested_domains
+			or target_capability_id
+			or requested_time_scope
+			or target_metric
+			or requested_columns
+			or (target_dimension and requested_mode_set.intersection({"dimension_breakdown", "grouping_change"}))
+		)
+		creative_non_business_signal = _semantic_reason_indicates_creative_non_business_request(semantic_intent)
+		semantic_grounded_followup = bool(
+			non_presentation_requested_modes
+			or structured_followup_signals_present
+		) and not self_contained and not contradictory_presentation_payload and not creative_non_business_signal
+	else:
+		creative_non_business_signal = False
+	if not creative_non_business_signal:
+		creative_non_business_signal = _reasoning_semantic_result_indicates_creative_non_business_request(
+			reasoning_semantic_result
+		)
+	top_level_family_request_breakout = _top_level_family_request_breakout_signal(
+		message,
+		language=language,
+		artifact_signal=artifact_signal,
+		structured_followup_signals_present=structured_followup_signals_present,
+		contradictory_presentation_payload=contradictory_presentation_payload,
+	)
+	if not semantic_grounded_followup and not self_contained:
+		if not artifact_signal.has_grounded_turn and business_signals:
+			self_contained = True
+		elif artifact_signal.has_grounded_turn and business_signals and not grounded_followup_supported:
+			self_contained = True
+		elif (
+			artifact_signal.has_grounded_turn
+			and top_level_family_request_breakout
+			and not _same_grain_master_data_followup_signal(
+				message,
+				artifact_signal=artifact_signal,
+			)
+		):
+			self_contained = True
+
+	context_domains = set(artifact_signal.context_concepts)
+	affinity = _domain_affinity(requested_domains, context_domains)
+	source_listing_view = ""
+	requested_listing_view = ""
+	source_entity_grain = ""
+	requested_entity_grain = normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
+	if artifact_signal.family_id == "transaction_listing":
+		source_listing_view = listing_view_for_report_name(artifact_signal.report_name)
+	elif is_master_data_surface_family(artifact_signal.family_id):
+		source_entity_grain = normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
+	requested_listing_view = _message_slot_value("listing_view", message)
+	source_ranking_subject_alias = _artifact_ranking_subject_alias(grounded_turn, artifact_signal)
+	requested_ranking_subject_alias = _requested_ranking_subject_alias(message, semantic_intent)
+	ranking_subject_switch = bool(
+		artifact_signal.family_id == "ranking_analytics"
+		and source_ranking_subject_alias
+		and requested_ranking_subject_alias
+		and requested_ranking_subject_alias != source_ranking_subject_alias
+	)
+	ranking_projection_safe = bool(
+		contradictory_presentation_payload
+		and artifact_signal.family_id == "ranking_analytics"
+		and target_dimension
+		and _normalize_text(target_dimension) in artifact_signal.available_dimensions
+		and (
+			not target_metric
+			or _normalize_text(target_metric) in artifact_signal.available_metrics
+			or bool(
+				set(detect_canonical_keys(target_metric, dimension_or_metric="metric")).intersection(
+					artifact_signal.available_metric_keys
+				)
+			)
+		)
+	)
+	decision = "stay_grounded"
+	reason = ""
+	if out_of_scope_signal:
+		decision = "force_fresh_query"
+		reason = str(getattr(known_uncovered_decision, "reason", "") or "").strip()
+	elif creative_non_business_signal:
+		out_of_scope_signal = True
+		decision = "force_fresh_query"
+		reason = "The request asks for creative content generation rather than a governed ERP/business follow-up."
+	elif (
+		requested_listing_view
+		and (
+			not source_listing_view
+			or requested_listing_view != source_listing_view
+		)
+	):
+		decision = "force_fresh_query"
+		if source_listing_view:
+			reason = "The request switches to a different governed document-listing target and should not inherit the prior transaction listing."
+		else:
+			reason = "The request switches to a different document list and should not inherit the prior artifact."
+	elif (
+		is_master_data_surface_family(artifact_signal.family_id)
+		and source_entity_grain
+		and requested_entity_grain
+		and requested_entity_grain != source_entity_grain
+	):
+		decision = "force_fresh_query"
+		reason = "The request switches to a different entity list and should not inherit the prior master-data artifact."
+	elif (
+		artifact_signal.family_id == "transaction_listing"
+		and source_listing_view
+		and requested_listing_view
+		and requested_listing_view != source_listing_view
+	):
+		decision = "force_fresh_query"
+		reason = "The request switches to a different governed document-listing target and should not inherit the prior transaction listing."
+	elif ranking_subject_switch:
+		decision = "force_fresh_query"
+		reason = (
+			f"The request switches the governed ranking subject from {source_ranking_subject_alias} "
+			f"to {requested_ranking_subject_alias} and should not inherit the prior ranked artifact."
+		)
+	elif _entity_navigation_breakout_signal(
+		message,
+		artifact_signal=artifact_signal,
+		grounded_turn=grounded_turn,
+	):
+		decision = "force_fresh_query"
+		reason = (
+			"The request is a self-contained entity-navigation query and should not inherit the current artifact."
+		)
+	elif (
+		not semantic_grounded_followup
+		and not self_contained
+		and requested_domains
+		and context_domains
+		and requested_domains.isdisjoint(context_domains)
+	):
+		decision = "force_fresh_query"
+		reason = "The request shifts to a different governed business area and should not inherit the prior artifact."
+	elif (
+		contradictory_presentation_payload
+		and not ranking_projection_safe
+		and (business_signals or has_semantic_intent)
+	):
+		decision = "force_fresh_query"
+		reason = "The presentation-only semantic payload carries conflicting query fields and must break out to a fresh governed query."
+	elif self_contained:
+		decision = "force_fresh_query"
+		reason = "The request is self-contained and should be treated as a fresh governed ERP question."
+	elif not semantic_grounded_followup and not business_signals:
+		decision = "fail_closed_to_reasoning"
+	else:
+		decision = "stay_grounded"
+
+	return build_followup_boundary_contract(
+		request_id=request_id,
+		session_id=session_id,
+		source_family_id=artifact_signal.family_id,
+		source_report_name=artifact_signal.report_name,
+		grounded_context_domains=sorted(context_domains),
+		requested_domains=sorted(requested_domains),
+		structured_followup_modes=structured_followup_modes,
+		structured_business_signals_present=structured_followup_signals_present,
+		grounded_followup_supported=grounded_followup_supported,
+		self_contained_signal=self_contained,
+		contradictory_payload=contradictory_presentation_payload,
+		degraded_message_fallback_allowed=degraded_message_fallback_allowed,
+		degraded_message_fallback_used=degraded_message_fallback_used,
+		out_of_scope_signal=out_of_scope_signal,
+		primary_domain=primary_domain,
+		domain_affinity=affinity,
+		recommended_boundary_decision=decision,
+		decision_reason=reason,
+		resolution_source={
+			"requested_domains": requested_domain_source,
+			"context_domains": "grounded_metadata",
+			"boundary_decision": "governed_boundary_rules",
+		},
+	)
+
+
+def evaluate_followup_boundary_contract(
+	boundary_contract: FollowUpBoundaryContract,
+) -> ScopeDecisionInputContract:
+	requested_domains = [
+		str(value or "").strip()
+		for value in (getattr(boundary_contract, "requested_domains", []) or [])
+		if str(value or "").strip()
+	]
+	context_domains = [
+		str(value or "").strip()
+		for value in (getattr(boundary_contract, "grounded_context_domains", []) or [])
+		if str(value or "").strip()
+	]
+	primary_domain = str(getattr(boundary_contract, "primary_domain", "") or "").strip()
+	decision = str(getattr(boundary_contract, "recommended_boundary_decision", "") or "").strip()
+	reason = str(getattr(boundary_contract, "decision_reason", "") or "").strip()
+	if bool(getattr(boundary_contract, "out_of_scope_signal", False)):
+		return build_scope_decision_input(
+			force_new_query=True,
+			out_of_scope=True,
+			reason=reason,
+			requested_domains=requested_domains,
+			context_domains=context_domains,
+			primary_domain=primary_domain,
+		)
+	if decision == "force_fresh_query":
+		return build_scope_decision_input(
+			force_new_query=True,
+			out_of_scope=False,
+			reason=reason,
+			requested_domains=requested_domains,
+			context_domains=context_domains,
+			primary_domain=primary_domain,
+		)
+	return build_scope_decision_input(
+		force_new_query=False,
+		out_of_scope=False,
+		reason="",
+		requested_domains=requested_domains,
+		context_domains=context_domains,
+		primary_domain=primary_domain,
+	)
 
 
 def assess_context_isolation(
@@ -635,75 +1073,14 @@ def assess_context_isolation(
 	*,
 	language: str = "en",
 	grounded_turn: Dict[str, Any] | None = None,
+	semantic_intent: Any | None = None,
+	reasoning_semantic_result: Any | None = None,
 ) -> ScopeDecisionInputContract:
-	artifact_signal = _artifact_context_signal(grounded_turn)
-	signal = _message_signal(message, language=language, grounded_turn=grounded_turn)
-	intent = detect_followup_intent(signal.text, language=language, grounded_turn=grounded_turn)
-	requested_modes = {str(mode or "").strip() for mode in (intent.requested_modes or []) if str(mode or "").strip()}
-	local_only_modes = {
-		"presentation_transform",
-		"table_presentation",
-		"bullet_presentation",
-		"sort_or_limit",
-		"metric_refinement",
-		"column_refinement",
-		"time_scope_restatement",
-	}
-	message_concepts = set(signal.concepts)
-	alias_hits = set(signal.dimension_keys) | set(signal.metric_keys)
-	supported_concepts = set(supported_ontology_concepts())
-	out_of_scope_concepts = sorted(concept for concept in message_concepts if concept not in supported_concepts)
-	if out_of_scope_concepts and not (message_concepts & supported_concepts or alias_hits):
-		primary_domain = "hr" if "employee" in out_of_scope_concepts else ""
-		return build_scope_decision_input(
-			force_new_query=True,
-			out_of_scope=True,
-			reason="The request targets a business domain outside the current governed Qwen ERP scope.",
-			requested_domains=sorted(message_concepts),
-			context_domains=sorted(artifact_signal.context_concepts),
-			primary_domain=primary_domain,
-		)
-
-	self_contained = is_self_contained_business_request(
+	boundary_contract = build_followup_boundary_contract_from_context(
 		message,
 		language=language,
-		intent=intent,
 		grounded_turn=grounded_turn,
+		semantic_intent=semantic_intent,
+		reasoning_semantic_result=reasoning_semantic_result,
 	)
-	if (
-		message_concepts
-		and artifact_signal.context_concepts
-		and message_concepts.isdisjoint(artifact_signal.context_concepts)
-		and "dimension_breakdown" not in requested_modes
-	):
-		return build_scope_decision_input(
-			force_new_query=True,
-			out_of_scope=False,
-			reason="The request shifts to a different governed business area and should not inherit the prior artifact.",
-			requested_domains=sorted(message_concepts),
-			context_domains=sorted(artifact_signal.context_concepts),
-		)
-	if requested_modes and requested_modes.issubset(local_only_modes) and not self_contained:
-		return build_scope_decision_input(
-			force_new_query=False,
-			out_of_scope=False,
-			reason="",
-			requested_domains=sorted(message_concepts),
-			context_domains=sorted(artifact_signal.context_concepts),
-		)
-	if self_contained:
-		return build_scope_decision_input(
-			force_new_query=True,
-			out_of_scope=False,
-			reason="The request is self-contained and should be treated as a fresh governed ERP question.",
-			requested_domains=sorted(message_concepts),
-			context_domains=sorted(artifact_signal.context_concepts),
-		)
-
-	return build_scope_decision_input(
-		force_new_query=False,
-		out_of_scope=False,
-		reason="",
-		requested_domains=sorted(message_concepts),
-		context_domains=sorted(artifact_signal.context_concepts),
-	)
+	return evaluate_followup_boundary_contract(boundary_contract)

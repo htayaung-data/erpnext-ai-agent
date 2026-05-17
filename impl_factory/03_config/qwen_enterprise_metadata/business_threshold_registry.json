@@ -1,0 +1,125 @@
+{
+  "contract_version": "1.0",
+  "status": "phase2_threshold_semantics_active",
+  "description": "Governed threshold registry for approved risk bands, severity semantics, and activation state.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_threshold_bases": [
+    "overdue_amount",
+    "overdue_ratio",
+    "outstanding_amount",
+    "credit_utilization_ratio",
+    "collection_ratio",
+    "days_past_due"
+  ],
+  "allowed_band_directions": [
+    "higher_is_worse",
+    "lower_is_worse"
+  ],
+  "threshold_sets": [
+    {
+      "threshold_id": "customer_credit_utilization_policy_bands",
+      "label": "Customer Credit Utilization Policy Bands",
+      "formula_id": "credit_utilization_customer_as_of_date_formula",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "threshold_basis": "credit_utilization_ratio",
+      "band_direction": "higher_is_worse",
+      "effective_from": "2026-04-09",
+      "activation_state": "active",
+      "blocked_reason": "",
+      "business_rule_id": "credit_utilization_primary_basis_outstanding_vs_limit",
+      "bands": [
+        {
+          "label": "within_limit",
+          "upper_bound_exclusive": 1.0,
+          "meaning": "Outstanding remains below the configured credit limit."
+        },
+        {
+          "label": "limit_exceeded",
+          "lower_bound_inclusive": 1.0,
+          "meaning": "Outstanding has met or exceeded the configured credit limit."
+        }
+      ]
+    },
+    {
+      "threshold_id": "customer_overdue_ratio_severity_bands",
+      "formula_id": "customer_overdue_ratio_as_of_date_formula",
+      "label": "Customer Overdue Ratio Severity Bands",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "threshold_basis": "overdue_ratio",
+      "band_direction": "higher_is_worse",
+      "effective_from": "2026-04-09",
+      "activation_state": "blocked_missing_policy",
+      "blocked_reason": "customer overdue severity labels are not yet approved for user-facing runtime use.",
+      "business_rule_id": "overdue_severity_labels_blocked_until_policy_approved",
+      "bands": [
+        {
+          "label": "stable",
+          "upper_bound_exclusive": 0.1,
+          "meaning": "Only a small share of outstanding is overdue."
+        },
+        {
+          "label": "watch",
+          "lower_bound_inclusive": 0.1,
+          "upper_bound_exclusive": 0.3,
+          "meaning": "Overdue share is rising and should be watched."
+        },
+        {
+          "label": "elevated",
+          "lower_bound_inclusive": 0.3,
+          "upper_bound_exclusive": 0.6,
+          "meaning": "A material share of outstanding is overdue."
+        },
+        {
+          "label": "critical",
+          "lower_bound_inclusive": 0.6,
+          "meaning": "Most outstanding is overdue."
+        }
+      ]
+    },
+    {
+      "threshold_id": "collection_ratio_health_bands",
+      "formula_id": "collection_ratio_sales_invoice_period_formula",
+      "label": "Collection Ratio Health Bands",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "threshold_basis": "collection_ratio",
+      "band_direction": "lower_is_worse",
+      "effective_from": "2026-04-09",
+      "activation_state": "blocked_missing_policy",
+      "blocked_reason": "collection-ratio health labels are not yet approved for user-facing runtime use.",
+      "business_rule_id": "collection_ratio_threshold_labels_blocked_until_policy_approved",
+      "bands": [
+        {
+          "label": "healthy",
+          "lower_bound_inclusive": 0.9,
+          "meaning": "Most invoiced value is collected in the governed period."
+        },
+        {
+          "label": "watch",
+          "lower_bound_inclusive": 0.75,
+          "upper_bound_exclusive": 0.9,
+          "meaning": "Collection performance is below target and should be monitored."
+        },
+        {
+          "label": "critical",
+          "upper_bound_exclusive": 0.75,
+          "meaning": "Collection performance is materially below target."
+        }
+      ]
+    }
+  ]
+}

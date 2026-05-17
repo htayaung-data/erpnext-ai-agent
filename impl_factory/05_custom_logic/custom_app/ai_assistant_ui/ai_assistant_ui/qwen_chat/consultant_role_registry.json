@@ -1,0 +1,26 @@
+{
+  "type": "qwen_consultant_role_registry",
+  "contract_version": "1.0",
+  "default_role": "business_consultant",
+  "family_roles": {
+    "financial_statement": "controller",
+    "accounts_receivable": "collector",
+    "accounts_payable": "buyer",
+    "sales": "sales_manager",
+    "sales_order": "sales_manager",
+    "sales_invoice": "sales_manager",
+    "inventory": "inventory_manager",
+    "stock": "inventory_manager",
+    "item": "inventory_manager"
+  },
+  "capability_roles": {
+    "financial_statement_read": "controller",
+    "accounts_receivable_read": "collector",
+    "accounts_payable_read": "buyer"
+  },
+  "semantic_tag_roles": {
+    "sales": "sales_manager",
+    "inventory": "inventory_manager",
+    "stock": "inventory_manager"
+  }
+}

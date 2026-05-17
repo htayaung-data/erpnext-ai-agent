@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import re
 import time
 from typing import Any, Dict
 
-import frappe
-
-from ai_assistant_ui.qwen_chat.fac_client import fac_generate_report
 from ai_assistant_ui.qwen_chat.metadata import get_report_spec
+
+try:
+	from ai_assistant_ui.qwen_chat.fac_client import fac_generate_report
+except Exception:  # pragma: no cover
+	fac_generate_report = None
+
+try:
+	import frappe  # type: ignore
+except Exception:  # pragma: no cover
+	frappe = None
 
 
 def _normalize_output_obj(raw_result: Any) -> Dict[str, Any]:
@@ -38,29 +44,23 @@ def _result_row_count(output_obj: Dict[str, Any]) -> int:
 	return -1
 
 
-def _normalized_text(value: str) -> str:
-	return " ".join(str(value or "").strip().lower().split())
-
-
-def _requested_limit(message: str, default_limit: int) -> int:
-	text = _normalized_text(message)
-	if text:
-		match = re.search(r"\b(?:last|latest|recent|top)\s+(\d{1,2})\b", text)
-		if match:
-			try:
-				return max(1, min(100, int(match.group(1))))
-			except Exception:
-				pass
+def _default_limit(default_limit: int) -> int:
 	return max(1, min(100, int(default_limit or 10)))
 
 
-def _direct_query_columns(fields: list[str]) -> list[dict[str, Any]]:
+def _direct_query_columns(fields: list[str], *, doctype: str = "") -> list[dict[str, Any]]:
+	document_label = str(doctype or "").strip() or "Document"
 	label_map = {
-		"name": "Invoice",
+		"name": document_label,
 		"posting_date": "Posting Date",
+		"transaction_date": "Transaction Date",
+		"delivery_date": "Delivery Date",
 		"customer": "Customer",
 		"grand_total": "Grand Total",
 		"outstanding_amount": "Outstanding Amount",
+		"total_qty": "Quantity",
+		"per_delivered": "Delivered %",
+		"per_billed": "Billed %",
 		"status": "Status",
 		"docstatus": "Docstatus",
 	}
@@ -92,12 +92,45 @@ def _json_safe_row(row: Dict[str, Any]) -> Dict[str, Any]:
 	}
 
 
+def _direct_query_filterable_fields(report_spec: Dict[str, Any]) -> set[str]:
+	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	fields = {
+		str(value or "").strip()
+		for value in (query_spec.get("fields") or [])
+		if str(value or "").strip()
+	}
+	defaultable_filters = {
+		str(item.get("fieldname") or "").strip()
+		for item in (report_spec.get("defaultable_filters") or [])
+		if isinstance(item, dict) and str(item.get("fieldname") or "").strip()
+	}
+	required_filters = {
+		str(value or "").strip()
+		for value in (report_spec.get("required_filters") or [])
+		if str(value or "").strip()
+	}
+	return fields | defaultable_filters | required_filters
+
+
+def _normalize_direct_query_filter_value(value: Any) -> Any:
+	if value is None:
+		return None
+	if isinstance(value, str):
+		clean = value.strip()
+		return clean or None
+	if isinstance(value, (bool, int, float)):
+		return value
+	if isinstance(value, (dt.date, dt.datetime, dt.time)):
+		return value.isoformat()
+	return None
+
+
 def _execute_direct_query(
 	*,
 	report_name: str,
 	report_spec: Dict[str, Any],
 	filters: Dict[str, Any],
-	request_message: str,
+	target_limit: int = 0,
 ) -> Dict[str, Any]:
 	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
 	doctype = str(query_spec.get("doctype") or "").strip()
@@ -117,11 +150,12 @@ def _execute_direct_query(
 	date_field = str(query_spec.get("date_field") or "").strip()
 	order_by = str(query_spec.get("order_by") or "").strip() or "modified desc"
 	default_limit = int(query_spec.get("default_limit") or 10)
-	limit = _requested_limit(request_message, default_limit)
+	limit = _default_limit(target_limit or default_limit)
 	applied_filters: Dict[str, Any] = {}
 	fixed_filters = query_spec.get("fixed_filters") if isinstance(query_spec.get("fixed_filters"), dict) else {}
 	applied_filters.update({str(k): v for k, v in fixed_filters.items() if str(k or "").strip()})
-	if str(filters.get("company") or "").strip():
+	allowed_filter_fields = _direct_query_filterable_fields(report_spec)
+	if "company" in allowed_filter_fields and str(filters.get("company") or "").strip():
 		applied_filters["company"] = str(filters.get("company") or "").strip()
 	from_date = str(filters.get("from_date") or "").strip()
 	to_date = str(filters.get("to_date") or filters.get("report_date") or "").strip()
@@ -129,6 +163,30 @@ def _execute_direct_query(
 		applied_filters[date_field] = ["between", [from_date, to_date]]
 	elif date_field and to_date:
 		applied_filters[date_field] = ["<=", to_date]
+	reserved_filter_keys = {
+		"from_date",
+		"to_date",
+		"report_date",
+		"period_start_date",
+		"period_end_date",
+		"limit",
+	}
+	fixed_filter_keys = {str(key or "").strip() for key in fixed_filters}
+	for raw_key, raw_value in (filters or {}).items():
+		key = str(raw_key or "").strip()
+		if (
+			not key
+			or key in reserved_filter_keys
+			or key == date_field
+			or key in fixed_filter_keys
+			or key not in allowed_filter_fields
+			or key in applied_filters
+		):
+			continue
+		value = _normalize_direct_query_filter_value(raw_value)
+		if value is None:
+			continue
+		applied_filters[key] = value
 
 	started = time.perf_counter()
 	try:
@@ -145,7 +203,7 @@ def _execute_direct_query(
 			"result": {
 				"success": True,
 				"report_name": report_name,
-				"columns": _direct_query_columns(fields),
+				"columns": _direct_query_columns(fields, doctype=doctype),
 				"data": [_json_safe_row(row) for row in rows if isinstance(row, dict)],
 				"message": "",
 				"filters_applied": {
@@ -174,7 +232,7 @@ def _execute_once(
 	report_name: str,
 	filters: Dict[str, Any],
 	user: str,
-	request_message: str = "",
+	target_limit: int = 0,
 ) -> Dict[str, Any]:
 	started = time.perf_counter()
 	try:
@@ -185,9 +243,11 @@ def _execute_once(
 				report_name=report_name,
 				report_spec=report_spec,
 				filters=filters,
-				request_message=request_message,
+				target_limit=target_limit,
 			)
 		else:
+			if fac_generate_report is None:
+				raise RuntimeError("FAC report client is unavailable in this runtime.")
 			raw_result = fac_generate_report(
 				report_name,
 				filters=filters,
@@ -226,7 +286,7 @@ def execute_governed_report(
 	filters: Dict[str, Any] | None,
 	user: str,
 	mode: str = "compiled_read_query",
-	request_message: str = "",
+	target_limit: int = 0,
 ) -> Dict[str, Any]:
 	report = str(report_name or "").strip()
 	clean_filters = dict(filters or {})
@@ -246,7 +306,7 @@ def execute_governed_report(
 			report_name=report,
 			filters=clean_filters,
 			user=user,
-			request_message=request_message,
+			target_limit=target_limit,
 		)
 		attempts.append(
 			{

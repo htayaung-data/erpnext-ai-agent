@@ -422,12 +422,17 @@ def _artifact_narrative_messages(request: ChatRequest) -> List[Dict[str, Any]]:
 		"support_block_markdown": artifact_context.get("support_block_markdown") if isinstance(artifact_context.get("support_block_markdown"), list) else [],
 		"source_reports": artifact_context.get("source_reports") if isinstance(artifact_context.get("source_reports"), list) else [],
 	}
-	return [
+	messages: List[Dict[str, Any]] = []
+	system_prompt = str(artifact_context.get("system_prompt") or "").strip()
+	if system_prompt:
+		messages.append({"role": "system", "content": system_prompt})
+	messages.append(
 		{
 			"role": "user",
 			"content": json.dumps(payload, ensure_ascii=False),
 		}
-	]
+	)
+	return messages
 
 
 _TOOL_CALL_ERROR_PREFIX = "An error occurred when calling tool"

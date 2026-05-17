@@ -1,0 +1,829 @@
+{
+  "contract_version": "1.0",
+  "status": "phase3_3_entity_period_execution_contracts_active",
+  "description": "Governed KPI execution registry for approved runtime execution shapes, source authority, and typed KPI value artifact ownership.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_execution_shapes": [
+    "company_period_scalar",
+    "entity_period_ranking",
+    "customer_period_ranking",
+    "customer_as_of_scalar",
+    "customer_as_of_ranking"
+  ],
+  "allowed_scope_types": [
+    "company",
+    "customer",
+    "customer_set",
+    "entity_set"
+  ],
+  "allowed_time_scope_types": [
+    "period_required",
+    "as_of_date_required"
+  ],
+  "allowed_source_modes": [
+    "single_report",
+    "multi_report_join"
+  ],
+  "allowed_value_unit_types": [
+    "currency",
+    "ratio",
+    "days",
+    "count"
+  ],
+  "executions": [
+    {
+      "execution_id": "average_order_value_sales_order_period_company_scalar_execution",
+      "definition_id": "average_order_value_sales_order_period",
+      "formula_id": "average_order_value_sales_order_period_formula",
+      "label": "Average Order Value by Sales Order Company Period Scalar Execution",
+      "execution_shape": "company_period_scalar",
+      "scope_type": "company",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "company"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "value_metric": "average_order_value",
+        "numerator_metric": "Grand Total",
+        "denominator_metric": "submitted_sales_order_count"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "average_order_value_sales_invoice_period_company_scalar_execution",
+      "definition_id": "average_order_value_sales_invoice_period",
+      "formula_id": "average_order_value_sales_invoice_period_formula",
+      "label": "Average Order Value by Sales Invoice Company Period Scalar Execution",
+      "execution_shape": "company_period_scalar",
+      "scope_type": "company",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "company"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "value_metric": "average_order_value",
+        "numerator_metric": "Grand Total",
+        "denominator_metric": "submitted_sales_invoice_count"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "collection_ratio_sales_invoice_period_company_scalar_execution",
+      "definition_id": "collection_ratio_sales_invoice_period",
+      "formula_id": "collection_ratio_sales_invoice_period_formula",
+      "label": "Collection Ratio by Sales Invoice Period Company Scalar Execution",
+      "execution_shape": "company_period_scalar",
+      "scope_type": "company",
+      "time_scope_type": "period_required",
+      "source_mode": "multi_report_join",
+      "source_capabilities": [
+        "sales_read",
+        "collections_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List",
+        "Payment Entry List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "company"
+      ],
+      "value_unit_type": "ratio",
+      "value_metric_mapping": {
+        "value_metric": "collection_ratio",
+        "numerator_metric": "Allocated Customer Receipt Amount",
+        "denominator_metric": "Sales Invoice Grand Total"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_sales_order_revenue_period_ranking_execution",
+      "definition_id": "customer_sales_order_revenue_period",
+      "formula_id": "customer_sales_order_revenue_period_formula",
+      "label": "Customer Sales Order Revenue Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "revenue",
+        "value_metric": "customer_revenue",
+        "sort_metric": "customer_revenue",
+        "numerator_metric": "Grand Total"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_sales_order_quantity_period_ranking_execution",
+      "definition_id": "customer_sales_order_quantity_period",
+      "formula_id": "customer_sales_order_quantity_period_formula",
+      "label": "Customer Sales Order Quantity Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "count",
+      "value_metric_mapping": {
+        "family_metric_id": "quantity",
+        "value_metric": "customer_quantity",
+        "sort_metric": "customer_quantity",
+        "numerator_metric": "Total Quantity"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_average_order_value_sales_order_period_ranking_execution",
+      "definition_id": "customer_average_order_value_sales_order_period",
+      "formula_id": "customer_average_order_value_sales_order_period_formula",
+      "label": "Customer Average Order Value by Sales Order Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "average_order_value",
+        "value_metric": "customer_average_order_value",
+        "sort_metric": "customer_average_order_value",
+        "numerator_metric": "Grand Total",
+        "denominator_metric": "Submitted Sales Order Count"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_sales_invoice_revenue_period_ranking_execution",
+      "definition_id": "customer_sales_invoice_revenue_period",
+      "formula_id": "customer_sales_invoice_revenue_period_formula",
+      "label": "Customer Sales Invoice Revenue Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "revenue",
+        "value_metric": "customer_revenue",
+        "sort_metric": "customer_revenue",
+        "numerator_metric": "Grand Total"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_sales_invoice_quantity_period_ranking_execution",
+      "definition_id": "customer_sales_invoice_quantity_period",
+      "formula_id": "customer_sales_invoice_quantity_period_formula",
+      "label": "Customer Sales Invoice Quantity Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "count",
+      "value_metric_mapping": {
+        "family_metric_id": "quantity",
+        "value_metric": "customer_quantity",
+        "sort_metric": "customer_quantity",
+        "numerator_metric": "Total Quantity"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_average_invoice_value_sales_invoice_period_ranking_execution",
+      "definition_id": "customer_average_invoice_value_sales_invoice_period",
+      "formula_id": "customer_average_invoice_value_sales_invoice_period_formula",
+      "label": "Customer Average Invoice Value by Sales Invoice Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "average_invoice_value",
+        "value_metric": "customer_average_invoice_value",
+        "sort_metric": "customer_average_invoice_value",
+        "numerator_metric": "Grand Total",
+        "denominator_metric": "Submitted Sales Invoice Count"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "item_sales_order_revenue_period_ranking_execution",
+      "definition_id": "item_sales_order_revenue_period",
+      "formula_id": "item_sales_order_revenue_period_formula",
+      "label": "Item Sales Order Revenue Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order Item List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "item"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "revenue",
+        "value_metric": "item_revenue",
+        "sort_metric": "item_revenue",
+        "numerator_metric": "Amount"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "item_sales_order_quantity_period_ranking_execution",
+      "definition_id": "item_sales_order_quantity_period",
+      "formula_id": "item_sales_order_quantity_period_formula",
+      "label": "Item Sales Order Quantity Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order Item List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "item"
+      ],
+      "value_unit_type": "count",
+      "value_metric_mapping": {
+        "family_metric_id": "quantity",
+        "value_metric": "item_quantity",
+        "sort_metric": "item_quantity",
+        "numerator_metric": "Quantity"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "item_average_selling_price_sales_order_period_ranking_execution",
+      "definition_id": "item_average_selling_price_sales_order_period",
+      "formula_id": "item_average_selling_price_sales_order_period_formula",
+      "label": "Item Average Selling Price by Sales Order Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order Item List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "item"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "average_selling_price",
+        "value_metric": "item_average_selling_price",
+        "sort_metric": "item_average_selling_price",
+        "numerator_metric": "Amount",
+        "denominator_metric": "Quantity"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "item_sales_invoice_revenue_period_ranking_execution",
+      "definition_id": "item_sales_invoice_revenue_period",
+      "formula_id": "item_sales_invoice_revenue_period_formula",
+      "label": "Item Sales Invoice Revenue Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice Item List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "item"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "revenue",
+        "value_metric": "item_revenue",
+        "sort_metric": "item_revenue",
+        "numerator_metric": "Amount"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "item_sales_invoice_quantity_period_ranking_execution",
+      "definition_id": "item_sales_invoice_quantity_period",
+      "formula_id": "item_sales_invoice_quantity_period_formula",
+      "label": "Item Sales Invoice Quantity Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice Item List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "item"
+      ],
+      "value_unit_type": "count",
+      "value_metric_mapping": {
+        "family_metric_id": "quantity",
+        "value_metric": "item_quantity",
+        "sort_metric": "item_quantity",
+        "numerator_metric": "Quantity"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "item_average_selling_price_sales_invoice_period_ranking_execution",
+      "definition_id": "item_average_selling_price_sales_invoice_period",
+      "formula_id": "item_average_selling_price_sales_invoice_period_formula",
+      "label": "Item Average Selling Price by Sales Invoice Period Ranking Execution",
+      "execution_shape": "entity_period_ranking",
+      "scope_type": "entity_set",
+      "time_scope_type": "period_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice Item List"
+      ],
+      "supported_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "required_dimensions": [
+        "item"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "average_selling_price",
+        "value_metric": "item_average_selling_price",
+        "sort_metric": "item_average_selling_price",
+        "numerator_metric": "Amount",
+        "denominator_metric": "Quantity"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_tenure_customer_created_at_scalar_execution",
+      "definition_id": "customer_tenure_customer_created_at",
+      "formula_id": "customer_tenure_customer_created_at_formula",
+      "label": "Customer Tenure by Customer Created Date Scalar Execution",
+      "execution_shape": "customer_as_of_scalar",
+      "scope_type": "customer",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "customer_master_read"
+      ],
+      "source_reports": [
+        "Customer Master List"
+      ],
+      "supported_filters": [
+        "company",
+        "customer",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "days",
+      "value_metric_mapping": {
+        "value_metric": "customer_tenure_days",
+        "numerator_metric": "As Of Date",
+        "denominator_metric": "Customer Created Date"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_tenure_first_sales_order_scalar_execution",
+      "definition_id": "customer_tenure_first_sales_order_date",
+      "formula_id": "customer_tenure_first_sales_order_date_formula",
+      "label": "Customer Tenure by First Sales Order Scalar Execution",
+      "execution_shape": "customer_as_of_scalar",
+      "scope_type": "customer",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "supported_filters": [
+        "company",
+        "customer",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "days",
+      "value_metric_mapping": {
+        "value_metric": "customer_tenure_days",
+        "numerator_metric": "As Of Date",
+        "denominator_metric": "First Sales Order Date"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_tenure_first_sales_invoice_scalar_execution",
+      "definition_id": "customer_tenure_first_sales_invoice_date",
+      "formula_id": "customer_tenure_first_sales_invoice_date_formula",
+      "label": "Customer Tenure by First Sales Invoice Scalar Execution",
+      "execution_shape": "customer_as_of_scalar",
+      "scope_type": "customer",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "supported_filters": [
+        "company",
+        "customer",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "days",
+      "value_metric_mapping": {
+        "value_metric": "customer_tenure_days",
+        "numerator_metric": "As Of Date",
+        "denominator_metric": "First Sales Invoice Date"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_overdue_amount_as_of_scalar_execution",
+      "definition_id": "customer_overdue_amount_as_of_date",
+      "formula_id": "customer_overdue_amount_as_of_date_formula",
+      "label": "Customer Overdue Amount as of Date Scalar Execution",
+      "execution_shape": "customer_as_of_scalar",
+      "scope_type": "customer",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "supported_filters": [
+        "company",
+        "customer",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "value_metric": "customer_overdue_amount",
+        "sort_metric": "customer_overdue_amount",
+        "numerator_metric": "31+ Aging Buckets Total"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_overdue_amount_as_of_ranking_execution",
+      "definition_id": "customer_overdue_amount_as_of_date",
+      "formula_id": "customer_overdue_amount_as_of_date_formula",
+      "label": "Customer Overdue Amount as of Date Ranking Execution",
+      "execution_shape": "customer_as_of_ranking",
+      "scope_type": "customer_set",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "supported_filters": [
+        "company",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "overdue_amount",
+        "value_metric": "customer_overdue_amount",
+        "sort_metric": "customer_overdue_amount",
+        "numerator_metric": "31+ Aging Buckets Total"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_overdue_ratio_as_of_scalar_execution",
+      "definition_id": "customer_overdue_ratio_as_of_date",
+      "formula_id": "customer_overdue_ratio_as_of_date_formula",
+      "label": "Customer Overdue Ratio as of Date Scalar Execution",
+      "execution_shape": "customer_as_of_scalar",
+      "scope_type": "customer",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "supported_filters": [
+        "company",
+        "customer",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "ratio",
+      "value_metric_mapping": {
+        "value_metric": "customer_overdue_ratio",
+        "numerator_metric": "31+ Aging Buckets Total",
+        "denominator_metric": "Outstanding Amount"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "credit_utilization_customer_as_of_scalar_execution",
+      "definition_id": "credit_utilization_customer_as_of_date",
+      "formula_id": "credit_utilization_customer_as_of_date_formula",
+      "label": "Customer Credit Utilization as of Date Scalar Execution",
+      "execution_shape": "customer_as_of_scalar",
+      "scope_type": "customer",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "supported_filters": [
+        "company",
+        "customer",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "ratio",
+      "value_metric_mapping": {
+        "value_metric": "customer_credit_utilization",
+        "numerator_metric": "Outstanding Amount",
+        "denominator_metric": "Configured Credit Limit"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "credit_utilization_customer_as_of_ranking_execution",
+      "definition_id": "credit_utilization_customer_as_of_date",
+      "formula_id": "credit_utilization_customer_as_of_date_formula",
+      "label": "Customer Credit Utilization as of Date Ranking Execution",
+      "execution_shape": "customer_as_of_ranking",
+      "scope_type": "customer_set",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "supported_filters": [
+        "company",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "ratio",
+      "value_metric_mapping": {
+        "family_metric_id": "credit_utilization",
+        "value_metric": "customer_credit_utilization",
+        "sort_metric": "customer_credit_utilization",
+        "numerator_metric": "Outstanding Amount",
+        "denominator_metric": "Configured Credit Limit"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_overdue_ratio_as_of_ranking_execution",
+      "definition_id": "customer_overdue_ratio_as_of_date",
+      "formula_id": "customer_overdue_ratio_as_of_date_formula",
+      "label": "Customer Overdue Ratio as of Date Ranking Execution",
+      "execution_shape": "customer_as_of_ranking",
+      "scope_type": "customer_set",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "supported_filters": [
+        "company",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "ratio",
+      "value_metric_mapping": {
+        "family_metric_id": "overdue_ratio",
+        "value_metric": "customer_overdue_ratio",
+        "sort_metric": "customer_overdue_ratio",
+        "numerator_metric": "31+ Aging Buckets Total",
+        "denominator_metric": "Outstanding Amount"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    }
+  ]
+}

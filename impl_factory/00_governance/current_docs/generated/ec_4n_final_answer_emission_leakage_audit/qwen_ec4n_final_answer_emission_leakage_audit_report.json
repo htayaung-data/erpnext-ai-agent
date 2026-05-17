@@ -1,0 +1,1202 @@
+{
+  "authorized_append_sites": [
+    {
+      "append_mechanism": "direct_append_message",
+      "authorization_reason": "Centralized helper append after explicit control/meta authority validation.",
+      "direct_assistant_append": true,
+      "function_name": "emit_authorized_assistant_answer",
+      "line_reference": "271",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/authorized_emission.py",
+      "site_id": "authorized_emission_control_meta_sink",
+      "source_classification": "authorized_runtime_append_sink"
+    },
+    {
+      "append_mechanism": "direct_append_message",
+      "authorization_reason": "Centralized helper append after final-answer authority preflight validation.",
+      "direct_assistant_append": true,
+      "function_name": "emit_authorized_assistant_answer",
+      "line_reference": "327",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/authorized_emission.py",
+      "site_id": "authorized_emission_business_sink",
+      "source_classification": "authorized_runtime_append_sink"
+    }
+  ],
+  "blocked_leakage_checklist": [
+    "no_assistant_message",
+    "no_returned_answer_text",
+    "no_tool_trace_answer_text",
+    "no_business_artifact_rendered_narrative_grounded_payload",
+    "no_post_helper_payload_after_block",
+    "single_blocked_authorized_emission_contract",
+    "explicit_final_authority_block_reason"
+  ],
+  "blocked_leakage_not_applicable_count": 6,
+  "blocked_leakage_pass_count": 21,
+  "blocked_leakage_potential_leak_count": 0,
+  "branch": "feature/ai-assistant",
+  "contract_version": "1.0",
+  "created_at": "2026-05-15T18:26:40+00:00",
+  "current_dirty_status_count": 307,
+  "dry_run_counts": {
+    "active_runtime_direct_assistant_append_count": 0,
+    "authorized_runtime_append_sink_count": 2,
+    "excluded_non_runtime_append_count": 1,
+    "high_risk_paths": [
+      "service_append_message_wrapper"
+    ],
+    "migrated_authorized_path_count": 27,
+    "total_source_assistant_append_sites_observed": 3
+  },
+  "excluded_append_sites": [
+    {
+      "append_mechanism": "direct_append_message",
+      "direct_assistant_append": true,
+      "exclusion_reason": "Smoke/recovery seed helper, not active user-facing runtime emission.",
+      "function_name": "_seed_quantity_recovery_session",
+      "line_reference": "68",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/phase8_hardening_support.py",
+      "site_id": "phase8_quantity_recovery_smoke_seed",
+      "source_classification": "excluded_non_runtime_append_site"
+    }
+  ],
+  "final_recommendation": "enterprise_cleanup_ec_4n_ready_for_counterpart_review",
+  "hard_runtime_blocking_enabled": false,
+  "head": "154be1e",
+  "migrated_lane_audit": [
+    {
+      "answer_type": "policy_boundary_refusal",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "not_applicable",
+        "no_assistant_message": "not_applicable",
+        "no_business_artifact_rendered_narrative_grounded_payload": "not_applicable",
+        "no_post_helper_payload_after_block": "not_applicable",
+        "no_returned_answer_text": "not_applicable",
+        "no_tool_trace_answer_text": "not_applicable",
+        "single_blocked_authorized_emission_contract": "not_applicable"
+      },
+      "blocked_leakage_status": "not_applicable",
+      "blocked_probe_reason": "Policy boundary/filter-readiness path emits bounded refusals; missing-authority business block is not the expected branch.",
+      "evidence_tests": [
+        "test_visible_context_followup_activation",
+        "test_visible_context_trace_inspection"
+      ],
+      "function_name": "try_activate_visible_context_followup",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        1457
+      ],
+      "migration_slice": "EC-4A",
+      "path_id": "visible_context_followup_filter_boundary",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/visible_context_followup_activation.py"
+    },
+    {
+      "answer_type": "visible_context_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "not_applicable",
+        "no_assistant_message": "not_applicable",
+        "no_business_artifact_rendered_narrative_grounded_payload": "not_applicable",
+        "no_post_helper_payload_after_block": "not_applicable",
+        "no_returned_answer_text": "not_applicable",
+        "no_tool_trace_answer_text": "not_applicable",
+        "single_blocked_authorized_emission_contract": "not_applicable"
+      },
+      "blocked_leakage_status": "not_applicable",
+      "blocked_probe_reason": "Visible-context resolved answers derive authority from visible trace; blocked missing-authority path is covered by helper contract rather than lane-specific business payloads.",
+      "evidence_tests": [
+        "test_visible_context_followup_activation",
+        "test_visible_context_trace_inspection"
+      ],
+      "function_name": "try_activate_visible_context_followup",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        1457
+      ],
+      "migration_slice": "EC-4A",
+      "path_id": "visible_context_followup_answer",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/visible_context_followup_activation.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4O stages frontdoor render/runtime/artifact payloads inside authorized pre-assistant payloads and tests prove blocked authority writes no business payload leak.",
+      "evidence_tests": [
+        "test_frontdoor_authorized_emission_contracts"
+      ],
+      "function_name": "handle_frontdoor_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        921
+      ],
+      "migration_slice": "EC-4C",
+      "path_id": "frontdoor_lane_package_governed_report_or_projection",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 868,
+          "source": "append_message(session_doc, \"user\", raw_message or message)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 869,
+          "source": "append_tool_payload(session_doc, interaction_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 871,
+          "source": "append_tool_payload(session_doc, clarification_response_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 875,
+          "source": "append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 879,
+          "source": "append_tool_payload("
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 903,
+          "source": "append_tool_payload(session_doc, execution_path.to_payload())"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/frontdoor_lane.py"
+    },
+    {
+      "answer_type": "business_facing_factual_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4O stages governed KPI definition render/frontdoor payloads through the authorized helper and blocks missing registry evidence without business side-channel output.",
+      "evidence_tests": [
+        "test_frontdoor_authorized_emission_contracts"
+      ],
+      "function_name": "handle_frontdoor_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        921
+      ],
+      "migration_slice": "EC-4C",
+      "path_id": "frontdoor_lane_package_governed_kpi_definition",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 868,
+          "source": "append_message(session_doc, \"user\", raw_message or message)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 869,
+          "source": "append_tool_payload(session_doc, interaction_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 871,
+          "source": "append_tool_payload(session_doc, clarification_response_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 875,
+          "source": "append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 879,
+          "source": "append_tool_payload("
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 903,
+          "source": "append_tool_payload(session_doc, execution_path.to_payload())"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/frontdoor_lane.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4O stages compiled attempt artifacts, runtime trace, grounded turn, and integration payloads through authorized pre-assistant payloads.",
+      "evidence_tests": [
+        "test_compiled_support_authorized_emission_contracts"
+      ],
+      "function_name": "handle_compiled_first_turn_result",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        643
+      ],
+      "migration_slice": "EC-4E",
+      "path_id": "compiled_support_result_answer",
+      "post_helper_payload_lines": [
+        {
+          "guarded_by_authorized_emission": true,
+          "line": 680,
+          "source": "append_knowledge_boundary_observability("
+        }
+      ],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/compiled_support.py"
+    },
+    {
+      "answer_type": "reasoning_business_consultant_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4O stages reasoning execution payloads through authorized pre-assistant payloads, so missing authority blocks before answer_text reaches tool payloads.",
+      "evidence_tests": [
+        "test_reasoning_lane_model_role_observability_contracts"
+      ],
+      "function_name": "handle_reasoning_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        200
+      ],
+      "migration_slice": "EC-4G",
+      "path_id": "reasoning_lane_business_answer",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 173,
+          "source": "append_message(session_doc, \"user\", raw_message)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 174,
+          "source": "append_tool_payload(session_doc, interaction_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 175,
+          "source": "append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 176,
+          "source": "append_tool_payload(session_doc, frontdoor_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 178,
+          "source": "append_tool_payload(session_doc, clarification_response_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 179,
+          "source": "append_tool_payload(session_doc, provisional_response_policy_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 180,
+          "source": "append_tool_payload(session_doc, reasoning_activation_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 181,
+          "source": "append_tool_payload(session_doc, reasoning_semantic_result.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 182,
+          "source": "append_tool_payload(session_doc, model_role_observability)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 183,
+          "source": "append_tool_payload(session_doc, model_role_strict_readiness)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 197,
+          "source": "append_tool_payload(session_doc, reasoning_followup_resolution.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 198,
+          "source": "append_tool_payload(session_doc, execution_path.to_payload())"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/reasoning_lane.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "not_applicable",
+        "no_assistant_message": "not_applicable",
+        "no_business_artifact_rendered_narrative_grounded_payload": "not_applicable",
+        "no_post_helper_payload_after_block": "not_applicable",
+        "no_returned_answer_text": "not_applicable",
+        "no_tool_trace_answer_text": "not_applicable",
+        "single_blocked_authorized_emission_contract": "not_applicable"
+      },
+      "blocked_leakage_status": "not_applicable",
+      "blocked_probe_reason": "Guardrail branch emits a bounded policy refusal with explicit policy-boundary authority; missing business authority is not the branch contract.",
+      "evidence_tests": [
+        "test_reasoning_lane_model_role_observability_contracts"
+      ],
+      "function_name": "handle_reasoning_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        288
+      ],
+      "migration_slice": "EC-4G",
+      "path_id": "reasoning_lane_guardrail_boundary",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 258,
+          "source": "append_message(session_doc, \"user\", raw_message)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 259,
+          "source": "append_tool_payload(session_doc, interaction_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 260,
+          "source": "append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 261,
+          "source": "append_tool_payload(session_doc, frontdoor_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 263,
+          "source": "append_tool_payload(session_doc, clarification_response_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 264,
+          "source": "append_tool_payload(session_doc, provisional_response_policy_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 265,
+          "source": "append_tool_payload(session_doc, reasoning_activation_contract.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 266,
+          "source": "append_tool_payload(session_doc, reasoning_semantic_result.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 267,
+          "source": "append_tool_payload(session_doc, model_role_observability)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 268,
+          "source": "append_tool_payload(session_doc, model_role_strict_readiness)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 282,
+          "source": "append_tool_payload(session_doc, reasoning_followup_resolution.to_payload())"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 283,
+          "source": "append_tool_payload(session_doc, execution_path.to_payload())"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/reasoning_lane.py"
+    },
+    {
+      "answer_type": "error_fallback_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4M-A moved failure trace into authorized pre-assistant payloads and focused tests prove no blocked business payload leak.",
+      "evidence_tests": [
+        "test_entity_followup_authorized_emission_contracts"
+      ],
+      "function_name": "try_entity_detail_followup",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        123
+      ],
+      "migration_slice": "EC-4M",
+      "path_id": "entity_followup_failure",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/entity_followup_support.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4M-A focused tests prove missing authority writes only a blocked emission contract and no artifact/rendered/narrative/grounded/trace payload.",
+      "evidence_tests": [
+        "test_entity_followup_authorized_emission_contracts"
+      ],
+      "function_name": "try_entity_detail_followup",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        123
+      ],
+      "migration_slice": "EC-4M",
+      "path_id": "entity_followup_success",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/entity_followup_support.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4O stages NBU outcome artifact/rendered/narrative/grounded payloads through authorized pre-assistant payloads and tests cover invalid grounded authority.",
+      "evidence_tests": [
+        "test_nbu_governed_requery_authorized_emission_contracts"
+      ],
+      "function_name": "try_activate_nbu_governed_requery_response",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        916
+      ],
+      "migration_slice": "EC-4K",
+      "path_id": "nbu_governed_requery_entity_detail",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 859,
+          "source": "append_message(session_doc, \"user\", raw_message)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 862,
+          "source": "append_tool_payload(session_doc, payload)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 863,
+          "source": "append_tool_payload(session_doc, assessment)"
+        },
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": true,
+          "line": 865,
+          "source": "append_tool_payload(session_doc, activation_contract)"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_governed_requery_activation.py"
+    },
+    {
+      "answer_type": "error_fallback_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "not_applicable",
+        "no_assistant_message": "not_applicable",
+        "no_business_artifact_rendered_narrative_grounded_payload": "not_applicable",
+        "no_post_helper_payload_after_block": "not_applicable",
+        "no_returned_answer_text": "not_applicable",
+        "no_tool_trace_answer_text": "not_applicable",
+        "single_blocked_authorized_emission_contract": "not_applicable"
+      },
+      "blocked_leakage_status": "not_applicable",
+      "blocked_probe_reason": "Runtime client error is an explicit non-business error fallback path with control authority, not a missing business-authority block.",
+      "evidence_tests": [
+        "test_legacy_runtime_authorized_emission_contracts"
+      ],
+      "function_name": "handle_legacy_runtime_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        163
+      ],
+      "migration_slice": "EC-4I",
+      "path_id": "legacy_runtime_client_error",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 162,
+          "source": "append_tool_payload(session_doc, trace_payload)"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/legacy_runtime_lane.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4O stages legacy runtime trace and grounded-turn payloads through authorized pre-assistant payloads; blocked business authority appends only the blocked emission contract.",
+      "evidence_tests": [
+        "test_legacy_runtime_authorized_emission_contracts"
+      ],
+      "function_name": "handle_legacy_runtime_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        243
+      ],
+      "migration_slice": "EC-4I",
+      "path_id": "legacy_runtime_business_or_boundary_answer",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/legacy_runtime_lane.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4R1 stages artifact evidence, narrative, selected-entity, and clarification payloads through authorized pre-assistant payloads; missing governed authority writes only a blocked emission contract.",
+      "evidence_tests": [
+        "test_artifact_boundary_authorized_emission_contracts"
+      ],
+      "function_name": "handle_artifact_boundary_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        157
+      ],
+      "migration_slice": "EC-4R1",
+      "path_id": "artifact_boundary_evidence_answer",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/artifact_boundary_lane.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "not_applicable",
+        "no_assistant_message": "not_applicable",
+        "no_business_artifact_rendered_narrative_grounded_payload": "not_applicable",
+        "no_post_helper_payload_after_block": "not_applicable",
+        "no_returned_answer_text": "not_applicable",
+        "no_tool_trace_answer_text": "not_applicable",
+        "single_blocked_authorized_emission_contract": "not_applicable"
+      },
+      "blocked_leakage_status": "not_applicable",
+      "blocked_probe_reason": "Grounded-evidence artifact refusal emits a bounded policy-boundary answer with explicit boundary authority; generated recovery payloads are staged through the authorized helper.",
+      "evidence_tests": [
+        "test_artifact_boundary_authorized_emission_contracts"
+      ],
+      "function_name": "handle_artifact_boundary_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        251
+      ],
+      "migration_slice": "EC-4R1",
+      "path_id": "artifact_boundary_grounded_evidence_refusal",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/artifact_boundary_lane.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "not_applicable",
+        "no_assistant_message": "not_applicable",
+        "no_business_artifact_rendered_narrative_grounded_payload": "not_applicable",
+        "no_post_helper_payload_after_block": "not_applicable",
+        "no_returned_answer_text": "not_applicable",
+        "no_tool_trace_answer_text": "not_applicable",
+        "single_blocked_authorized_emission_contract": "not_applicable"
+      },
+      "blocked_leakage_status": "not_applicable",
+      "blocked_probe_reason": "Artifact-enrichment refusal emits a bounded policy-boundary answer with explicit boundary authority; generated recovery payloads are staged through the authorized helper.",
+      "evidence_tests": [
+        "test_artifact_boundary_authorized_emission_contracts"
+      ],
+      "function_name": "handle_artifact_boundary_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        350
+      ],
+      "migration_slice": "EC-4R1",
+      "path_id": "artifact_boundary_enrichment_refusal",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/artifact_boundary_lane.py"
+    },
+    {
+      "answer_type": "visible_context_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4R2 stages transformed render, artifact update, narrative, runtime trace, and execution payloads through authorized pre-assistant payloads; missing grounded authority writes only a blocked emission contract.",
+      "evidence_tests": [
+        "test_local_followup_authorized_emission_contracts"
+      ],
+      "function_name": "try_local_followup_transform",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        361
+      ],
+      "migration_slice": "EC-4R2",
+      "path_id": "local_followup_transform",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/local_followup_support.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4S1 stages runtime-gate boundary and observability payloads through authorized pre-assistant payloads; missing boundary authority writes only a blocked emission contract.",
+      "evidence_tests": [
+        "test_runtime_gate_authorized_emission_contracts"
+      ],
+      "function_name": "try_handle_runtime_gate_lane",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        197
+      ],
+      "migration_slice": "EC-4S1",
+      "path_id": "runtime_gate_out_of_scope_boundary",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/runtime_gate_lane.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4S2 stages service out-of-scope boundary, observability, and execution payloads through authorized pre-assistant payloads; missing boundary authority writes only a blocked emission contract.",
+      "evidence_tests": [
+        "test_service_policy_boundary_authorized_emission_contracts"
+      ],
+      "function_name": "chat",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        3321
+      ],
+      "migration_slice": "EC-4S2",
+      "path_id": "service_out_of_scope_domain_boundary",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4S2 stages service known-unsupported ERP-domain boundary, observability, and execution payloads through authorized pre-assistant payloads; missing boundary authority writes only a blocked emission contract.",
+      "evidence_tests": [
+        "test_service_policy_boundary_authorized_emission_contracts"
+      ],
+      "function_name": "chat",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        3321
+      ],
+      "migration_slice": "EC-4S2",
+      "path_id": "service_known_unsupported_erp_domain_boundary",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    },
+    {
+      "answer_type": "trace_debug_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4T1 stages trace inspection, execution, and additional control payloads through authorized pre-assistant payloads before emitting trace_debug_answer.",
+      "evidence_tests": [
+        "test_control_authorized_emission_contracts",
+        "test_visible_context_trace_inspection"
+      ],
+      "function_name": "try_activate_visible_context_trace_inspection_response",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        971
+      ],
+      "migration_slice": "EC-4T1",
+      "path_id": "visible_context_trace_inspection",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 927,
+          "source": "append_message(session_doc, \"user\", raw_message)"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/visible_context_trace_inspection.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4T1 stages NBU trace, activation, execution, and optional audit payloads through authorized pre-assistant payloads before emitting control_meta_answer.",
+      "evidence_tests": [
+        "test_control_authorized_emission_contracts"
+      ],
+      "function_name": "try_activate_nbu_presentation_response",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        1160
+      ],
+      "migration_slice": "EC-4T1",
+      "path_id": "nbu_presentation_safe_response",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 1106,
+          "source": "append_message(session_doc, \"user\", raw_message)"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_service_activation.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4T1 stages clarification control, observability, boundary, execution, and pending signal payloads through authorized pre-assistant payloads.",
+      "evidence_tests": [
+        "test_control_authorized_emission_contracts"
+      ],
+      "function_name": "handle_pending_clarification_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        155
+      ],
+      "migration_slice": "EC-4T1",
+      "path_id": "clarification_show_options",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 135,
+          "source": "append_message(session_doc, \"user\", raw_message)"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/clarification_lane.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4T1 emits pending clarification re-ask/stop as control_meta_answer and updates pending state only after authorized emission.",
+      "evidence_tests": [
+        "test_control_authorized_emission_contracts"
+      ],
+      "function_name": "handle_pending_clarification_turn",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        274
+      ],
+      "migration_slice": "EC-4T1",
+      "path_id": "clarification_pending_reask_or_stop",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 238,
+          "source": "append_message(session_doc, \"user\", raw_message)"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/clarification_lane.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4T1 stages recovery guidance contracts, observability, performance, and audit payloads through authorized pre-assistant payloads.",
+      "evidence_tests": [
+        "test_control_authorized_emission_contracts"
+      ],
+      "function_name": "handle_recovery_guidance_response",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        115
+      ],
+      "migration_slice": "EC-4T1",
+      "path_id": "recovery_guidance_answer",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [
+        {
+          "business_payload_patterns": [],
+          "known_safe_contract_payload": false,
+          "line": 58,
+          "source": "append_message(session_doc, \"user\", raw_message)"
+        }
+      ],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/recovery_guidance_support.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4T2 stages prior-branch restore control payloads through the authorized service control helper; missing control authority writes only a blocked emission contract.",
+      "evidence_tests": [
+        "test_service_control_authorized_emission_contracts"
+      ],
+      "function_name": "_handle_prior_branch_restore_reopen_pending_clarification",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        3357
+      ],
+      "migration_slice": "EC-4T2",
+      "path_id": "service_prior_branch_clarification_restore",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4T2 stages completed compound continuation control/audit payloads through the authorized service control helper.",
+      "evidence_tests": [
+        "test_service_control_authorized_emission_contracts"
+      ],
+      "function_name": "chat",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        3357
+      ],
+      "migration_slice": "EC-4T2",
+      "path_id": "service_compound_continue_completed",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "blocked_leakage_checks": {
+        "explicit_final_authority_block_reason": "pass",
+        "no_assistant_message": "pass",
+        "no_business_artifact_rendered_narrative_grounded_payload": "pass",
+        "no_post_helper_payload_after_block": "pass",
+        "no_returned_answer_text": "pass",
+        "no_tool_trace_answer_text": "pass",
+        "single_blocked_authorized_emission_contract": "pass"
+      },
+      "blocked_leakage_status": "pass",
+      "blocked_probe_reason": "EC-4T2 stages compound cancellation control/audit payloads through the authorized service control helper.",
+      "evidence_tests": [
+        "test_service_control_authorized_emission_contracts"
+      ],
+      "function_name": "chat",
+      "helper_call_count": 1,
+      "helper_call_lines": [
+        3357
+      ],
+      "migration_slice": "EC-4T2",
+      "path_id": "service_compound_stop",
+      "post_helper_payload_lines": [],
+      "post_helper_payload_risks": [],
+      "pre_helper_business_payload_risks": [],
+      "pre_helper_payload_lines": [],
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    }
+  ],
+  "migrated_path_count": 27,
+  "migrated_path_ids": [
+    "visible_context_followup_filter_boundary",
+    "visible_context_followup_answer",
+    "frontdoor_lane_package_governed_report_or_projection",
+    "frontdoor_lane_package_governed_kpi_definition",
+    "compiled_support_result_answer",
+    "reasoning_lane_business_answer",
+    "reasoning_lane_guardrail_boundary",
+    "entity_followup_failure",
+    "entity_followup_success",
+    "nbu_governed_requery_entity_detail",
+    "legacy_runtime_client_error",
+    "legacy_runtime_business_or_boundary_answer",
+    "artifact_boundary_evidence_answer",
+    "artifact_boundary_grounded_evidence_refusal",
+    "artifact_boundary_enrichment_refusal",
+    "local_followup_transform",
+    "runtime_gate_out_of_scope_boundary",
+    "service_out_of_scope_domain_boundary",
+    "service_known_unsupported_erp_domain_boundary",
+    "visible_context_trace_inspection",
+    "nbu_presentation_safe_response",
+    "clarification_show_options",
+    "clarification_pending_reask_or_stop",
+    "recovery_guidance_answer",
+    "service_prior_branch_clarification_restore",
+    "service_compound_continue_completed",
+    "service_compound_stop"
+  ],
+  "missing_evidence_path_ids": [],
+  "non_goals": [
+    "no_new_lane_migration",
+    "no_service_append_wrapper_migration",
+    "no_root_frontdoor_duplicate_cleanup",
+    "no_model_role_strict_enforcement",
+    "no_release_packaging_cleanup"
+  ],
+  "potential_leak_path_ids": [],
+  "recommendation_reason": "All migrated lanes have explicit blocked-emission leakage evidence or accepted not-applicable classification.",
+  "remaining_high_risk_paths": [
+    {
+      "classification": "low_level_append_wrapper_not_migrated_by_design",
+      "ec4n_decision": "classify_only_do_not_migrate_in_ec4n",
+      "path_id": "service_append_message_wrapper",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py",
+      "risk_level": "high"
+    }
+  ],
+  "report_json_artifact_path": "impl_factory/00_governance/current_docs/generated/ec_4n_final_answer_emission_leakage_audit/qwen_ec4n_final_answer_emission_leakage_audit_report.json",
+  "report_markdown_artifact_path": "impl_factory/00_governance/current_docs/generated/ec_4n_final_answer_emission_leakage_audit/qwen_ec4n_final_answer_emission_leakage_audit_report.md",
+  "reviewer": "codex_ec4u_a_closure",
+  "runtime_behavior_changed": false,
+  "scope": "EC-4 checkpoint audit across migrated authorized-emission lanes; no new lane migration.",
+  "slice_id": "ec_4n_final_answer_emission_leakage_audit",
+  "type": "qwen_ec4n_final_answer_emission_leakage_audit"
+}

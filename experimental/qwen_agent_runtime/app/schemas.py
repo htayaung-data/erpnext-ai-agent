@@ -59,6 +59,9 @@ class FollowUpInterpretation(BaseModel):
 	target_dimension: str = ""
 	target_limit: int = 0
 	sort_direction: str = ""
+	target_metric: str = ""
+	requested_columns: List[str] = Field(default_factory=list)
+	requested_time_scope: str = ""
 	target_capability_id: str = ""
 	self_contained: bool = False
 	confidence: float = 0.0
@@ -119,6 +122,7 @@ class FrontDoorInterpretation(BaseModel):
 	intent_class: str = ""
 	confidence: float = 0.0
 	reason: str = ""
+	extracted_slots: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FrontDoorInterpretResponse(BaseModel):
@@ -166,6 +170,14 @@ class ReasoningActivationInterpretation(BaseModel):
 	reasoning_type: str = ""
 	detail_level: str = ""
 	presentation_style: str = ""
+	response_mode: str = ""
+	evidence_policy: str = ""
+	answer_obligation: str = ""
+	answer_goal: str = ""
+	evidence_depth: str = ""
+	business_role: str = ""
+	target_reference: str = ""
+	risk_level: str = ""
 	confidence: float = 0.0
 	reason: str = ""
 
@@ -204,6 +216,52 @@ class RepairIntentInterpretation(BaseModel):
 class RepairIntentInterpretResponse(BaseModel):
 	ok: bool
 	interpretation: RepairIntentInterpretation | None = None
+	agent_meta: Dict[str, Any] = Field(default_factory=dict)
+	error: str = ""
+
+
+class BusinessUnderstandingInterpretRequest(BaseModel):
+	request_id: str
+	session_id: str
+	user_id: str
+	site_name: str
+	message: str
+	recent_messages: List[ChatMessage] = Field(default_factory=list)
+	latest_grounded_turn: Dict[str, Any] = Field(default_factory=dict)
+	latest_assistant_payload: Dict[str, Any] = Field(default_factory=dict)
+	interpretation_context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class BusinessUnderstandingCandidate(BaseModel):
+	candidate_id: str = ""
+	intent_scope: str = "unknown"
+	business_domain: str = ""
+	requested_action: str = "unknown"
+	target_reference: str = "none"
+	target_entity: Dict[str, Any] = Field(default_factory=dict)
+	candidate_route: str = "unknown"
+	candidate_capability_ids: List[str] = Field(default_factory=list)
+	candidate_report_names: List[str] = Field(default_factory=list)
+	candidate_composite_family_ids: List[str] = Field(default_factory=list)
+	requested_metrics: List[str] = Field(default_factory=list)
+	requested_dimensions: List[str] = Field(default_factory=list)
+	requested_time_scope: str = ""
+	evidence_need: str = "unknown"
+	authority_class: str = "unknown"
+	model_confidence: float = 0.0
+	model_reason: str = ""
+
+
+class BusinessUnderstandingInterpretation(BaseModel):
+	detected_language: str = "en"
+	candidate_interpretations: List[BusinessUnderstandingCandidate] = Field(default_factory=list)
+	selected_candidate_id: str = ""
+	reason: str = ""
+
+
+class BusinessUnderstandingInterpretResponse(BaseModel):
+	ok: bool
+	interpretation: BusinessUnderstandingInterpretation | None = None
 	agent_meta: Dict[str, Any] = Field(default_factory=dict)
 	error: str = ""
 

@@ -1,0 +1,115 @@
+{
+  "contract_version": "1.0",
+  "status": "runtime_governed",
+  "description": "Governed clarification prompts and business options for first-wave financial_summary runtime migration.",
+  "intent_class": "financial_summary",
+  "reason_types": [
+    {
+      "reason_type": "financial_summary_domain_clarification",
+      "user_question": "Which area do you want summarized: sales, inventory, receivable, payable, financial statements, or product performance?",
+      "suggested_options": [
+        "sales",
+        "inventory",
+        "receivable",
+        "payable",
+        "financial statements",
+        "product performance"
+      ]
+    },
+    {
+      "reason_type": "financial_summary_focus_clarification",
+      "user_question": "What kind of summary do you want: current position, outstanding amount, value snapshot, profitability snapshot, statement view, or cross-domain health?",
+      "suggested_options": [
+        "current position",
+        "outstanding amount",
+        "value snapshot",
+        "profitability snapshot",
+        "statement view",
+        "cross-domain health"
+      ]
+    },
+    {
+      "reason_type": "financial_summary_multi_domain_clarification",
+      "user_question": "Do you want one specific area, or do you want a combined cross-domain health summary?",
+      "suggested_options": [
+        "one specific area",
+        "cross-domain health"
+      ],
+      "option_aliases_by_option": {
+        "one specific area": [
+          "one specific area",
+          "specific area"
+        ],
+        "cross-domain health": [
+          "cross-domain health",
+          "combined cross-domain health",
+          "combined cross-domain health summary",
+          "cross domain health",
+          "cross domain health summary"
+        ]
+      },
+      "resolved_message_by_option": {
+        "one specific area": "show me financial summary for one specific area",
+        "cross-domain health": "show me working capital health"
+      },
+      "semantic_slot_name": "summary_focus",
+      "semantic_slot_value_by_option": {
+        "one specific area": "single_domain",
+        "cross-domain health": "cross_domain_health"
+      },
+      "resolved_slot_payload_by_option": {
+        "one specific area": {
+          "intent_class": "financial_summary",
+          "requested_time_scope": "as_of_today",
+          "ambiguity_flags": [
+            "ambiguous_capability"
+          ],
+          "ambiguity_reason": "The user chose a single-area summary, so the specific business area must be clarified before execution."
+        },
+        "cross-domain health": {
+          "intent_class": "financial_summary",
+          "candidate_capability_ids": [
+            "accounts_receivable_read",
+            "accounts_payable_read"
+          ],
+          "candidate_reports": [
+            "Accounts Receivable Summary",
+            "Accounts Payable Summary"
+          ],
+          "requested_metrics": [
+            "Outstanding",
+            "Total Due"
+          ],
+          "requested_time_scope": "as_of_today",
+          "extracted_slots": {
+            "composite_profile_context": [
+              "working_capital_health"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "reason_type": "financial_summary_sales_scope_clarification",
+      "user_question": "What kind of sales summary do you want: monthly trend, top customers, top products, or a sales statement-style summary?",
+      "suggested_options": [
+        "monthly trend",
+        "top customers",
+        "top products",
+        "sales statement-style summary"
+      ]
+    },
+    {
+      "reason_type": "financial_summary_composite_scope_clarification",
+      "user_question": "I can summarize one area directly. Which area should I focus on first?",
+      "suggested_options": [
+        "receivable",
+        "payable",
+        "inventory",
+        "financial statements",
+        "sales",
+        "product performance"
+      ]
+    }
+  ]
+}

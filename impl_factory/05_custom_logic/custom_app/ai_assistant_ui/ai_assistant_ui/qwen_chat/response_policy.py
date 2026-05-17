@@ -103,11 +103,14 @@ def derive_response_policy(
 		answer_style = "statement_question"
 		policy_mode = "statement_summary"
 		highlight_allowed = True
-		implication_allowed = True
+		implication_allowed = bool(analysis_requested)
 		recommendation_allowed = bool(analysis_requested)
 		supporting_table_preference = "compact_when_helpful"
-		structure = ["summary", "notable_line_items", "implication"]
-		user_sections = ["summary", "notable_line_items", "implication"]
+		structure = ["summary", "notable_line_items", "supporting_table"]
+		user_sections = ["summary", "notable_line_items", "supporting_table"]
+		if implication_allowed:
+			structure.append("implication")
+			user_sections.append("implication")
 		for format_name in ("table", "bullet_points"):
 			if format_name not in preferred_formats:
 				preferred_formats.append(format_name)

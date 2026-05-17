@@ -1,0 +1,124 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2015-12-12 10:22:45.383203",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "mandatory": 1,
+   "options": "Company",
+   "wildcard_filter": 0
+  },
+  {
+   "default": "Date Range",
+   "fieldname": "filter_based_on",
+   "fieldtype": "Select",
+   "label": "Filter Based On",
+   "mandatory": 0,
+   "options": "Date Range\nFiscal Year",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "period_start_date",
+   "fieldtype": "Date",
+   "label": "From Date",
+   "mandatory": 1,
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "period_end_date",
+   "fieldtype": "Date",
+   "label": "To Date",
+   "mandatory": 1,
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "from_fiscal_year",
+   "fieldtype": "Link",
+   "label": "From Fiscal Year",
+   "mandatory": 0,
+   "options": "Fiscal Year",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "to_fiscal_year",
+   "fieldtype": "Link",
+   "label": "To Fiscal Year",
+   "mandatory": 0,
+   "options": "Fiscal Year",
+   "wildcard_filter": 0
+  },
+  {
+   "default": "Monthly",
+   "fieldname": "periodicity",
+   "fieldtype": "Select",
+   "label": "Periodicity",
+   "mandatory": 0,
+   "options": "Monthly\nQuarterly\nYearly",
+   "wildcard_filter": 0
+  },
+  {
+   "default": "1",
+   "fieldname": "accumulated_values",
+   "fieldtype": "Check",
+   "label": "Accumulated Values",
+   "mandatory": 0,
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "presentation_currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "mandatory": 0,
+   "options": "Currency",
+   "wildcard_filter": 0
+  },
+  {
+   "default": "Summary",
+   "fieldname": "show_account_details",
+   "fieldtype": "Select",
+   "label": "Show Account Details",
+   "mandatory": 0,
+   "options": "Summary\nAll",
+   "wildcard_filter": 0
+  },
+  {
+   "default": "1",
+   "fieldname": "include_default_book_entries",
+   "fieldtype": "Check",
+   "label": "Include Default Book Entries",
+   "mandatory": 0,
+   "wildcard_filter": 0
+  }
+ ],
+ "idx": 2,
+ "is_standard": "Yes",
+ "letter_head": null,
+ "modified": "2026-04-16 12:54:59.035931",
+ "modified_by": "Administrator",
+ "module": "AI Assistant UI",
+ "name": "Cash Flow",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "GL Entry",
+ "report_name": "Cash Flow",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "Auditor"
+  }
+ ],
+ "timeout": 0
+}

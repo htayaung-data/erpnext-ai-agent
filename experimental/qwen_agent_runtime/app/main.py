@@ -5,6 +5,8 @@ from typing import Optional
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 
 from app.schemas import (
+	BusinessUnderstandingInterpretRequest,
+	BusinessUnderstandingInterpretResponse,
 	ChatRequest,
 	ChatResponse,
 	FrontDoorInterpretRequest,
@@ -23,6 +25,7 @@ from app.schemas import (
 	ReasoningRenderResponse,
 )
 from app.service import (
+	handle_business_understanding_interpretation,
 	handle_chat,
 	handle_frontdoor_interpretation,
 	handle_frontdoor_render,
@@ -153,6 +156,18 @@ def interpret_repair_intent(
 	settings: Settings = Depends(get_settings),
 ) -> RepairIntentInterpretResponse:
 	return handle_repair_intent_interpretation(request, settings)
+
+
+@app.post(
+	"/interpret-business-understanding",
+	response_model=BusinessUnderstandingInterpretResponse,
+	dependencies=[Depends(_require_auth)],
+)
+def interpret_business_understanding(
+	request: BusinessUnderstandingInterpretRequest,
+	settings: Settings = Depends(get_settings),
+) -> BusinessUnderstandingInterpretResponse:
+	return handle_business_understanding_interpretation(request, settings)
 
 
 @app.post(

@@ -61,7 +61,7 @@ services:
       REDIS_SOCKETIO: ${REDIS_SOCKETIO:-redis-socketio:6379}
       SOCKETIO_PORT: ${SOCKETIO_PORT:-9000}
       DEFAULT_SITE: ${DEFAULT_SITE:-${SITE_NAME:-frontend}}
-      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       QWEN_ENTERPRISE_METADATA_DIR: /home/frappe/frappe-bench/qwen_enterprise_metadata
     depends_on:
       db:
@@ -75,6 +75,7 @@ services:
     volumes:
       - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
       - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+      - ./impl_factory/05_custom_logic/custom_app/erp_workspace_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       - ./impl_factory/03_config/qwen_enterprise_metadata:/home/frappe/frappe-bench/qwen_enterprise_metadata:ro
     restart: "no"
 
@@ -82,7 +83,7 @@ services:
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
     environment:
-      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       QWEN_ENTERPRISE_METADATA_DIR: /home/frappe/frappe-bench/qwen_enterprise_metadata
     depends_on:
       configurator:
@@ -90,6 +91,7 @@ services:
     volumes:
       - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
       - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+      - ./impl_factory/05_custom_logic/custom_app/erp_workspace_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       - ./impl_factory/03_config/qwen_enterprise_metadata:/home/frappe/frappe-bench/qwen_enterprise_metadata:ro
     healthcheck:
       # no curl needed; just check TCP connect to 8000
@@ -108,7 +110,7 @@ services:
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
     environment:
-      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       QWEN_ENTERPRISE_METADATA_DIR: /home/frappe/frappe-bench/qwen_enterprise_metadata
     depends_on:
       configurator:
@@ -118,6 +120,7 @@ services:
     volumes:
       - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
       - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+      - ./impl_factory/05_custom_logic/custom_app/erp_workspace_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       - ./impl_factory/03_config/qwen_enterprise_metadata:/home/frappe/frappe-bench/qwen_enterprise_metadata:ro
     healthcheck:
       test:
@@ -135,7 +138,7 @@ services:
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["bench", "worker", "--queue", "short,default"]
     environment:
-      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       QWEN_ENTERPRISE_METADATA_DIR: /home/frappe/frappe-bench/qwen_enterprise_metadata
     depends_on:
       configurator:
@@ -143,6 +146,7 @@ services:
     volumes:
       - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
       - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+      - ./impl_factory/05_custom_logic/custom_app/erp_workspace_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       - ./impl_factory/03_config/qwen_enterprise_metadata:/home/frappe/frappe-bench/qwen_enterprise_metadata:ro
     restart: unless-stopped
 
@@ -151,7 +155,7 @@ services:
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["bench", "worker", "--queue", "long,default,short"]
     environment:
-      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       QWEN_ENTERPRISE_METADATA_DIR: /home/frappe/frappe-bench/qwen_enterprise_metadata
     depends_on:
       configurator:
@@ -159,6 +163,7 @@ services:
     volumes:
       - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
       - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+      - ./impl_factory/05_custom_logic/custom_app/erp_workspace_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       - ./impl_factory/03_config/qwen_enterprise_metadata:/home/frappe/frappe-bench/qwen_enterprise_metadata:ro
     restart: unless-stopped
 
@@ -167,7 +172,7 @@ services:
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["bench", "schedule"]
     environment:
-      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       QWEN_ENTERPRISE_METADATA_DIR: /home/frappe/frappe-bench/qwen_enterprise_metadata
     depends_on:
       configurator:
@@ -175,6 +180,7 @@ services:
     volumes:
       - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
       - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+      - ./impl_factory/05_custom_logic/custom_app/erp_workspace_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       - ./impl_factory/03_config/qwen_enterprise_metadata:/home/frappe/frappe-bench/qwen_enterprise_metadata:ro
     restart: unless-stopped
 
@@ -198,6 +204,10 @@ services:
       - "${HTTP_PORT:-8082}:8080"
     volumes:
       - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+      # Frontend serves custom-app static assets through symlinked paths under sites/assets.
+      # Mount the live app sources here too so nginx never drifts behind backend-mounted code.
+      - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui:ro
+      - ./impl_factory/05_custom_logic/custom_app/erp_workspace_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui:ro
     restart: unless-stopped
 
   # First-time only: create site + install apps
@@ -221,12 +231,13 @@ services:
           --install-app hrms \
           --install-app frappe_assistant_core \
           --install-app ai_assistant_ui \
+          --install-app erp_workspace_ui \
           --set-default
     environment:
       SITE_NAME: ${SITE_NAME:-frontend}
       DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
-      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       QWEN_ENTERPRISE_METADATA_DIR: /home/frappe/frappe-bench/qwen_enterprise_metadata
     depends_on:
       configurator:
@@ -234,6 +245,7 @@ services:
     volumes:
       - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
       - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+      - ./impl_factory/05_custom_logic/custom_app/erp_workspace_ui:/home/frappe/frappe-bench/apps/erp_workspace_ui
       - ./impl_factory/03_config/qwen_enterprise_metadata:/home/frappe/frappe-bench/qwen_enterprise_metadata:ro
     restart: "no"
 

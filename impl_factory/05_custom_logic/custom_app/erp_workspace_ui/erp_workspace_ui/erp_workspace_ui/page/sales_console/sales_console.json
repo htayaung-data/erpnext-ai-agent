@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "sales-console",
+  "page_name": "sales-console",
+  "title": "Sales Console",
+  "icon": "octicon octicon-briefcase",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

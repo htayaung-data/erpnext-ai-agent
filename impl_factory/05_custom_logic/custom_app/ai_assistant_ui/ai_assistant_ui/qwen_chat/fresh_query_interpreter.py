@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 import re
-import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
-
-import requests
 
 from ai_assistant_ui.qwen_chat.compiler import CompilerOutcome, compile_fresh_query
 from ai_assistant_ui.qwen_chat.composite_reads import execute_composite_read_plan, plan_composite_read
 from ai_assistant_ui.qwen_chat.contracts import (
 	FreshQueryInterpretationContract,
+	_infer_followup_requested_time_scope,
 	build_compiled_execution_audit_contract,
 	build_fresh_query_interpretation_contract,
 	build_interaction_contract,
@@ -26,27 +22,42 @@ from ai_assistant_ui.qwen_chat.artifact_narrative import (
 	build_artifact_narrative_contract,
 	narrate_governed_artifact,
 )
+from ai_assistant_ui.qwen_chat.entity_reference_resolution import (
+	infer_entity_grains_from_message,
+	normalize_master_data_lookup_slots,
+	resolve_entity_reference_from_message,
+)
 from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
-from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
 from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
+from ai_assistant_ui.qwen_chat.governed_scope_registry import (
+	active_listing_view_aliases,
+	master_data_lookup_mode_allowed,
+)
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
+from ai_assistant_ui.qwen_chat.ranking_limit_parser import extract_requested_top_n
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_report_names,
 	capability_default_report_name,
 	capability_fresh_query_defaults,
 	capability_intent_classes,
 	capability_ontology_concepts,
+	entity_grain_display_label,
+	get_entity_reference_policy_spec,
+	get_report_family_spec,
+	get_report_spec,
+	financial_statement_report_name,
 	list_capability_specs,
+	list_composite_read_specs,
 	list_intent_class_specs,
+	load_semantic_resolution_registry,
 	ontology_detect_concepts,
-	ontology_query_slot_aliases,
 	report_business_family_ids,
 	report_capability_ids,
+	report_direct_query_filter_value_aliases,
 	report_family_capability_ids,
-	report_family_default_intent_class,
 	report_family_ids_for_intent_class,
-	report_family_report_names,
+	report_semantic_tags,
 	report_supported_dimensions,
 	report_supported_intent_classes,
 	report_supported_metrics,
@@ -56,13 +67,41 @@ from ai_assistant_ui.qwen_chat.runtime_client import (
 	call_qwen_runtime_chat,
 	call_qwen_runtime_fresh_query_interpretation,
 )
+from ai_assistant_ui.qwen_chat.probes.fresh_query_diagnostics import (
+	run_phase4_audit_observability_smoke,
+	run_phase4_compiled_execution_smoke,
+	run_phase4_fresh_query_cache_smoke,
+	run_phase4_fresh_query_inflight_smoke,
+	run_phase4_fresh_query_interpreter_selftests,
+	run_phase4_fresh_query_pipeline_smokes,
+	run_phase4_semantic_validation_smoke,
+	run_phase4_slice5_selftests,
+	run_phase4_slice6_selftests,
+	run_phase4b_aging_family_probe,
+	run_phase4b_aging_family_smoke,
+	run_phase4b_broad_financial_report_ambiguity_probe,
+	run_phase4b_composite_read_debug,
+	run_phase4b_composite_read_probe,
+	run_phase4b_composite_read_smoke,
+	run_phase4b_family_rendering_smoke,
+	run_phase4b_financial_statement_family_probe,
+	run_phase4b_financial_statement_family_smoke,
+	run_phase4b_inventory_product_family_probe,
+	run_phase4b_inventory_product_family_smoke,
+	run_phase4b_ranking_trend_family_probe,
+	run_phase4b_ranking_trend_family_smoke,
+)
+from ai_assistant_ui.qwen_chat.semantic_resolution import (
+	resolve_interpretation_semantically,
+)
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import (
+	semantic_slot_alias_match_details,
+	semantic_resolution_governs_intent,
+)
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_erp_field_mapping
 from ai_assistant_ui.qwen_chat.semantic_validator import (
-	run_phase4_semantic_validation_selftests,
 	validate_compiled_semantic_result,
 )
-from ai_assistant_ui.qwen_chat.intent_rules_engine import apply_intent_rules
-
 try:
 	import frappe  # type: ignore
 except Exception:  # pragma: no cover
@@ -81,6 +120,34 @@ _ALLOWED_AMBIGUITY_FLAGS = {
 	"unsupported_request",
 }
 _RUNTIME_DEFAULT_MODEL_OVERRIDE = "__runtime_default__"
+
+
+def _family_narrative_prefers_rendered_response(
+	*,
+	family_id: str,
+	response_policy: Dict[str, Any] | None,
+) -> bool:
+	clean_family = str(family_id or "").strip().lower()
+	policy = dict(response_policy or {}) if isinstance(response_policy, dict) else {}
+	if clean_family == "financial_statement":
+		if bool(policy.get("analysis_requested")):
+			return False
+		if bool(policy.get("implication_allowed")) or bool(policy.get("recommendation_allowed")):
+			return False
+		return True
+	if clean_family in {"ranking_analytics", "product_profitability"}:
+		if bool(policy.get("analysis_requested")):
+			return False
+		if bool(policy.get("implication_allowed")) or bool(policy.get("recommendation_allowed")):
+			return False
+		return True
+	if clean_family != "aging":
+		return False
+	if bool(policy.get("analysis_requested")):
+		return False
+	if bool(policy.get("implication_allowed")) or bool(policy.get("recommendation_allowed")):
+		return False
+	return True
 
 
 @dataclass(frozen=True)
@@ -117,6 +184,10 @@ def _normalize_key(value: Any) -> str:
 	return text.strip("_")
 
 
+def _extract_structural_target_limit_seed(message: str) -> int:
+	return extract_requested_top_n(message, default_limit=0, max_limit=50)
+
+
 def _normalized_lookup(values: List[str]) -> Dict[str, str]:
 	out: Dict[str, str] = {}
 	for value in values:
@@ -125,6 +196,138 @@ def _normalized_lookup(values: List[str]) -> Dict[str, str]:
 			continue
 		out[_normalize_key(clean)] = clean
 	return out
+
+
+def _governed_time_scope_aliases(canonical_scope: str) -> List[str]:
+	scope = _normalize_time_scope(canonical_scope)
+	if not scope:
+		return []
+	out: List[str] = []
+	registry = load_semantic_resolution_registry()
+	alias_maps = registry.get("alias_maps") if isinstance(registry.get("alias_maps"), dict) else {}
+	entries = alias_maps.get("time_scope") if isinstance(alias_maps.get("time_scope"), list) else []
+	for entry in entries:
+		if not isinstance(entry, dict):
+			continue
+		if _normalize_time_scope(entry.get("canonical_value")) != scope:
+			continue
+		out.extend(str(value or "").strip() for value in (entry.get("aliases") or []) if str(value or "").strip())
+	return list(dict.fromkeys(out))
+
+
+def _message_explicitly_requests_time_scope(message: str, canonical_scope: str) -> bool:
+	return any(_message_contains_phrase(message, alias) for alias in _governed_time_scope_aliases(canonical_scope))
+
+
+def _strip_structural_limit_time_scope_conflict(
+	*,
+	message: str,
+	intent_class: str,
+	requested_time_scope: str,
+	target_limit: int,
+) -> str:
+	current = str(requested_time_scope or "").strip()
+	if intent_class not in {"ranked_entities", "transaction_listing"}:
+		return current
+	limit = int(max(0, target_limit or 0))
+	if not current or limit <= 0:
+		return current
+	normalized_scope = _normalize_key(current)
+	message_text = str(message or "").strip().lower()
+	if normalized_scope == "as_of_today":
+		if _message_explicitly_requests_time_scope(message, normalized_scope):
+			return current
+		if _extract_structural_target_limit_seed(message_text) == limit:
+			return ""
+	if normalized_scope == "latest":
+		if re.search(
+			r"\b(?:last|latest)\s+"
+			+ re.escape(str(limit))
+			+ r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+			message_text,
+		):
+			return current
+		return ""
+	latest_limit_match = re.fullmatch(r"latest_(\d{1,2})", normalized_scope)
+	if latest_limit_match:
+		try:
+			latest_count = int(latest_limit_match.group(1) or 0)
+		except Exception:
+			latest_count = 0
+		if latest_count == limit:
+			if re.search(
+				r"\b(?:last|latest)\s+"
+				+ re.escape(str(limit))
+				+ r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+				message_text,
+			):
+				return current
+			return ""
+	match = re.fullmatch(
+		r"last_(\d{1,2})_(days|weeks|months|years|quarters)",
+		normalized_scope,
+	)
+	if not match:
+		return current
+	try:
+		scope_count = int(match.group(1) or 0)
+	except Exception:
+		return current
+	if scope_count != limit:
+		return current
+	if re.search(
+		r"\b(?:last|past|previous|prior)\s+"
+		+ re.escape(str(limit))
+		+ r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+		message_text,
+	):
+		return current
+	return ""
+
+
+def _clear_time_scope_slots(extracted_slots: Dict[str, Any]) -> Dict[str, Any]:
+	if not isinstance(extracted_slots, dict):
+		return {}
+	cleaned = dict(extracted_slots)
+	for fieldname in ("report_date", "from_date", "to_date", "period_start_date", "period_end_date"):
+		cleaned.pop(fieldname, None)
+	slot_filters = cleaned.get("filters")
+	if isinstance(slot_filters, dict):
+		cleaned_filters = dict(slot_filters)
+		for fieldname in ("report_date", "from_date", "to_date", "period_start_date", "period_end_date"):
+			cleaned_filters.pop(fieldname, None)
+		cleaned["filters"] = cleaned_filters
+	return cleaned
+
+
+def _message_contains_explicit_date_literal(message: str) -> bool:
+	text = str(message or "").strip()
+	if not text:
+		return False
+	if re.search(r"\d{4}-\d{2}-\d{2}", text):
+		return True
+	if re.search(r"\d{1,2}/\d{1,2}/\d{2,4}", text):
+		return True
+	return False
+
+
+def _strip_unrequested_today_scope_for_transaction_listing(
+	*,
+	message: str,
+	intent_class: str,
+	requested_time_scope: str,
+	extracted_slots: Dict[str, Any],
+) -> str:
+	current = str(requested_time_scope or "").strip()
+	if intent_class != "transaction_listing":
+		return current
+	if _normalize_time_scope(current) != "as_of_today":
+		return current
+	if _message_explicitly_requests_time_scope(message, "as_of_today"):
+		return current
+	if _message_contains_explicit_date_literal(message):
+		return current
+	return ""
 
 
 def _normalize_time_scope(value: Any) -> str:
@@ -141,42 +344,13 @@ def _normalize_time_scope(value: Any) -> str:
 		return "current_period"
 	if key in {"last_month", "previous_month", "prior_month"}:
 		return "last_month"
+	if key == "last_year":
+		return "last_year"
 	if key in {"current_fiscal_year_to_date", "fiscal_year_to_date", "year_to_date", "this_fiscal_year"}:
 		return "current_fiscal_year_to_date"
 	if key in {"all_period", "all_time", "overall"}:
 		return "all_period"
 	return key
-
-
-def _contains_alias(text: str, alias: str) -> bool:
-	value = " ".join(str(text or "").strip().lower().split())
-	target = " ".join(str(alias or "").strip().lower().split())
-	if not value or not target:
-		return False
-	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
-	return bool(re.search(pattern, value))
-
-
-def _metadata_slot_value(message: str, slot_aliases: Dict[str, List[str]]) -> str:
-	text = str(message or "").strip()
-	if not text:
-		return ""
-	for slot_value, aliases in slot_aliases.items():
-		for alias in aliases:
-			if _contains_alias(text, alias):
-				return str(slot_value or "").strip()
-	return ""
-
-
-def _infer_governed_time_scope(*, intent_class: str, message: str, requested_time_scope: str) -> str:
-	if str(requested_time_scope or "").strip():
-		return str(requested_time_scope or "").strip()
-	value = _metadata_slot_value(message, ontology_query_slot_aliases("requested_time_scope"))
-	if value:
-		return _normalize_time_scope(value)
-	if str(intent_class or "").strip() in {"trend_analysis", "product_performance"}:
-		return "current_fiscal_year_to_date"
-	return ""
 
 
 def _confidence_threshold() -> float:
@@ -221,10 +395,36 @@ def _sanitize_extracted_slots(
 		}
 		if filters:
 			clean_slots["filters"] = filters
+	composite_profile_lookup = {
+		str(item.get("plan_id") or "").strip()
+		for item in list_composite_read_specs()
+		if isinstance(item, dict) and str(item.get("plan_id") or "").strip()
+	}
+	composite_profile_context = [
+		value
+		for value in _clean_list(extracted_slots.get("composite_profile_context"))
+		if value in composite_profile_lookup
+	]
+	if composite_profile_context:
+		clean_slots["composite_profile_context"] = list(dict.fromkeys(composite_profile_context))
 	return clean_slots
 
 
 def _build_interpretation_context() -> Dict[str, Any]:
+	registry = load_semantic_resolution_registry()
+	slot_definitions = [
+		{
+			"slot_name": str(item.get("slot_name") or "").strip(),
+			"allowed_values": _clean_list(item.get("allowed_values")),
+		}
+		for item in (registry.get("slot_definitions") or [])
+		if isinstance(item, dict) and str(item.get("slot_name") or "").strip()
+	]
+	alias_maps = (
+		{str(key): value for key, value in registry.get("alias_maps", {}).items()}
+		if isinstance(registry.get("alias_maps"), dict)
+		else {}
+	)
 	intent_classes = [
 		{
 			"intent_class_id": str(item.get("intent_class_id") or "").strip(),
@@ -245,12 +445,43 @@ def _build_interpretation_context() -> Dict[str, Any]:
 		for item in list_capability_specs()
 		if isinstance(item, dict) and str(item.get("capability_id") or "").strip()
 	]
+	composite_profiles = [
+		{
+			"plan_id": str(item.get("plan_id") or "").strip(),
+			"supported_intent_classes": _clean_list(item.get("supported_intent_classes")),
+			"required_concepts_all": _clean_list(item.get("required_concepts_all")),
+			"preferred_concepts_any": _clean_list(item.get("preferred_concepts_any")),
+		}
+		for item in list_composite_read_specs()
+		if isinstance(item, dict) and str(item.get("plan_id") or "").strip()
+	]
+	report_names: List[str] = []
+	for capability in capabilities:
+		for report_name in _clean_list(capability.get("report_names")):
+			if report_name not in report_names:
+				report_names.append(report_name)
+	reports = [
+		{
+			"report_name": report_name,
+			"capability_ids": _clean_list(report_capability_ids(report_name)),
+			"supported_intent_classes": _clean_list(report_supported_intent_classes(report_name)),
+			"supported_dimensions": _clean_list(report_supported_dimensions(report_name)),
+			"supported_metrics": _clean_list(report_supported_metrics(report_name)),
+			"semantic_tags": _clean_list(report_semantic_tags(report_name)),
+		}
+		for report_name in report_names
+		if str(report_name or "").strip()
+	]
 	return {
 		"current_date_utc": _current_date_iso(),
 		"single_company_mode": True,
 		"company_handling": "compiler_injected_invariant",
 		"intent_classes": intent_classes,
 		"capabilities": capabilities,
+		"reports": reports,
+		"composite_profiles": composite_profiles,
+		"slot_definitions": slot_definitions,
+		"alias_maps": alias_maps,
 		"allowed_presentations": sorted(_ALLOWED_PRESENTATION_MODES),
 		"allowed_ambiguity_flags": sorted(_ALLOWED_AMBIGUITY_FLAGS),
 	}
@@ -288,40 +519,8 @@ def _message_tokens(value: str) -> set[str]:
 	return {token for token in text.split() if token}
 
 
-def _apply_governed_intent_bias(*, intent_class: str, message: str) -> str:
-	"""
-	Apply intent bias rules from metadata registry.
-	
-	This function uses the metadata-driven rules engine instead of
-	hardcoded Python logic. This is enterprise-grade architecture.
-	
-	Args:
-		intent_class: Current intent class from proposal
-		message: Original user message
-	
-	Returns:
-		Updated intent class (or original if no rules matched)
-	"""
-	# Create minimal interpretation for rule evaluation
-	interpretation = FreshQueryInterpretationContract(
-		request_id="",
-		session_id="",
-		intent_class=intent_class,
-		candidate_capability_ids=[],
-		candidate_reports=[],
-		requested_dimensions=[],
-		requested_metrics=[],
-		requested_time_scope="",
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=0.0,
-	)
-	
-	# Apply rules from metadata registry
-	result = apply_intent_rules(message, interpretation)
-	return result.intent_class
+def _semantic_resolution_governs_intent(intent_class: str) -> bool:
+	return semantic_resolution_governs_intent(intent_class)
 
 
 def _default_spec_values(spec: Dict[str, Any], key: str) -> List[str]:
@@ -527,18 +726,15 @@ def _apply_governed_interpretation_biases(
 	requested_metrics: List[str],
 ) -> tuple[List[str], List[str]]:
 	intent_key = str(intent_class or "").strip()
+	if _semantic_resolution_governs_intent(intent_key):
+		return (
+			list(dict.fromkeys(_clean_list(candidate_capability_ids))),
+			list(dict.fromkeys(_clean_list(candidate_reports))),
+		)
 	message_concepts = ontology_detect_concepts(message)
 	capability_ids = list(dict.fromkeys(_clean_list(candidate_capability_ids)))
 	if not capability_ids and intent_key:
-		surface = build_family_tool_surface_for_message(
-			request_id="",
-			session_id="",
-			message=message,
-			preferred_intent_class=intent_key,
-		)
 		family_id = ""
-		if surface is not None and list(surface.candidate_family_ids or []):
-			family_id = str((surface.candidate_family_ids or [""])[0] or "").strip()
 		if not family_id:
 			family_ids = report_family_ids_for_intent_class(intent_key)
 			family_id = str((family_ids or [""])[0] or "").strip()
@@ -579,6 +775,12 @@ def _apply_governed_request_defaults(
 	requested_metrics: List[str],
 	requested_time_scope: str,
 ) -> tuple[List[str], List[str], str]:
+	if _semantic_resolution_governs_intent(intent_class):
+		return (
+			list(dict.fromkeys(_clean_list(requested_dimensions))),
+			list(dict.fromkeys(_clean_list(requested_metrics))),
+			str(requested_time_scope or "").strip(),
+		)
 	capability_id = str((_clean_list(candidate_capability_ids) or [""])[0] or "").strip()
 	report_name = str((_clean_list(candidate_reports) or [""])[0] or "").strip()
 	dimensions = _resolve_requested_labels(
@@ -602,6 +804,950 @@ def _apply_governed_request_defaults(
 		spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
 		time_scope = str(spec.get("default_time_scope") or "").strip()
 	return dimensions, metrics, time_scope
+
+
+def _allow_deterministic_family_surface_fallback(intent_class: str) -> bool:
+	target_intent = str(intent_class or "").strip()
+	if not target_intent:
+		return False
+	rules = load_semantic_resolution_registry().get("family_resolution_rules")
+	if not isinstance(rules, list):
+		return False
+	signatures: Dict[tuple[str, tuple[tuple[str, str], ...]], int] = {}
+	for rule in rules:
+		if not isinstance(rule, dict):
+			continue
+		rule_intent = str(rule.get("intent_class") or "").strip()
+		required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+		if not rule_intent or not required_slots:
+			continue
+		signature = (
+			rule_intent,
+			tuple(
+				sorted(
+					(
+						str(key or "").strip(),
+						str(value or "").strip(),
+					)
+					for key, value in required_slots.items()
+					if str(key or "").strip() and str(value or "").strip()
+				)
+			),
+		)
+		if signature[1]:
+			signatures[signature] = int(signatures.get(signature, 0) or 0) + 1
+	for (rule_intent, _signature), count in signatures.items():
+		if rule_intent == target_intent and count > 1:
+			return False
+	return any(rule_intent == target_intent for rule_intent, _signature in signatures)
+
+
+def _slot_alias_matches(slot_name: str, message: str) -> List[str]:
+	matches: List[tuple[str, str]] = list(semantic_slot_alias_match_details(slot_name, message))
+	if str(slot_name or "").strip() == "listing_view":
+		for canonical_value, aliases in active_listing_view_aliases().items():
+			for alias in aliases:
+				if _message_contains_phrase(message, alias):
+					matches.append((canonical_value, alias))
+					break
+	if str(slot_name or "").strip() != "listing_view":
+		return list(dict.fromkeys(canonical_value for canonical_value, _alias in matches))
+	suppressed: set[str] = set()
+	for canonical_value, alias in matches:
+		for other_canonical_value, other_alias in matches:
+			if canonical_value == other_canonical_value:
+				continue
+			if len(_normalized_message_phrase(other_alias)) <= len(_normalized_message_phrase(alias)):
+				continue
+			if _message_contains_phrase(other_alias, alias):
+				suppressed.add(canonical_value)
+				break
+	out: List[str] = []
+	for canonical_value, _alias in matches:
+		if canonical_value in suppressed:
+			continue
+		out.append(canonical_value)
+	return list(dict.fromkeys(out))
+
+
+def _financial_statement_family_markers() -> List[str]:
+	spec = get_report_family_spec("financial_statement")
+	if not isinstance(spec, dict):
+		return []
+	routing_hints = spec.get("routing_hints") if isinstance(spec.get("routing_hints"), dict) else {}
+	intent_markers = _clean_list(routing_hints.get("intent_markers"))
+	family_label = str(spec.get("family_label") or "").strip()
+	markers = list(intent_markers)
+	if family_label:
+		markers.append(family_label)
+	return list(dict.fromkeys([marker for marker in markers if str(marker or "").strip()]))
+
+
+def _message_requests_generic_financial_statement(message: str) -> bool:
+	if _slot_alias_matches("statement_variant", message):
+		return False
+	return any(_message_contains_phrase(message, marker) for marker in _financial_statement_family_markers())
+
+
+def _reconcile_generic_financial_statement_request_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if str(interpretation.intent_class or "").strip() != "financial_statement":
+		return interpretation
+	if not _message_requests_generic_financial_statement(message):
+		return interpretation
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
+	extracted_slots.pop("statement_variant", None)
+	current_reports = list(interpretation.candidate_reports or [])
+	current_capabilities = list(interpretation.candidate_capability_ids or [])
+	if not current_reports and not extracted_slots.get("statement_variant"):
+		return interpretation
+	if "financial_statement_read" not in current_capabilities:
+		current_capabilities = ["financial_statement_read"] + current_capabilities
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(dict.fromkeys(current_capabilities)),
+		candidate_reports=[],
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=extracted_slots,
+		ambiguity_flags=list(dict.fromkeys(_clean_list(interpretation.ambiguity_flags) + ["ambiguous_report"])),
+		ambiguity_reason="Financial statement requests require an explicit statement view before execution.",
+		confidence=float(interpretation.confidence or 0.0),
+	)
+
+
+def _slot_value_matches_message(
+	*,
+	slot_name: str,
+	required_value: str,
+	message: str,
+	message_concepts: set[str],
+) -> bool:
+	target = str(required_value or "").strip()
+	if not target:
+		return False
+	matched_aliases = _slot_alias_matches(slot_name, message)
+	if target in matched_aliases:
+		return True
+	if str(slot_name or "").strip() == "listing_view" and matched_aliases:
+		return False
+	return target in message_concepts
+
+
+_GENERIC_DETERMINISTIC_SURFACE_SLOTS = {"entity_grain"}
+
+
+def _deterministic_surface_rule_specificity(rule: Dict[str, Any]) -> tuple[int, int, int]:
+	required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+	non_generic_slots = [
+		str(slot_name or "").strip()
+		for slot_name in required_slots
+		if str(slot_name or "").strip()
+		and str(slot_name or "").strip() not in _GENERIC_DETERMINISTIC_SURFACE_SLOTS
+	]
+	candidate_reports = _clean_list(rule.get("candidate_reports"))
+	candidate_capability_ids = _clean_list(rule.get("candidate_capability_ids"))
+	return (
+		len(non_generic_slots),
+		len([slot_name for slot_name in required_slots if str(slot_name or "").strip()]),
+		len(candidate_reports) + len(candidate_capability_ids),
+	)
+
+
+def _select_deterministic_surface_rule(matched_rules: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+	if len(matched_rules) == 1:
+		return matched_rules[0]
+	if not matched_rules:
+		return None
+	scored_rules = [
+		(_deterministic_surface_rule_specificity(rule), rule)
+		for rule in matched_rules
+	]
+	best_score = max(score for score, _rule in scored_rules)
+	best_rules = [rule for score, rule in scored_rules if score == best_score]
+	if len(best_rules) != 1:
+		return None
+	return best_rules[0]
+
+
+def _reconcile_explicit_transaction_listing_view_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if str(interpretation.intent_class or "").strip() != "transaction_listing":
+		return interpretation
+	explicit_listing_views = _slot_alias_matches("listing_view", message)
+	if len(explicit_listing_views) != 1:
+		return interpretation
+	explicit_listing_view = str((explicit_listing_views or [""])[0] or "").strip()
+	if not explicit_listing_view:
+		return interpretation
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
+	current_listing_view = str(extracted_slots.get("listing_view") or "").strip()
+	if current_listing_view == explicit_listing_view:
+		return interpretation
+	extracted_slots["listing_view"] = explicit_listing_view
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=extracted_slots,
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=float(interpretation.confidence or 0.0),
+	)
+
+
+
+def _reconcile_explicit_time_scope_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	explicit_time_scopes = _slot_alias_matches("time_scope", message)
+	if len(explicit_time_scopes) != 1:
+		return interpretation
+	explicit_time_scope = str((explicit_time_scopes or [""])[0] or "").strip()
+	if not explicit_time_scope:
+		return interpretation
+	current_time_scope = str(interpretation.requested_time_scope or "").strip()
+	if current_time_scope == explicit_time_scope:
+		return interpretation
+	if current_time_scope:
+		return interpretation
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=explicit_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots) if isinstance(interpretation.extracted_slots, dict) else {},
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=float(interpretation.confidence or 0.0),
+	)
+
+
+def _reconcile_financial_statement_default_time_scope_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if str(interpretation.intent_class or "").strip() != "financial_statement":
+		return interpretation
+	current_time_scope = str(interpretation.requested_time_scope or "").strip()
+	if _slot_alias_matches("time_scope", message) or (
+		current_time_scope and _message_explicitly_requests_time_scope(message, current_time_scope)
+	) or _infer_followup_requested_time_scope(message=message, requested_time_scope=""):
+		return interpretation
+	defaults = capability_fresh_query_defaults(
+		"financial_statement_read",
+		intent_class="financial_statement",
+	)
+	default_time_scope = str(defaults.get("default_time_scope") or "").strip()
+	if not default_time_scope:
+		return interpretation
+	if current_time_scope == default_time_scope:
+		return interpretation
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=default_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots) if isinstance(interpretation.extracted_slots, dict) else {},
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=float(interpretation.confidence or 0.0),
+	)
+
+
+def _apply_governed_time_scope_default(
+	*,
+	intent_class: str,
+	candidate_capability_ids: List[str],
+	requested_time_scope: str,
+) -> str:
+	current = str(requested_time_scope or "").strip()
+	if current or not _semantic_resolution_governs_intent(intent_class):
+		return current
+	capability_id = str((_clean_list(candidate_capability_ids) or [""])[0] or "").strip()
+	if not capability_id:
+		return ""
+	spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
+	return str(spec.get("default_time_scope") or "").strip()
+
+
+def _normalized_message_phrase(value: Any) -> str:
+	return " ".join(str(value or "").strip().lower().split())
+
+
+def _message_contains_phrase(value: str, phrase: str) -> bool:
+	text = _normalized_message_phrase(value)
+	target = _normalized_message_phrase(phrase)
+	if not text or not target:
+		return False
+	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
+	return bool(re.search(pattern, text))
+
+
+def _direct_query_filterable_fields(report_name: str) -> List[str]:
+	report_spec = get_report_spec(report_name)
+	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	fields = {
+		str(value or "").strip()
+		for value in (query_spec.get("fields") or [])
+		if str(value or "").strip()
+	}
+	filterable_fields = [
+		str(value or "").strip()
+		for value in (query_spec.get("filterable_fields") or [])
+		if str(value or "").strip()
+	]
+	return [field for field in filterable_fields if field in fields]
+
+
+def _direct_query_distinct_scalar_values(
+	*,
+	report_name: str,
+	field_name: str,
+) -> List[str]:
+	if frappe is None:
+		return []
+	report_spec = get_report_spec(report_name)
+	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	doctype = str(query_spec.get("doctype") or "").strip()
+	if not doctype or not str(field_name or "").strip():
+		return []
+	fixed_filters = query_spec.get("fixed_filters") if isinstance(query_spec.get("fixed_filters"), dict) else {}
+	try:
+		rows = frappe.get_all(
+			doctype,
+			fields=[str(field_name or "").strip()],
+			filters={str(key): value for key, value in fixed_filters.items() if str(key or "").strip()},
+			order_by="modified desc",
+			limit_page_length=200,
+		)
+	except Exception:
+		return []
+	out: List[str] = []
+	for row in rows or []:
+		if not isinstance(row, dict):
+			continue
+		value = str(row.get(field_name) or "").strip()
+		if value and value not in out:
+			out.append(value)
+	return out
+
+
+def _match_message_to_direct_query_value(
+	*,
+	message: str,
+	candidate_values: List[str],
+) -> str:
+	scored: List[tuple[int, str]] = []
+	for value in _clean_list(candidate_values):
+		if _message_contains_phrase(message, value):
+			scored.append((len(_normalized_message_phrase(value)), value))
+	if not scored:
+		return ""
+	scored.sort(key=lambda item: (-int(item[0] or 0), str(item[1] or "")))
+	return str(scored[0][1] or "").strip()
+
+
+def _match_message_to_governed_filter_value(
+	*,
+	message: str,
+	value_specs: List[Dict[str, Any]],
+) -> str:
+	scored: List[tuple[int, str]] = []
+	for spec in value_specs:
+		if not isinstance(spec, dict):
+			continue
+		value = str(spec.get("value") or "").strip()
+		if not value:
+			continue
+		phrases = [value]
+		phrases.extend(
+			str(alias or "").strip()
+			for alias in (spec.get("aliases") or [])
+			if str(alias or "").strip()
+		)
+		best_len = 0
+		for phrase in phrases:
+			if _message_contains_phrase(message, phrase):
+				best_len = max(best_len, len(_normalized_message_phrase(phrase)))
+		if best_len > 0:
+			scored.append((best_len, value))
+	if not scored:
+		return ""
+	scored.sort(key=lambda item: (-int(item[0] or 0), str(item[1] or "")))
+	best_len = int(scored[0][0] or 0)
+	best_values = list(
+		dict.fromkeys(
+			str(value or "").strip()
+			for length, value in scored
+			if int(length or 0) == best_len and str(value or "").strip()
+		)
+	)
+	if len(best_values) != 1:
+		return ""
+	return best_values[0]
+
+
+def _augment_direct_query_scalar_filters_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract,
+) -> FreshQueryInterpretationContract:
+	report_name = str((_clean_list(interpretation.candidate_reports) or [""])[0] or "").strip()
+	capability_id = str((_clean_list(interpretation.candidate_capability_ids) or [""])[0] or "").strip()
+	if not report_name or not capability_id or not str(message or "").strip():
+		return interpretation
+	filterable_fields = _direct_query_filterable_fields(report_name)
+	if not filterable_fields:
+		return interpretation
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
+	existing_filters = (
+		dict(extracted_slots.get("filters"))
+		if isinstance(extracted_slots.get("filters"), dict)
+		else {}
+	)
+	dimension_keys = detect_canonical_keys(
+		message,
+		capability_id=capability_id,
+		dimension_or_metric="dimension",
+	)
+	updated_filters = dict(existing_filters)
+	for canonical_key in dimension_keys:
+		mapped_fields = [
+			str(field_name or "").strip()
+			for field_name in get_erp_field_mapping(canonical_key, report_name)
+			if str(field_name or "").strip()
+		]
+		for field_name in mapped_fields:
+			if field_name not in filterable_fields or updated_filters.get(field_name):
+				continue
+			candidate_values = _direct_query_distinct_scalar_values(
+				report_name=report_name,
+				field_name=field_name,
+			)
+			matched_value = _match_message_to_direct_query_value(
+				message=message,
+				candidate_values=candidate_values,
+			)
+			if matched_value:
+				updated_filters[field_name] = matched_value
+	for field_name in filterable_fields:
+		if updated_filters.get(field_name):
+			continue
+		governed_value_specs = report_direct_query_filter_value_aliases(report_name, field_name)
+		if not governed_value_specs:
+			continue
+		matched_value = _match_message_to_governed_filter_value(
+			message=message,
+			value_specs=governed_value_specs,
+		)
+		if matched_value:
+			updated_filters[field_name] = matched_value
+	if updated_filters == existing_filters:
+		return interpretation
+	extracted_slots["filters"] = updated_filters
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=extracted_slots,
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=float(interpretation.confidence or 0.0),
+	)
+
+
+def _frontdoor_master_data_assessment_payload(front_door_contract: Dict[str, Any] | None) -> Dict[str, Any]:
+	payload = front_door_contract if isinstance(front_door_contract, dict) else {}
+	response_payload = (
+		payload.get("response_payload")
+		if isinstance(payload.get("response_payload"), dict)
+		else {}
+	)
+	assessment = (
+		response_payload.get("master_data_frontdoor_assessment")
+		if isinstance(response_payload.get("master_data_frontdoor_assessment"), dict)
+		else {}
+	)
+	return dict(assessment) if assessment else {}
+
+
+def _apply_master_data_frontdoor_assessment_to_interpretation(
+	*,
+	request_id: str,
+	session_id: str,
+	interpretation: FreshQueryInterpretationContract | None,
+	assessment_payload: Dict[str, Any] | None,
+) -> FreshQueryInterpretationContract | None:
+	assessment = assessment_payload if isinstance(assessment_payload, dict) else {}
+	if str(assessment.get("status") or "").strip() != "resolved":
+		return interpretation
+	scope_id = str(assessment.get("scope_id") or "").strip()
+	entity_grain = str(assessment.get("entity_grain") or "").strip()
+	request_mode = str(assessment.get("request_mode") or "").strip()
+	if not entity_grain or not request_mode:
+		return interpretation
+	projection = str(assessment.get("lookup_projection") or "").strip()
+	search_text = str(assessment.get("lookup_search_text") or "").strip()
+	capability_id = str(assessment.get("capability_id") or "").strip()
+	report_name = str(assessment.get("report_name") or "").strip()
+	allowed_lookup_modes = [
+		str(value or "").strip()
+		for value in (assessment.get("allowed_lookup_modes") or [])
+		if str(value or "").strip()
+	]
+	internal_details = assessment.get("internal_details") if isinstance(assessment.get("internal_details"), dict) else {}
+	lookup_limit = int(max(0, internal_details.get("lookup_limit") or 0))
+	if scope_id and not str(internal_details.get("scope_id") or "").strip():
+		internal_details = {**internal_details, "scope_id": scope_id}
+	if capability_id and not str(internal_details.get("capability_id") or "").strip():
+		internal_details = {**internal_details, "capability_id": capability_id}
+	if report_name and not str(internal_details.get("report_name") or "").strip():
+		internal_details = {**internal_details, "report_name": report_name}
+	if allowed_lookup_modes and not internal_details.get("allowed_lookup_modes"):
+		internal_details = {**internal_details, "allowed_lookup_modes": list(allowed_lookup_modes)}
+
+	base_slots: Dict[str, Any] = {}
+	if interpretation is not None and isinstance(interpretation.extracted_slots, dict):
+		base_slots = dict(interpretation.extracted_slots)
+	if scope_id:
+		base_slots["scope_id"] = scope_id
+	base_slots["entity_grain"] = entity_grain
+	base_slots["lookup_mode"] = request_mode
+	if projection:
+		base_slots["lookup_projection"] = projection
+	if search_text:
+		base_slots["lookup_search_text"] = search_text
+	if lookup_limit > 0 and not int(max(0, base_slots.get("lookup_limit") or 0)):
+		base_slots["lookup_limit"] = lookup_limit
+
+	requested_dimensions = []
+	if interpretation is not None:
+		requested_dimensions = list(interpretation.requested_dimensions)
+	if not requested_dimensions:
+		dimension_label = entity_grain_display_label(entity_grain, plural=False).title()
+		requested_dimensions = [dimension_label or entity_grain.title()]
+
+	if interpretation is None or str(interpretation.intent_class or "").strip() != "master_data_lookup":
+		return build_fresh_query_interpretation_contract(
+			request_id=request_id,
+			session_id=session_id,
+			intent_class="master_data_lookup",
+			candidate_capability_ids=[capability_id] if capability_id else [],
+			candidate_reports=[report_name] if report_name else [],
+			requested_dimensions=requested_dimensions,
+			requested_metrics=[],
+			requested_time_scope="",
+			target_limit=lookup_limit,
+			requested_presentation=[],
+			extracted_slots=base_slots,
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.95,
+		)
+
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(
+			dict.fromkeys([capability_id] + list(interpretation.candidate_capability_ids))
+		)
+		if capability_id
+		else list(interpretation.candidate_capability_ids),
+		candidate_reports=list(
+			dict.fromkeys([report_name] + list(interpretation.candidate_reports))
+		)
+		if report_name
+		else list(interpretation.candidate_reports),
+		requested_dimensions=requested_dimensions,
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=int(max(lookup_limit, interpretation.target_limit or 0)),
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=base_slots,
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=max(float(interpretation.confidence or 0.0), 0.95),
+	)
+
+
+def _augment_master_data_lookup_interpretation_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if str(interpretation.intent_class or "").strip() != "master_data_lookup":
+		return interpretation
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
+	updated_slots = dict(extracted_slots)
+	entity_grain = str(extracted_slots.get("entity_grain") or "").strip()
+	if not entity_grain:
+		inferred_entity_grains = [
+			str(value or "").strip()
+			for value in infer_entity_grains_from_message(message)
+			if str(value or "").strip()
+		]
+		if len(inferred_entity_grains) == 1:
+			entity_grain = inferred_entity_grains[0]
+			updated_slots["entity_grain"] = entity_grain
+	if not entity_grain:
+		return interpretation
+	policy = get_entity_reference_policy_spec(entity_grain)
+	if not policy or str(policy.get("activation_state") or "").strip() != "active":
+		if updated_slots == extracted_slots:
+			return interpretation
+		return build_fresh_query_interpretation_contract(
+			request_id=interpretation.request_id,
+			session_id=interpretation.session_id,
+			intent_class=interpretation.intent_class,
+			candidate_capability_ids=list(interpretation.candidate_capability_ids),
+			candidate_reports=list(interpretation.candidate_reports),
+			requested_dimensions=list(interpretation.requested_dimensions),
+			requested_metrics=list(interpretation.requested_metrics),
+			requested_time_scope=interpretation.requested_time_scope,
+			target_limit=interpretation.target_limit,
+			requested_presentation=list(interpretation.requested_presentation),
+			extracted_slots=updated_slots,
+			ambiguity_flags=list(interpretation.ambiguity_flags),
+			ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+			confidence=float(interpretation.confidence or 0.0),
+		)
+	normalized_slots = normalize_master_data_lookup_slots(
+		message=message,
+		entity_grain=entity_grain,
+		preferred_slots=updated_slots,
+	)
+	for key, value in normalized_slots.items():
+		if key == "lookup_limit":
+			if not updated_slots.get(key):
+				updated_slots[key] = int(max(0, value or 0))
+			continue
+		if not str(updated_slots.get(key) or "").strip() and str(value or "").strip():
+			updated_slots[key] = value
+	lookup_mode = str(updated_slots.get("lookup_mode") or "").strip()
+	if lookup_mode and not master_data_lookup_mode_allowed(entity_grain, lookup_mode):
+		if updated_slots == extracted_slots:
+			return interpretation
+		return build_fresh_query_interpretation_contract(
+			request_id=interpretation.request_id,
+			session_id=interpretation.session_id,
+			intent_class=interpretation.intent_class,
+			candidate_capability_ids=list(interpretation.candidate_capability_ids),
+			candidate_reports=list(interpretation.candidate_reports),
+			requested_dimensions=list(interpretation.requested_dimensions),
+			requested_metrics=list(interpretation.requested_metrics),
+			requested_time_scope=interpretation.requested_time_scope,
+			target_limit=interpretation.target_limit,
+			requested_presentation=list(interpretation.requested_presentation),
+			extracted_slots=updated_slots,
+			ambiguity_flags=list(interpretation.ambiguity_flags),
+			ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+			confidence=float(interpretation.confidence or 0.0),
+		)
+	if lookup_mode in {"candidate_resolution", "profile_target"}:
+		existing_filters = (
+			dict(updated_slots.get("filters"))
+			if isinstance(updated_slots.get("filters"), dict)
+			else {}
+		)
+		filter_field = str(policy.get("filter_field") or "").strip()
+		if filter_field and not str(existing_filters.get(filter_field) or "").strip():
+			resolution_payload = resolve_entity_reference_from_message(
+				request_id=interpretation.request_id,
+				entity_grain=entity_grain,
+				message=message,
+				lookup_mode=lookup_mode,
+				search_text=str(updated_slots.get("lookup_search_text") or "").strip(),
+			)
+			if isinstance(resolution_payload, dict) and resolution_payload:
+				updated_slots["entity_reference_resolution"] = resolution_payload
+				resolved_entity = (
+					resolution_payload.get("resolved_entity")
+					if isinstance(resolution_payload.get("resolved_entity"), dict)
+					else {}
+				)
+				resolved_entity_key = str(resolved_entity.get("entity_key") or "").strip()
+				if str(resolution_payload.get("resolution_status") or "").strip() == "resolved" and resolved_entity_key:
+					updated_filters = dict(existing_filters)
+					updated_filters[filter_field] = resolved_entity_key
+					updated_slots["filters"] = updated_filters
+	if updated_slots == extracted_slots:
+		return interpretation
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=updated_slots,
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=float(interpretation.confidence or 0.0),
+	)
+
+
+def _report_entity_scope_specs(report_name: str) -> List[Dict[str, Any]]:
+	spec = get_report_spec(report_name)
+	values = spec.get("entity_scope_support")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def _report_entity_scope_spec_for_grain(report_name: str, entity_grain: str) -> Dict[str, Any]:
+	clean_grain = str(entity_grain or "").strip()
+	if not clean_grain:
+		return {}
+	for item in _report_entity_scope_specs(report_name):
+		if str(item.get("entity_grain") or "").strip() == clean_grain:
+			return item
+	return {}
+
+
+def _report_supports_entity_scope(
+	*,
+	report_name: str,
+	entity_grain: str,
+	requested_dimensions: List[str],
+) -> bool:
+	spec = _report_entity_scope_spec_for_grain(report_name, entity_grain)
+	if not spec:
+		return False
+	supported_dimensions = [
+		str(value or "").strip()
+		for value in (spec.get("supported_dimensions") or [])
+		if str(value or "").strip()
+	]
+	if not supported_dimensions:
+		return True
+	requested = _clean_list(requested_dimensions)
+	if not requested:
+		return True
+	supported_keys = {_normalize_key(value) for value in supported_dimensions}
+	return all(_normalize_key(value) in supported_keys for value in requested)
+
+
+def _single_entity_grain_for_message(
+	*,
+	message: str,
+	extracted_slots: Dict[str, Any],
+) -> str:
+	slot_grain = str(extracted_slots.get("entity_grain") or "").strip()
+	if slot_grain:
+		return slot_grain
+	inferred = [
+		str(value or "").strip()
+		for value in infer_entity_grains_from_message(message)
+		if str(value or "").strip()
+	]
+	if len(inferred) == 1:
+		return inferred[0]
+	return ""
+
+
+def _resolve_entity_scoped_report_candidate(
+	*,
+	capability_id: str,
+	intent_class: str,
+	current_report: str,
+	entity_grain: str,
+	requested_dimensions: List[str],
+) -> str:
+	candidates = []
+	if current_report:
+		candidates.append(current_report)
+	for report_name in _intent_supported_reports_for_capability(
+		capability_id=capability_id,
+		intent_class=intent_class,
+	):
+		if report_name not in candidates:
+			candidates.append(report_name)
+	for report_name in candidates:
+		if _report_supports_entity_scope(
+			report_name=report_name,
+			entity_grain=entity_grain,
+			requested_dimensions=requested_dimensions,
+		):
+			return report_name
+	return current_report
+
+
+def _augment_entity_scoped_report_interpretation_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if not str(message or "").strip():
+		return interpretation
+	if str(interpretation.intent_class or "").strip() == "master_data_lookup":
+		return interpretation
+	capability_id = str((_clean_list(interpretation.candidate_capability_ids) or [""])[0] or "").strip()
+	current_report = str((_clean_list(interpretation.candidate_reports) or [""])[0] or "").strip()
+	if not capability_id:
+		return interpretation
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
+	entity_grain = _single_entity_grain_for_message(
+		message=message,
+		extracted_slots=extracted_slots,
+	)
+	if not entity_grain:
+		return interpretation
+	target_report = _resolve_entity_scoped_report_candidate(
+		capability_id=capability_id,
+		intent_class=str(interpretation.intent_class or "").strip(),
+		current_report=current_report,
+		entity_grain=entity_grain,
+		requested_dimensions=list(interpretation.requested_dimensions),
+	)
+	scope_spec = _report_entity_scope_spec_for_grain(target_report, entity_grain)
+	filter_field = str(scope_spec.get("filter_field") or "").strip()
+	if not filter_field:
+		return interpretation
+	existing_filters = (
+		dict(extracted_slots.get("filters"))
+		if isinstance(extracted_slots.get("filters"), dict)
+		else {}
+	)
+	resolution_payload = (
+		dict(extracted_slots.get("entity_reference_resolution"))
+		if isinstance(extracted_slots.get("entity_reference_resolution"), dict)
+		else {}
+	)
+	resolved_entity = (
+		dict(resolution_payload.get("resolved_entity"))
+		if isinstance(resolution_payload.get("resolved_entity"), dict)
+		else {}
+	)
+	resolution_status = str(resolution_payload.get("resolution_status") or "").strip()
+	if resolution_status != "resolved" or not str(resolved_entity.get("entity_key") or "").strip():
+		resolution_payload = resolve_entity_reference_from_message(
+			request_id=interpretation.request_id,
+			entity_grain=entity_grain,
+			message=message,
+			lookup_mode="profile_target",
+			search_text="",
+		)
+		if not isinstance(resolution_payload, dict) or not resolution_payload:
+			return interpretation
+		resolved_entity = (
+			dict(resolution_payload.get("resolved_entity"))
+			if isinstance(resolution_payload.get("resolved_entity"), dict)
+			else {}
+		)
+		resolution_status = str(resolution_payload.get("resolution_status") or "").strip()
+		if resolution_status != "resolved":
+			return interpretation
+	resolved_entity_key = str(resolved_entity.get("entity_key") or "").strip()
+	if not resolved_entity_key:
+		return interpretation
+	updated_slots = dict(extracted_slots)
+	updated_slots["entity_grain"] = entity_grain
+	updated_slots["entity_reference_resolution"] = resolution_payload
+	updated_filters = dict(existing_filters)
+	updated_filters[filter_field] = resolved_entity_key
+	updated_slots["filters"] = updated_filters
+	candidate_reports = list(_clean_list(interpretation.candidate_reports))
+	if target_report:
+		candidate_reports = [target_report]
+	if (
+		candidate_reports == list(_clean_list(interpretation.candidate_reports))
+		and updated_slots == extracted_slots
+	):
+		return interpretation
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=candidate_reports,
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=updated_slots,
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=float(interpretation.confidence or 0.0),
+	)
 
 
 def _preferred_family_id_for_message(
@@ -663,7 +1809,6 @@ def _validate_semantic_payload(
 	)
 	raw_intent_class = str(payload.get("intent_class") or "").strip()
 	intent_class = intent_lookup.get(_normalize_key(raw_intent_class), "")
-	intent_class = _apply_governed_intent_bias(intent_class=intent_class, message=message)
 
 	capabilities = [
 		dict(item)
@@ -717,11 +1862,20 @@ def _validate_semantic_payload(
 		candidate_reports.append(canonical)
 	candidate_reports = list(dict.fromkeys(candidate_reports))
 
+	raw_requested_dimensions = list(dict.fromkeys(_clean_list(payload.get("requested_dimensions"))))
+	raw_requested_metrics = list(dict.fromkeys(_clean_list(payload.get("requested_metrics"))))
+
+	scoped_capabilities = _capability_scope(intent_class, candidate_capability_ids, context)
 	dimension_lookup = _normalized_lookup(
 		[
 			dimension
 			for capability in scoped_capabilities
 			for dimension in _clean_list(capability.get("dimensions"))
+		]
+		+ [
+			dimension
+			for report_name in candidate_reports
+			for dimension in _clean_list(report_supported_dimensions(report_name))
 		]
 	)
 	metric_lookup = _normalized_lookup(
@@ -730,9 +1884,14 @@ def _validate_semantic_payload(
 			for capability in scoped_capabilities
 			for metric in _clean_list(capability.get("metrics"))
 		]
+		+ [
+			metric
+			for report_name in candidate_reports
+			for metric in _clean_list(report_supported_metrics(report_name))
+		]
 	)
 	requested_dimensions: List[str] = []
-	for value in _clean_list(payload.get("requested_dimensions")):
+	for value in raw_requested_dimensions:
 		canonical = dimension_lookup.get(_normalize_key(value), "")
 		if not canonical:
 			return None
@@ -740,7 +1899,7 @@ def _validate_semantic_payload(
 	requested_dimensions = list(dict.fromkeys(requested_dimensions))
 
 	requested_metrics: List[str] = []
-	for value in _clean_list(payload.get("requested_metrics")):
+	for value in raw_requested_metrics:
 		canonical = metric_lookup.get(_normalize_key(value), "")
 		if not canonical:
 			return None
@@ -775,10 +1934,15 @@ def _validate_semantic_payload(
 	except Exception:
 		confidence = 0.0
 	confidence = max(0.0, min(1.0, confidence))
+	try:
+		target_limit = int(payload.get("target_limit") or 0)
+	except Exception:
+		target_limit = 0
+	target_limit = max(0, min(50, target_limit))
 	requested_time_scope = _normalize_time_scope(payload.get("requested_time_scope"))
-	requested_time_scope = _infer_governed_time_scope(
+	requested_time_scope = _apply_governed_time_scope_default(
 		intent_class=intent_class,
-		message=message,
+		candidate_capability_ids=candidate_capability_ids,
 		requested_time_scope=requested_time_scope,
 	)
 	ambiguity_reason = str(payload.get("ambiguity_reason") or "").strip()
@@ -820,7 +1984,7 @@ def _validate_semantic_payload(
 		requested_time_scope=requested_time_scope,
 	)
 
-	return build_fresh_query_interpretation_contract(
+	contract = build_fresh_query_interpretation_contract(
 		request_id=request_id,
 		session_id=session_id,
 		intent_class=intent_class,
@@ -829,12 +1993,14 @@ def _validate_semantic_payload(
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
 		requested_time_scope=requested_time_scope,
+		target_limit=target_limit,
 		requested_presentation=requested_presentation,
 		extracted_slots=clean_slots,
 		ambiguity_flags=ambiguity_flags,
 		ambiguity_reason=ambiguity_reason,
 		confidence=confidence,
 	)
+	return contract
 
 
 def interpret_fresh_query_semantically(
@@ -957,99 +2123,301 @@ def _deterministic_family_surface_interpretation(
 	message: str,
 	confidence_threshold: float,
 ) -> FreshQueryInterpretationContract | None:
-	surface = build_family_tool_surface_for_message(
-		request_id=request_id,
-		session_id=session_id,
-		message=message,
-	)
-	if surface is None or not list(surface.candidate_family_ids or []):
-		return None
-	family_id = str((surface.candidate_family_ids or [""])[0] or "").strip()
-	message_concepts = ontology_detect_concepts(message)
-	intent_class = report_family_default_intent_class(family_id)
-	candidate_capability_ids = _ordered_capability_ids_for_family(
-		family_id=family_id,
-		intent_class=intent_class,
-		message_concepts=message_concepts,
-	)
-	if not candidate_capability_ids:
-		return None
-	candidate_capability_ids = candidate_capability_ids[:1]
-	candidate_reports = _resolve_governed_report_candidates(
-		capability_id=candidate_capability_ids[0],
-		intent_class=intent_class,
-		message_concepts=message_concepts,
-		candidate_reports=[],
-	)
-	if not candidate_reports:
-		report_name = _resolve_default_report_name(
-			capability_id=candidate_capability_ids[0],
-			intent_class=intent_class,
-			message_concepts=message_concepts,
+	if _message_requests_generic_financial_statement(message):
+		defaults = capability_fresh_query_defaults(
+			"financial_statement_read",
+			intent_class="financial_statement",
+		)
+		return build_fresh_query_interpretation_contract(
+			request_id=request_id,
+			session_id=session_id,
+			intent_class="financial_statement",
+			candidate_capability_ids=["financial_statement_read"],
 			candidate_reports=[],
+			requested_dimensions=_clean_list(defaults.get("default_dimensions")),
+			requested_metrics=_clean_list(defaults.get("default_metrics")),
+			requested_time_scope=str(defaults.get("default_time_scope") or "").strip(),
+			target_limit=0,
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=["ambiguous_report"],
+			ambiguity_reason="Financial statement requests require an explicit statement view before execution.",
+			confidence=max(float(confidence_threshold or 0.0), 0.9),
 		)
-		if report_name:
-			candidate_reports = [report_name]
-	if not candidate_reports:
-		report_names = report_family_report_names(family_id)
-		report_name = str((report_names or [""])[0] or "").strip()
-		candidate_reports = [report_name] if report_name else []
-	requested_dimensions: List[str] = []
-	requested_metrics: List[str] = []
-	requested_time_scope = _infer_governed_time_scope(
-		intent_class=intent_class,
-		message=message,
-		requested_time_scope="",
-	)
-	if not intent_class:
+	registry = load_semantic_resolution_registry()
+	rules = registry.get("family_resolution_rules")
+	if not isinstance(rules, list):
 		return None
-
-	ambiguity_flags: List[str] = []
-	ambiguity_reason = ""
-	if len(candidate_reports) > 1:
-		ambiguity_flags.append("ambiguous_report")
-		ambiguity_reason = "The request matches multiple governed reports and needs clarification before execution."
-		default_dimensions = []
-		default_metrics = []
-		default_time_scope = requested_time_scope
-	else:
-		default_dimensions, default_metrics, default_time_scope = _apply_governed_request_defaults(
-			intent_class=intent_class,
-			message=message,
-			candidate_capability_ids=candidate_capability_ids,
-			candidate_reports=candidate_reports,
-			requested_dimensions=requested_dimensions,
-			requested_metrics=requested_metrics,
-			requested_time_scope=requested_time_scope,
-		)
-
-	return build_fresh_query_interpretation_contract(
+	message_concepts = {
+		str(value or "").strip()
+		for value in ontology_detect_concepts(message)
+		if str(value or "").strip()
+	}
+	matched_rules: List[Dict[str, Any]] = []
+	for rule in rules:
+		if not isinstance(rule, dict):
+			continue
+		intent_class = str(rule.get("intent_class") or "").strip()
+		required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+		if not intent_class or not required_slots:
+			continue
+		if not _allow_deterministic_family_surface_fallback(intent_class):
+			continue
+		if not all(
+			_slot_value_matches_message(
+				slot_name=str(slot_name or "").strip(),
+				required_value=str(slot_value or "").strip(),
+				message=message,
+				message_concepts=message_concepts,
+			)
+			for slot_name, slot_value in required_slots.items()
+			if str(slot_name or "").strip() and str(slot_value or "").strip()
+		):
+			continue
+		matched_rules.append(rule)
+	selected_rule = _select_deterministic_surface_rule(matched_rules)
+	if selected_rule is None:
+		return None
+	intent_class = str(selected_rule.get("intent_class") or "").strip()
+	candidate_capability_ids = _clean_list(selected_rule.get("candidate_capability_ids"))
+	candidate_reports = _clean_list(selected_rule.get("candidate_reports"))
+	primary_capability_id = str((candidate_capability_ids or [""])[0] or "").strip()
+	defaults = capability_fresh_query_defaults(primary_capability_id, intent_class=intent_class)
+	detected_metrics = detect_canonical_keys(
+		message,
+		capability_id=primary_capability_id or None,
+		dimension_or_metric="metric",
+	)
+	requested_metrics = list(dict.fromkeys(_clean_list(defaults.get("default_metrics")) + detected_metrics))
+	contract = build_fresh_query_interpretation_contract(
 		request_id=request_id,
 		session_id=session_id,
 		intent_class=intent_class,
 		candidate_capability_ids=candidate_capability_ids,
 		candidate_reports=candidate_reports,
-		requested_dimensions=default_dimensions,
-		requested_metrics=default_metrics,
-		requested_time_scope=default_time_scope,
+		requested_dimensions=_clean_list(defaults.get("default_dimensions")),
+		requested_metrics=requested_metrics,
+		requested_time_scope=str(defaults.get("default_time_scope") or "").strip(),
+		target_limit=0,
 		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=ambiguity_flags,
-		ambiguity_reason=ambiguity_reason,
-		confidence=max(confidence_threshold, 0.85),
+		extracted_slots={
+			str(slot_name or "").strip(): str(slot_value or "").strip()
+			for slot_name, slot_value in (
+				(selected_rule.get("required_slots") if isinstance(selected_rule.get("required_slots"), dict) else {}).items()
+			)
+			if str(slot_name or "").strip() and str(slot_value or "").strip()
+		},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=max(float(confidence_threshold or 0.0), 0.9),
+	)
+	return _augment_master_data_lookup_interpretation_from_message(
+		message=message,
+		interpretation=contract,
 	)
 
 
-def compile_from_fresh_query_message(
+def _normalize_transaction_listing_requested_metrics_from_message(
 	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if str(interpretation.intent_class or "").strip() != "transaction_listing":
+		return interpretation
+	candidate_capability_ids = list(interpretation.candidate_capability_ids or [])
+	candidate_reports = list(interpretation.candidate_reports or [])
+	capability_id = str((candidate_capability_ids or [""])[0] or "").strip()
+	report_name = str((candidate_reports or [""])[0] or "").strip()
+	if not capability_id or not report_name:
+		return interpretation
+	explicit_supported_metric_labels = [
+		label
+		for label in _supported_labels_for_report(report_name, dimension_or_metric="metric")
+		if _message_contains_phrase(message, label)
+	]
+	normalized_metrics = (
+		list(dict.fromkeys(explicit_supported_metric_labels))
+		if explicit_supported_metric_labels
+		else _resolve_requested_labels(
+			message=message,
+			report_name=report_name,
+			capability_id=capability_id,
+			intent_class="transaction_listing",
+			existing_values=[],
+			dimension_or_metric="metric",
+		)
+	)
+	if not normalized_metrics:
+		return interpretation
+	if normalized_metrics == list(interpretation.requested_metrics or []):
+		return interpretation
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=normalized_metrics,
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots),
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=interpretation.ambiguity_reason,
+		confidence=interpretation.confidence,
+	)
+
+
+def _augment_semantic_interpretation_with_detected_metrics(
+	*,
+	semantic_result: SemanticFreshQueryResult,
+	message: str,
+) -> SemanticFreshQueryResult:
+	interpretation = semantic_result.interpretation
+	if interpretation is None:
+		return semantic_result
+	if str(interpretation.intent_class or "").strip() == "trend_analysis":
+		return semantic_result
+	candidate_capability_ids = list(interpretation.candidate_capability_ids or [])
+	primary_capability_id = str(candidate_capability_ids[0] or "").strip() if candidate_capability_ids else ""
+	detected_metrics = detect_canonical_keys(
+		message,
+		capability_id=primary_capability_id or None,
+		dimension_or_metric="metric",
+	)
+	if not detected_metrics:
+		return semantic_result
+	combined_metrics = list(dict.fromkeys(list(interpretation.requested_metrics) + detected_metrics))
+	if combined_metrics == list(interpretation.requested_metrics):
+		return semantic_result
+	augmented = build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=combined_metrics,
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots),
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=interpretation.ambiguity_reason,
+		confidence=interpretation.confidence,
+	)
+	return SemanticFreshQueryResult(
+		status=semantic_result.status,
+		confidence_threshold=semantic_result.confidence_threshold,
+		interpretation=augmented,
+		runtime_error=semantic_result.runtime_error,
+		validation_error=semantic_result.validation_error,
+		agent_meta=semantic_result.agent_meta,
+	)
+
+
+def _normalize_trend_requested_metrics_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if str(interpretation.intent_class or "").strip() != "trend_analysis":
+		return interpretation
+	candidate_capability_ids = list(interpretation.candidate_capability_ids or [])
+	candidate_reports = list(interpretation.candidate_reports or [])
+	capability_id = str((candidate_capability_ids or [""])[0] or "").strip()
+	report_name = str((candidate_reports or [""])[0] or "").strip()
+	if not capability_id:
+		return interpretation
+	detected_metrics = detect_canonical_keys(
+		message,
+		capability_id=capability_id,
+		dimension_or_metric="metric",
+	)
+	if not detected_metrics:
+		return interpretation
+	normalized_metrics = _resolve_requested_labels(
+		message=message,
+		report_name=report_name,
+		capability_id=capability_id,
+		intent_class="trend_analysis",
+		existing_values=[],
+		dimension_or_metric="metric",
+	)
+	if not normalized_metrics or normalized_metrics == list(interpretation.requested_metrics):
+		return interpretation
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=normalized_metrics,
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots),
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=interpretation.ambiguity_reason,
+		confidence=interpretation.confidence,
+	)
+
+
+def _compile_pipeline_from_semantic_result(
+	*,
+	request_id: str,
 	session_id: str,
 	user_id: str,
 	site_name: str,
 	message: str,
-	recent_messages: List[Dict[str, str]] | None = None,
-	clarification_resolution: Dict[str, Any] | None = None,
+	clarification_resolution: Dict[str, Any] | None,
+	front_door_contract: Dict[str, Any] | None,
+	semantic_result: SemanticFreshQueryResult,
+	proposal_generation_latency_ms: int,
 ) -> Dict[str, Any]:
-	request_id = uuid.uuid4().hex
+	master_data_frontdoor_assessment = _frontdoor_master_data_assessment_payload(front_door_contract)
+	if master_data_frontdoor_assessment:
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=_apply_master_data_frontdoor_assessment_to_interpretation(
+				request_id=request_id,
+				session_id=session_id,
+				interpretation=semantic_result.interpretation,
+				assessment_payload=master_data_frontdoor_assessment,
+			),
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta={
+				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+				"master_data_frontdoor_assessment_applied": True,
+			},
+		)
+	if semantic_result.interpretation is not None:
+		semantic_result = _augment_semantic_interpretation_with_detected_metrics(
+			semantic_result=semantic_result,
+			message=message,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=_reconcile_financial_statement_default_time_scope_from_message(
+				message=message,
+				interpretation=_reconcile_generic_financial_statement_request_from_message(
+					message=message,
+					interpretation=semantic_result.interpretation,
+				),
+			),
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta=semantic_result.agent_meta,
+		)
 	interaction_contract = build_interaction_contract(
 		request_id=request_id,
 		session_id=session_id,
@@ -1060,63 +2428,31 @@ def compile_from_fresh_query_message(
 	response_policy = build_response_policy_contract(
 		interaction_contract=interaction_contract,
 	)
-	proposal_started = time.perf_counter()
-	semantic_result = interpret_fresh_query_semantically(
-		request_id=request_id,
-		session_id=session_id,
-		user_id=user_id,
-		site_name=site_name,
+	reconciled_interpretation = _reconcile_explicit_transaction_listing_view_from_message(
 		message=message,
-		recent_messages=list(recent_messages or []),
+		interpretation=semantic_result.interpretation,
 	)
-	if _should_retry_with_runtime_default(semantic_result, ""):
-		fallback_result = interpret_fresh_query_semantically(
-			request_id=request_id,
-			session_id=session_id,
-			user_id=user_id,
-			site_name=site_name,
-			message=message,
-			recent_messages=list(recent_messages or []),
-			model_override=_RUNTIME_DEFAULT_MODEL_OVERRIDE,
+	reconciled_interpretation = _reconcile_explicit_time_scope_from_message(
+		message=message,
+		interpretation=reconciled_interpretation,
+	)
+	reconciled_interpretation = _augment_master_data_lookup_interpretation_from_message(
+		message=message,
+		interpretation=reconciled_interpretation,
+	)
+	reconciled_interpretation = _augment_entity_scoped_report_interpretation_from_message(
+		message=message,
+		interpretation=reconciled_interpretation,
+	)
+	if reconciled_interpretation != semantic_result.interpretation:
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=reconciled_interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta=dict(semantic_result.agent_meta or {}),
 		)
-		if fallback_result.interpretation is not None:
-			fallback_result = SemanticFreshQueryResult(
-				status=fallback_result.status,
-				interpretation=fallback_result.interpretation,
-				confidence_threshold=fallback_result.confidence_threshold,
-				runtime_error=fallback_result.runtime_error,
-				validation_error=fallback_result.validation_error,
-				agent_meta=_merge_fallback_agent_meta(
-					semantic_result.agent_meta,
-					fallback_result.agent_meta,
-					semantic_result.status,
-				),
-			)
-			semantic_result = fallback_result
-	if semantic_result.interpretation is None:
-		confidence_threshold = float(semantic_result.confidence_threshold or _confidence_threshold())
-		deterministic_interpretation = _deterministic_family_surface_interpretation(
-			request_id=request_id,
-			session_id=session_id,
-			message=message,
-			confidence_threshold=confidence_threshold,
-		)
-		if deterministic_interpretation is not None:
-			semantic_result = SemanticFreshQueryResult(
-				status="deterministic_family_fallback",
-				interpretation=deterministic_interpretation,
-				confidence_threshold=confidence_threshold,
-				agent_meta={
-					"engine": "deterministic_family_surface",
-					"model": "none",
-					"telemetry": {
-						"fallback_attempted": True,
-						"fallback_used": True,
-						"fallback_type": "family_tool_surface",
-					},
-				},
-			)
-	proposal_generation_latency_ms = int((time.perf_counter() - proposal_started) * 1000)
 	compilation_latency_ms = 0
 	out: Dict[str, Any] = {
 		"request_id": request_id,
@@ -1126,6 +2462,8 @@ def compile_from_fresh_query_message(
 	}
 	if isinstance(clarification_resolution, dict) and clarification_resolution:
 		out["clarification_resolution"] = dict(clarification_resolution)
+	if master_data_frontdoor_assessment:
+		out["master_data_frontdoor_assessment"] = dict(master_data_frontdoor_assessment)
 	if semantic_result.interpretation is None:
 		out["phase4_latency_breakdown"] = {
 			"proposal_generation_latency_ms": proposal_generation_latency_ms,
@@ -1148,6 +2486,79 @@ def compile_from_fresh_query_message(
 				"clarification_resolution_applied": True,
 			},
 		)
+	trend_normalized_interpretation = _normalize_trend_requested_metrics_from_message(
+		message=message,
+		interpretation=semantic_result.interpretation,
+	)
+	if trend_normalized_interpretation != semantic_result.interpretation:
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=trend_normalized_interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta={
+				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+				"trend_metric_reconciled_from_message": True,
+			},
+		)
+	semantic_resolution = resolve_interpretation_semantically(semantic_result.interpretation)
+	if semantic_resolution is not None:
+		out["semantic_resolution_contract"] = semantic_resolution.contract.to_payload()
+		semantic_result = SemanticFreshQueryResult(
+			status="semantic_resolution_applied",
+			interpretation=semantic_resolution.interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta={
+				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+				"semantic_resolution_applied": True,
+			},
+		)
+		semantic_result = _augment_semantic_interpretation_with_detected_metrics(
+			semantic_result=semantic_result,
+			message=message,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=_augment_entity_scoped_report_interpretation_from_message(
+				message=message,
+				interpretation=semantic_result.interpretation,
+			),
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta=dict(semantic_result.agent_meta or {}),
+		)
+	semantic_result = SemanticFreshQueryResult(
+		status=semantic_result.status,
+		interpretation=_normalize_transaction_listing_requested_metrics_from_message(
+			message=message,
+			interpretation=semantic_result.interpretation,
+		),
+		confidence_threshold=semantic_result.confidence_threshold,
+		runtime_error=semantic_result.runtime_error,
+		validation_error=semantic_result.validation_error,
+		agent_meta=dict(semantic_result.agent_meta or {}),
+	)
+	augmented_interpretation = _augment_direct_query_scalar_filters_from_message(
+		message=message,
+		interpretation=semantic_result.interpretation,
+	)
+	augmented_interpretation = _augment_master_data_lookup_interpretation_from_message(
+		message=message,
+		interpretation=augmented_interpretation,
+	)
+	if augmented_interpretation != semantic_result.interpretation:
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=augmented_interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta=dict(semantic_result.agent_meta or {}),
+		)
 	compilation_started = time.perf_counter()
 	compiler_outcome: CompilerOutcome = compile_fresh_query(
 		request_id=request_id,
@@ -1155,80 +2566,6 @@ def compile_from_fresh_query_message(
 		interpretation=semantic_result.interpretation,
 		response_policy=response_policy.to_runtime_payload(),
 	)
-	compiler_decision = str(compiler_outcome.compiler_contract.decision or "").strip()
-	if compiler_decision == "clarify":
-		confidence_threshold = float(semantic_result.confidence_threshold or _confidence_threshold())
-		deterministic_interpretation = _deterministic_family_surface_interpretation(
-			request_id=request_id,
-			session_id=session_id,
-			message=message,
-			confidence_threshold=confidence_threshold,
-		)
-		if deterministic_interpretation is not None:
-			deterministic_report_candidates = _clean_list(deterministic_interpretation.candidate_reports)
-			deterministic_ambiguity_flags = set(_clean_list(deterministic_interpretation.ambiguity_flags))
-			deterministic_outcome = compile_fresh_query(
-				request_id=request_id,
-				session_id=session_id,
-				interpretation=deterministic_interpretation,
-				response_policy=response_policy.to_runtime_payload(),
-			)
-			deterministic_decision = str(deterministic_outcome.compiler_contract.decision or "").strip()
-			deterministic_reason_type = str(deterministic_outcome.compiler_contract.clarification_reason_type or "").strip()
-			if (
-				deterministic_decision == "clarify"
-				and deterministic_reason_type == "report_ambiguity"
-				and len(deterministic_report_candidates) > 1
-			):
-				semantic_result = SemanticFreshQueryResult(
-					status="deterministic_family_clarification_refinement",
-					interpretation=deterministic_interpretation,
-					confidence_threshold=confidence_threshold,
-					agent_meta={
-						"engine": "deterministic_family_surface",
-						"model": "none",
-						"telemetry": {
-							"fallback_attempted": True,
-							"fallback_used": True,
-							"fallback_type": "family_tool_surface_clarify_refinement",
-							"primary_status": str(semantic_result.status or "").strip(),
-							"primary_model": str((semantic_result.agent_meta or {}).get("model") or "").strip(),
-							"cache_hit": bool(
-								(((semantic_result.agent_meta or {}).get("telemetry") or {}).get("cache_hit"))
-								if isinstance((semantic_result.agent_meta or {}).get("telemetry"), dict)
-								else False
-							),
-						},
-					},
-				)
-				compiler_outcome = deterministic_outcome
-			if (
-				deterministic_decision == "execute"
-				and len(deterministic_report_candidates) <= 1
-				and "ambiguous_report" not in deterministic_ambiguity_flags
-			):
-				semantic_result = SemanticFreshQueryResult(
-					status="deterministic_family_override",
-					interpretation=deterministic_interpretation,
-					confidence_threshold=confidence_threshold,
-					agent_meta={
-						"engine": "deterministic_family_surface",
-						"model": "none",
-						"telemetry": {
-							"fallback_attempted": True,
-							"fallback_used": True,
-							"fallback_type": "family_tool_surface_after_clarify",
-							"primary_status": str(semantic_result.status or "").strip(),
-							"primary_model": str((semantic_result.agent_meta or {}).get("model") or "").strip(),
-							"cache_hit": bool(
-								(((semantic_result.agent_meta or {}).get("telemetry") or {}).get("cache_hit"))
-								if isinstance((semantic_result.agent_meta or {}).get("telemetry"), dict)
-								else False
-							),
-						},
-					},
-				)
-				compiler_outcome = deterministic_outcome
 	compilation_latency_ms = int((time.perf_counter() - compilation_started) * 1000)
 	out["fresh_query_compiler"] = compiler_outcome.compiler_contract.to_payload()
 	out["fresh_query_interpretation"] = semantic_result.to_payload()
@@ -1239,6 +2576,368 @@ def compile_from_fresh_query_message(
 		"compilation_latency_ms": compilation_latency_ms,
 	}
 	return out
+
+
+def _pipeline_requires_deterministic_surface_rescue(pipeline: Dict[str, Any]) -> bool:
+	fresh_query_payload = (
+		pipeline.get("fresh_query_interpretation")
+		if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+		else {}
+	)
+	interpretation_payload = (
+		fresh_query_payload.get("interpretation")
+		if isinstance(fresh_query_payload.get("interpretation"), dict)
+		else {}
+	)
+	if interpretation_payload:
+		candidate_capability_ids = _clean_list(interpretation_payload.get("candidate_capability_ids"))
+		candidate_reports = _clean_list(interpretation_payload.get("candidate_reports"))
+		return not bool(candidate_capability_ids or candidate_reports)
+	status = str(fresh_query_payload.get("status") or "").strip()
+	return status in {"runtime_error", "invalid_response", "low_confidence"}
+
+
+def _semantic_result_requires_deterministic_surface_rescue(result: SemanticFreshQueryResult) -> bool:
+	interpretation = result.interpretation
+	if interpretation is None:
+		return str(result.status or "").strip() in {"runtime_error", "invalid_response", "low_confidence"}
+	return not bool(
+		list(getattr(interpretation, "candidate_capability_ids", []) or [])
+		or list(getattr(interpretation, "candidate_reports", []) or [])
+	)
+
+
+def _semantic_result_should_defer_to_deterministic_surface(
+	*,
+	semantic_result: SemanticFreshQueryResult,
+	deterministic_interpretation: FreshQueryInterpretationContract | None,
+) -> bool:
+	if deterministic_interpretation is None or semantic_result.interpretation is None:
+		return False
+	deterministic_intent = str(getattr(deterministic_interpretation, "intent_class", "") or "").strip()
+	deterministic_reports = set(
+		str(value or "").strip()
+		for value in (getattr(deterministic_interpretation, "candidate_reports", []) or [])
+		if str(value or "").strip()
+	)
+	semantic_reports = set(
+		str(value or "").strip()
+		for value in (getattr(semantic_result.interpretation, "candidate_reports", []) or [])
+		if str(value or "").strip()
+	)
+	semantic_intent = str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip()
+	if deterministic_intent == "aging_analysis":
+		return bool(
+			deterministic_reports
+			and (semantic_intent != deterministic_intent or semantic_reports != deterministic_reports)
+		)
+	if deterministic_intent == "financial_statement":
+		return bool(deterministic_reports and (semantic_intent != deterministic_intent or semantic_reports != deterministic_reports))
+	deterministic_slots = (
+		getattr(deterministic_interpretation, "extracted_slots", {})
+		if isinstance(getattr(deterministic_interpretation, "extracted_slots", {}), dict)
+		else {}
+	)
+	semantic_slots = (
+		getattr(semantic_result.interpretation, "extracted_slots", {})
+		if isinstance(getattr(semantic_result.interpretation, "extracted_slots", {}), dict)
+		else {}
+	)
+	deterministic_composite_context = [
+		str(value or "").strip()
+		for value in (deterministic_slots.get("composite_profile_context") or [])
+		if str(value or "").strip()
+	]
+	semantic_composite_context = [
+		str(value or "").strip()
+		for value in (semantic_slots.get("composite_profile_context") or [])
+		if str(value or "").strip()
+	]
+	if deterministic_composite_context:
+		return bool(
+			semantic_intent != deterministic_intent
+			or semantic_composite_context != deterministic_composite_context
+		)
+	return False
+
+
+def _recover_pipeline_with_deterministic_surface_fallback(
+	*,
+	pipeline: Dict[str, Any],
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	clarification_resolution: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+	if not _pipeline_requires_deterministic_surface_rescue(pipeline):
+		return pipeline
+	fresh_query_payload = (
+		pipeline.get("fresh_query_interpretation")
+		if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+		else {}
+	)
+	try:
+		confidence_threshold = float(fresh_query_payload.get("confidence_threshold") or _confidence_threshold())
+	except Exception:
+		confidence_threshold = _confidence_threshold()
+	request_id = str(pipeline.get("request_id") or uuid.uuid4().hex).strip()
+	deterministic_interpretation = _deterministic_family_surface_interpretation(
+		request_id=request_id,
+		session_id=session_id,
+		message=message,
+		confidence_threshold=confidence_threshold,
+	)
+	if deterministic_interpretation is None:
+		return pipeline
+	latency_breakdown = (
+		pipeline.get("phase4_latency_breakdown")
+		if isinstance(pipeline.get("phase4_latency_breakdown"), dict)
+		else {}
+	)
+	semantic_result = SemanticFreshQueryResult(
+		status="deterministic_surface_fallback",
+		interpretation=deterministic_interpretation,
+		confidence_threshold=confidence_threshold,
+		runtime_error=str(fresh_query_payload.get("runtime_error") or "").strip(),
+		validation_error=str(fresh_query_payload.get("validation_error") or "").strip(),
+		agent_meta={
+			**(
+				fresh_query_payload.get("agent_meta")
+				if isinstance(fresh_query_payload.get("agent_meta"), dict)
+				else {}
+			),
+			"deterministic_surface_fallback": True,
+			"deterministic_surface_pipeline_rescue": True,
+		},
+	)
+	return _compile_pipeline_from_semantic_result(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		clarification_resolution=clarification_resolution,
+		front_door_contract=None,
+		semantic_result=semantic_result,
+		proposal_generation_latency_ms=int(
+			max(0, (latency_breakdown.get("proposal_generation_latency_ms") or 0))
+		),
+	)
+
+
+def compile_from_fresh_query_message(
+	*,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	recent_messages: List[Dict[str, str]] | None = None,
+	clarification_resolution: Dict[str, Any] | None = None,
+	front_door_contract: Dict[str, Any] | None = None,
+	governed_target_limit: int = 0,
+) -> Dict[str, Any]:
+	request_id = uuid.uuid4().hex
+	proposal_started = time.perf_counter()
+	clarification_seed_interpretation = _interpretation_from_clarification_resolution(
+		request_id=request_id,
+		session_id=session_id,
+		clarification_resolution=clarification_resolution,
+		confidence_threshold=_confidence_threshold(),
+	)
+	if clarification_seed_interpretation is not None:
+		semantic_result = SemanticFreshQueryResult(
+			status="clarification_resolution_seed",
+			interpretation=clarification_seed_interpretation,
+			confidence_threshold=_confidence_threshold(),
+			agent_meta={"clarification_resolution_seed": True},
+		)
+	else:
+		semantic_result = interpret_fresh_query_semantically(
+			request_id=request_id,
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+			recent_messages=list(recent_messages or []),
+		)
+		if _should_retry_with_runtime_default(semantic_result, ""):
+			fallback_result = interpret_fresh_query_semantically(
+				request_id=request_id,
+				session_id=session_id,
+				user_id=user_id,
+				site_name=site_name,
+				message=message,
+				recent_messages=list(recent_messages or []),
+				model_override=_RUNTIME_DEFAULT_MODEL_OVERRIDE,
+			)
+			if fallback_result.interpretation is not None:
+				fallback_result = SemanticFreshQueryResult(
+					status=fallback_result.status,
+					interpretation=fallback_result.interpretation,
+					confidence_threshold=fallback_result.confidence_threshold,
+					runtime_error=fallback_result.runtime_error,
+					validation_error=fallback_result.validation_error,
+					agent_meta=_merge_fallback_agent_meta(
+						semantic_result.agent_meta,
+						fallback_result.agent_meta,
+						semantic_result.status,
+					),
+				)
+				semantic_result = fallback_result
+	master_data_frontdoor_assessment = _frontdoor_master_data_assessment_payload(front_door_contract)
+	if master_data_frontdoor_assessment:
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=_apply_master_data_frontdoor_assessment_to_interpretation(
+				request_id=request_id,
+				session_id=session_id,
+				interpretation=semantic_result.interpretation,
+				assessment_payload=master_data_frontdoor_assessment,
+			),
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta={
+				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+				"master_data_frontdoor_assessment_applied": True,
+			},
+		)
+	governed_target_limit = int(max(0, governed_target_limit or 0))
+	semantic_status = str(getattr(semantic_result, "status", "") or "").strip()
+	semantic_intent_class = str(
+		getattr(getattr(semantic_result, "interpretation", None), "intent_class", "") or ""
+	).strip()
+	if (
+		governed_target_limit == 0
+		and semantic_status == "accepted"
+		and semantic_intent_class in {"ranked_entities", "transaction_listing"}
+	):
+		governed_target_limit = _extract_structural_target_limit_seed(message)
+	if (
+		governed_target_limit > 0
+		and semantic_result.interpretation is not None
+		and int(max(0, getattr(semantic_result.interpretation, "target_limit", 0) or 0)) == 0
+	):
+		seeded_interpretation = build_fresh_query_interpretation_contract(
+			request_id=str(getattr(semantic_result.interpretation, "request_id", "") or request_id).strip(),
+			session_id=str(getattr(semantic_result.interpretation, "session_id", "") or session_id).strip(),
+			intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
+			candidate_capability_ids=list(getattr(semantic_result.interpretation, "candidate_capability_ids", []) or []),
+			candidate_reports=list(getattr(semantic_result.interpretation, "candidate_reports", []) or []),
+			requested_dimensions=list(getattr(semantic_result.interpretation, "requested_dimensions", []) or []),
+			requested_metrics=list(getattr(semantic_result.interpretation, "requested_metrics", []) or []),
+			requested_time_scope=str(getattr(semantic_result.interpretation, "requested_time_scope", "") or "").strip(),
+			target_limit=governed_target_limit,
+			requested_presentation=list(getattr(semantic_result.interpretation, "requested_presentation", []) or []),
+			extracted_slots=dict(getattr(semantic_result.interpretation, "extracted_slots", {}) or {}),
+			ambiguity_flags=list(getattr(semantic_result.interpretation, "ambiguity_flags", []) or []),
+			ambiguity_reason=str(getattr(semantic_result.interpretation, "ambiguity_reason", "") or "").strip(),
+			confidence=float(getattr(semantic_result.interpretation, "confidence", 0.0) or 0.0),
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=seeded_interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta=dict(semantic_result.agent_meta or {}),
+		)
+	if semantic_result.interpretation is not None:
+		current_time_scope = str(getattr(semantic_result.interpretation, "requested_time_scope", "") or "").strip()
+		reconciled_time_scope = _strip_structural_limit_time_scope_conflict(
+			message=message,
+			intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
+			requested_time_scope=current_time_scope,
+			target_limit=int(max(0, getattr(semantic_result.interpretation, "target_limit", 0) or 0)),
+		)
+		reconciled_slots = dict(getattr(semantic_result.interpretation, "extracted_slots", {}) or {})
+		reconciled_time_scope = _strip_unrequested_today_scope_for_transaction_listing(
+			message=message,
+			intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
+			requested_time_scope=reconciled_time_scope,
+			extracted_slots=reconciled_slots,
+		)
+		if reconciled_time_scope != current_time_scope:
+			if not reconciled_time_scope:
+				reconciled_slots = _clear_time_scope_slots(reconciled_slots)
+			reconciled_interpretation = build_fresh_query_interpretation_contract(
+				request_id=str(getattr(semantic_result.interpretation, "request_id", "") or request_id).strip(),
+				session_id=str(getattr(semantic_result.interpretation, "session_id", "") or session_id).strip(),
+				intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
+				candidate_capability_ids=list(getattr(semantic_result.interpretation, "candidate_capability_ids", []) or []),
+				candidate_reports=list(getattr(semantic_result.interpretation, "candidate_reports", []) or []),
+				requested_dimensions=list(getattr(semantic_result.interpretation, "requested_dimensions", []) or []),
+				requested_metrics=list(getattr(semantic_result.interpretation, "requested_metrics", []) or []),
+				requested_time_scope=reconciled_time_scope,
+				target_limit=int(max(0, getattr(semantic_result.interpretation, "target_limit", 0) or 0)),
+				requested_presentation=list(getattr(semantic_result.interpretation, "requested_presentation", []) or []),
+				extracted_slots=reconciled_slots,
+				ambiguity_flags=list(getattr(semantic_result.interpretation, "ambiguity_flags", []) or []),
+				ambiguity_reason=str(getattr(semantic_result.interpretation, "ambiguity_reason", "") or "").strip(),
+				confidence=float(getattr(semantic_result.interpretation, "confidence", 0.0) or 0.0),
+			)
+			semantic_result = SemanticFreshQueryResult(
+				status=semantic_result.status,
+				interpretation=reconciled_interpretation,
+				confidence_threshold=semantic_result.confidence_threshold,
+				runtime_error=semantic_result.runtime_error,
+				validation_error=semantic_result.validation_error,
+				agent_meta=dict(semantic_result.agent_meta or {}),
+			)
+	if _semantic_result_requires_deterministic_surface_rescue(semantic_result):
+		deterministic_interpretation = _deterministic_family_surface_interpretation(
+			request_id=request_id,
+			session_id=session_id,
+			message=message,
+			confidence_threshold=semantic_result.confidence_threshold,
+		)
+		if deterministic_interpretation is not None:
+			semantic_result = SemanticFreshQueryResult(
+				status="deterministic_surface_fallback",
+				interpretation=deterministic_interpretation,
+				confidence_threshold=semantic_result.confidence_threshold,
+				runtime_error=semantic_result.runtime_error,
+				validation_error=semantic_result.validation_error,
+				agent_meta={
+					**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+					"deterministic_surface_fallback": True,
+				},
+			)
+	else:
+		deterministic_interpretation = _deterministic_family_surface_interpretation(
+			request_id=request_id,
+			session_id=session_id,
+			message=message,
+			confidence_threshold=semantic_result.confidence_threshold,
+		)
+		if _semantic_result_should_defer_to_deterministic_surface(
+			semantic_result=semantic_result,
+			deterministic_interpretation=deterministic_interpretation,
+		):
+			semantic_result = SemanticFreshQueryResult(
+				status="deterministic_surface_authority_override",
+				interpretation=deterministic_interpretation,
+				confidence_threshold=semantic_result.confidence_threshold,
+				runtime_error=semantic_result.runtime_error,
+				validation_error=semantic_result.validation_error,
+				agent_meta={
+					**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+					"deterministic_surface_authority_override": True,
+				},
+			)
+	proposal_generation_latency_ms = int((time.perf_counter() - proposal_started) * 1000)
+	return _compile_pipeline_from_semantic_result(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		clarification_resolution=clarification_resolution,
+		front_door_contract=front_door_contract,
+		semantic_result=semantic_result,
+		proposal_generation_latency_ms=proposal_generation_latency_ms,
+	)
 
 
 def _proposal_cache_hit_from_pipeline(pipeline: Dict[str, Any]) -> bool:
@@ -1326,29 +3025,152 @@ def _resolve_capability_ids_for_business_area(option: str) -> List[str]:
 	return list(dict.fromkeys(matches))
 
 
+def _clarification_resolved_slot(clarification_resolution: Dict[str, Any] | None) -> Dict[str, Any]:
+	payload = clarification_resolution if isinstance(clarification_resolution, dict) else {}
+	if str(payload.get("decision") or "").strip() != "resolved_option":
+		return {}
+	resolved_slot = payload.get("resolved_slot") if isinstance(payload.get("resolved_slot"), dict) else {}
+	return dict(resolved_slot) if resolved_slot else {}
+
+
+def _merge_clarification_extracted_slots(
+	base_slots: Dict[str, Any] | None,
+	resolved_slot: Dict[str, Any],
+) -> Dict[str, Any]:
+	merged = dict(base_slots or {})
+	embedded_slots = resolved_slot.get("extracted_slots")
+	if isinstance(embedded_slots, dict):
+		for key, value in embedded_slots.items():
+			clean_key = str(key or "").strip()
+			if clean_key:
+				merged[clean_key] = value
+	for key in (
+		"composite_profile_context",
+		"financial_summary_resolution_contract",
+		"statement_variant",
+		"summary_focus",
+		"entity_grain",
+		"lookup_mode",
+		"lookup_projection",
+		"lookup_search_text",
+		"scope_id",
+	):
+		if key in resolved_slot:
+			merged[key] = resolved_slot.get(key)
+	return merged
+
+
+def _infer_intent_class_from_resolution(
+	*,
+	candidate_capability_ids: List[str],
+	candidate_reports: List[str],
+) -> str:
+	intent_classes: List[str] = []
+	for capability_id in candidate_capability_ids:
+		for intent_class in capability_intent_classes(capability_id):
+			clean_intent = str(intent_class or "").strip()
+			if clean_intent:
+				intent_classes.append(clean_intent)
+	for report_name in candidate_reports:
+		for intent_class in report_supported_intent_classes(report_name):
+			clean_intent = str(intent_class or "").strip()
+			if clean_intent:
+				intent_classes.append(clean_intent)
+	unique = list(dict.fromkeys(intent_classes))
+	return unique[0] if len(unique) == 1 else ""
+
+
+def _interpretation_from_clarification_resolution(
+	*,
+	request_id: str,
+	session_id: str,
+	clarification_resolution: Dict[str, Any] | None,
+	confidence_threshold: float,
+) -> FreshQueryInterpretationContract | None:
+	resolved_slot = _clarification_resolved_slot(clarification_resolution)
+	if not resolved_slot:
+		return None
+	candidate_capability_ids = _clean_list(resolved_slot.get("candidate_capability_ids"))
+	candidate_reports = _clean_list(resolved_slot.get("candidate_reports"))
+	intent_class = str(resolved_slot.get("intent_class") or "").strip() or _infer_intent_class_from_resolution(
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+	)
+	if not intent_class:
+		return None
+	extracted_slots = _merge_clarification_extracted_slots({}, resolved_slot)
+	return build_fresh_query_interpretation_contract(
+		request_id=request_id,
+		session_id=session_id,
+		intent_class=intent_class,
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		requested_dimensions=_clean_list(resolved_slot.get("requested_dimensions")),
+		requested_metrics=_clean_list(resolved_slot.get("requested_metrics")),
+		requested_time_scope=_normalize_time_scope(
+			resolved_slot.get("requested_time_scope")
+			or resolved_slot.get("selected_time_scope")
+		),
+		target_limit=int(max(0, resolved_slot.get("target_limit") or 0)),
+		requested_presentation=_clean_list(resolved_slot.get("requested_presentation")),
+		extracted_slots=extracted_slots,
+		ambiguity_flags=_clean_list(resolved_slot.get("ambiguity_flags")),
+		ambiguity_reason=str(resolved_slot.get("ambiguity_reason") or "").strip(),
+		confidence=max(float(confidence_threshold or 0.0), 0.9),
+	)
+
+
 def _apply_clarification_resolution_to_interpretation(
 	*,
 	interpretation: FreshQueryInterpretationContract,
 	clarification_resolution: Dict[str, Any] | None = None,
 ) -> FreshQueryInterpretationContract:
-	payload = clarification_resolution if isinstance(clarification_resolution, dict) else {}
-	if str(payload.get("decision") or "").strip() != "resolved_option":
-		return interpretation
-	resolved_slot = payload.get("resolved_slot") if isinstance(payload.get("resolved_slot"), dict) else {}
+	resolved_slot = _clarification_resolved_slot(clarification_resolution)
 	if not resolved_slot:
 		return interpretation
 
+	intent_class = str(resolved_slot.get("intent_class") or interpretation.intent_class or "").strip()
 	candidate_capability_ids = list(_clean_list(interpretation.candidate_capability_ids))
 	candidate_reports = list(_clean_list(interpretation.candidate_reports))
 	requested_time_scope = str(interpretation.requested_time_scope or "").strip()
+	extracted_slots = _merge_clarification_extracted_slots(dict(interpretation.extracted_slots), resolved_slot)
+	requested_dimensions = list(interpretation.requested_dimensions)
+	requested_metrics = list(interpretation.requested_metrics)
+	requested_presentation = list(interpretation.requested_presentation)
 	ambiguity_flags = [
 		flag
 		for flag in _clean_list(interpretation.ambiguity_flags)
 		if flag not in {"ambiguous_report", "ambiguous_capability", "missing_time_scope"}
 	]
 	ambiguity_reason = str(interpretation.ambiguity_reason or "").strip()
+	explicit_capability_ids = _clean_list(resolved_slot.get("candidate_capability_ids"))
+	if explicit_capability_ids:
+		candidate_capability_ids = explicit_capability_ids
+		ambiguity_reason = ""
+	explicit_reports = _clean_list(resolved_slot.get("candidate_reports"))
+	if explicit_reports:
+		candidate_reports = explicit_reports
+		ambiguity_reason = ""
+	explicit_dimensions = _clean_list(resolved_slot.get("requested_dimensions"))
+	if explicit_dimensions:
+		requested_dimensions = explicit_dimensions
+	explicit_metrics = _clean_list(resolved_slot.get("requested_metrics"))
+	if explicit_metrics:
+		requested_metrics = explicit_metrics
+	explicit_presentation = _clean_list(resolved_slot.get("requested_presentation"))
+	if explicit_presentation:
+		requested_presentation = explicit_presentation
+	explicit_flags = _clean_list(resolved_slot.get("ambiguity_flags"))
+	if explicit_flags:
+		ambiguity_flags = explicit_flags
+	explicit_reason = str(resolved_slot.get("ambiguity_reason") or "").strip()
+	if explicit_reason:
+		ambiguity_reason = explicit_reason
 
 	selected_report = str(resolved_slot.get("selected_report") or "").strip()
+	statement_variant = str(resolved_slot.get("statement_variant") or "").strip()
+	if not selected_report and statement_variant and intent_class == "financial_statement":
+		selected_report = str(financial_statement_report_name(statement_variant) or "").strip()
 	if selected_report:
 		candidate_reports = [selected_report]
 		report_capabilities = report_capability_ids(selected_report)
@@ -1360,6 +3182,25 @@ def _apply_clarification_resolution_to_interpretation(
 	if selected_time_scope:
 		requested_time_scope = selected_time_scope
 		ambiguity_reason = ""
+	explicit_requested_time_scope = _normalize_time_scope(resolved_slot.get("requested_time_scope"))
+	if explicit_requested_time_scope:
+		requested_time_scope = explicit_requested_time_scope
+
+	if statement_variant:
+		extracted_slots["statement_variant"] = statement_variant
+		ambiguity_reason = ""
+
+	for slot_key in ("entity_grain", "lookup_mode", "lookup_projection", "lookup_search_text", "scope_id"):
+		slot_value = str(resolved_slot.get(slot_key) or "").strip()
+		if slot_value:
+			extracted_slots[slot_key] = slot_value
+			ambiguity_reason = ""
+
+	if not requested_dimensions:
+		entity_grain = str(extracted_slots.get("entity_grain") or "").strip()
+		if entity_grain:
+			dimension_label = entity_grain_display_label(entity_grain, plural=False).title()
+			requested_dimensions = [dimension_label or entity_grain.title()]
 
 	selected_business_area = str(resolved_slot.get("selected_business_area") or "").strip()
 	if selected_business_area:
@@ -1374,1257 +3215,18 @@ def _apply_clarification_resolution_to_interpretation(
 	return build_fresh_query_interpretation_contract(
 		request_id=interpretation.request_id,
 		session_id=interpretation.session_id,
-		intent_class=interpretation.intent_class,
+		intent_class=intent_class,
 		candidate_capability_ids=candidate_capability_ids,
 		candidate_reports=candidate_reports,
-		requested_dimensions=list(interpretation.requested_dimensions),
-		requested_metrics=list(interpretation.requested_metrics),
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
 		requested_time_scope=requested_time_scope,
-		requested_presentation=list(interpretation.requested_presentation),
-		extracted_slots=dict(interpretation.extracted_slots),
+		requested_presentation=requested_presentation,
+		extracted_slots=extracted_slots,
 		ambiguity_flags=ambiguity_flags,
 		ambiguity_reason=ambiguity_reason,
 		confidence=float(interpretation.confidence or 0.0),
 	)
-
-
-def run_phase4_fresh_query_pipeline_smokes() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	results: List[Dict[str, Any]] = []
-	for message in [
-		"How much payable amount do we have as of now",
-		"Analyze payable amount",
-		"Top 5 customers by revenue",
-		"Show monthly sales trend in all regions",
-	]:
-		results.append(
-			compile_from_fresh_query_message(
-				session_id="phase4-smoke",
-				user_id="Administrator",
-				site_name=site_name,
-				message=message,
-				recent_messages=[],
-			)
-		)
-	return {"smokes": results}
-
-
-def run_phase4_fresh_query_cache_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	message = "How much payable amount do we have as of now"
-	first = compile_from_fresh_query_message(
-		session_id="phase4-cache-smoke-1",
-		user_id="Administrator",
-		site_name=site_name,
-		message=message,
-		recent_messages=[],
-	)
-	second = compile_from_fresh_query_message(
-		session_id="phase4-cache-smoke-2",
-		user_id="Administrator",
-		site_name=site_name,
-		message=message,
-		recent_messages=[],
-	)
-	first_telemetry = (
-		((first.get("fresh_query_interpretation") or {}).get("agent_meta") or {}).get("telemetry")
-		if isinstance(first.get("fresh_query_interpretation"), dict)
-		else {}
-	)
-	second_telemetry = (
-		((second.get("fresh_query_interpretation") or {}).get("agent_meta") or {}).get("telemetry")
-		if isinstance(second.get("fresh_query_interpretation"), dict)
-		else {}
-	)
-	if not isinstance(first_telemetry, dict):
-		first_telemetry = {}
-	if not isinstance(second_telemetry, dict):
-		second_telemetry = {}
-	if bool(first_telemetry.get("cache_hit")):
-		raise RuntimeError("Fresh-query cache smoke failed: first proposal unexpectedly reported a cache hit.")
-	if not bool(second_telemetry.get("cache_hit")):
-		raise RuntimeError("Fresh-query cache smoke failed: second proposal did not report a cache hit.")
-	return {
-		"first": {
-			"status": (first.get("fresh_query_interpretation") or {}).get("status")
-			if isinstance(first.get("fresh_query_interpretation"), dict)
-			else "",
-			"telemetry": first_telemetry,
-			"phase4_latency_breakdown": first.get("phase4_latency_breakdown"),
-		},
-		"second": {
-			"status": (second.get("fresh_query_interpretation") or {}).get("status")
-			if isinstance(second.get("fresh_query_interpretation"), dict)
-			else "",
-			"telemetry": second_telemetry,
-			"phase4_latency_breakdown": second.get("phase4_latency_breakdown"),
-		},
-	}
-
-
-def run_phase4_fresh_query_inflight_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	message = "Please show the current total payable amount as of today"
-	barrier = threading.Barrier(2)
-	context = _build_interpretation_context()
-	conf = getattr(frappe, "conf", None) or {}
-	base_url = str(conf.get("qwen_agent_runtime_base_url") or "").strip().rstrip("/")
-	if not base_url:
-		raise RuntimeError("Fresh-query inflight smoke failed: qwen runtime base URL is not configured.")
-	headers = {"Content-Type": "application/json"}
-	token = str(conf.get("qwen_agent_runtime_api_token") or "").strip()
-	if token:
-		headers["Authorization"] = f"Bearer {token}"
-
-	def _run(index: int) -> Dict[str, Any]:
-		barrier.wait()
-		payload = {
-			"request_id": f"phase4-inflight-{index}-{uuid.uuid4().hex}",
-			"session_id": f"phase4-inflight-smoke-{index}",
-			"user_id": "Administrator",
-			"site_name": site_name,
-			"message": message,
-			"recent_messages": [],
-			"interpretation_context": context,
-		}
-		response = requests.post(
-			f"{base_url}/interpret-fresh-query",
-			headers=headers,
-			data=json.dumps(payload),
-			timeout=150,
-		)
-		response.raise_for_status()
-		return response.json()
-
-	with ThreadPoolExecutor(max_workers=2) as executor:
-		first_future = executor.submit(_run, 1)
-		second_future = executor.submit(_run, 2)
-		first = first_future.result()
-		second = second_future.result()
-
-	def _telemetry(result: Dict[str, Any]) -> Dict[str, Any]:
-		agent_meta = result.get("agent_meta") if isinstance(result.get("agent_meta"), dict) else {}
-		telemetry = agent_meta.get("telemetry") if isinstance(agent_meta.get("telemetry"), dict) else {}
-		return telemetry
-
-	first_telemetry = _telemetry(first)
-	second_telemetry = _telemetry(second)
-	shared_inflight = bool(first_telemetry.get("shared_inflight_hit")) or bool(second_telemetry.get("shared_inflight_hit"))
-	warm_cache = bool(first_telemetry.get("cache_hit")) and bool(second_telemetry.get("cache_hit"))
-	if not (shared_inflight or warm_cache):
-		raise RuntimeError(
-			f"Fresh-query inflight smoke failed: no request reported a shared inflight hit. "
-			f"first={first_telemetry!r} second={second_telemetry!r}"
-		)
-	return {
-		"mode": "shared_inflight" if shared_inflight else "warm_cache",
-		"first": {
-			"telemetry": first_telemetry,
-			"phase4_latency_breakdown": first.get("phase4_latency_breakdown"),
-		},
-		"second": {
-			"telemetry": second_telemetry,
-			"phase4_latency_breakdown": second.get("phase4_latency_breakdown"),
-		},
-	}
-
-
-def run_phase4_fresh_query_interpreter_selftests() -> Dict[str, Any]:
-	context = _build_interpretation_context()
-	request_id = "selftest-fresh-query"
-	session_id = "selftest-session"
-	valid_payload = {
-		"intent_class": "financial_summary",
-		"candidate_capability_ids": ["accounts_payable_read"],
-		"candidate_reports": ["Accounts Payable Summary"],
-		"requested_dimensions": [],
-		"requested_metrics": ["Outstanding"],
-		"requested_time_scope": "as_of_today",
-		"requested_presentation": [],
-		"extracted_slots": {
-			"report_date": _current_date_iso(),
-			"filters": {
-				"company": "Should Be Ignored",
-			},
-		},
-		"ambiguity_flags": [],
-		"ambiguity_reason": "",
-		"confidence": 0.94,
-	}
-	contract = _validate_semantic_payload(
-		request_id=request_id,
-		session_id=session_id,
-		payload=valid_payload,
-		context=context,
-	)
-	if contract is None:
-		raise RuntimeError("Fresh-query validation selftest failed: valid payload did not validate.")
-	if "company" in ((contract.extracted_slots or {}).get("filters") or {}):
-		raise RuntimeError("Fresh-query validation selftest failed: company leaked into extracted slot filters.")
-	compiler_outcome = compile_fresh_query(
-		request_id=request_id,
-		session_id=session_id,
-		interpretation=contract,
-		response_policy={"analysis_level": "none"},
-	)
-	if compiler_outcome.compiler_contract.decision != "execute":
-		raise RuntimeError(
-			f"Fresh-query compiler selftest failed: expected execute, got {compiler_outcome.compiler_contract.decision}."
-		)
-
-	invalid_payload = {
-		"intent_class": "financial_summary",
-		"candidate_capability_ids": ["accounts_payable_read"],
-		"candidate_reports": ["Accounts Payable Summary"],
-		"requested_dimensions": ["Warehouse"],
-		"requested_metrics": ["Outstanding"],
-		"requested_time_scope": "as_of_today",
-		"requested_presentation": [],
-		"extracted_slots": {},
-		"ambiguity_flags": [],
-		"ambiguity_reason": "",
-		"confidence": 0.9,
-	}
-	invalid_contract = _validate_semantic_payload(
-		request_id="selftest-invalid",
-		session_id=session_id,
-		payload=invalid_payload,
-		context=context,
-	)
-	if invalid_contract is not None:
-		raise RuntimeError("Fresh-query validation selftest failed: invalid dimension payload was accepted.")
-
-	return {
-		"valid_interpretation": contract.to_payload(),
-		"compiler_contract": compiler_outcome.compiler_contract.to_payload(),
-		"compiled_query_request": (
-			compiler_outcome.compiled_request_contract.to_payload()
-			if compiler_outcome.compiled_request_contract is not None
-			else {}
-		),
-		"invalid_payload_rejected": True,
-	}
-
-
-def run_phase4_compiled_execution_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	message = "How much payable amount do we have as of now"
-	result = execute_compiled_fresh_query_message(
-		session_id="phase4-compiled-smoke",
-		user_id="Administrator",
-		site_name=site_name,
-		message=message,
-		recent_messages=[],
-	)
-	semantic_validation = result.get("semantic_intent_validation")
-	if not isinstance(semantic_validation, dict) or str(semantic_validation.get("status") or "").strip() != "pass":
-		raise RuntimeError("Compiled execution smoke failed: semantic validation did not pass.")
-	return result
-
-
-def _phase4b_financial_statement_case_result(
-	*,
-	request_id: str,
-	session_id: str,
-	site_name: str,
-	message: str,
-	candidate_report: str,
-	requested_metrics: List[str],
-) -> Dict[str, Any]:
-	response_policy = {"analysis_level": "none"}
-	interaction_contract = build_interaction_contract(
-		request_id=request_id,
-		session_id=session_id,
-		user_id="Administrator",
-		site_name=site_name,
-		raw_message=message,
-	)
-	interpretation = build_fresh_query_interpretation_contract(
-		request_id=interaction_contract.request_id,
-		session_id=session_id,
-		intent_class="financial_statement",
-		candidate_capability_ids=["financial_statement_read"],
-		candidate_reports=[candidate_report],
-		requested_dimensions=[],
-		requested_metrics=requested_metrics,
-		requested_time_scope="current_fiscal_year_to_date",
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=0.95,
-	)
-	compiler_outcome = compile_fresh_query(
-		request_id=interaction_contract.request_id,
-		session_id=session_id,
-		interpretation=interpretation,
-		response_policy=response_policy,
-	)
-	runtime_payload: Dict[str, Any] = {}
-	if compiler_outcome.compiled_request_contract is not None:
-		runtime_payload = call_qwen_runtime_chat(
-			session_id=session_id,
-			user_id="Administrator",
-			site_name=site_name,
-			message=message,
-			recent_messages=[],
-			response_policy=response_policy,
-			family_tool_context={},
-			mode="compiled_read_query",
-			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
-			request_id=interaction_contract.request_id,
-		)
-	adapter_outcome = build_normalized_family_artifact(
-		request_id=interaction_contract.request_id,
-		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-		runtime_payload=runtime_payload,
-		request_message=message,
-		intent_class="financial_statement",
-		preferred_family_id=_preferred_family_id_for_message(
-			message=message,
-			compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-			interpretation_contract=interpretation.to_payload(),
-		),
-	)
-	family_validation = validate_normalized_family_artifact(
-		request_id=interaction_contract.request_id,
-		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-		artifact_contract=adapter_outcome.artifact_contract,
-		family_id=adapter_outcome.family_id,
-		adapter_errors=adapter_outcome.errors,
-		adapter_warnings=adapter_outcome.warnings,
-	)
-	return {
-		"request_id": interaction_contract.request_id,
-		"message": message,
-		"compiler_contract": compiler_outcome.compiler_contract.to_payload(),
-		"compiled_query_request": (
-			compiler_outcome.compiled_request_contract.to_payload()
-			if compiler_outcome.compiled_request_contract is not None
-			else {}
-		),
-		"runtime_ok": bool(runtime_payload.get("ok")),
-		"runtime_answer": str(runtime_payload.get("answer_text") or "").strip(),
-		"normalized_family_artifact": (
-			adapter_outcome.artifact_contract.to_payload()
-			if adapter_outcome.artifact_contract is not None
-			else {}
-		),
-		"family_adapter_status": adapter_outcome.status,
-		"family_adapter_errors": list(adapter_outcome.errors),
-		"family_validation": family_validation.to_payload() if family_validation else {},
-	}
-
-
-def run_phase4b_financial_statement_family_probe() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	return {
-		"pnl": _phase4b_financial_statement_case_result(
-			request_id="phase4b-probe-pnl",
-			session_id="phase4b-financial-family-probe",
-			site_name=site_name,
-			message="Show me P & L statement, and analyze it",
-			candidate_report="Profit and Loss Statement",
-			requested_metrics=["Total Income", "Total Expense", "Net Profit"],
-		),
-		"balance_sheet": _phase4b_financial_statement_case_result(
-			request_id="phase4b-probe-balance-sheet",
-			session_id="phase4b-financial-family-probe",
-			site_name=site_name,
-			message="Show balance sheet",
-			candidate_report="Balance Sheet",
-			requested_metrics=["Total Asset", "Total Liability", "Total Equity"],
-		),
-		"cash_flow": _phase4b_financial_statement_case_result(
-			request_id="phase4b-probe-cash-flow",
-			session_id="phase4b-financial-family-probe",
-			site_name=site_name,
-			message="Show cash flow statement",
-			candidate_report="Cash Flow",
-			requested_metrics=["Net Cash from Operations", "Net Change in Cash"],
-		),
-	}
-
-
-def run_phase4b_broad_financial_report_ambiguity_probe() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	results: List[Dict[str, Any]] = []
-	for message in [
-		"give me the statement",
-		"give me the financial statement",
-		"give me the management report",
-	]:
-		result = compile_from_fresh_query_message(
-			session_id="phase4b-broad-financial-report-ambiguity",
-			user_id="Administrator",
-			site_name=site_name,
-			message=message,
-			recent_messages=[],
-		)
-		compiler = result.get("fresh_query_compiler") if isinstance(result.get("fresh_query_compiler"), dict) else {}
-		decision = str(compiler.get("decision") or "").strip()
-		reason_type = str(compiler.get("clarification_reason_type") or "").strip()
-		details = compiler.get("clarification_details") if isinstance(compiler.get("clarification_details"), dict) else {}
-		report_candidates = [str(value or "").strip() for value in (details.get("report_candidates") or []) if str(value or "").strip()]
-		if decision != "clarify":
-			raise RuntimeError(
-				f"Broad financial report ambiguity probe failed: `{message}` resolved as `{decision}` instead of clarification."
-			)
-		if reason_type != "report_ambiguity":
-			raise RuntimeError(
-				f"Broad financial report ambiguity probe failed: `{message}` produced `{reason_type}` instead of report_ambiguity."
-			)
-		if len(report_candidates) < 2:
-			raise RuntimeError(
-				f"Broad financial report ambiguity probe failed: `{message}` did not preserve multiple report candidates."
-			)
-		results.append(
-			{
-				"message": message,
-				"decision": decision,
-				"reason_type": reason_type,
-				"report_candidates": report_candidates,
-			}
-		)
-	return {"ok": True, "results": results}
-
-
-def run_phase4b_financial_statement_family_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	cases = [
-		{
-			"request_id": "phase4b-pnl",
-			"message": "Show me P & L statement, and analyze it",
-			"intent_class": "financial_statement",
-			"candidate_reports": ["Profit and Loss Statement"],
-			"requested_metrics": ["Total Income", "Total Expense", "Net Profit"],
-		},
-		{
-			"request_id": "phase4b-balance-sheet",
-			"message": "Show balance sheet",
-			"intent_class": "financial_statement",
-			"candidate_reports": ["Balance Sheet"],
-			"requested_metrics": ["Total Asset", "Total Liability", "Total Equity"],
-		},
-		{
-			"request_id": "phase4b-cash-flow",
-			"message": "Show cash flow statement",
-			"intent_class": "financial_statement",
-			"candidate_reports": ["Cash Flow"],
-			"requested_metrics": ["Net Cash from Operations", "Net Change in Cash"],
-		},
-	]
-	results: List[Dict[str, Any]] = []
-	for item in cases:
-		case_result = _phase4b_financial_statement_case_result(
-			request_id=str(item.get("request_id") or uuid.uuid4().hex),
-			session_id="phase4b-financial-family-smoke",
-			site_name=site_name,
-			message=str(item.get("message") or "").strip(),
-			candidate_report=str((item.get("candidate_reports") or [""])[0] or "").strip(),
-			requested_metrics=list(item.get("requested_metrics") or []),
-		)
-		family_validation = case_result.get("family_validation") if isinstance(case_result.get("family_validation"), dict) else {}
-		if str(family_validation.get("status") or "").strip() != "pass":
-			raise RuntimeError(
-				f"Phase 4B financial family smoke failed: family validation did not pass for `{item.get('message')}`."
-			)
-		results.append(case_result)
-	return {"ok": True, "results": results}
-
-
-def _phase4b_aging_case_result(
-	*,
-	request_id: str,
-	session_id: str,
-	site_name: str,
-	message: str,
-	candidate_capability_id: str,
-	candidate_report: str,
-	requested_metrics: List[str],
-) -> Dict[str, Any]:
-	response_policy = {"analysis_level": "none"}
-	interaction_contract = build_interaction_contract(
-		request_id=request_id,
-		session_id=session_id,
-		user_id="Administrator",
-		site_name=site_name,
-		raw_message=message,
-	)
-	interpretation = build_fresh_query_interpretation_contract(
-		request_id=interaction_contract.request_id,
-		session_id=session_id,
-		intent_class="aging_analysis",
-		candidate_capability_ids=[candidate_capability_id],
-		candidate_reports=[candidate_report],
-		requested_dimensions=[],
-		requested_metrics=requested_metrics,
-		requested_time_scope="as_of_today",
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=0.95,
-	)
-	compiler_outcome = compile_fresh_query(
-		request_id=interaction_contract.request_id,
-		session_id=session_id,
-		interpretation=interpretation,
-		response_policy=response_policy,
-	)
-	runtime_payload: Dict[str, Any] = {}
-	if compiler_outcome.compiled_request_contract is not None:
-		runtime_payload = call_qwen_runtime_chat(
-			session_id=session_id,
-			user_id="Administrator",
-			site_name=site_name,
-			message=message,
-			recent_messages=[],
-			response_policy=response_policy,
-			family_tool_context={},
-			mode="compiled_read_query",
-			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
-			request_id=interaction_contract.request_id,
-		)
-	adapter_outcome = build_normalized_family_artifact(
-		request_id=interaction_contract.request_id,
-		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-		runtime_payload=runtime_payload,
-		intent_class="aging_analysis",
-		preferred_family_id=_preferred_family_id_for_message(
-			message=message,
-			compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-			interpretation_contract=interpretation.to_payload(),
-		),
-	)
-	family_validation = validate_normalized_family_artifact(
-		request_id=interaction_contract.request_id,
-		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-		artifact_contract=adapter_outcome.artifact_contract,
-		family_id=adapter_outcome.family_id,
-		adapter_errors=adapter_outcome.errors,
-		adapter_warnings=adapter_outcome.warnings,
-	)
-	return {
-		"request_id": interaction_contract.request_id,
-		"message": message,
-		"compiler_contract": compiler_outcome.compiler_contract.to_payload(),
-		"compiled_query_request": (
-			compiler_outcome.compiled_request_contract.to_payload()
-			if compiler_outcome.compiled_request_contract is not None
-			else {}
-		),
-		"runtime_ok": bool(runtime_payload.get("ok")),
-		"runtime_answer": str(runtime_payload.get("answer_text") or "").strip(),
-		"normalized_family_artifact": (
-			adapter_outcome.artifact_contract.to_payload()
-			if adapter_outcome.artifact_contract is not None
-			else {}
-		),
-		"family_adapter_status": adapter_outcome.status,
-		"family_adapter_errors": list(adapter_outcome.errors),
-		"family_validation": family_validation.to_payload() if family_validation else {},
-	}
-
-
-def run_phase4b_aging_family_probe() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	return {
-		"accounts_payable": _phase4b_aging_case_result(
-			request_id="phase4b-probe-aging-payable",
-			session_id="phase4b-aging-family-probe",
-			site_name=site_name,
-			message="Analyze payable aging as of today",
-			candidate_capability_id="accounts_payable_read",
-			candidate_report="Accounts Payable Summary",
-			requested_metrics=["Outstanding Amount", "Total Amount Due"],
-		),
-		"accounts_receivable": _phase4b_aging_case_result(
-			request_id="phase4b-probe-aging-receivable",
-			session_id="phase4b-aging-family-probe",
-			site_name=site_name,
-			message="Analyze receivable aging as of today",
-			candidate_capability_id="accounts_receivable_read",
-			candidate_report="Accounts Receivable Summary",
-			requested_metrics=["Outstanding Amount", "Total Amount Due"],
-		),
-	}
-
-
-def run_phase4b_aging_family_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	cases = [
-		{
-			"request_id": "phase4b-aging-payable",
-			"message": "Analyze payable aging as of today",
-			"candidate_capability_id": "accounts_payable_read",
-			"candidate_report": "Accounts Payable Summary",
-			"requested_metrics": ["Outstanding Amount", "Total Amount Due"],
-		},
-		{
-			"request_id": "phase4b-aging-receivable",
-			"message": "Analyze receivable aging as of today",
-			"candidate_capability_id": "accounts_receivable_read",
-			"candidate_report": "Accounts Receivable Summary",
-			"requested_metrics": ["Outstanding Amount", "Total Amount Due"],
-		},
-	]
-	results: List[Dict[str, Any]] = []
-	for item in cases:
-		case_result = _phase4b_aging_case_result(
-			request_id=str(item.get("request_id") or uuid.uuid4().hex),
-			session_id="phase4b-aging-family-smoke",
-			site_name=site_name,
-			message=str(item.get("message") or "").strip(),
-			candidate_capability_id=str(item.get("candidate_capability_id") or "").strip(),
-			candidate_report=str(item.get("candidate_report") or "").strip(),
-			requested_metrics=list(item.get("requested_metrics") or []),
-		)
-		family_validation = case_result.get("family_validation") if isinstance(case_result.get("family_validation"), dict) else {}
-		if str(family_validation.get("status") or "").strip() != "pass":
-			raise RuntimeError(
-				f"Phase 4B aging family smoke failed: family validation did not pass for `{item.get('message')}`."
-			)
-		results.append(case_result)
-	return {"ok": True, "results": results}
-
-
-def _phase4b_ranking_trend_case_result(
-	*,
-	request_id: str,
-	session_id: str,
-	site_name: str,
-	message: str,
-	intent_class: str,
-	candidate_capability_id: str,
-	candidate_report: str,
-	requested_dimensions: List[str],
-	requested_metrics: List[str],
-	requested_time_scope: str,
-) -> Dict[str, Any]:
-	response_policy = {"analysis_level": "none"}
-	interaction_contract = build_interaction_contract(
-		request_id=request_id,
-		session_id=session_id,
-		user_id="Administrator",
-		site_name=site_name,
-		raw_message=message,
-	)
-	interpretation = build_fresh_query_interpretation_contract(
-		request_id=interaction_contract.request_id,
-		session_id=session_id,
-		intent_class=intent_class,
-		candidate_capability_ids=[candidate_capability_id],
-		candidate_reports=[candidate_report],
-		requested_dimensions=requested_dimensions,
-		requested_metrics=requested_metrics,
-		requested_time_scope=requested_time_scope,
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=0.95,
-	)
-	compiler_outcome = compile_fresh_query(
-		request_id=interaction_contract.request_id,
-		session_id=session_id,
-		interpretation=interpretation,
-		response_policy=response_policy,
-	)
-	runtime_payload: Dict[str, Any] = {}
-	if compiler_outcome.compiled_request_contract is not None:
-		runtime_payload = call_qwen_runtime_chat(
-			session_id=session_id,
-			user_id="Administrator",
-			site_name=site_name,
-			message=message,
-			recent_messages=[],
-			response_policy=response_policy,
-			family_tool_context={},
-			mode="compiled_read_query",
-			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
-			request_id=interaction_contract.request_id,
-		)
-	adapter_outcome = build_normalized_family_artifact(
-		request_id=interaction_contract.request_id,
-		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-		runtime_payload=runtime_payload,
-		intent_class=intent_class,
-		preferred_family_id=_preferred_family_id_for_message(
-			message=message,
-			compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-			interpretation_contract=interpretation.to_payload(),
-		),
-	)
-	family_validation = validate_normalized_family_artifact(
-		request_id=interaction_contract.request_id,
-		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-		artifact_contract=adapter_outcome.artifact_contract,
-		family_id=adapter_outcome.family_id,
-		adapter_errors=adapter_outcome.errors,
-		adapter_warnings=adapter_outcome.warnings,
-	)
-	return {
-		"request_id": interaction_contract.request_id,
-		"message": message,
-		"compiler_contract": compiler_outcome.compiler_contract.to_payload(),
-		"compiled_query_request": (
-			compiler_outcome.compiled_request_contract.to_payload()
-			if compiler_outcome.compiled_request_contract is not None
-			else {}
-		),
-		"runtime_ok": bool(runtime_payload.get("ok")),
-		"runtime_answer": str(runtime_payload.get("answer_text") or "").strip(),
-		"normalized_family_artifact": (
-			adapter_outcome.artifact_contract.to_payload()
-			if adapter_outcome.artifact_contract is not None
-			else {}
-		),
-		"family_adapter_status": adapter_outcome.status,
-		"family_adapter_errors": list(adapter_outcome.errors),
-		"family_validation": family_validation.to_payload() if family_validation else {},
-	}
-
-
-def run_phase4b_ranking_trend_family_probe() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	return {
-		"top_customers_revenue": _phase4b_ranking_trend_case_result(
-			request_id="phase4b-probe-ranking-customers",
-			session_id="phase4b-ranking-trend-family-probe",
-			site_name=site_name,
-			message="Top 5 customers by revenue",
-			intent_class="ranked_entities",
-			candidate_capability_id="sales_read",
-			candidate_report="Sales Analytics",
-			requested_dimensions=["Customer"],
-			requested_metrics=["Revenue"],
-			requested_time_scope="current_fiscal_year_to_date",
-		),
-		"monthly_sales_trend": _phase4b_ranking_trend_case_result(
-			request_id="phase4b-probe-trend-sales",
-			session_id="phase4b-ranking-trend-family-probe",
-			site_name=site_name,
-			message="Show monthly sales trend",
-			intent_class="trend_analysis",
-			candidate_capability_id="sales_read",
-			candidate_report="Sales Analytics",
-			requested_dimensions=[],
-			requested_metrics=["Revenue"],
-			requested_time_scope="current_fiscal_year_to_date",
-		),
-		"top_products_gross_profit": _phase4b_ranking_trend_case_result(
-			request_id="phase4b-probe-ranking-products",
-			session_id="phase4b-ranking-trend-family-probe",
-			site_name=site_name,
-			message="Top products by gross profit last month",
-			intent_class="ranked_entities",
-			candidate_capability_id="product_performance_read",
-			candidate_report="Gross Profit",
-			requested_dimensions=["Item Code"],
-			requested_metrics=["Gross Profit"],
-			requested_time_scope="last_month",
-		),
-	}
-
-
-def run_phase4b_ranking_trend_family_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	cases = [
-		{
-			"request_id": "phase4b-ranking-customers",
-			"message": "Top 5 customers by revenue",
-			"intent_class": "ranked_entities",
-			"candidate_capability_id": "sales_read",
-			"candidate_report": "Sales Analytics",
-			"requested_dimensions": ["Customer"],
-			"requested_metrics": ["Revenue"],
-			"requested_time_scope": "current_fiscal_year_to_date",
-		},
-		{
-			"request_id": "phase4b-trend-sales",
-			"message": "Show monthly sales trend",
-			"intent_class": "trend_analysis",
-			"candidate_capability_id": "sales_read",
-			"candidate_report": "Sales Analytics",
-			"requested_dimensions": [],
-			"requested_metrics": ["Revenue"],
-			"requested_time_scope": "current_fiscal_year_to_date",
-		},
-		{
-			"request_id": "phase4b-ranking-products",
-			"message": "Top products by gross profit last month",
-			"intent_class": "ranked_entities",
-			"candidate_capability_id": "product_performance_read",
-			"candidate_report": "Gross Profit",
-			"requested_dimensions": ["Item Code"],
-			"requested_metrics": ["Gross Profit"],
-			"requested_time_scope": "last_month",
-		},
-	]
-	results: List[Dict[str, Any]] = []
-	for item in cases:
-		case_result = _phase4b_ranking_trend_case_result(
-			request_id=str(item.get("request_id") or uuid.uuid4().hex),
-			session_id="phase4b-ranking-trend-family-smoke",
-			site_name=site_name,
-			message=str(item.get("message") or "").strip(),
-			intent_class=str(item.get("intent_class") or "").strip(),
-			candidate_capability_id=str(item.get("candidate_capability_id") or "").strip(),
-			candidate_report=str(item.get("candidate_report") or "").strip(),
-			requested_dimensions=list(item.get("requested_dimensions") or []),
-			requested_metrics=list(item.get("requested_metrics") or []),
-			requested_time_scope=str(item.get("requested_time_scope") or "").strip(),
-		)
-		family_validation = case_result.get("family_validation") if isinstance(case_result.get("family_validation"), dict) else {}
-		if str(family_validation.get("status") or "").strip() != "pass":
-			raise RuntimeError(
-				f"Phase 4B ranking/trend family smoke failed: family validation did not pass for `{item.get('message')}`."
-			)
-		results.append(case_result)
-	return {"ok": True, "results": results}
-
-
-def _phase4b_inventory_product_case_result(
-	*,
-	request_id: str,
-	session_id: str,
-	site_name: str,
-	message: str,
-	intent_class: str,
-	candidate_capability_id: str,
-	candidate_report: str,
-	requested_dimensions: List[str],
-	requested_metrics: List[str],
-	requested_time_scope: str,
-) -> Dict[str, Any]:
-	response_policy = {"analysis_level": "none"}
-	interaction_contract = build_interaction_contract(
-		request_id=request_id,
-		session_id=session_id,
-		user_id="Administrator",
-		site_name=site_name,
-		raw_message=message,
-	)
-	interpretation = build_fresh_query_interpretation_contract(
-		request_id=interaction_contract.request_id,
-		session_id=session_id,
-		intent_class=intent_class,
-		candidate_capability_ids=[candidate_capability_id],
-		candidate_reports=[candidate_report],
-		requested_dimensions=requested_dimensions,
-		requested_metrics=requested_metrics,
-		requested_time_scope=requested_time_scope,
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=0.95,
-	)
-	compiler_outcome = compile_fresh_query(
-		request_id=interaction_contract.request_id,
-		session_id=session_id,
-		interpretation=interpretation,
-		response_policy=response_policy,
-	)
-	runtime_payload: Dict[str, Any] = {}
-	if compiler_outcome.compiled_request_contract is not None:
-		runtime_payload = call_qwen_runtime_chat(
-			session_id=session_id,
-			user_id="Administrator",
-			site_name=site_name,
-			message=message,
-			recent_messages=[],
-			response_policy=response_policy,
-			family_tool_context={},
-			mode="compiled_read_query",
-			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
-			request_id=interaction_contract.request_id,
-		)
-	adapter_outcome = build_normalized_family_artifact(
-		request_id=interaction_contract.request_id,
-		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-		runtime_payload=runtime_payload,
-		intent_class=intent_class,
-		preferred_family_id=_preferred_family_id_for_message(
-			message=message,
-			compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-			interpretation_contract=interpretation.to_payload(),
-		),
-	)
-	family_validation = validate_normalized_family_artifact(
-		request_id=interaction_contract.request_id,
-		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
-		artifact_contract=adapter_outcome.artifact_contract,
-		family_id=adapter_outcome.family_id,
-		adapter_errors=adapter_outcome.errors,
-		adapter_warnings=adapter_outcome.warnings,
-	)
-	return {
-		"request_id": interaction_contract.request_id,
-		"message": message,
-		"compiler_contract": compiler_outcome.compiler_contract.to_payload(),
-		"compiled_query_request": (
-			compiler_outcome.compiled_request_contract.to_payload()
-			if compiler_outcome.compiled_request_contract is not None
-			else {}
-		),
-		"runtime_ok": bool(runtime_payload.get("ok")),
-		"runtime_answer": str(runtime_payload.get("answer_text") or "").strip(),
-		"normalized_family_artifact": (
-			adapter_outcome.artifact_contract.to_payload()
-			if adapter_outcome.artifact_contract is not None
-			else {}
-		),
-		"family_adapter_status": adapter_outcome.status,
-		"family_adapter_errors": list(adapter_outcome.errors),
-		"family_validation": family_validation.to_payload() if family_validation else {},
-	}
-
-
-def run_phase4b_inventory_product_family_probe() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	return {
-		"inventory_by_warehouse": _phase4b_inventory_product_case_result(
-			request_id="phase4b-probe-inventory-warehouse",
-			session_id="phase4b-inventory-product-family-probe",
-			site_name=site_name,
-			message="Show current inventory value by warehouse",
-			intent_class="inventory_summary",
-			candidate_capability_id="stock_read",
-			candidate_report="Warehouse Wise Stock Balance",
-			requested_dimensions=["Warehouse"],
-			requested_metrics=["Balance Value (MMK)"],
-			requested_time_scope="as_of_today",
-		),
-		"inventory_by_item": _phase4b_inventory_product_case_result(
-			request_id="phase4b-probe-inventory-item",
-			session_id="phase4b-inventory-product-family-probe",
-			site_name=site_name,
-			message="Show stock balance by item",
-			intent_class="inventory_summary",
-			candidate_capability_id="stock_read",
-			candidate_report="Stock Balance",
-			requested_dimensions=["Item"],
-			requested_metrics=["Balance Qty"],
-			requested_time_scope="as_of_today",
-		),
-		"product_profitability": _phase4b_inventory_product_case_result(
-			request_id="phase4b-probe-product-profitability",
-			session_id="phase4b-inventory-product-family-probe",
-			site_name=site_name,
-			message="Which products are performing well last month",
-			intent_class="product_performance",
-			candidate_capability_id="product_performance_read",
-			candidate_report="Gross Profit",
-			requested_dimensions=["Item Code"],
-			requested_metrics=["Gross Profit", "Gross Profit Percent"],
-			requested_time_scope="last_month",
-		),
-		"product_sales_history": _phase4b_inventory_product_case_result(
-			request_id="phase4b-probe-product-history",
-			session_id="phase4b-inventory-product-family-probe",
-			site_name=site_name,
-			message="Show item sales history this fiscal year",
-			intent_class="product_performance",
-			candidate_capability_id="product_performance_read",
-			candidate_report="Item-wise Sales History",
-			requested_dimensions=["Item"],
-			requested_metrics=["Billed Amount", "Delivered Quantity"],
-			requested_time_scope="current_fiscal_year_to_date",
-		),
-	}
-
-
-def run_phase4b_inventory_product_family_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	cases = [
-		{
-			"request_id": "phase4b-inventory-warehouse",
-			"message": "Show current inventory value by warehouse",
-			"intent_class": "inventory_summary",
-			"candidate_capability_id": "stock_read",
-			"candidate_report": "Warehouse Wise Stock Balance",
-			"requested_dimensions": ["Warehouse"],
-			"requested_metrics": ["Balance Value (MMK)"],
-			"requested_time_scope": "as_of_today",
-		},
-		{
-			"request_id": "phase4b-inventory-item",
-			"message": "Show stock balance by item",
-			"intent_class": "inventory_summary",
-			"candidate_capability_id": "stock_read",
-			"candidate_report": "Stock Balance",
-			"requested_dimensions": ["Item"],
-			"requested_metrics": ["Balance Qty"],
-			"requested_time_scope": "as_of_today",
-		},
-		{
-			"request_id": "phase4b-product-profitability",
-			"message": "Which products are performing well last month",
-			"intent_class": "product_performance",
-			"candidate_capability_id": "product_performance_read",
-			"candidate_report": "Gross Profit",
-			"requested_dimensions": ["Item Code"],
-			"requested_metrics": ["Gross Profit", "Gross Profit Percent"],
-			"requested_time_scope": "last_month",
-		},
-		{
-			"request_id": "phase4b-product-history",
-			"message": "Show item sales history this fiscal year",
-			"intent_class": "product_performance",
-			"candidate_capability_id": "product_performance_read",
-			"candidate_report": "Item-wise Sales History",
-			"requested_dimensions": ["Item"],
-			"requested_metrics": ["Billed Amount", "Delivered Quantity"],
-			"requested_time_scope": "current_fiscal_year_to_date",
-		},
-	]
-	results: List[Dict[str, Any]] = []
-	for item in cases:
-		case_result = _phase4b_inventory_product_case_result(
-			request_id=str(item.get("request_id") or uuid.uuid4().hex),
-			session_id="phase4b-inventory-product-family-smoke",
-			site_name=site_name,
-			message=str(item.get("message") or "").strip(),
-			intent_class=str(item.get("intent_class") or "").strip(),
-			candidate_capability_id=str(item.get("candidate_capability_id") or "").strip(),
-			candidate_report=str(item.get("candidate_report") or "").strip(),
-			requested_dimensions=list(item.get("requested_dimensions") or []),
-			requested_metrics=list(item.get("requested_metrics") or []),
-			requested_time_scope=str(item.get("requested_time_scope") or "").strip(),
-		)
-		family_validation = case_result.get("family_validation") if isinstance(case_result.get("family_validation"), dict) else {}
-		if str(family_validation.get("status") or "").strip() != "pass":
-			raise RuntimeError(
-				f"Phase 4B inventory/product family smoke failed: family validation did not pass for `{item.get('message')}`."
-			)
-		results.append(case_result)
-	return {"ok": True, "results": results}
-
-
-def run_phase4b_composite_read_probe() -> Dict[str, Any]:
-	request_id = "phase4b-composite-probe"
-	session_id = "phase4b-composite-probe"
-	interpretation = build_fresh_query_interpretation_contract(
-		request_id=request_id,
-		session_id=session_id,
-		intent_class="financial_summary",
-		candidate_capability_ids=[],
-		candidate_reports=[],
-		requested_dimensions=[],
-		requested_metrics=["Outstanding"],
-		requested_time_scope="as_of_today",
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=1.0,
-	)
-	plan_outcome = plan_composite_read(
-		request_id=request_id,
-		session_id=session_id,
-		message="Analyze AR / AP amount and evaluate the company health",
-		interpretation=interpretation,
-		response_policy={
-			"analysis_requested": True,
-			"policy_mode": "grounded_analysis",
-			"insight_allowed": True,
-			"recommendation_allowed": False,
-			"grounding_rule": "Composite analysis must stay grounded in normalized governed family artifacts.",
-			"structure": ["grounded_facts_first", "concise_interpretation_only_when_grounded"],
-		},
-	)
-	if str(plan_outcome.status or "").strip() != "execute":
-		raise RuntimeError("Phase 4B composite probe failed: composite plan did not execute.")
-	return {
-		"ok": True,
-		"plan": plan_outcome.plan_contract.to_payload() if plan_outcome.plan_contract else {},
-		"compiler_contract": (
-			plan_outcome.compiler_contract.to_payload()
-			if plan_outcome.compiler_contract is not None
-			else {}
-		),
-		"step_compiler_contracts": [
-			item.to_payload()
-			for item in plan_outcome.step_compiler_contracts
-		],
-	}
-
-
-def run_phase4b_composite_read_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	request_id = "phase4b-composite-smoke"
-	session_id = "phase4b-composite-smoke"
-	interpretation = build_fresh_query_interpretation_contract(
-		request_id=request_id,
-		session_id=session_id,
-		intent_class="financial_summary",
-		candidate_capability_ids=[],
-		candidate_reports=[],
-		requested_dimensions=[],
-		requested_metrics=["Outstanding"],
-		requested_time_scope="as_of_today",
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=1.0,
-	)
-	response_policy_payload = {
-		"analysis_requested": True,
-		"policy_mode": "grounded_analysis",
-		"insight_allowed": True,
-		"recommendation_allowed": False,
-		"grounding_rule": "Composite analysis must stay grounded in normalized governed family artifacts.",
-		"structure": ["grounded_facts_first", "concise_interpretation_only_when_grounded"],
-	}
-	plan_outcome = plan_composite_read(
-		request_id=request_id,
-		session_id=session_id,
-		message="Analyze AR / AP amount and evaluate the company health",
-		interpretation=interpretation,
-		response_policy=response_policy_payload,
-	)
-	if str(plan_outcome.status or "").strip() != "execute":
-		raise RuntimeError("Phase 4B composite smoke failed: composite plan did not execute.")
-	pipeline = {
-		"request_id": request_id,
-		"response_policy_contract": {
-			"analysis_requested": True,
-			"policy_mode": "grounded_analysis",
-			"insight_allowed": True,
-			"recommendation_allowed": False,
-			"grounding_rule": "Composite analysis must stay grounded in normalized governed family artifacts.",
-			"structure": ["grounded_facts_first", "concise_interpretation_only_when_grounded"],
-		},
-		"fresh_query_interpretation": {
-			"status": "accepted",
-			"interpretation": interpretation.to_payload(),
-			"agent_meta": {},
-		},
-		"fresh_query_compiler": plan_outcome.compiler_contract.to_payload() if plan_outcome.compiler_contract else {},
-		"composite_read_plan": plan_outcome.plan_contract.to_payload() if plan_outcome.plan_contract else {},
-	}
-	result = execute_composite_read_plan(
-		session_id=session_id,
-		user_id="Administrator",
-		site_name=site_name,
-		message="Analyze AR / AP amount and evaluate the company health",
-		recent_messages=[],
-		pipeline=pipeline,
-		plan_outcome=plan_outcome,
-		proposal_generation_latency_ms=0,
-		compilation_latency_ms=0,
-		total_started=time.perf_counter(),
-	)
-	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
-	semantic_validation = (
-		result.get("semantic_intent_validation")
-		if isinstance(result.get("semantic_intent_validation"), dict)
-		else {}
-	)
-	runtime_payload = result.get("runtime_payload") if isinstance(result.get("runtime_payload"), dict) else {}
-	if str(family_validation.get("status") or "").strip() != "pass":
-		raise RuntimeError("Phase 4B composite smoke failed: composite validation did not pass.")
-	if str(semantic_validation.get("status") or "").strip() != "pass":
-		raise RuntimeError("Phase 4B composite smoke failed: composite semantic validation did not pass.")
-	if not bool(runtime_payload.get("ok")):
-		raise RuntimeError("Phase 4B composite smoke failed: composite runtime payload was not ok.")
-	return {
-		"ok": True,
-		"result": result,
-	}
-
-
-def run_phase4b_composite_read_debug() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	request_id = "phase4b-composite-debug"
-	session_id = "phase4b-composite-debug"
-	interpretation = build_fresh_query_interpretation_contract(
-		request_id=request_id,
-		session_id=session_id,
-		intent_class="financial_summary",
-		candidate_capability_ids=[],
-		candidate_reports=[],
-		requested_dimensions=[],
-		requested_metrics=["Outstanding"],
-		requested_time_scope="as_of_today",
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=1.0,
-	)
-	response_policy_payload = {
-		"analysis_requested": True,
-		"policy_mode": "grounded_analysis",
-		"insight_allowed": True,
-		"recommendation_allowed": False,
-		"grounding_rule": "Composite analysis must stay grounded in normalized governed family artifacts.",
-		"structure": ["grounded_facts_first", "concise_interpretation_only_when_grounded"],
-	}
-	plan_outcome = plan_composite_read(
-		request_id=request_id,
-		session_id=session_id,
-		message="Analyze AR / AP amount and evaluate the company health",
-		interpretation=interpretation,
-		response_policy=response_policy_payload,
-	)
-	pipeline = {
-		"request_id": request_id,
-		"fresh_query_interpretation": {
-			"status": "accepted",
-			"interpretation": interpretation.to_payload(),
-			"agent_meta": {},
-		},
-		"fresh_query_compiler": plan_outcome.compiler_contract.to_payload() if plan_outcome.compiler_contract else {},
-		"composite_read_plan": plan_outcome.plan_contract.to_payload() if plan_outcome.plan_contract else {},
-	}
-	return execute_composite_read_plan(
-		session_id=session_id,
-		user_id="Administrator",
-		site_name=site_name,
-		message="Analyze AR / AP amount and evaluate the company health",
-		recent_messages=[],
-		pipeline=pipeline,
-		plan_outcome=plan_outcome,
-		proposal_generation_latency_ms=0,
-		compilation_latency_ms=0,
-		total_started=time.perf_counter(),
-	)
-
-
 def execute_compiled_fresh_query_message(
 	*,
 	session_id: str,
@@ -2633,6 +3235,8 @@ def execute_compiled_fresh_query_message(
 	message: str,
 	recent_messages: List[Dict[str, str]] | None = None,
 	clarification_resolution: Dict[str, Any] | None = None,
+	front_door_contract: Dict[str, Any] | None = None,
+	governed_target_limit: int = 0,
 ) -> Dict[str, Any]:
 	total_started = time.perf_counter()
 	pipeline = compile_from_fresh_query_message(
@@ -2641,6 +3245,16 @@ def execute_compiled_fresh_query_message(
 		site_name=site_name,
 		message=message,
 		recent_messages=list(recent_messages or []),
+		clarification_resolution=clarification_resolution,
+		front_door_contract=front_door_contract,
+		governed_target_limit=governed_target_limit,
+	)
+	pipeline = _recover_pipeline_with_deterministic_surface_fallback(
+		pipeline=pipeline,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
 		clarification_resolution=clarification_resolution,
 	)
 	latency_breakdown = (
@@ -2719,6 +3333,11 @@ def execute_compiled_fresh_query_message(
 			session_id=session_id,
 			compiler_decision=str(compiler_contract.get("decision") or "").strip(),
 			compiler_reason=str(compiler_contract.get("compiler_reason") or "").strip(),
+			governed_resolution_details=(
+				compiler_contract.get("governed_resolution_details")
+				if isinstance(compiler_contract.get("governed_resolution_details"), dict)
+				else {}
+			),
 			capability_id=str(compiler_contract.get("capability_id") or "").strip(),
 			selected_report=str(compiler_contract.get("selected_report") or "").strip(),
 			governed_family_id=str(compiler_contract.get("selected_report_family") or "").strip(),
@@ -2766,7 +3385,7 @@ def execute_compiled_fresh_query_message(
 		filters=compiled_query.get("filters") if isinstance(compiled_query.get("filters"), dict) else {},
 		user=user_id,
 		mode="compiled_read_query",
-		request_message=message,
+		target_limit=int(max(0, compiled_query.get("target_limit") or 0)),
 	)
 	if not bool(runtime_payload.get("ok")) or not list(runtime_payload.get("tool_trace") or []):
 		try:
@@ -2794,7 +3413,6 @@ def execute_compiled_fresh_query_message(
 		request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
 		compiler_contract=compiler_contract,
 		runtime_payload=runtime_payload if isinstance(runtime_payload, dict) else {},
-		request_message=message,
 		intent_class=str(
 			(((pipeline.get("fresh_query_interpretation") or {}).get("interpretation") or {}).get("intent_class"))
 			if isinstance(pipeline.get("fresh_query_interpretation"), dict)
@@ -2880,6 +3498,11 @@ def execute_compiled_fresh_query_message(
 		)
 		if narrative_contract is not None:
 			narrative_response_payload = narrative_contract.to_payload()
+		if _family_narrative_prefers_rendered_response(
+			family_id=str(adapter_outcome.family_id or compiler_contract.get("selected_report_family") or "").strip(),
+			response_policy=response_policy,
+		):
+			narrative_response_payload = {}
 	total_pipeline_latency_ms = int((time.perf_counter() - total_started) * 1000)
 	tool_trace = runtime_payload.get("tool_trace") if isinstance(runtime_payload.get("tool_trace"), list) else []
 	tool_names = [
@@ -2894,6 +3517,11 @@ def execute_compiled_fresh_query_message(
 		session_id=session_id,
 		compiler_decision=str(compiler_contract.get("decision") or "").strip(),
 		compiler_reason=str(compiler_contract.get("compiler_reason") or "").strip(),
+		governed_resolution_details=(
+			compiler_contract.get("governed_resolution_details")
+			if isinstance(compiler_contract.get("governed_resolution_details"), dict)
+			else {}
+		),
 		capability_id=str(compiler_contract.get("capability_id") or "").strip(),
 		selected_report=str(compiler_contract.get("selected_report") or "").strip(),
 		governed_family_id=str(adapter_outcome.family_id or compiler_contract.get("selected_report_family") or "").strip(),
@@ -2943,138 +3571,3 @@ def execute_compiled_fresh_query_message(
 			"total_pipeline_latency_ms": total_pipeline_latency_ms,
 		},
 	}
-
-
-def run_phase4_semantic_validation_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	return execute_compiled_fresh_query_message(
-		session_id="phase4-semantic-smoke",
-		user_id="Administrator",
-		site_name=site_name,
-		message="How much payable amount do we have as of now",
-		recent_messages=[],
-	)
-
-
-def run_phase4_slice5_selftests() -> Dict[str, Any]:
-	return {
-		"fresh_query_interpreter": run_phase4_fresh_query_interpreter_selftests(),
-		"semantic_validation": run_phase4_semantic_validation_selftests(),
-	}
-
-
-def run_phase4_slice6_selftests() -> Dict[str, Any]:
-	audit = build_compiled_execution_audit_contract(
-		request_id="slice6-selftest",
-		session_id="slice6-session",
-		compiler_decision="execute",
-		compiler_reason="governed compiler path",
-		capability_id="accounts_payable_read",
-		selected_report="Accounts Payable Summary",
-		governed_family_id="aging",
-		composite_plan_id="",
-		proposal_cache_hit=False,
-		proposal_shared_inflight_hit=False,
-		compiled_query_available=True,
-		runtime_invoked=True,
-		runtime_ok=True,
-		runtime_engine="qwen_agent",
-		runtime_model="qwen3.5-plus",
-		grounded_validation_status="pass",
-		family_validation_status="pass",
-		semantic_validation_status="pass",
-		proposal_generation_latency_ms=120,
-		compilation_latency_ms=5,
-		runtime_execution_latency_ms=950,
-		semantic_validation_latency_ms=3,
-		total_pipeline_latency_ms=1078,
-		tool_count=1,
-		tool_names=["erp_fac-generate_report"],
-	)
-	payload = audit.to_payload()
-	if str(payload.get("type") or "").strip() != "qwen_compiled_execution_audit_contract":
-		raise RuntimeError("Slice 6 selftest failed: compiled execution audit contract type mismatch.")
-	if int(payload.get("total_pipeline_latency_ms") or 0) < int(payload.get("runtime_execution_latency_ms") or 0):
-		raise RuntimeError("Slice 6 selftest failed: total latency is inconsistent.")
-	if int(payload.get("tool_count") or 0) != 1:
-		raise RuntimeError("Slice 6 selftest failed: tool count mismatch.")
-	if bool(payload.get("proposal_cache_hit")):
-		raise RuntimeError("Slice 6 selftest failed: proposal cache flag mismatch.")
-	if bool(payload.get("proposal_shared_inflight_hit")):
-		raise RuntimeError("Slice 6 selftest failed: proposal inflight flag mismatch.")
-	return payload
-
-
-def run_phase4_audit_observability_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	result = execute_compiled_fresh_query_message(
-		session_id="phase4-audit-smoke",
-		user_id="Administrator",
-		site_name=site_name,
-		message="How much payable amount do we have as of now",
-		recent_messages=[],
-	)
-	audit = result.get("compiled_execution_audit")
-	if not isinstance(audit, dict):
-		raise RuntimeError("Slice 6 audit smoke failed: missing compiled execution audit payload.")
-	if str(audit.get("semantic_validation_status") or "").strip() != "pass":
-		raise RuntimeError("Slice 6 audit smoke failed: semantic validation did not pass.")
-	if int(audit.get("tool_count") or 0) < 1:
-		raise RuntimeError("Slice 6 audit smoke failed: expected at least one grounded tool call.")
-	return result
-
-
-def run_phase4b_family_rendering_smoke() -> Dict[str, Any]:
-	site_name = ""
-	if frappe is not None:
-		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
-	checks = [
-		("financial_statement", "Show me P & L statement"),
-		("aging", "How much payable amount do we have as of now"),
-		("ranking_analytics", "Top 5 customers by revenue"),
-		("trend_analytics", "Show monthly sales trend"),
-		("product_profitability", "which products are performing well last month"),
-		("composite_working_capital_health", "Analyze AR / AP amount and evaluate the company health"),
-	]
-	results: List[Dict[str, Any]] = []
-	for expected_family, message in checks:
-		result = execute_compiled_fresh_query_message(
-			session_id=f"phase4b-rendering-{_normalize_message_key(message)}",
-			user_id="Administrator",
-			site_name=site_name,
-			message=message,
-			recent_messages=[],
-		)
-		rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
-		answer_text = str(rendered_response.get("answer_text") or "").strip()
-		if not answer_text:
-			raise RuntimeError(f"Phase 4B rendering smoke failed: missing rendered response for `{message}`.")
-		family_id = str(rendered_response.get("family_id") or "").strip()
-		if family_id != expected_family:
-			raise RuntimeError(
-				f"Phase 4B rendering smoke failed: expected family `{expected_family}`, got `{family_id or 'unknown'}` for `{message}`."
-			)
-		family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
-		if str(family_validation.get("status") or "").strip() != "pass":
-			raise RuntimeError(
-				f"Phase 4B rendering smoke failed: family validation did not pass for `{message}`."
-			)
-		results.append(
-			{
-				"message": message,
-				"family_id": family_id,
-				"title": str(rendered_response.get("title") or "").strip(),
-				"answer_text": answer_text,
-				"phase4_latency_breakdown": result.get("phase4_latency_breakdown"),
-			}
-		)
-	return {"renders": results}
-
-
-def _normalize_message_key(value: str) -> str:
-	text = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower())
-	return text.strip("-") or "message"

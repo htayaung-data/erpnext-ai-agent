@@ -5,8 +5,6 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
-import frappe
-
 from ai_assistant_ui.qwen_chat.contracts import (
 	CompiledQueryRequestContract,
 	FreshQueryCompilerContract,
@@ -14,8 +12,22 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_compiled_query_request_contract,
 	build_fresh_query_compiler_contract,
 )
+from ai_assistant_ui.qwen_chat.defaults_repository import (
+	current_fiscal_year_bounds as defaults_current_fiscal_year_bounds,
+	current_fiscal_year_name as defaults_current_fiscal_year_name,
+	current_fiscal_year_row as defaults_current_fiscal_year_row,
+	fiscal_year_row_for_date as defaults_fiscal_year_row_for_date,
+	fiscal_year_rows as defaults_fiscal_year_rows,
+	matching_fiscal_year_row_for_range as defaults_matching_fiscal_year_row_for_range,
+	open_fiscal_year_bounds as defaults_open_fiscal_year_bounds,
+	previous_fiscal_year_bounds as defaults_previous_fiscal_year_bounds,
+	previous_fiscal_year_name as defaults_previous_fiscal_year_name,
+	previous_fiscal_year_row as defaults_previous_fiscal_year_row,
+	single_company_name as defaults_single_company_name,
+)
 from ai_assistant_ui.qwen_chat.metadata import (
 	ambiguity_rules,
+	capability_contract_identity,
 	capability_default_report_name,
 	capability_detail_report_name,
 	capability_intent_classes,
@@ -30,9 +42,13 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_supported_intent_classes,
 	report_supported_metrics,
 )
+from ai_assistant_ui.qwen_chat.semantic_resolution import (
+	resolve_interpretation_semantically,
+)
 from ai_assistant_ui.qwen_chat.semantic_aliases import (
 	get_canonical_key,
 	get_aliases,
+	get_all_canonical_keys,
 )
 
 
@@ -95,6 +111,36 @@ def _semantic_alias_keys(value: Any) -> set[str]:
 	return {key}
 
 
+def _canonical_requested_metric_keys(
+	values: List[Any] | None,
+	*,
+	capability_id: str,
+) -> List[str]:
+	if not values:
+		return []
+	clean_capability = str(capability_id or "").strip() or None
+	out: List[str] = []
+	for value in _clean_list(values):
+		canonical = get_canonical_key(
+			value,
+			capability_id=clean_capability,
+			dimension_or_metric="metric",
+		)
+		if canonical:
+			out.append(str(canonical).strip())
+			continue
+		normalized = _normalize_key(value)
+		if normalized and normalized in {
+			_normalize_key(key)
+			for key in get_all_canonical_keys(
+				capability_id=clean_capability,
+				dimension_or_metric="metric",
+			)
+		}:
+			out.append(normalized)
+	return list(dict.fromkeys([value for value in out if value]))
+
+
 def _tokenize(value: Any) -> set[str]:
 	text = str(value or "").strip().lower()
 	clean = "".join(ch if ch.isalnum() else " " for ch in text)
@@ -141,59 +187,47 @@ def _first_supported_value_match(requested_values: List[str], supported_values: 
 
 
 def _single_company_name() -> str:
-	companies = frappe.get_all("Company", pluck="name", limit=2)
-	if isinstance(companies, list) and len(companies) == 1:
-		return str(companies[0] or "").strip()
-	return ""
+	return defaults_single_company_name()
+
+
+def _fiscal_year_rows() -> List[Dict[str, str]]:
+	return defaults_fiscal_year_rows()
+
+
+def _current_fiscal_year_row() -> Dict[str, str]:
+	return defaults_current_fiscal_year_row(today=_today_date())
+
+
+def _previous_fiscal_year_row() -> Dict[str, str]:
+	return defaults_previous_fiscal_year_row(today=_today_date())
+
+
+def _matching_fiscal_year_row_for_range(from_date: str, to_date: str) -> Dict[str, str]:
+	return defaults_matching_fiscal_year_row_for_range(from_date, to_date)
+
+
+def _fiscal_year_row_for_date(target_date: str) -> Dict[str, str]:
+	return defaults_fiscal_year_row_for_date(target_date)
 
 
 def _current_fiscal_year_bounds() -> Tuple[str, str]:
-	today = _today_date()
-	rows = frappe.get_all(
-		"Fiscal Year",
-		fields=["name", "year_start_date", "year_end_date"],
-		order_by="year_start_date desc",
-		limit=10,
-	)
-	fallback_start = ""
-	fallback_end = ""
-	for row in rows or []:
-		start_value = row.get("year_start_date")
-		end_value = row.get("year_end_date")
-		start = dt.date.fromisoformat(str(start_value)) if start_value else None
-		end = dt.date.fromisoformat(str(end_value)) if end_value else None
-		if not start or not end:
-			continue
-		if not fallback_start:
-			fallback_start = start.isoformat()
-			fallback_end = end.isoformat()
-		if start <= today <= end:
-			return start.isoformat(), end.isoformat()
-	return fallback_start, fallback_end
+	return defaults_current_fiscal_year_bounds(today=_today_date())
+
+
+def _open_fiscal_year_bounds() -> Tuple[str, str]:
+	return defaults_open_fiscal_year_bounds(today=_today_date(), company=_single_company_name())
+
+
+def _previous_fiscal_year_bounds() -> Tuple[str, str]:
+	return defaults_previous_fiscal_year_bounds(today=_today_date())
 
 
 def _current_fiscal_year_name() -> str:
-	today = _today_date()
-	rows = frappe.get_all(
-		"Fiscal Year",
-		fields=["name", "year_start_date", "year_end_date"],
-		order_by="year_start_date desc",
-		limit=10,
-	)
-	fallback_name = ""
-	for row in rows or []:
-		name = str(row.get("name") or "").strip()
-		start_value = row.get("year_start_date")
-		end_value = row.get("year_end_date")
-		start = dt.date.fromisoformat(str(start_value)) if start_value else None
-		end = dt.date.fromisoformat(str(end_value)) if end_value else None
-		if not name or not start or not end:
-			continue
-		if not fallback_name:
-			fallback_name = name
-		if start <= today <= end:
-			return name
-	return fallback_name
+	return defaults_current_fiscal_year_name(today=_today_date())
+
+
+def _previous_fiscal_year_name() -> str:
+	return defaults_previous_fiscal_year_name(today=_today_date())
 
 
 def _valid_intent_classes() -> set[str]:
@@ -254,7 +288,26 @@ def _date_range_from_time_scope(requested_time_scope: str) -> Tuple[str, str]:
 		start, _ = _current_fiscal_year_bounds()
 		if start:
 			return start, today.isoformat()
+	if scope == "open_fiscal_year_to_date":
+		return _open_fiscal_year_bounds()
+	if scope == "last_year":
+		return _previous_fiscal_year_bounds()
 	return "", ""
+
+
+def _scoped_fiscal_year_row(*, requested_time_scope: str, filters: Dict[str, Any]) -> Dict[str, str]:
+	scope = str(requested_time_scope or "").strip()
+	if scope == "last_year":
+		return _previous_fiscal_year_row()
+	if scope == "current_fiscal_year_to_date":
+		return _current_fiscal_year_row()
+	if scope == "open_fiscal_year_to_date":
+		start, _ = _open_fiscal_year_bounds()
+		if start:
+			return _fiscal_year_row_for_date(start)
+	start = str(filters.get("period_start_date") or filters.get("from_date") or "").strip()
+	end = str(filters.get("period_end_date") or filters.get("to_date") or "").strip()
+	return _matching_fiscal_year_row_for_range(start, end)
 
 
 def _resolve_capability(interpretation: FreshQueryInterpretationContract) -> Tuple[str, str]:
@@ -382,15 +435,20 @@ def _extract_candidate_filters(
 
 	report_spec = get_report_spec(report_name)
 	required_filters = set(_clean_list(report_spec.get("required_filters")))
-	if allow_slot_dates and "report_date" in required_filters and not filters.get("report_date"):
+	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	optional_date_filters: set[str] = set()
+	if str(direct_query.get("date_field") or "").strip():
+		optional_date_filters = {"report_date", "from_date", "to_date"}
+	date_filter_fields = required_filters | optional_date_filters
+	if allow_slot_dates and "report_date" in date_filter_fields and not filters.get("report_date"):
 		slot_value = slots.get("report_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["report_date"] = slot_value.strip()
-	if allow_slot_dates and "from_date" in required_filters and not filters.get("from_date"):
+	if allow_slot_dates and "from_date" in date_filter_fields and not filters.get("from_date"):
 		slot_value = slots.get("from_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["from_date"] = slot_value.strip()
-	if allow_slot_dates and "to_date" in required_filters and not filters.get("to_date"):
+	if allow_slot_dates and "to_date" in date_filter_fields and not filters.get("to_date"):
 		slot_value = slots.get("to_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["to_date"] = slot_value.strip()
@@ -404,15 +462,15 @@ def _extract_candidate_filters(
 			filters["period_end_date"] = slot_value.strip()
 
 	date_from, date_to = _date_range_from_time_scope(interpretation.requested_time_scope)
-	if "from_date" in required_filters and not filters.get("from_date") and date_from:
+	if "from_date" in date_filter_fields and not filters.get("from_date") and date_from:
 		filters["from_date"] = date_from
-	if "to_date" in required_filters and not filters.get("to_date") and date_to:
+	if "to_date" in date_filter_fields and not filters.get("to_date") and date_to:
 		filters["to_date"] = date_to
 	if "period_start_date" in required_filters and not filters.get("period_start_date") and date_from:
 		filters["period_start_date"] = date_from
 	if "period_end_date" in required_filters and not filters.get("period_end_date") and date_to:
 		filters["period_end_date"] = date_to
-	if "report_date" in required_filters and not filters.get("report_date"):
+	if "report_date" in date_filter_fields and not filters.get("report_date"):
 		if date_to:
 			filters["report_date"] = date_to
 		elif interpretation.requested_time_scope == "as_of_today":
@@ -435,8 +493,17 @@ def _extract_candidate_filters(
 	return filters
 
 
-def _apply_defaultable_filters(report_name: str, filters: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_defaultable_filters(
+	report_name: str,
+	filters: Dict[str, Any],
+	*,
+	requested_time_scope: str = "",
+) -> Dict[str, Any]:
 	updated = dict(filters or {})
+	scoped_fiscal_year = _scoped_fiscal_year_row(
+		requested_time_scope=requested_time_scope,
+		filters=updated,
+	)
 	for item in report_defaultable_filters(report_name):
 		fieldname = str(item.get("fieldname") or "").strip()
 		strategy = str(item.get("strategy") or "").strip()
@@ -447,13 +514,33 @@ def _apply_defaultable_filters(report_name: str, filters: Dict[str, Any]) -> Dic
 			if company:
 				updated[fieldname] = company
 		elif strategy == "current_date":
-			updated[fieldname] = _today_iso()
+			if fieldname in {"to_date", "period_end_date"} and scoped_fiscal_year:
+				updated[fieldname] = str(scoped_fiscal_year.get("year_end_date") or "").strip()
+			else:
+				updated[fieldname] = _today_iso()
 		elif strategy == "fiscal_year_start_date":
-			start, _ = _current_fiscal_year_bounds()
+			start = str(scoped_fiscal_year.get("year_start_date") or "").strip()
+			if not start:
+				start, _ = _current_fiscal_year_bounds()
+			if start:
+				updated[fieldname] = start
+		elif strategy == "open_fiscal_year_start_date":
+			start, _ = _open_fiscal_year_bounds()
 			if start:
 				updated[fieldname] = start
 		elif strategy == "current_fiscal_year_name":
-			fiscal_year_name = _current_fiscal_year_name()
+			reference_date = ""
+			if fieldname == "from_fiscal_year":
+				reference_date = str(updated.get("period_start_date") or updated.get("from_date") or "").strip()
+			elif fieldname == "to_fiscal_year":
+				reference_date = str(updated.get("period_end_date") or updated.get("to_date") or "").strip()
+			fiscal_year_name = ""
+			if reference_date:
+				fiscal_year_name = str(_fiscal_year_row_for_date(reference_date).get("name") or "").strip()
+			if not fiscal_year_name:
+				fiscal_year_name = str(scoped_fiscal_year.get("name") or "").strip()
+			if not fiscal_year_name:
+				fiscal_year_name = _current_fiscal_year_name()
 			if fiscal_year_name:
 				updated[fieldname] = fiscal_year_name
 		elif strategy == "compiler_default":
@@ -517,12 +604,82 @@ def compile_fresh_query(
 	interpretation: FreshQueryInterpretationContract,
 	response_policy: Dict[str, Any] | None = None,
 ) -> CompilerOutcome:
+	governed_resolution_details: Dict[str, Any] = {}
+	requested_metric_seed = list(interpretation.requested_metrics)
+	semantic_resolution = resolve_interpretation_semantically(interpretation)
+	if semantic_resolution is not None:
+		governed_resolution_details = {
+			"resolution_mode": "semantic_resolution",
+			"semantic_resolution_contract": semantic_resolution.contract.to_payload(),
+		}
+		if semantic_resolution.blocks_legacy_fallback:
+			governed_resolution_details["blocks_legacy_fallback"] = True
+		semantic_decision = str(
+			getattr(semantic_resolution.contract, "governed_decision", "")
+			or getattr(semantic_resolution.contract, "decision", "")
+			or ""
+		).strip()
+		semantic_reason = str(
+			getattr(semantic_resolution.contract, "governed_reason", "")
+			or getattr(semantic_resolution.contract, "decision_reason", "")
+			or ""
+		).strip()
+		semantic_capability_ids = _clean_list(
+			getattr(semantic_resolution.contract, "candidate_capability_ids", [])
+		)
+		semantic_canonical_capability_ids = _clean_list(
+			getattr(semantic_resolution.contract, "canonical_candidate_capability_ids", [])
+		)
+		semantic_reports = _clean_list(
+			getattr(semantic_resolution.contract, "candidate_reports", [])
+		)
+		if semantic_decision == "clarify":
+			clarification_reason_type = str(semantic_resolution.clarification_reason_type or "").strip() or "report_ambiguity"
+			clarification_details = dict(semantic_resolution.clarification_details or {})
+			if "semantic_resolution_contract" not in clarification_details:
+				clarification_details["semantic_resolution_contract"] = semantic_resolution.contract.to_payload()
+			if semantic_resolution.blocks_legacy_fallback:
+				clarification_details["blocks_legacy_fallback"] = True
+			if semantic_canonical_capability_ids:
+				clarification_details["canonical_capability_candidates"] = list(semantic_canonical_capability_ids)
+			compiler_contract = build_fresh_query_compiler_contract(
+				request_id=request_id,
+				session_id=session_id,
+				capability_id=str((semantic_capability_ids or [""])[0] or "").strip(),
+				requested_dimensions=interpretation.requested_dimensions,
+				requested_metrics=interpretation.requested_metrics,
+				requested_time_scope=interpretation.requested_time_scope,
+				target_limit=interpretation.target_limit,
+				decision="clarify",
+				clarification_required=True,
+				compiler_reason=semantic_reason,
+				governed_resolution_details=governed_resolution_details,
+				clarification_reason_type=clarification_reason_type,
+				clarification_details={
+					"report_candidates": list(semantic_reports),
+					**clarification_details,
+				},
+				extracted_slots=dict(interpretation.extracted_slots or {}),
+			)
+			return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
+		interpretation = semantic_resolution.interpretation
+
 	capability_id, capability_reason = _resolve_capability(interpretation)
 	if not capability_id:
 		decision = "clarify" if interpretation.ambiguity_flags else "reject"
 		reason_type = "capability_ambiguity" if interpretation.ambiguity_flags else "capability_missing"
+		report_name = str((interpretation.candidate_reports or [""])[0] or "").strip()
 		reason_details = {
 			"capability_candidates": list(interpretation.candidate_capability_ids),
+			"canonical_capability_candidates": [
+				capability_contract_identity(
+					capability_id,
+					scope_id=str((interpretation.extracted_slots or {}).get("scope_id") or "").strip(),
+					report_name=report_name,
+				)
+				for capability_id in interpretation.candidate_capability_ids
+				if str(capability_id or "").strip()
+			],
 			"ambiguity_flags": list(interpretation.ambiguity_flags),
 		}
 		compiler_contract = build_fresh_query_compiler_contract(
@@ -531,13 +688,26 @@ def compile_fresh_query(
 			requested_dimensions=interpretation.requested_dimensions,
 			requested_metrics=interpretation.requested_metrics,
 			requested_time_scope=interpretation.requested_time_scope,
+			target_limit=interpretation.target_limit,
 			decision=decision,
 			clarification_required=decision == "clarify",
 			compiler_reason=capability_reason or interpretation.ambiguity_reason or "Capability resolution failed.",
+			governed_resolution_details=governed_resolution_details,
 			clarification_reason_type=reason_type if decision == "clarify" else "",
 			clarification_details=reason_details if decision == "clarify" else {},
+			extracted_slots=dict(interpretation.extracted_slots or {}),
 		)
 		return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
+
+	requested_metric_keys = _canonical_requested_metric_keys(
+		requested_metric_seed + list(interpretation.requested_metrics),
+		capability_id=capability_id,
+	)
+	if requested_metric_keys:
+		governed_resolution_details = {
+			**governed_resolution_details,
+			"requested_metric_keys": requested_metric_keys,
+		}
 
 	report_name, report_reason = _select_report(capability_id, interpretation)
 	if not report_name:
@@ -548,16 +718,23 @@ def compile_fresh_query(
 			requested_dimensions=interpretation.requested_dimensions,
 			requested_metrics=interpretation.requested_metrics,
 			requested_time_scope=interpretation.requested_time_scope,
+			target_limit=interpretation.target_limit,
 			decision="clarify",
 			clarification_required=True,
 			compiler_reason=report_reason or "Report selection remained ambiguous.",
+			governed_resolution_details=governed_resolution_details,
 			clarification_reason_type="report_ambiguity",
 			clarification_details={"report_candidates": list(interpretation.candidate_reports)},
+			extracted_slots=dict(interpretation.extracted_slots or {}),
 		)
 		return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
 
 	filters = _extract_candidate_filters(interpretation, report_name)
-	filters = _apply_defaultable_filters(report_name, filters)
+	filters = _apply_defaultable_filters(
+		report_name,
+		filters,
+		requested_time_scope=interpretation.requested_time_scope,
+	)
 	missing_filters = _missing_required_filters(report_name, filters)
 	ambiguity_decision = _ambiguity_rule_decision(interpretation)
 	report_spec = get_report_spec(report_name)
@@ -607,11 +784,14 @@ def compile_fresh_query(
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
 		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
 		decision=decision,
 		clarification_required=clarification_required,
 		compiler_reason=" ".join(part for part in reasons if part).strip(),
+		governed_resolution_details=governed_resolution_details,
 		clarification_reason_type=clarification_reason_type,
 		clarification_details=clarification_details,
+		extracted_slots=dict(interpretation.extracted_slots or {}),
 	)
 	if decision != "execute":
 		return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
@@ -623,7 +803,9 @@ def compile_fresh_query(
 		filters=filters,
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
+		target_limit=interpretation.target_limit,
 		response_policy=response_policy if isinstance(response_policy, dict) else {},
+		extracted_slots=dict(interpretation.extracted_slots or {}),
 	)
 	return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=compiled_request)
 
@@ -631,7 +813,9 @@ def compile_fresh_query(
 def run_phase4_compiler_selftests() -> Dict[str, Any]:
 	today = _today_iso()
 	last_month_start, last_month_end = _date_range_from_time_scope("last_month")
-	fiscal_year_start, _ = _current_fiscal_year_bounds()
+	open_period_start, open_period_end = _date_range_from_time_scope("open_fiscal_year_to_date")
+	open_period_start_fiscal_year = str(_fiscal_year_row_for_date(open_period_start).get("name") or "").strip()
+	open_period_end_fiscal_year = str(_fiscal_year_row_for_date(open_period_end).get("name") or "").strip()
 	payable_interpretation = FreshQueryInterpretationContract(
 		request_id="selftest-payable",
 		session_id="selftest",
@@ -670,7 +854,7 @@ def run_phase4_compiler_selftests() -> Dict[str, Any]:
 		candidate_reports=["Profit and Loss Statement"],
 		requested_dimensions=[],
 		requested_metrics=[],
-		requested_time_scope="current_fiscal_year_to_date",
+		requested_time_scope="open_fiscal_year_to_date",
 		requested_presentation=[],
 		extracted_slots={},
 		ambiguity_flags=[],
@@ -685,7 +869,7 @@ def run_phase4_compiler_selftests() -> Dict[str, Any]:
 		candidate_reports=["Balance Sheet"],
 		requested_dimensions=[],
 		requested_metrics=["Total Asset", "Total Liability", "Total Equity"],
-		requested_time_scope="current_fiscal_year_to_date",
+		requested_time_scope="open_fiscal_year_to_date",
 		requested_presentation=[],
 		extracted_slots={},
 		ambiguity_flags=[],
@@ -700,7 +884,7 @@ def run_phase4_compiler_selftests() -> Dict[str, Any]:
 		candidate_reports=["Cash Flow"],
 		requested_dimensions=[],
 		requested_metrics=["Net Cash from Operations", "Net Change in Cash"],
-		requested_time_scope="current_fiscal_year_to_date",
+		requested_time_scope="open_fiscal_year_to_date",
 		requested_presentation=[],
 		extracted_slots={},
 		ambiguity_flags=[],
@@ -759,9 +943,9 @@ def run_phase4_compiler_selftests() -> Dict[str, Any]:
 				raise RuntimeError("P&L compiler selftest failed: financial statement query did not execute.")
 			if outcome.compiler_contract.selected_report != "Profit and Loss Statement":
 				raise RuntimeError("P&L compiler selftest failed: wrong report selected.")
-			if outcome.compiler_contract.completed_filters.get("period_start_date") != fiscal_year_start:
-				raise RuntimeError("P&L compiler selftest failed: fiscal-year start default was not applied.")
-			if outcome.compiler_contract.completed_filters.get("period_end_date") != today:
+			if outcome.compiler_contract.completed_filters.get("period_start_date") != open_period_start:
+				raise RuntimeError("P&L compiler selftest failed: open fiscal period start was not applied.")
+			if outcome.compiler_contract.completed_filters.get("period_end_date") != open_period_end:
 				raise RuntimeError("P&L compiler selftest failed: period_end_date did not resolve to today.")
 		if interpretation.request_id == "selftest-product-performance":
 			if outcome.compiler_contract.decision != "execute":
@@ -779,22 +963,22 @@ def run_phase4_compiler_selftests() -> Dict[str, Any]:
 				raise RuntimeError("Balance Sheet compiler selftest failed: financial statement query did not execute.")
 			if outcome.compiler_contract.selected_report != "Balance Sheet":
 				raise RuntimeError("Balance Sheet compiler selftest failed: wrong report selected.")
-			if outcome.compiler_contract.completed_filters.get("period_start_date") != fiscal_year_start:
-				raise RuntimeError("Balance Sheet compiler selftest failed: fiscal-year start default was not applied.")
-			if outcome.compiler_contract.completed_filters.get("period_end_date") != today:
+			if outcome.compiler_contract.completed_filters.get("period_start_date") != open_period_start:
+				raise RuntimeError("Balance Sheet compiler selftest failed: open fiscal period start was not applied.")
+			if outcome.compiler_contract.completed_filters.get("period_end_date") != open_period_end:
 				raise RuntimeError("Balance Sheet compiler selftest failed: period_end_date did not resolve to today.")
 		if interpretation.request_id == "selftest-cash-flow":
 			if outcome.compiler_contract.decision != "execute":
 				raise RuntimeError("Cash Flow compiler selftest failed: financial statement query did not execute.")
 			if outcome.compiler_contract.selected_report != "Cash Flow":
 				raise RuntimeError("Cash Flow compiler selftest failed: wrong report selected.")
-			if outcome.compiler_contract.completed_filters.get("from_fiscal_year") != _current_fiscal_year_name():
+			if outcome.compiler_contract.completed_filters.get("from_fiscal_year") != open_period_start_fiscal_year:
 				raise RuntimeError("Cash Flow compiler selftest failed: from_fiscal_year was not resolved.")
-			if outcome.compiler_contract.completed_filters.get("to_fiscal_year") != outcome.compiler_contract.completed_filters.get("from_fiscal_year"):
-				raise RuntimeError("Cash Flow compiler selftest failed: to_fiscal_year did not mirror from_fiscal_year.")
-			if outcome.compiler_contract.completed_filters.get("period_start_date") != fiscal_year_start:
-				raise RuntimeError("Cash Flow compiler selftest failed: fiscal-year start default was not applied.")
-			if outcome.compiler_contract.completed_filters.get("period_end_date") != today:
+			if outcome.compiler_contract.completed_filters.get("to_fiscal_year") != open_period_end_fiscal_year:
+				raise RuntimeError("Cash Flow compiler selftest failed: to_fiscal_year was not resolved from the end date.")
+			if outcome.compiler_contract.completed_filters.get("period_start_date") != open_period_start:
+				raise RuntimeError("Cash Flow compiler selftest failed: open fiscal period start was not applied.")
+			if outcome.compiler_contract.completed_filters.get("period_end_date") != open_period_end:
 				raise RuntimeError("Cash Flow compiler selftest failed: period_end_date did not resolve to today.")
 	return {
 		"ok": True,

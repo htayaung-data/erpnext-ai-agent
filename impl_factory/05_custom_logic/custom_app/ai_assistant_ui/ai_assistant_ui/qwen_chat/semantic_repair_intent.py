@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from ai_assistant_ui.qwen_chat.followup_interpreter import detect_followup_intent
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_repair_intent_interpretation,
@@ -124,29 +123,6 @@ def _validate_semantic_payload(
 	}
 	if repair_intent_type == "accept_recovery_action" and accepted_recovery_action not in available_actions:
 		return None
-	if repair_intent_type == "accept_recovery_action":
-		followup_intent = detect_followup_intent(message, grounded_turn=latest_grounded_turn)
-		requested_modes = {
-			str(value or "").strip()
-			for value in (getattr(followup_intent, "requested_modes", []) or [])
-			if str(value or "").strip()
-		}
-		requested_columns = [
-			str(value or "").strip()
-			for value in (getattr(followup_intent, "requested_columns", []) or [])
-			if str(value or "").strip()
-		]
-		has_substantive_followup_signal = bool(
-			requested_modes
-			or str(getattr(followup_intent, "target_dimension", "") or "").strip()
-			or int(max(0, getattr(followup_intent, "target_limit", 0) or 0))
-			or str(getattr(followup_intent, "sort_direction", "") or "").strip()
-			or str(getattr(followup_intent, "target_metric", "") or "").strip()
-			or requested_columns
-			or str(getattr(followup_intent, "requested_time_scope", "") or "").strip()
-		)
-		if has_substantive_followup_signal:
-			return None
 	if repair_intent_type != "accept_recovery_action":
 		accepted_recovery_action = ""
 	guidance_topic = str(payload.get("guidance_topic") or "").strip()
