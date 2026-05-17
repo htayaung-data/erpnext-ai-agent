@@ -125,6 +125,7 @@ Documents in this folder:
 - `procurement-console-phase6c2a-rfq-send-readiness-baseline-2026-05-16.md`
 - `procurement-console-phase6c2-rfq-email-send-design-plan-2026-05-16.md`
 - `procurement-console-phase6c2b-rfq-governed-send-design-plan-2026-05-16.md`
+- `procurement-console-phase6c2c-rfq-test-send-deferral-plan-2026-05-17.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
