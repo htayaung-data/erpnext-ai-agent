@@ -1538,9 +1538,12 @@ function assertLinkField(payload, key, doctype, label, placeholder) {
   }
 }
 
-function assertTextSearchField(payload, key, label, expectedLabel) {
+function assertTextSearchField(payload, key, label, expectedLabel, expectedPlaceholder) {
   const field = fieldByKey(payload, key);
   assert(field && field.type === "text" && field.label === expectedLabel, `${label}: text search filter label mismatch`, { key, expectedLabel, field });
+  if (expectedPlaceholder) {
+    assert(field.placeholder === expectedPlaceholder, `${label}: text search placeholder mismatch`, { key, expectedPlaceholder, field });
+  }
 }
 
 function assertNoCompanyField(payload, label) {
@@ -1789,9 +1792,9 @@ async function checkSupplierAutocomplete(page) {
   assert(itemHistoryResponse.ok, "Item Purchase History API failed for autocomplete setup", itemHistoryResponse);
   const itemHistoryPayload = itemHistoryResponse.data.message || {};
 
-  assertLinkField(supplierPayload, "supplier", "Supplier", "Supplier Directory", "Select supplier");
-  assertLinkField(supplierPayload, "supplier_group", "Supplier Group", "Supplier Directory", "Select supplier group");
-  assertTextSearchField(supplierPayload, "keyword", "Supplier Directory", "Search supplier text");
+  assertLinkField(supplierPayload, "supplier", "Supplier", "Supplier Directory", "Supplier");
+  assertLinkField(supplierPayload, "supplier_group", "Supplier Group", "Supplier Directory", "Supplier group");
+  assertTextSearchField(supplierPayload, "keyword", "Supplier Directory", "Supplier search", "Search supplier");
   assertLinkField(requestPayload, "material_request", "Material Request", "Purchase Requests", "Select purchase request");
   assertTextSearchField(requestPayload, "keyword", "Purchase Requests", "Search request text");
   assertNoCompanyField(requestPayload, "Purchase Requests");

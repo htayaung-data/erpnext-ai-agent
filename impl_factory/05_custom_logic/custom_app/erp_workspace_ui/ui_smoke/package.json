@@ -35,6 +35,7 @@
     "test:sales-freeze-watchlist": "bash ./check_sales_freeze_watchlist.sh",
     "test:sales-freeze-protection": "bash ./run_sales_freeze_protection_gate.sh",
     "test:procurement-responsive-filters": "node procurement_responsive_filter_smoke.js",
+    "test:procurement-detail-performance": "node procurement_detail_performance_smoke.js",
     "test:protected-workspaces": "bash ./run_protected_workspace_gate.sh",
     "test:procurement-phase5a": "node procurement_phase5a_smoke.js",
     "test:procurement-phase5b": "node procurement_phase5b_smoke.js",

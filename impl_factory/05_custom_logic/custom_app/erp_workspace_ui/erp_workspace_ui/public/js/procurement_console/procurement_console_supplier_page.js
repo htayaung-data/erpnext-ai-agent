@@ -14,6 +14,9 @@
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
   ];
   let runtimePromise = null;
+  const SAME_ROUTE_CACHE_TTL_MS = 5000;
+  const globalContextRequestCache = window.__erpwProcurementDetailContextCache = window.__erpwProcurementDetailContextCache || Object.create(null);
+  const contextRequestCache = globalContextRequestCache[PAGE_KEY] = globalContextRequestCache[PAGE_KEY] || Object.create(null);
 
   function helpers() {
     return (window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers) || {};
@@ -59,8 +62,37 @@
     return frappe.utils.escape_html(value == null ? "" : String(value));
   }
 
+  function traceDetailLoad(event) {
+    const target = window.__erpwProcurementDetailPerfTrace;
+    if (!Array.isArray(target)) return;
+    target.push(Object.assign({ pageKey: PAGE_KEY, at: Date.now() }, event || {}));
+  }
+
   function resolveSupplier(route) {
     return Array.isArray(route) && route.length > 1 ? String(route[1] || "") : "";
+  }
+
+
+  function routePartsFromLocationPath() {
+    const path = String(window.location && window.location.pathname || "").replace(/^\/+/, "");
+    const parts = path.split("/").filter(Boolean);
+    const routeParts = parts[0] === "desk" || parts[0] === "app" ? parts.slice(1) : parts;
+    return routeParts.map((part) => {
+      try {
+        return decodeURIComponent(part || "");
+      } catch (error) {
+        return part || "";
+      }
+    });
+  }
+
+  function currentRouteParts() {
+    const route = frappe.get_route ? frappe.get_route() : [];
+    const pathRoute = routePartsFromLocationPath();
+    if (Array.isArray(pathRoute) && pathRoute[0] === PAGE_KEY && pathRoute.length > (Array.isArray(route) ? route.length : 0)) {
+      return pathRoute;
+    }
+    return Array.isArray(route) ? route : pathRoute;
   }
 
   function routeToWorklist(queueKey) {
@@ -170,7 +202,7 @@
     return actions.map((action) => Object.assign({}, action, {
       title: action.title || action.label || action.key,
       handler() {
-        if (action.key === "refresh") return loadRoute(viewState);
+        if (action.key === "refresh") return loadRoute(viewState, { refresh: true });
         const target = ((payload && payload.action_targets) || {})[action.key];
         if (target && target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key);
         if (target && target.kind === "form" && target.doctype && target.name) {
@@ -310,36 +342,76 @@
     };
   }
 
-  function loadRoute(viewState) {
-    const route = frappe.get_route ? frappe.get_route() : [];
+  function unavailablePayload(error) {
+    return {
+      page: { title: "Supplier Detail" },
+      summary: {
+        kicker: "Procurement supplier",
+        title: "Supplier detail unavailable",
+        subtitle: error && error.message ? error.message : "The supplier page could not be loaded.",
+        chips: [{ label: "error", tone: "blocker" }],
+        facts: [],
+      },
+      detail: {
+        state: { kind: "error", title: "Supplier detail failed", detail: error && error.message ? error.message : "The page could not load." },
+      },
+    };
+  }
+
+  function loadRoute(viewState, options) {
+    const settings = options && typeof options === "object" ? options : {};
+    const route = currentRouteParts();
     const supplierName = resolveSupplier(route);
     const routeSignature = Array.isArray(route) ? route.join("|") : "";
+    const cacheKey = routeSignature || supplierName || "supplier-detail";
+    const cached = contextRequestCache[cacheKey];
     viewState.routeSignature = routeSignature;
+    traceDetailLoad({ type: "loadRoute", routeSignature, cacheKey, refresh: Boolean(settings.refresh), name: supplierName, hasCachedRequest: Boolean(cached && cached.request), hasCachedPayload: Boolean(cached && cached.payload), cachedAgeMs: cached && cached.loadedAt ? Date.now() - cached.loadedAt : null });
+
+    if (!settings.refresh && cached && cached.request) {
+      traceDetailLoad({ type: "cache-request-reuse", routeSignature, cacheKey, name: supplierName, mount: cached.payload ? "cached-payload" : "loading" });
+      mountPayload(viewState, cached.payload || loadingPayload(supplierName));
+      cached.request.then((payload) => {
+        traceDetailLoad({ type: "cache-request-resolved", routeSignature, cacheKey, name: supplierName, routeStillActive: viewState.routeSignature === routeSignature });
+        if (viewState.routeSignature === routeSignature) mountPayload(viewState, payload || {});
+      });
+      return cached.request;
+    }
+
+    if (!settings.refresh && cached && cached.payload && Date.now() - cached.loadedAt < SAME_ROUTE_CACHE_TTL_MS) {
+      traceDetailLoad({ type: "cache-payload-reuse", routeSignature, cacheKey, name: supplierName, cachedAgeMs: Date.now() - cached.loadedAt });
+      mountPayload(viewState, cached.payload);
+      return Promise.resolve(cached.payload);
+    }
+
+    traceDetailLoad({ type: "request-start", routeSignature, cacheKey, name: supplierName });
     mountPayload(viewState, loadingPayload(supplierName));
-    frappe.call({
+    const entry = { request: null, payload: null, loadedAt: 0 };
+    contextRequestCache[cacheKey] = entry;
+    entry.request = frappe.call({
       method: CONTEXT_METHOD,
       args: {
         supplier: supplierName,
       },
     }).then((response) => {
-      if (viewState.routeSignature !== routeSignature) return;
-      mountPayload(viewState, response && response.message ? response.message : {});
+      const payload = response && response.message ? response.message : {};
+      entry.payload = payload;
+      entry.loadedAt = Date.now();
+      traceDetailLoad({ type: "request-success", routeSignature, cacheKey, name: supplierName, routeStillActive: viewState.routeSignature === routeSignature });
+      if (viewState.routeSignature === routeSignature) mountPayload(viewState, payload);
+      return payload;
     }).catch((error) => {
-      if (viewState.routeSignature !== routeSignature) return;
-      mountPayload(viewState, {
-        page: { title: "Supplier Detail" },
-        summary: {
-          kicker: "Procurement supplier",
-          title: "Supplier detail unavailable",
-          subtitle: error && error.message ? error.message : "The supplier page could not be loaded.",
-          chips: [{ label: "error", tone: "blocker" }],
-          facts: [],
-        },
-        detail: {
-          state: { kind: "error", title: "Supplier detail failed", detail: error && error.message ? error.message : "The page could not load." },
-        },
-      });
+      const payload = unavailablePayload(error);
+      entry.payload = payload;
+      entry.loadedAt = Date.now();
+      traceDetailLoad({ type: "request-error", routeSignature, cacheKey, name: supplierName, routeStillActive: viewState.routeSignature === routeSignature, message: error && error.message ? error.message : String(error || "") });
+      if (viewState.routeSignature === routeSignature) mountPayload(viewState, payload);
+      return payload;
     });
+    entry.request.then(() => {
+      if (contextRequestCache[cacheKey] === entry) entry.request = null;
+    });
+    return entry.request;
   }
 
   function cleanupRouteShells() {
