@@ -264,7 +264,7 @@ async function runForUser(browser, user) {
 
     await assertRouteClean(page, `/desk/procurement-console-purchase-request-form/${encodeURIComponent(docs.pr)}`, ".erpw-managed-pr-page", `${user.key}-managed-pr-saved`, ["Review Request"]);
     await assertRouteClean(page, `/desk/procurement-console-rfq-form/${encodeURIComponent(docs.rfq)}`, ".erpw-managed-rfq-page", `${user.key}-managed-rfq-saved`, ["Supplier Communication", "Preview RFQ", "Download RFQ PDF", "Send RFQ"]);
-    const sendButton = page.locator("button:has-text('Send RFQ')").first();
+    const sendButton = page.locator(".erpw-managed-rfq-page:visible button:has-text('Send RFQ')").first();
     await sendButton.waitFor({ state: "visible", timeout: TIMEOUT });
     assert(await sendButton.isDisabled(), `${user.key}: Send RFQ must remain disabled`, { route: page.url() });
     await assertRouteClean(page, `/desk/procurement-console-supplier-quotation-form/${encodeURIComponent(docs.sq)}`, ".erpw-managed-sq-page", `${user.key}-managed-sq-saved`, ["Review Quotation"]);
