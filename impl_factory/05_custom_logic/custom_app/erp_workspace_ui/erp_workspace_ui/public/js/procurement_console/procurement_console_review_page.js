@@ -237,11 +237,6 @@
         const target = ((payload && payload.action_targets) || {})[action.key];
         if (target && target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
         if (target && target.kind === "report_page" && target.report_key) return routeToReportPage(target.report_key, target.filters || null);
-        if (target && target.kind === "form" && target.doctype && target.name) {
-          rememberNativeChromeTarget(target);
-          cleanupForNativeRoute();
-          return frappe.set_route("Form", target.doctype, target.name);
-        }
       },
     }));
   }

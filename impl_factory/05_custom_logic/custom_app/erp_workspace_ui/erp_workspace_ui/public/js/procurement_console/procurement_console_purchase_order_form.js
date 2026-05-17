@@ -306,18 +306,13 @@
     return actions.map((action) => Object.assign({}, action, {
       title: action.key === "reset_unsaved" ? "Reset" : action.title || action.label || action.key,
       variant: action.kind === "primary" ? "primary" : "secondary",
-      icon: action.key === "save_purchase_order" ? "check" : action.key === "open_erp_form" ? "external" : action.key === "back_to_purchase_orders" ? "arrow-left" : "refresh",
+      icon: action.key === "save_purchase_order" ? "check" : action.key === "back_to_purchase_orders" ? "arrow-left" : "refresh",
       handler() {
         if (action.key === "save_purchase_order") return savePurchaseOrder(viewState);
         if (action.key === "reset_unsaved") return loadRoute(viewState, { force: true });
         const target = ((viewState.payload && viewState.payload.action_targets) || {})[action.key];
         if (target && target.kind === "worklist") return routeToWorklist(target.queue_key);
         if (target && target.kind === "page" && target.route) return routeToPage(target.route, target.route_parts, target.options);
-        if (target && target.kind === "form" && target.doctype && target.name) {
-          rememberNativeChromeTarget(target);
-          cleanupForNativeRoute();
-          return frappe.set_route("Form", target.doctype, target.name);
-        }
       },
     }));
   }

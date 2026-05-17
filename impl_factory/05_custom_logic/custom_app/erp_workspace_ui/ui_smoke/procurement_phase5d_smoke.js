@@ -377,9 +377,9 @@ async function fillAndSavePo(page, userKey) {
     return { url: location.pathname, text: shell ? shell.innerText : document.body.innerText, actions: actionDetails.map((button) => button.text), actionDetails };
   });
   assert(/Purchase Order Recorded/.test(saved.text || ""), "Purchase Order Recorded status missing after save", saved);
-  assert(saved.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form should appear only after saved Purchase Order", saved);
+  assert(!saved.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form must not appear after a managed Purchase Order is saved", saved);
   assert(saved.actions.some((label) => /Review Purchase Order/i.test(label)), "Review Purchase Order action missing after save", saved);
-  assert(saved.actionDetails.every((button) => !/Open ERP Form|Review Purchase Order|Back to Purchase Orders|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed Purchase Order secondary actions must not use primary style", saved);
+  assert(saved.actionDetails.every((button) => !/Review Purchase Order|Back to Purchase Orders|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed Purchase Order secondary actions must not use primary style", saved);
   assert(!/Submit|Approve|Reject|Purchase Receipt|Create Receipt|Purchase Invoice|Create Invoice|Update Item Price|Set Default Supplier|Receive|Bill|Pay|Payment|Cancel|Stop/i.test(saved.text || ""), "Forbidden Purchase Order action text visible after save", saved);
   return saved;
 }

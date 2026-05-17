@@ -357,19 +357,6 @@ def _available_fields(doctype: str, fields: list[str]) -> list[str]:
 def _actions_and_targets(doctype: str, name: str, context: dict[str, object], back_queue: str, back_label: str, native_leaf_label: str) -> tuple[list[dict[str, object]], dict[str, object]]:
     actions = _base_actions(back_label)
     targets: dict[str, object] = {"back_to_worklist": {"kind": "worklist", "queue_key": back_queue}}
-    if common.can_write(doctype):
-        actions.append(
-            {
-                "key": "open_erp_form",
-                "title": "Open ERP Form",
-                "label": "Open ERP Form",
-                "variant": "secondary",
-                "category": "governed_native",
-                "icon": "external-link",
-                "note": "Uses ERPNext permissions and workflow controls.",
-            }
-        )
-        targets["open_erp_form"] = {"kind": "form", "doctype": doctype, "name": name, "native_chrome": common.native_form_context(doctype, name=name, leaf_label=native_leaf_label)}
     return actions, targets
 
 

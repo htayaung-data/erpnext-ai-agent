@@ -311,9 +311,9 @@ async function fillAndSaveDraft(page, userKey) {
   assert(/procurement-console-purchase-request-form\/(?!new$)/.test(state.url), "Save Request did not move to a saved managed PR route", state);
   assert(/Request Recorded/.test(state.text || ""), "Request Recorded status missing after save", state);
   assert(!/Save Draft|Saved Draft|\bDraft\b/.test(state.text || ""), "Draft wording visible after save", state);
-  assert(state.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form should appear only after save", state);
+  assert(!state.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form must not appear after a managed Purchase Request draft is saved", state);
   assert(state.actions.some((label) => /Review Request/i.test(label)), "Review Request action missing after save", state);
-  assert(state.actionDetails.every((button) => !/Open ERP Form|Review Request|Back to Purchase Requests|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed PR secondary actions must not use primary style", state);
+  assert(state.actionDetails.every((button) => !/Review Request|Back to Purchase Requests|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed PR secondary actions must not use primary style", state);
 }
 
 async function verifyOverviewAction(page, user) {

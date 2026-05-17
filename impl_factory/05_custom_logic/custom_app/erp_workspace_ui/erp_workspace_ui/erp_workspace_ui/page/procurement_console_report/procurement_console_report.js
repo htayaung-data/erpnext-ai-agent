@@ -109,11 +109,6 @@
 
   function executeTarget(target) {
     if (!target) return;
-    if (target.kind === "form" && target.doctype && target.name) {
-      rememberNativeChromeTarget(target);
-      cleanupForNativeRoute();
-      return frappe.set_route("Form", target.doctype, target.name);
-    }
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
     if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);
     if (target.kind === "report_page") return routeToReportPage(target.report_key || REPORT_INDEX_KEY, target.filters || null);

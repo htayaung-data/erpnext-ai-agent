@@ -1236,6 +1236,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(doc.items[0].stock_uom, "Nos")
         self.assertEqual(doc.items[0].conversion_factor, 1)
         self.assertEqual(payload["review_route"], "/desk/procurement-console-purchase-request-review/MAT-MR-DRAFT-001")
+        saved_action_keys = [action["key"] for action in payload["controls"]["actions"]]
+        self.assertNotIn("open_erp_form", saved_action_keys)
+        self.assertIn("review_request", saved_action_keys)
+        self.assertEqual(payload["action_targets"]["review_request"]["kind"], "page")
         _assert_no_forbidden_mutation_actions(self, payload)
 
     def test_managed_purchase_request_rejects_non_purchase_type_and_forbidden_fields(self):
@@ -1309,7 +1313,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(doc.items[0].conversion_factor, 1)
         self.assertEqual(payload["review_route"], "/desk/procurement-console-rfq-review/PUR-RFQ-DRAFT-001")
         self.assertNotIn("open_erp_form", [action["key"] for action in managed_rfq.get_managed_rfq_context("new")["controls"]["actions"]])
-        self.assertIn("open_erp_form", [action["key"] for action in payload["controls"]["actions"]])
+        saved_action_keys = [action["key"] for action in payload["controls"]["actions"]]
+        self.assertNotIn("open_erp_form", saved_action_keys)
+        self.assertIn("review_rfq", saved_action_keys)
+        self.assertEqual(payload["action_targets"]["review_rfq"]["kind"], "page")
         _assert_no_forbidden_mutation_actions(self, payload)
 
     def test_managed_rfq_requires_supplier_and_item(self):
@@ -1418,7 +1425,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(doc.items[0].amount, 200.0)
         self.assertEqual(payload["review_route"], "/desk/procurement-console-supplier-quotation-review/SUP-QTN-DRAFT-001")
         self.assertNotIn("open_erp_form", [action["key"] for action in managed_supplier_quotation.get_managed_supplier_quotation_context("new")["controls"]["actions"]])
-        self.assertIn("open_erp_form", [action["key"] for action in payload["controls"]["actions"]])
+        saved_action_keys = [action["key"] for action in payload["controls"]["actions"]]
+        self.assertNotIn("open_erp_form", saved_action_keys)
+        self.assertIn("review_quotation", saved_action_keys)
+        self.assertEqual(payload["action_targets"]["review_quotation"]["kind"], "page")
         _assert_no_forbidden_mutation_actions(self, payload)
 
     def test_managed_supplier_quotation_requires_supplier_item_and_rate(self):
@@ -1515,7 +1525,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(doc.items[0].schedule_date, "2026-05-30")
         self.assertEqual(payload["route"], "/desk/procurement-console-purchase-order-form/PUR-ORD-DRAFT-001")
         self.assertEqual(payload["review_route"], "/desk/procurement-console-po-follow-up/PUR-ORD-DRAFT-001")
-        self.assertIn("open_erp_form", [action["key"] for action in payload["controls"]["actions"]])
+        saved_action_keys = [action["key"] for action in payload["controls"]["actions"]]
+        self.assertNotIn("open_erp_form", saved_action_keys)
+        self.assertIn("review_purchase_order", saved_action_keys)
+        self.assertEqual(payload["action_targets"]["review_purchase_order"]["kind"], "page")
         _assert_no_forbidden_mutation_actions(self, payload)
 
     def test_managed_purchase_order_requires_supplier_item_qty_and_rate(self):
@@ -1746,9 +1759,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         boot_source = (Path(__file__).resolve().parents[1] / "public" / "js" / "erp_workspace_ui_boot.js").read_text()
 
         self.assertIn("create_actions", source)
-        self.assertIn("new_doc", source)
+        self.assertNotIn("new_doc", source)
         self.assertIn('if (target.kind === "page"', source)
-        self.assertIn('frappe.set_route("Form"', source)
+        self.assertNotIn('frappe.set_route("Form"', source)
         self.assertIn("cleanupProcurementRouteShells", source)
         self.assertIn("workspace_console_runtime.js", source)
         self.assertIn("ensureConsoleRuntime", source)
@@ -2211,25 +2224,21 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         )
         self.assertFalse(any(call["doctype"] in {"Request for Quotation Supplier", "Dynamic Link"} for call in CAPTURED_GET_ALL_CALLS))
 
-    def test_supplier_detail_native_form_action_requires_manager_and_write_permission(self):
-        _set_user("manager@example.com", ["Purchase Manager"])
-        _set_writeable_doctypes("Supplier")
+    def test_supplier_detail_does_not_expose_native_form_escape_for_procurement_roles(self):
+        for user, roles in (
+            ("manager@example.com", ["Purchase Manager"]),
+            ("purchase@example.com", ["Purchase User"]),
+            ("master@example.com", ["Purchase Master Manager"]),
+        ):
+            with self.subTest(user=user):
+                _set_user(user, roles)
+                _set_writeable_doctypes("Supplier")
 
-        manager_payload = supplier_detail.get_supplier_detail_context("SUP-001")
+                payload = supplier_detail.get_supplier_detail_context("SUP-001")
 
-        supplier_target = manager_payload["action_targets"]["open_supplier_form"]
-        self.assertEqual(supplier_target["kind"], "form")
-        self.assertEqual(supplier_target["doctype"], "Supplier")
-        self.assertEqual(supplier_target["name"], "SUP-001")
-        self.assertEqual(supplier_target["native_chrome"]["parentLabel"], "Suppliers")
-        self.assertEqual(supplier_target["native_chrome"]["leafLabel"], "ERP Supplier Form")
-        self.assertEqual([action["key"] for action in manager_payload["controls"]["actions"]], ["back_to_suppliers", "refresh", "open_supplier_form"])
-        self.assertEqual([action["icon"] for action in manager_payload["controls"]["actions"]], ["arrow-left", "refresh", "external-link"])
-
-        _set_user("purchase@example.com", ["Purchase User"])
-        user_payload = supplier_detail.get_supplier_detail_context("SUP-001")
-
-        self.assertNotIn("open_supplier_form", user_payload["action_targets"])
+                self.assertNotIn("open_supplier_form", payload["action_targets"])
+                self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_suppliers", "refresh"])
+                self.assertNotIn("Open ERP Supplier Form", str(payload))
 
     def test_supplier_detail_restricted_for_finance_executive_only(self):
         _set_user("approver@example.com", ["Finance Lead Approver", "Executive Approver"])
@@ -2284,25 +2293,21 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         )
         self.assertFalse(any(call["doctype"] in {"Item Supplier", "Supplier Quotation Item", "Purchase Order Item"} for call in CAPTURED_GET_ALL_CALLS))
 
-    def test_buying_item_native_form_action_requires_item_write_governance(self):
-        _set_user("master@example.com", ["Purchase Master Manager"])
-        _set_writeable_doctypes("Item")
+    def test_buying_item_detail_does_not_expose_native_form_escape_for_procurement_roles(self):
+        for user, roles in (
+            ("master@example.com", ["Purchase Master Manager"]),
+            ("manager@example.com", ["Purchase Manager"]),
+            ("purchase@example.com", ["Purchase User"]),
+        ):
+            with self.subTest(user=user):
+                _set_user(user, roles)
+                _set_writeable_doctypes("Item")
 
-        payload = items.get_item_detail_context("ITEM-001")
+                payload = items.get_item_detail_context("ITEM-001")
 
-        item_target = payload["action_targets"]["open_item_form"]
-        self.assertEqual(item_target["kind"], "form")
-        self.assertEqual(item_target["doctype"], "Item")
-        self.assertEqual(item_target["name"], "ITEM-001")
-        self.assertEqual(item_target["native_chrome"]["parentLabel"], "Buying Items")
-        self.assertEqual(item_target["native_chrome"]["leafLabel"], "ERP Item Form")
-        self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_items", "refresh", "open_item_form"])
-        self.assertEqual([action["icon"] for action in payload["controls"]["actions"]], ["arrow-left", "refresh", "external-link"])
-
-        _set_user("manager@example.com", ["Purchase Manager"])
-        manager_payload = items.get_item_detail_context("ITEM-001")
-
-        self.assertNotIn("open_item_form", manager_payload["action_targets"])
+                self.assertNotIn("open_item_form", payload["action_targets"])
+                self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_items", "refresh"])
+                self.assertNotIn("Open ERP Item Form", str(payload))
 
     def test_material_request_directory_is_purchase_only(self):
         payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")
@@ -2654,17 +2659,24 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["action_targets"]["open_quote_comparison"], {"kind": "report_page", "report_key": "supplier_quotation_comparison", "filters": {"supplier_quotation": "SUP-QTN-001"}})
         _assert_no_forbidden_mutation_actions(self, payload)
 
-    def test_supplier_quotation_review_native_form_access_is_secondary_and_permission_based(self):
-        _set_writeable_doctypes("Supplier Quotation")
+    def test_review_contexts_do_not_expose_native_form_escape_for_procurement_roles(self):
+        _set_writeable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation")
 
-        payload = document_reviews.get_supplier_quotation_review_context("SUP-QTN-001")
+        contexts = (
+            document_reviews.get_purchase_request_review_context("MAT-MR-001"),
+            document_reviews.get_rfq_review_context("PUR-RFQ-001"),
+            document_reviews.get_supplier_quotation_review_context("SUP-QTN-001"),
+        )
 
-        self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_worklist", "refresh", "open_erp_form", "open_quote_comparison"])
-        native_target = payload["action_targets"]["open_erp_form"]
-        self.assertEqual(native_target["kind"], "form")
-        self.assertEqual(native_target["doctype"], "Supplier Quotation")
-        self.assertEqual(native_target["native_chrome"]["parentLabel"], "Supplier Quotations")
-        self.assertEqual(native_target["native_chrome"]["leafLabel"], "ERP Supplier Quotation Form")
+        for payload in contexts:
+            with self.subTest(title=payload["summary"]["title"]):
+                action_keys = [action["key"] for action in payload["controls"]["actions"]]
+                self.assertNotIn("open_erp_form", action_keys)
+                self.assertNotIn("open_erp_form", payload["action_targets"])
+                self.assertNotIn("Open ERP Form", str(payload))
+        quotation_payload = contexts[2]
+        self.assertIn("open_quote_comparison", [action["key"] for action in quotation_payload["controls"]["actions"]])
+        self.assertEqual(quotation_payload["action_targets"]["open_quote_comparison"]["kind"], "report_page")
 
     def test_supplier_quotation_review_requires_parent_visible_before_children(self):
         HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES.add("SUP-QTN-001")

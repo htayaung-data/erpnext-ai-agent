@@ -335,9 +335,9 @@ async function fillAndSaveRfq(page, userKey) {
     return { url: location.pathname, text: shell ? shell.innerText : document.body.innerText, actions: actionDetails.map((button) => button.text), actionDetails };
   });
   assert(/RFQ Recorded/.test(saved.text || ""), "RFQ Recorded status missing after save", saved);
-  assert(saved.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form should appear only after saved RFQ", saved);
+  assert(!saved.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form must not appear after a managed RFQ is saved", saved);
   assert(saved.actions.some((label) => /Review RFQ/i.test(label)), "Review RFQ action missing after save", saved);
-  assert(saved.actionDetails.every((button) => !/Open ERP Form|Review RFQ|Back to RFQs|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed RFQ secondary actions must not use primary style", saved);
+  assert(saved.actionDetails.every((button) => !/Review RFQ|Back to RFQs|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed RFQ secondary actions must not use primary style", saved);
   assert(!/Submit|Send Email|Supplier Portal|Create Supplier Quotation|Create Purchase Order/i.test(saved.text || ""), "Forbidden RFQ action text visible after save", saved);
 }
 

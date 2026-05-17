@@ -282,14 +282,7 @@ def _base_actions(name: str | None = None) -> tuple[list[dict[str, object]], dic
     ]
     targets: dict[str, object] = {"back_to_purchase_orders": {"kind": "worklist", "queue_key": DIRECTORY_QUEUE}}
     if name and _can_edit_purchase_order():
-        actions.append({"key": "open_erp_form", "label": "Open ERP Form", "category": "navigation"})
         actions.append({"key": "review_purchase_order", "label": "Review Purchase Order", "category": "navigation"})
-        targets["open_erp_form"] = {
-            "kind": "form",
-            "doctype": DOCTYPE,
-            "name": name,
-            "native_chrome": common.native_form_context(DOCTYPE, name=name, leaf_label=name),
-        }
         targets["review_purchase_order"] = {"kind": "page", "route": REVIEW_ROUTE, "route_parts": [name]}
     return actions, targets
 

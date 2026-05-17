@@ -149,20 +149,6 @@
 
   function executeTarget(target) {
     if (!target) return;
-    if (target.kind === "new_doc" && target.doctype) {
-      const nativeContext = procurementNativeContextForDoctype(target.doctype);
-      const defaults = target.defaults && typeof target.defaults === "object" ? Object.assign({}, target.defaults) : {};
-      if (nativeContext) {
-        defaults.__erpw_procurement_native_chrome = 1;
-        defaults.__erpw_procurement_parent_route = nativeContext.parentRoute;
-        defaults.__erpw_procurement_parent_label = nativeContext.parentLabel;
-        defaults.__erpw_procurement_leaf_label = nativeContext.leafLabel;
-        rememberProcurementNativeContext(nativeContext);
-      }
-      frappe.route_options = defaults;
-      cleanupForNativeRoute();
-      return frappe.set_route("Form", target.doctype, "new-" + String(target.doctype).toLowerCase().replace(/\s+/g, "-"));
-    }
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
     if (target.kind === "report_page" && target.report_key) return routeToReport(target.report_key, target.filters || null);
     if (target.kind === "page" && target.route) {

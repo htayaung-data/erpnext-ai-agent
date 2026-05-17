@@ -206,25 +206,6 @@ def _detail_payload(
 	disabled = bool(record.get("disabled"))
 	actions = _base_actions()
 	action_targets = _base_action_targets()
-	if _can_open_native_item(context):
-		actions.append(
-			{
-				"key": "open_item_form",
-				"title": "Open ERP Item Form",
-				"label": "Open ERP Item Form",
-				"variant": "secondary",
-				"category": "governed_native",
-				"icon": "external-link",
-				"note": "Uses ERPNext item master permissions.",
-			}
-		)
-		action_targets["open_item_form"] = {
-			"kind": "form",
-			"doctype": "Item",
-			"name": name,
-			"native_chrome": common.native_form_context("Item", name=name, leaf_label="ERP Item Form"),
-		}
-
 	return {
 		"page": {"title": "Buying Item Detail", "key": "buying_item_detail", "item": name},
 		"summary": {
@@ -360,10 +341,6 @@ def _base_actions() -> list[dict[str, object]]:
 def _base_action_targets() -> dict[str, object]:
 	return {"back_to_items": {"kind": "worklist", "queue_key": "buying_item_directory"}}
 
-
-def _can_open_native_item(context: dict[str, object]) -> bool:
-	roles = set(context.get("roles") or [])
-	return bool(roles.intersection({"Purchase Master Manager", "Item Manager", "Stock Manager", "System Manager"})) and common.can_write("Item")
 
 
 def _empty_table() -> dict[str, object]:

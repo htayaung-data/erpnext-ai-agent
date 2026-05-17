@@ -197,11 +197,6 @@
         if (action.key === "refresh") return loadRoute(viewState, { refresh: true });
         const target = ((payload && payload.action_targets) || {})[action.key];
         if (target && target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key);
-        if (target && target.kind === "form" && target.doctype && target.name) {
-          rememberNativeChromeTarget(target);
-          cleanupForNativeRoute();
-          return frappe.set_route("Form", target.doctype, target.name);
-        }
       },
     }));
   }

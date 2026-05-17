@@ -59,16 +59,17 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             if action["classification"] == "governed_native_action":
                 self.assertIn(action.get("native_exception_ref"), NATIVE_EXCEPTION_POLICIES, action)
 
-    def test_productized_pages_do_not_declare_generic_native_primary_row_actions(self):
+    def test_procurement_actions_do_not_declare_normal_role_native_form_escapes(self):
+        forbidden_labels = {"Open ERP Form", "Open ERP Supplier Form", "Open ERP Item Form", "Advanced ERP Form"}
+        forbidden_keys = {"open_erp_form", "open_supplier_form", "open_item_form", "advanced_erp_form"}
         for action in ACTION_MANIFEST:
             action_key = str(action.get("action_key") or "")
             source_route = str(action.get("source_route") or "")
             label = str(action.get("label") or action.get("label_pattern") or "")
-            if action_key == "open_erp_form" or label == "Open ERP Form":
-                self.assertEqual("governed_native_action", action["classification"], action)
-                self.assertEqual("procurement-secondary-native-open-v1", action.get("native_exception_ref"), action)
-                self.assertNotIn("worklist/*", source_route, action)
-                self.assertIn("Secondary", str(action.get("notes") or ""), action)
+            if action["workspace_id"] == "procurement":
+                self.assertNotIn(action_key, forbidden_keys, action)
+                self.assertNotIn(label, forbidden_labels, action)
+                self.assertNotEqual("form", action.get("target_kind"), action)
             if action_key == "row:*:open_record" and source_route.startswith("procurement-console-worklist"):
                 self.assertEqual("productized_navigation", action["classification"], action)
                 self.assertNotEqual("form", action.get("target_kind"), action)
@@ -225,9 +226,10 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             "procurement-console-purchase-request-form",
             "procurement-console-rfq-form",
             "procurement-console-supplier-quotation-form",
-            "Form/Material Request/new-purchase",
+            "procurement-console-purchase-order-form",
         }:
             self.assertIn(expected, procurement_keys)
+        self.assertNotIn("Form/Material Request/new-purchase", procurement_keys)
 
 
     def test_procurement_managed_purchase_request_actions_are_productized(self):
@@ -238,7 +240,6 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "procurement-new-purchase-request",
                 "procurement-worklist-new-purchase-request",
                 "procurement-managed-pr-save-draft",
-                "procurement-managed-pr-open-native",
             }
         }
 
@@ -247,8 +248,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("/desk/procurement-console-purchase-request-form/new", actions["procurement-new-purchase-request"]["target_route_pattern"])
         self.assertEqual("/desk/procurement-console-purchase-request-form/new", actions["procurement-worklist-new-purchase-request"]["target_route_pattern"])
         self.assertEqual("productized_primary_action", actions["procurement-managed-pr-save-draft"]["classification"])
-        self.assertEqual("governed_native_action", actions["procurement-managed-pr-open-native"]["classification"])
-        self.assertEqual("procurement-secondary-native-open-v1", actions["procurement-managed-pr-open-native"]["native_exception_ref"])
+        self.assertNotIn("procurement-managed-pr-open-native", {item["manifest_key"] for item in ACTION_MANIFEST})
 
     def test_procurement_managed_rfq_output_actions_are_productized(self):
         actions = {
@@ -258,7 +258,6 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "procurement-new-rfq",
                 "procurement-worklist-new-rfq",
                 "procurement-managed-rfq-save-draft",
-                "procurement-managed-rfq-open-native",
                 "procurement-managed-rfq-preview-output",
                 "procurement-managed-rfq-download-pdf",
                 "procurement-managed-rfq-email-blocked",
@@ -273,7 +272,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("/desk/procurement-console-rfq-form/new", actions["procurement-new-rfq"]["target_route_pattern"])
         self.assertEqual("/desk/procurement-console-rfq-form/new", actions["procurement-worklist-new-rfq"]["target_route_pattern"])
         self.assertEqual("productized_primary_action", actions["procurement-managed-rfq-save-draft"]["classification"])
-        self.assertEqual("governed_native_action", actions["procurement-managed-rfq-open-native"]["classification"])
+        self.assertNotIn("procurement-managed-rfq-open-native", {item["manifest_key"] for item in ACTION_MANIFEST})
         self.assertEqual("productized_secondary_action", actions["procurement-managed-rfq-preview-output"]["classification"])
         self.assertEqual("controlled_pdf_endpoint", actions["procurement-managed-rfq-download-pdf"]["target_kind"])
         self.assertEqual("disabled", actions["procurement-managed-rfq-email-blocked"]["target_kind"])
@@ -290,7 +289,6 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "procurement-new-supplier-quotation",
                 "procurement-worklist-new-supplier-quotation",
                 "procurement-managed-sq-save-draft",
-                "procurement-managed-sq-open-native",
             }
         }
 
@@ -299,8 +297,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("/desk/procurement-console-supplier-quotation-form/new", actions["procurement-new-supplier-quotation"]["target_route_pattern"])
         self.assertEqual("/desk/procurement-console-supplier-quotation-form/new", actions["procurement-worklist-new-supplier-quotation"]["target_route_pattern"])
         self.assertEqual("productized_primary_action", actions["procurement-managed-sq-save-draft"]["classification"])
-        self.assertEqual("governed_native_action", actions["procurement-managed-sq-open-native"]["classification"])
-        self.assertEqual("procurement-secondary-native-open-v1", actions["procurement-managed-sq-open-native"]["native_exception_ref"])
+        self.assertNotIn("procurement-managed-sq-open-native", {item["manifest_key"] for item in ACTION_MANIFEST})
 
     def test_procurement_managed_purchase_order_output_actions_are_productized(self):
         actions = {
@@ -310,7 +307,6 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "procurement-new-purchase-order",
                 "procurement-worklist-new-purchase-order",
                 "procurement-managed-po-save-draft",
-                "procurement-managed-po-open-native",
                 "procurement-managed-po-preview-output",
                 "procurement-managed-po-download-pdf",
                 "procurement-managed-po-email-blocked",
@@ -321,7 +317,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("/desk/procurement-console-purchase-order-form/new", actions["procurement-new-purchase-order"]["target_route_pattern"])
         self.assertEqual("/desk/procurement-console-purchase-order-form/new", actions["procurement-worklist-new-purchase-order"]["target_route_pattern"])
         self.assertEqual("productized_primary_action", actions["procurement-managed-po-save-draft"]["classification"])
-        self.assertEqual("governed_native_action", actions["procurement-managed-po-open-native"]["classification"])
+        self.assertNotIn("procurement-managed-po-open-native", {item["manifest_key"] for item in ACTION_MANIFEST})
         self.assertEqual("productized_secondary_action", actions["procurement-managed-po-preview-output"]["classification"])
         self.assertEqual("controlled_pdf_endpoint", actions["procurement-managed-po-download-pdf"]["target_kind"])
         self.assertEqual("disabled", actions["procurement-managed-po-email-blocked"]["target_kind"])

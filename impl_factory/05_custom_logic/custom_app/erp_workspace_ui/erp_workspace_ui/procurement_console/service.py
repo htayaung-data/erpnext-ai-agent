@@ -522,9 +522,9 @@ def _build_phase1_overview() -> dict[str, object]:
 def _build_create_action_payload(context: dict[str, object]) -> dict[str, object]:
 	from . import common
 
-	# Supplier and Item master-data creation are deliberately deferred from
-	# Procurement Phase 3. Buyers keep governed native form access only where
-	# explicitly exposed on read-only detail pages.
+	# Supplier and Item master-data creation are deliberately deferred.
+	# Phase 7D1 closes normal-role native ERP form escapes; create actions
+	# must resolve to productized Procurement routes only.
 	plan = [
 		{
 			"key": "new_purchase_request",
@@ -575,12 +575,6 @@ def _build_create_action_payload(context: dict[str, object]) -> dict[str, object
 			}
 		)
 		target = item.get("target")
-		if isinstance(target, dict):
+		if isinstance(target, dict) and target.get("kind") == "page":
 			targets[key] = dict(target)
-		else:
-			targets[key] = {
-				"kind": "new_doc",
-				"doctype": doctype,
-				"defaults": dict(item.get("defaults") or {}),
-			}
 	return {"create_actions": actions, "action_targets": targets}

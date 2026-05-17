@@ -2627,9 +2627,8 @@ async function checkSupplierDetail(page, user) {
     purchaseOrderNavigation = { purchaseOrderName };
   }
   const hasNativeFormAction = Boolean((payload.action_targets || {}).open_supplier_form);
-  if (user.key !== "manager") {
-    assert(!hasNativeFormAction, "Non-manager user should not see governed native Supplier form action", payload.action_targets || {});
-  }
+  assert(!hasNativeFormAction, "Supplier Detail must not expose native Supplier form action to normal Procurement roles", payload.action_targets || {});
+  assert(!/Open ERP Supplier Form|Open ERP Form|Advanced ERP Form/i.test(text), "Supplier Detail must not show native ERP form escape labels", { text });
   await exerciseDetailRefresh(page, ".erpw-procurement-supplier-detail-shell", "supplierDetail", "Supplier Detail");
   await exerciseDetailBack(page, ".erpw-procurement-supplier-detail-shell", "/desk/procurement-console-worklist/supplier-directory", "worklist", "Supplier Detail");
   return { supplierName, state, hasNativeFormAction, actionStyles, compactHeader, purchaseOrderNavigation, toolbarExercise: { refresh: true, back: true } };
@@ -2668,9 +2667,8 @@ async function checkItemDetail(page, user) {
   assert(["ready", "restricted", "unavailable", "empty"].includes(state), "Item Detail API invalid state", payload);
   assertNoForbiddenActions(payload, "buying_item_detail");
   const hasNativeFormAction = Boolean((payload.action_targets || {}).open_item_form);
-  if (user.key !== "manager") {
-    assert(!hasNativeFormAction, "Non-manager user should not see governed native Item form action", payload.action_targets || {});
-  }
+  assert(!hasNativeFormAction, "Buying Item Detail must not expose native Item form action to normal Procurement roles", payload.action_targets || {});
+  assert(!/Open ERP Item Form|Open ERP Form|Advanced ERP Form/i.test(text), "Buying Item Detail must not show native ERP form escape labels", { text });
   const purchaseRows = (((payload.detail || {}).purchase_orders || {}).rows || []);
   let purchaseOrderNavigation = { skipped: "no visible open purchase orders" };
   if (purchaseRows.length) {

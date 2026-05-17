@@ -318,9 +318,9 @@ async function fillAndSaveSq(page, userKey) {
     return { url: location.pathname, text: shell ? shell.innerText : document.body.innerText, actions: actionDetails.map((button) => button.text), actionDetails };
   });
   assert(/Quotation Recorded/.test(saved.text || ""), "Quotation Recorded status missing after save", saved);
-  assert(saved.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form should appear only after saved Supplier Quotation", saved);
+  assert(!saved.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form must not appear after a managed Supplier Quotation is saved", saved);
   assert(saved.actions.some((label) => /Review Quotation/i.test(label)), "Review Quotation action missing after save", saved);
-  assert(saved.actionDetails.every((button) => !/Open ERP Form|Review Quotation|Back to Supplier Quotations|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed Supplier Quotation secondary actions must not use primary style", saved);
+  assert(saved.actionDetails.every((button) => !/Review Quotation|Back to Supplier Quotations|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed Supplier Quotation secondary actions must not use primary style", saved);
   assert(!/Submit|Approve|Create Purchase Order|Update Item Price|Set Default Supplier|Receive|Bill|Pay/i.test(saved.text || ""), "Forbidden Supplier Quotation action text visible after save", saved);
   return saved;
 }

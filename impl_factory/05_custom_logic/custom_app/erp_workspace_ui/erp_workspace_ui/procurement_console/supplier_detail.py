@@ -106,25 +106,6 @@ def _detail_payload(
 	]
 	actions = _base_actions()
 	action_targets = _base_action_targets()
-	if _can_open_native_supplier(context):
-		actions.append(
-			{
-				"key": "open_supplier_form",
-				"title": "Open ERP Supplier Form",
-				"label": "Open ERP Supplier Form",
-				"variant": "secondary",
-				"category": "governed_native",
-				"icon": "external-link",
-				"note": "Uses ERPNext permissions for any master-data changes.",
-			}
-		)
-		action_targets["open_supplier_form"] = {
-			"kind": "form",
-			"doctype": "Supplier",
-			"name": name,
-			"native_chrome": common.native_form_context("Supplier", name=name, leaf_label="ERP Supplier Form"),
-		}
-
 	return {
 		"page": {"title": "Supplier Detail", "key": "supplier_detail", "supplier": name},
 		"summary": {
@@ -276,10 +257,6 @@ def _base_actions() -> list[dict[str, object]]:
 def _base_action_targets() -> dict[str, object]:
 	return {"back_to_suppliers": {"kind": "worklist", "queue_key": "supplier_directory"}}
 
-
-def _can_open_native_supplier(context: dict[str, object]) -> bool:
-	roles = set(context.get("roles") or [])
-	return bool(roles.intersection({"Purchase Manager", "Purchase Master Manager"})) and common.can_write("Supplier")
 
 
 def _empty_table() -> dict[str, object]:
