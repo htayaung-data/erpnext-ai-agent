@@ -1,0 +1,13 @@
+{
+  "type": "qwen_entity_detail_capability_binding_registry",
+  "contract_version": "1.0",
+  "entity_capability_bindings": {
+    "customer": "accounts_receivable_read",
+    "supplier": "accounts_payable_read",
+    "item": "stock_read",
+    "product": "stock_read",
+    "purchase_order": "purchase_order_read",
+    "sales_order": "sales_order_read",
+    "sales_invoice": "sales_read"
+  }
+}

@@ -1,0 +1,209 @@
+{
+  "contract_version": "1.0",
+  "status": "phase3_1_artifact_contracts_active",
+  "description": "Governed composite artifact registry for approved composite instances inside reusable composite families.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_composite_kinds": [
+    "ranking_table",
+    "risk_table"
+  ],
+  "allowed_render_styles": [
+    "business_table"
+  ],
+  "artifacts": [
+    {
+      "composite_id": "customer_commercial_ranking_sales_order_composite",
+      "family_id": "customer_commercial_ranking",
+      "label": "Customer Commercial Ranking By Sales Order",
+      "composite_kind": "ranking_table",
+      "entity_grain": "customer",
+      "time_scope_type": "period_required",
+      "variation_requirements": {
+        "basis": "sales_order"
+      },
+      "primary_metric_id": "revenue",
+      "secondary_metric_ids": [
+        "quantity",
+        "average_order_value"
+      ],
+      "default_secondary_metric_ids_by_primary_metric": {
+        "revenue": [
+          "quantity",
+          "average_order_value"
+        ],
+        "quantity": [
+          "revenue",
+          "average_order_value"
+        ]
+      },
+      "required_execution_ids": [
+        "customer_sales_order_revenue_period_ranking_execution",
+        "customer_sales_order_quantity_period_ranking_execution",
+        "customer_average_order_value_sales_order_period_ranking_execution"
+      ],
+      "assembly_id": "customer_period_commercial_ranking_assembly",
+      "compatibility_rule_ids": [
+        "customer_period_same_basis_commercial_metrics"
+      ],
+      "render_style": "business_table",
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "composite_id": "customer_commercial_ranking_sales_invoice_composite",
+      "family_id": "customer_commercial_ranking",
+      "label": "Customer Commercial Ranking By Sales Invoice",
+      "composite_kind": "ranking_table",
+      "entity_grain": "customer",
+      "time_scope_type": "period_required",
+      "variation_requirements": {
+        "basis": "sales_invoice"
+      },
+      "primary_metric_id": "revenue",
+      "secondary_metric_ids": [
+        "quantity",
+        "average_invoice_value"
+      ],
+      "default_secondary_metric_ids_by_primary_metric": {
+        "revenue": [
+          "quantity",
+          "average_invoice_value"
+        ],
+        "quantity": [
+          "revenue",
+          "average_invoice_value"
+        ]
+      },
+      "required_execution_ids": [
+        "customer_sales_invoice_revenue_period_ranking_execution",
+        "customer_sales_invoice_quantity_period_ranking_execution",
+        "customer_average_invoice_value_sales_invoice_period_ranking_execution"
+      ],
+      "assembly_id": "customer_period_commercial_ranking_assembly",
+      "compatibility_rule_ids": [
+        "customer_period_same_basis_commercial_metrics"
+      ],
+      "render_style": "business_table",
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "composite_id": "product_commercial_ranking_sales_order_composite",
+      "family_id": "product_commercial_ranking",
+      "label": "Product Commercial Ranking By Sales Order",
+      "composite_kind": "ranking_table",
+      "entity_grain": "item",
+      "time_scope_type": "period_required",
+      "variation_requirements": {
+        "basis": "sales_order"
+      },
+      "primary_metric_id": "revenue",
+      "secondary_metric_ids": [
+        "quantity",
+        "average_selling_price"
+      ],
+      "default_secondary_metric_ids_by_primary_metric": {
+        "revenue": [
+          "quantity",
+          "average_selling_price"
+        ],
+        "quantity": [
+          "revenue",
+          "average_selling_price"
+        ]
+      },
+      "required_execution_ids": [
+        "item_sales_order_revenue_period_ranking_execution",
+        "item_sales_order_quantity_period_ranking_execution",
+        "item_average_selling_price_sales_order_period_ranking_execution"
+      ],
+      "assembly_id": "item_period_commercial_ranking_assembly",
+      "compatibility_rule_ids": [
+        "item_period_same_basis_commercial_metrics"
+      ],
+      "render_style": "business_table",
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "composite_id": "product_commercial_ranking_sales_invoice_composite",
+      "family_id": "product_commercial_ranking",
+      "label": "Product Commercial Ranking By Sales Invoice",
+      "composite_kind": "ranking_table",
+      "entity_grain": "item",
+      "time_scope_type": "period_required",
+      "variation_requirements": {
+        "basis": "sales_invoice"
+      },
+      "primary_metric_id": "revenue",
+      "secondary_metric_ids": [
+        "quantity",
+        "average_selling_price"
+      ],
+      "default_secondary_metric_ids_by_primary_metric": {
+        "revenue": [
+          "quantity",
+          "average_selling_price"
+        ],
+        "quantity": [
+          "revenue",
+          "average_selling_price"
+        ]
+      },
+      "required_execution_ids": [
+        "item_sales_invoice_revenue_period_ranking_execution",
+        "item_sales_invoice_quantity_period_ranking_execution",
+        "item_average_selling_price_sales_invoice_period_ranking_execution"
+      ],
+      "assembly_id": "item_period_commercial_ranking_assembly",
+      "compatibility_rule_ids": [
+        "item_period_same_basis_commercial_metrics"
+      ],
+      "render_style": "business_table",
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "composite_id": "customer_risk_as_of_default_composite",
+      "family_id": "customer_risk_as_of",
+      "label": "Customer Risk As-Of Default Composite",
+      "composite_kind": "risk_table",
+      "entity_grain": "customer",
+      "time_scope_type": "as_of_date_required",
+      "variation_requirements": {
+        "primary_sort_metric": "overdue_amount"
+      },
+      "primary_metric_id": "overdue_amount",
+      "secondary_metric_ids": [
+        "overdue_ratio",
+        "outstanding_amount",
+        "credit_utilization"
+      ],
+      "required_execution_ids": [
+        "customer_overdue_amount_as_of_ranking_execution",
+        "customer_overdue_ratio_as_of_ranking_execution",
+        "credit_utilization_customer_as_of_ranking_execution"
+      ],
+      "derived_metric_specs": {
+        "outstanding_amount": {
+          "source_metric_id": "overdue_amount",
+          "value_key": "outstanding_total",
+          "display_format": "money_mmk"
+        }
+      },
+      "assembly_id": "customer_as_of_risk_ranking_assembly",
+      "compatibility_rule_ids": [
+        "customer_risk_as_of_same_scope_metrics"
+      ],
+      "render_style": "business_table",
+      "activation_state": "active",
+      "blocked_reason": ""
+    }
+  ]
+}

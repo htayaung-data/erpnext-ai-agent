@@ -1,0 +1,95 @@
+{
+  "contract_version": "1.0",
+  "entity_grain_labels": [
+    {
+      "entity_grain": "customer",
+      "singular_label": "customer",
+      "plural_label": "customers"
+    },
+    {
+      "entity_grain": "supplier",
+      "singular_label": "supplier",
+      "plural_label": "suppliers"
+    },
+    {
+      "entity_grain": "item",
+      "singular_label": "item",
+      "plural_label": "items"
+    },
+    {
+      "entity_grain": "product",
+      "singular_label": "product",
+      "plural_label": "products"
+    },
+    {
+      "entity_grain": "warehouse",
+      "singular_label": "warehouse",
+      "plural_label": "warehouses"
+    }
+  ],
+  "entity_reference_policies": [
+    {
+      "entity_grain": "customer",
+      "doctype": "Customer",
+      "identity_field": "name",
+      "display_field": "customer_name",
+      "search_fields": [
+        "name",
+        "customer_name"
+      ],
+      "filter_field": "name",
+      "allowed_lookup_modes": [
+        "directory_list",
+        "candidate_resolution",
+        "profile_target"
+      ],
+      "default_projection": "names_only",
+      "default_limit": 10,
+      "match_policy": "exact_then_governed_fuzzy",
+      "clarify_on_ambiguity": true,
+      "activation_state": "active"
+    },
+    {
+      "entity_grain": "supplier",
+      "doctype": "Supplier",
+      "identity_field": "name",
+      "display_field": "supplier_name",
+      "search_fields": [
+        "name",
+        "supplier_name"
+      ],
+      "filter_field": "name",
+      "allowed_lookup_modes": [
+        "directory_list",
+        "candidate_resolution",
+        "profile_target"
+      ],
+      "default_projection": "names_only",
+      "default_limit": 10,
+      "match_policy": "exact_then_governed_fuzzy",
+      "clarify_on_ambiguity": true,
+      "activation_state": "active"
+    },
+    {
+      "entity_grain": "item",
+      "doctype": "Item",
+      "identity_field": "name",
+      "display_field": "item_name",
+      "search_fields": [
+        "name",
+        "item_name"
+      ],
+      "filter_field": "name",
+      "allowed_lookup_modes": [
+        "directory_list",
+        "candidate_resolution",
+        "profile_target"
+      ],
+      "default_projection": "names_only",
+      "default_limit": 10,
+      "match_policy": "exact_then_governed_fuzzy",
+      "clarify_on_ambiguity": true,
+      "activation_state": "active"
+    }
+  ]
+}

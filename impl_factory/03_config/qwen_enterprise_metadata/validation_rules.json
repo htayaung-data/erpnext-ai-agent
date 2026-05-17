@@ -61,5 +61,32 @@
       ],
       "decision": "clarify"
     }
-  ]
+  ],
+  "governed_scope_integrity": {
+    "required_registry_files": [
+      "governed_scope_registry.json",
+      "scope_owner_registry.json",
+      "family_scope_compatibility_registry.json",
+      "scope_projection_registry.json",
+      "scope_clarification_registry.json"
+    ],
+    "active_scope_requirements": [
+      "owner_declared",
+      "approved_source_authority_declared",
+      "compatible_family_declared",
+      "projection_policy_declared",
+      "clarification_coverage_declared"
+    ],
+    "pair_integrity_requirements": [
+      "no_unknown_scope_reference",
+      "no_unknown_family_reference",
+      "projection_requires_compatible_family",
+      "clarification_requires_compatible_family"
+    ],
+    "support_state_rules": [
+      "active_scope_cannot_use_pending_authority",
+      "restricted_listing_scope_must_declare_blocked_listing_reason",
+      "frontdoor_inactive_scope_must_not_be_marked_active"
+    ]
+  }
 }

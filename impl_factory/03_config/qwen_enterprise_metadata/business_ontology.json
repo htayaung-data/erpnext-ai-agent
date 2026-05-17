@@ -25,7 +25,37 @@
     {
       "concept_id": "receivable",
       "aliases": {
-        "en": ["receivable", "accounts receivable", "ar", "customer receivable"],
+        "en": [
+          "receivable",
+          "receivables",
+          "accounts receivable",
+          "ar",
+          "customer receivable",
+          "customer credit status",
+          "customer credit exposure",
+          "credit exposure",
+          "credit balance",
+          "credit balances",
+          "customer credit balance",
+          "customers with credit balance",
+          "customer credit limit",
+          "credit limit",
+          "credit utilization",
+          "credit usage",
+          "available credit",
+          "remaining credit",
+          "overdue customer",
+          "overdue customers",
+          "customer overdue",
+          "customer collections",
+          "collection priority",
+          "collections priority",
+          "collect from",
+          "collect first",
+          "collect from first",
+          "who to collect from",
+          "who should we collect from"
+        ],
         "my": []
       }
     },
@@ -48,6 +78,7 @@
           "assets and liabilities",
           "liabilities and equity",
           "statement of financial position",
+          "financial position",
           "assets",
           "liabilities",
           "equity",
@@ -62,18 +93,44 @@
     {
       "concept_id": "cash_flow",
       "aliases": {
-        "en": ["cash flow", "cashflow", "cash flow statement", "operating cash flow", "net change in cash"],
+        "en": [
+          "cash flow",
+          "cashflow",
+          "cash flow statement",
+          "operating cash flow",
+          "net change in cash",
+          "cash position",
+          "cash situation",
+          "money position",
+          "money situation"
+        ],
         "my": []
       }
     },
     {
       "concept_id": "working_capital",
       "aliases": {
-        "en": ["working capital", "liquidity"],
+        "en": [
+          "working capital",
+          "liquidity",
+          "cross-domain health",
+          "cross domain health",
+          "cross-domain health summary",
+          "combined cross-domain health",
+          "combined cross-domain health summary"
+        ],
         "my": []
       },
       "extended_aliases": {
-        "en": ["company health", "financial health", "business health", "ar/ap", "ar ap", "ap/ar", "ap ar"],
+        "en": [
+          "company health",
+          "financial health",
+          "business health",
+          "ar/ap",
+          "ar ap",
+          "ap/ar",
+          "ap ar"
+        ],
         "my": []
       }
     },
@@ -95,6 +152,27 @@
       "concept_id": "sales_invoice",
       "aliases": {
         "en": ["sales invoice", "sales invoices", "invoice", "invoices"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "sales_order",
+      "aliases": {
+        "en": ["sales order", "sales orders", "customer order", "customer orders"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "purchase_order",
+      "aliases": {
+        "en": ["purchase order", "purchase orders", "vendor order", "vendor orders"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "payment_entry",
+      "aliases": {
+        "en": ["payment entry", "payment entries", "payment"],
         "my": []
       }
     },
@@ -214,6 +292,38 @@
         "my": []
       },
       "supported_families": ["aging", "ranking_analytics", "trend_analytics", "inventory_snapshot", "product_profitability"]
+    },
+    {
+      "mode": "consultant_detail",
+      "label": "Consultant-depth continuation over the current governed result",
+      "requires_grounded_turn": true,
+      "slot_keys": ["reasoning_depth"],
+      "aliases": {
+        "en": [
+          "more insight",
+          "more insights",
+          "more detail",
+          "more details",
+          "more information",
+          "tell me more",
+          "explain more",
+          "go deeper",
+          "deeper view",
+          "consultant view",
+          "business consultant view",
+          "break down details",
+          "break it down"
+        ],
+        "my": []
+      },
+      "reasoning_activation": {
+        "reasoning_type": "continuation_detail",
+        "detail_level": "expanded",
+        "presentation_style": "default",
+        "confidence": 0.94,
+        "reason": "Governed follow-up metadata classifies the turn as a request for deeper continuation on the current ERP result."
+      },
+      "supported_families": ["aging", "working_capital_health", "ranking_analytics", "trend_analytics", "financial_statement", "inventory_snapshot", "product_profitability", "transaction_listing"]
     },
     {
       "mode": "sort_or_limit",
@@ -340,14 +450,14 @@
         "my": []
       },
       "last_year": {
-        "en": ["last year", "previous year", "prior year"],
+        "en": ["last year", "previous year", "prior year", "last fiscal year", "previous fiscal year", "prior fiscal year"],
         "my": []
       }
     }
   },
   "interaction_hints": {
     "self_contained_prefixes": {
-      "en": ["show me", "give me", "tell me", "display", "list", "analyze", "what is", "how much", "show"],
+      "en": ["show me", "give me", "tell me", "display", "list", "analyze", "what is", "how much", "show", "top", "bottom", "highest", "lowest", "largest", "smallest"],
       "my": []
     }
   }

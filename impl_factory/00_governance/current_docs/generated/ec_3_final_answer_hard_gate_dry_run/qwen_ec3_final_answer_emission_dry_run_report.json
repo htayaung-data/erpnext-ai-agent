@@ -1,0 +1,475 @@
+{
+  "active_runtime_direct_assistant_append_count": 0,
+  "active_unmanaged_answer_type_counts": {
+    "low_level_append_helper": 1
+  },
+  "answer_type_counts": {
+    "business_facing_factual_answer": 1,
+    "control_meta_answer": 7,
+    "error_fallback_answer": 2,
+    "governed_report_answer": 6,
+    "low_level_append_helper": 1,
+    "policy_boundary_refusal": 7,
+    "reasoning_business_consultant_answer": 1,
+    "trace_debug_answer": 1,
+    "visible_context_answer": 2
+  },
+  "authority_availability_counts": {
+    "not_applicable_low_level_append_wrapper": 1
+  },
+  "authorized_append_sites": [
+    {
+      "append_mechanism": "direct_append_message",
+      "authorization_reason": "Centralized helper append after explicit control/meta authority validation.",
+      "direct_assistant_append": true,
+      "function_name": "emit_authorized_assistant_answer",
+      "line_reference": "271",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/authorized_emission.py",
+      "site_id": "authorized_emission_control_meta_sink",
+      "source_classification": "authorized_runtime_append_sink"
+    },
+    {
+      "append_mechanism": "direct_append_message",
+      "authorization_reason": "Centralized helper append after final-answer authority preflight validation.",
+      "direct_assistant_append": true,
+      "function_name": "emit_authorized_assistant_answer",
+      "line_reference": "327",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/authorized_emission.py",
+      "site_id": "authorized_emission_business_sink",
+      "source_classification": "authorized_runtime_append_sink"
+    }
+  ],
+  "authorized_runtime_append_sink_count": 2,
+  "contract_version": "1.0",
+  "current_dirty_status_count": 307,
+  "direct_assistant_append_count": 0,
+  "direct_assistant_append_count_note": "Deprecated alias for active_runtime_direct_assistant_append_count.",
+  "ec4_allowed_preflight_statuses": [
+    "passed",
+    "bounded"
+  ],
+  "ec4_blocked_preflight_statuses": [
+    "missing_authority",
+    "incomplete_authority"
+  ],
+  "ec4_test_requirements": [
+    "business_answer_missing_authority_is_blocked_or_downgraded",
+    "visible_context_answer_with_complete_authority_is_allowed",
+    "governed_report_answer_with_complete_authority_is_allowed",
+    "policy_boundary_answer_with_bounded_preflight_is_allowed",
+    "policy_boundary_answer_without_policy_boundary_is_blocked",
+    "reasoning_answer_requires_complete_authority",
+    "legacy_runtime_business_answer_requires_complete_authority_or_downgrades",
+    "entity_followup_success_attaches_final_authority_before_append",
+    "control_meta_answer_requires_explicit_control_authority",
+    "direct_assistant_append_inventory_does_not_gain_new_business_paths",
+    "trace_inspection_exposes_preflight_and_authority_status"
+  ],
+  "emission_path_inventory": [
+    {
+      "answer_type": "low_level_append_helper",
+      "append_mechanism": "service_append_wrapper",
+      "audit_timing": "no_answer_context",
+      "authority_availability_status": "not_applicable_low_level_append_wrapper",
+      "direct_assistant_append": false,
+      "ec4_action": "Monitor only; do not hard-gate the raw wrapper because authority context lives above this layer.",
+      "function_name": "_append_message",
+      "line_reference": "1034",
+      "path_id": "service_append_message_wrapper",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py",
+      "requires_hard_gate": false,
+      "risk_level": "high",
+      "risk_reason": "The raw append wrapper can write any role and does not receive authority context."
+    }
+  ],
+  "excluded_append_sites": [
+    {
+      "append_mechanism": "direct_append_message",
+      "direct_assistant_append": true,
+      "exclusion_reason": "Smoke/recovery seed helper, not active user-facing runtime emission.",
+      "function_name": "_seed_quantity_recovery_session",
+      "line_reference": "68",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/phase8_hardening_support.py",
+      "site_id": "phase8_quantity_recovery_smoke_seed",
+      "source_classification": "excluded_non_runtime_append_site"
+    }
+  ],
+  "excluded_non_runtime_append_count": 1,
+  "final_recommendation": "enterprise_cleanup_ec_3_ready_for_counterpart_review",
+  "generated_at": "2026-05-15T18:26:40+00:00",
+  "hard_runtime_blocking_enabled": false,
+  "high_risk_paths": [
+    "service_append_message_wrapper"
+  ],
+  "inventory_count": 1,
+  "migrated_authorized_answer_type_counts": {
+    "business_facing_factual_answer": 1,
+    "control_meta_answer": 7,
+    "error_fallback_answer": 2,
+    "governed_report_answer": 6,
+    "policy_boundary_refusal": 7,
+    "reasoning_business_consultant_answer": 1,
+    "trace_debug_answer": 1,
+    "visible_context_answer": 2
+  },
+  "migrated_authorized_paths": [
+    {
+      "answer_type": "policy_boundary_refusal",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_activate_visible_context_followup",
+      "migration_slice": "EC-4A",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "visible_context_followup_filter_boundary",
+      "previous_risk_level": "medium",
+      "reason": "Filter/readiness visible-context boundary now validates authority before appending the assistant answer.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/visible_context_followup_activation.py"
+    },
+    {
+      "answer_type": "visible_context_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_activate_visible_context_followup",
+      "migration_slice": "EC-4A",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "visible_context_followup_answer",
+      "previous_risk_level": "medium",
+      "reason": "Resolved, boundary, out-of-range, and clarification visible-context answers now emit through the authorized helper.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/visible_context_followup_activation.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_frontdoor_turn",
+      "migration_slice": "EC-4C",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "frontdoor_lane_package_governed_report_or_projection",
+      "previous_risk_level": "high",
+      "reason": "Active package frontdoor governed/report, bounded-refusal, and control/meta answers now emit through the authorized helper.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/frontdoor_lane.py"
+    },
+    {
+      "answer_type": "business_facing_factual_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_frontdoor_turn",
+      "migration_slice": "EC-4C",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "frontdoor_lane_package_governed_kpi_definition",
+      "previous_risk_level": "high",
+      "reason": "Governed KPI definitions now emit as business-facing factual answers only with deterministic registry authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/frontdoor_lane.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_compiled_first_turn_result",
+      "migration_slice": "EC-4E",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "compiled_support_result_answer",
+      "previous_risk_level": "high",
+      "reason": "Compiled-support governed/report, bounded-refusal, control, and error fallback answers now emit through the authorized helper.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/compiled_support.py"
+    },
+    {
+      "answer_type": "reasoning_business_consultant_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_reasoning_turn",
+      "migration_slice": "EC-4G",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "reasoning_lane_business_answer",
+      "previous_risk_level": "high",
+      "reason": "Answered grounded ERP reasoning now emits through the authorized helper as reasoning_business_consultant_answer with passed authority required.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/reasoning_lane.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_reasoning_turn",
+      "migration_slice": "EC-4G",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "reasoning_lane_guardrail_boundary",
+      "previous_risk_level": "medium",
+      "reason": "Reasoning guardrail/boundary output now emits through the authorized helper as policy_boundary_refusal with bounded authority required.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/reasoning_lane.py"
+    },
+    {
+      "answer_type": "error_fallback_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_entity_detail_followup",
+      "migration_slice": "EC-4M",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "entity_followup_failure",
+      "previous_risk_level": "medium",
+      "reason": "Entity follow-up failure now emits through the authorized helper with explicit error fallback authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/entity_followup_support.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_entity_detail_followup",
+      "migration_slice": "EC-4M",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "entity_followup_success",
+      "previous_risk_level": "high",
+      "reason": "Entity follow-up success now appends artifact, grounded turn, trace, audit, and authorized emission before assistant answer.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/entity_followup_support.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_activate_nbu_governed_requery_response",
+      "migration_slice": "EC-4K",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "nbu_governed_requery_entity_detail",
+      "previous_risk_level": "high",
+      "reason": "NBU governed requery entity-detail answers now build authority before assistant emission and block missing authority without answer_text leakage.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_governed_requery_activation.py"
+    },
+    {
+      "answer_type": "error_fallback_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_legacy_runtime_turn",
+      "migration_slice": "EC-4I",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "legacy_runtime_client_error",
+      "previous_risk_level": "medium",
+      "reason": "Legacy runtime client errors now emit through the authorized helper with explicit error fallback authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/legacy_runtime_lane.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_legacy_runtime_turn",
+      "migration_slice": "EC-4I",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "legacy_runtime_business_or_boundary_answer",
+      "previous_risk_level": "high",
+      "reason": "Legacy runtime governed output and grounded-validation boundaries now build authority before assistant emission.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/legacy_runtime_lane.py"
+    },
+    {
+      "answer_type": "governed_report_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_artifact_boundary_turn",
+      "migration_slice": "EC-4R1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "artifact_boundary_evidence_answer",
+      "previous_risk_level": "medium",
+      "reason": "Artifact direct-evidence answers now validate governed artifact authority before assistant or evidence-payload emission.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/artifact_boundary_lane.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_artifact_boundary_turn",
+      "migration_slice": "EC-4R1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "artifact_boundary_grounded_evidence_refusal",
+      "previous_risk_level": "medium",
+      "reason": "Grounded-evidence artifact refusals now emit as bounded policy-boundary answers through the authorized helper.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/artifact_boundary_lane.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_artifact_boundary_turn",
+      "migration_slice": "EC-4R1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "artifact_boundary_enrichment_refusal",
+      "previous_risk_level": "medium",
+      "reason": "Artifact-enrichment refusals now emit as bounded policy-boundary answers through the authorized helper.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/artifact_boundary_lane.py"
+    },
+    {
+      "answer_type": "visible_context_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_local_followup_transform",
+      "migration_slice": "EC-4R2",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "local_followup_transform",
+      "previous_risk_level": "medium",
+      "reason": "Local follow-up transforms now validate visible/grounded authority before assistant or transform payload emission.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/local_followup_support.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_handle_runtime_gate_lane",
+      "migration_slice": "EC-4S1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "runtime_gate_out_of_scope_boundary",
+      "previous_risk_level": "medium",
+      "reason": "Runtime-gate out-of-scope ERP-domain boundary now emits as a bounded policy refusal only after authority validation.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/runtime_gate_lane.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "chat",
+      "migration_slice": "EC-4S2",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "service_out_of_scope_domain_boundary",
+      "previous_risk_level": "medium",
+      "reason": "Service out-of-scope-domain branch now emits as a bounded policy refusal through the authorized service boundary helper.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    },
+    {
+      "answer_type": "policy_boundary_refusal",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "chat",
+      "migration_slice": "EC-4S2",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "service_known_unsupported_erp_domain_boundary",
+      "previous_risk_level": "medium",
+      "reason": "Service known-unsupported ERP-domain branch now emits as a bounded policy refusal through the authorized service boundary helper.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    },
+    {
+      "answer_type": "trace_debug_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_activate_visible_context_trace_inspection_response",
+      "migration_slice": "EC-4T1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "visible_context_trace_inspection",
+      "previous_risk_level": "low",
+      "reason": "Visible-context trace inspection now emits as trace_debug_answer with explicit trace-debug control authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/visible_context_trace_inspection.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "try_activate_nbu_presentation_response",
+      "migration_slice": "EC-4T1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "nbu_presentation_safe_response",
+      "previous_risk_level": "medium",
+      "reason": "NBU safe presentation responses now emit as control_meta_answer with activation, execution, and optional audit payloads staged behind authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_service_activation.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_pending_clarification_turn",
+      "migration_slice": "EC-4T1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "clarification_show_options",
+      "previous_risk_level": "low",
+      "reason": "Clarification option rendering now emits as control_meta_answer with pending-control payloads staged behind authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/clarification_lane.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_pending_clarification_turn",
+      "migration_slice": "EC-4T1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "clarification_pending_reask_or_stop",
+      "previous_risk_level": "low",
+      "reason": "Pending clarification re-ask/stop responses now emit as control_meta_answer and update pending state only after authorized emission.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/clarification_lane.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "handle_recovery_guidance_response",
+      "migration_slice": "EC-4T1",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "recovery_guidance_answer",
+      "previous_risk_level": "medium",
+      "reason": "Recovery guidance now emits as control_meta_answer with recovery/audit/observability payloads staged behind authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/recovery_guidance_support.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "_handle_prior_branch_restore_reopen_pending_clarification",
+      "migration_slice": "EC-4T2",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "service_prior_branch_clarification_restore",
+      "previous_risk_level": "low",
+      "reason": "Prior-branch pending clarification restore now emits as control_meta_answer with restore evidence staged behind authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "chat",
+      "migration_slice": "EC-4T2",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "service_compound_continue_completed",
+      "previous_risk_level": "medium",
+      "reason": "Compound completed-sequence continuation now emits as control_meta_answer with control/audit payloads staged behind authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    },
+    {
+      "answer_type": "control_meta_answer",
+      "authorization_helper": "emit_authorized_assistant_answer",
+      "function_name": "chat",
+      "migration_slice": "EC-4T2",
+      "migration_status": "migrated_to_authorized_helper",
+      "path_id": "service_compound_stop",
+      "previous_risk_level": "medium",
+      "reason": "Compound stop response now emits as control_meta_answer with cancellation/audit payloads staged behind authority.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py"
+    }
+  ],
+  "missing_answer_types": [],
+  "missing_required_fields": {},
+  "non_goals": [
+    "no_hard_runtime_blocking_in_ec3",
+    "no_model_role_strict_enforcement",
+    "no_service_py_refactor",
+    "no_duplicate_lane_cleanup",
+    "no_release_packaging_cleanup",
+    "no_new_business_family_behavior",
+    "no_filter_mi_or_ux_work"
+  ],
+  "proposed_ec4_design": {
+    "allow_rules": [
+      "Allow preflight_status=passed for complete factual/governed/report/visible-context answers.",
+      "Allow preflight_status=bounded only when a valid policy_boundary is present.",
+      "Allow explicit control/meta/error emissions only when they are classified as non-business and carry control authority."
+    ],
+    "block_or_downgrade_rules": [
+      "Block or downgrade missing_authority.",
+      "Block incomplete authority.",
+      "Block unbounded business answers without visible, governed, grounded, or policy authority.",
+      "Block silent fallback that presents as a business answer."
+    ],
+    "central_helper": "emit_authorized_assistant_answer",
+    "design_status": "proposed_for_ec4_not_implemented_in_ec3",
+    "helper_location_recommendation": "qwen_chat/authorized_emission.py or qwen_chat/context/authorized_emission.py",
+    "inputs": [
+      "session_doc",
+      "answer_text",
+      "answer_type",
+      "execution_path",
+      "interaction_contract",
+      "followup_resolution",
+      "runtime_trace_payload",
+      "grounded_turn_context",
+      "authority_context",
+      "control_meta_authority"
+    ],
+    "migration_strategy": [
+      "Start with dry-run reporting.",
+      "Wrap high-risk business paths first: frontdoor, compiled support, reasoning, legacy runtime, entity follow-up, NBU governed requery.",
+      "Then wrap medium-risk boundary/control paths.",
+      "Finally restrict direct assistant append usage to the authorized helper plus explicit test fixtures."
+    ],
+    "why_not_lowest_append_only": "The low-level append helper receives role/content only and cannot know report family, policy boundary, grounding, answer class, or audit timing."
+  },
+  "recommendation_reason": "Dry-run inventory is complete enough for counterpart review; high-risk paths are intentionally exposed for EC-4.",
+  "report_json_artifact_path": "impl_factory/00_governance/current_docs/generated/ec_3_final_answer_hard_gate_dry_run/qwen_ec3_final_answer_emission_dry_run_report.json",
+  "report_markdown_artifact_path": "impl_factory/00_governance/current_docs/generated/ec_3_final_answer_hard_gate_dry_run/qwen_ec3_final_answer_emission_dry_run_report.md",
+  "requires_hard_gate_count": 0,
+  "reviewer": "codex_ec4u_a_closure",
+  "risk_counts": {
+    "high": 1,
+    "low": 0,
+    "medium": 0
+  },
+  "runtime_behavior_changed": false,
+  "scope": "final_answer_hard_gate_design_dry_run_only",
+  "slice_id": "ec_3_final_answer_hard_gate_dry_run",
+  "total_source_assistant_append_sites_observed": 3,
+  "type": "qwen_final_answer_emission_dry_run_contract"
+}
