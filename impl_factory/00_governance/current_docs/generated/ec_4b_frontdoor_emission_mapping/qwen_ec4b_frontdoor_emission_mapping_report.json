@@ -1,0 +1,215 @@
+{
+  "active_runtime_emitter_count": 1,
+  "active_runtime_migrated_to_authorized_helper_count": 1,
+  "branch": "feature/ai-assistant",
+  "compatibility_facade_emitter_count": 1,
+  "contract_version": "1.2",
+  "created_at": "2026-05-15T18:05:11+00:00",
+  "current_dirty_status_count": 307,
+  "diff_summary": {
+    "files_identical": false,
+    "line_count_delta_package_minus_root": 970,
+    "package_has_fresh_breakout_helper": true,
+    "package_line_count": 984,
+    "root_duplicate_drift_reason": "Root frontdoor module is now an EC-4U compatibility facade over the active package lane.",
+    "root_has_fresh_breakout_helper": false,
+    "root_is_compatibility_facade": true,
+    "root_line_count": 14
+  },
+  "duplicate_drift_emitter_count": 0,
+  "final_recommendation": "enterprise_cleanup_ec_4u_frontdoor_duplicate_facade_closed",
+  "frontdoor_direct_assistant_append_count": 0,
+  "frontdoor_emitter_count": 2,
+  "frontdoor_emitters": [
+    {
+      "active_classification": "active_runtime_primary_migrated_to_authorized_helper",
+      "answer_type": "governed_report_or_policy_boundary_or_control",
+      "append_mechanism": "authorized_assistant_emission_helper",
+      "audit_timing": "audit_and_emission_contract_before_assistant_append",
+      "authority_availability_status": "authority_validated_before_append",
+      "authorized_emission_helper_count": 1,
+      "authorized_emission_helper_lines": [
+        921
+      ],
+      "direct_assistant_append_count": 0,
+      "direct_assistant_append_lines": [],
+      "function_names": {
+        "evaluate_frontdoor_lane": [
+          454
+        ],
+        "handle_frontdoor_turn": [
+          801
+        ]
+      },
+      "line_count": 984,
+      "migration_recommendation": "ec_4c_migration_complete_keep_root_for_ec_9_duplicate_cleanup",
+      "path_id": "frontdoor_lane_package_governed_report_or_projection",
+      "reason": "service.py imports this package lane and the active EC-4C runtime path now uses emit_authorized_assistant_answer.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/frontdoor_lane.py",
+      "runtime_behavior_changed": true,
+      "service_imported": true,
+      "sha256": "b69b61576480a0764872edb466007b68da12ea88ee747873f99882ad68112924"
+    },
+    {
+      "active_classification": "compatibility_facade_not_service_runtime",
+      "answer_type": "governed_report_or_policy_boundary_or_control",
+      "append_mechanism": "none_observed",
+      "audit_timing": "none_observed",
+      "authority_availability_status": "no_assistant_append_observed",
+      "authorized_emission_helper_count": 0,
+      "authorized_emission_helper_lines": [],
+      "direct_assistant_append_count": 0,
+      "direct_assistant_append_lines": [],
+      "function_names": {
+        "evaluate_frontdoor_lane": [],
+        "handle_frontdoor_turn": []
+      },
+      "line_count": 14,
+      "migration_recommendation": "ec_4u_duplicate_closure_complete_keep_facade",
+      "path_id": "frontdoor_lane_root_duplicate",
+      "reason": "service.py does not import the root module; EC-4U converted it to a compatibility facade so older imports cannot execute duplicate answer-emission behavior.",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/frontdoor_lane.py",
+      "runtime_behavior_changed": false,
+      "service_imported": false,
+      "sha256": "1b8deb8de122a4be7d5750b3be803d972c0ac1e80843d243c8f77a227087c581"
+    }
+  ],
+  "hard_runtime_blocking_enabled": false,
+  "head": "154be1e",
+  "non_goals": [
+    "no_additional_runtime_migration_beyond_active_package_frontdoor_in_ec4c",
+    "no_service_py_changes",
+    "no_active_package_frontdoor_behavior_change",
+    "no_model_role_strict_enforcement",
+    "no_release_packaging_cleanup",
+    "no_reasoning_nbu_entity_or_legacy_lane_migration"
+  ],
+  "proposed_ec4c_write_scope": {
+    "allowed_files": [
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/frontdoor_lane.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/frontdoor_lane.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/frontdoor_emission_mapping.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_frontdoor_authorized_emission_contracts.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_frontdoor_emission_mapping_contracts.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/final_answer_emission_dry_run.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_final_answer_emission_dry_run_contracts.py"
+    ],
+    "forbidden_files": [
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/reasoning_lane.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/legacy_runtime_lane.py",
+      "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/entity_drilldown_lane.py"
+    ],
+    "write_scope_decision": "ec_4u_root_duplicate_converted_to_facade_service_unchanged"
+  },
+  "reviewer": "codex_ec4u_closure",
+  "runtime_behavior_changed": true,
+  "scope": "EC-4U duplicate/wrapper closure refresh after root frontdoor facade conversion",
+  "service_import_evidence": {
+    "package_import_lines": [
+      265
+    ],
+    "package_imported_by_service": true,
+    "root_import_lines": [],
+    "root_imported_by_service": false,
+    "service_call_sites": {
+      "evaluate_frontdoor_lane": [
+        4137,
+        4156,
+        4863,
+        5237
+      ],
+      "handle_frontdoor_turn": [
+        4738,
+        4875,
+        5251
+      ]
+    }
+  },
+  "test_import_evidence": {
+    "package_imports": [
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_frontdoor_authorized_emission_contracts.py",
+        "line": 9,
+        "text": "from ai_assistant_ui.qwen_chat.lanes.frontdoor_lane import handle_frontdoor_turn"
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_frontdoor_lane_compound_request.py",
+        "line": 27,
+        "text": "from ai_assistant_ui.qwen_chat.lanes.frontdoor_lane import evaluate_frontdoor_lane"
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_frontdoor_lane_compound_request.py",
+        "line": 83,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.assess_compound_request\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_frontdoor_lane_compound_request.py",
+        "line": 91,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.render_front_door_answer\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_master_data_frontdoor_contracts.py",
+        "line": 32,
+        "text": "from ai_assistant_ui.qwen_chat.lanes.frontdoor_lane import evaluate_frontdoor_lane"
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_master_data_frontdoor_contracts.py",
+        "line": 305,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_master_data_frontdoor_contracts.py",
+        "line": 336,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_master_data_frontdoor_contracts.py",
+        "line": 373,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py",
+        "line": 186,
+        "text": "from ai_assistant_ui.qwen_chat.lanes.frontdoor_lane import evaluate_frontdoor_lane"
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py",
+        "line": 355,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py",
+        "line": 366,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.render_front_door_answer\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py",
+        "line": 394,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py",
+        "line": 427,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.maybe_build_governed_kpi_frontdoor_response\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py",
+        "line": 446,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically\""
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py",
+        "line": 472,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically\","
+      },
+      {
+        "file": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py",
+        "line": 483,
+        "text": "\"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.assess_master_data_frontdoor_request\","
+      }
+    ],
+    "root_imports": []
+  },
+  "type": "qwen_ec4b_frontdoor_emission_mapping_report"
+}

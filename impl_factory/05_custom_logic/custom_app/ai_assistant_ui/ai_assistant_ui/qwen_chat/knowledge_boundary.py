@@ -92,6 +92,8 @@ def _valid_erp_domain(
 	clarification_reason: Dict[str, Any],
 ) -> bool:
 	governed_scope_status = _status(governed_scope_contract.get("governed_scope_status"))
+	if governed_scope_status == "unsupported_request":
+		return False
 	if governed_scope_status in {"covered_family", "fresh_query_breakout", "clarification_needed", "out_of_scope_but_valid_erp_domain"}:
 		return True
 	if bool(reasoning_activation_contract.get("grounded_context_available")):
@@ -218,7 +220,7 @@ def evaluate_knowledge_boundary(
 				grounding_required=False,
 				grounding_available=bool(grounded_turn_payload.get("grounded")),
 				knowledge_coverage_state="covered_but_wrong_lane",
-				reclassification_reason="A governed artifact result is already supported, so front door should not own the turn.",
+				reclassification_reason="An ERP result is already supported, so front door should not own the turn.",
 				boundary_flags=boundary_flags,
 				allowed_to_answer=True,
 				safe_next_action="route_to_artifact_lane",
@@ -297,7 +299,7 @@ def evaluate_knowledge_boundary(
 				grounding_required=False,
 				grounding_available=bool(grounded_turn_payload.get("grounded")),
 				knowledge_coverage_state="valid_erp_domain_uncovered",
-				reclassification_reason="The request is a valid ERP/business domain ask but is not yet covered by the governed artifact lane.",
+				reclassification_reason="The request is a valid ERP/business domain ask but is not yet covered by the previous-answer lane.",
 				boundary_flags=boundary_flags,
 				allowed_to_answer=False,
 				safe_next_action="respond_uncovered_erp_domain",
@@ -356,7 +358,7 @@ def evaluate_knowledge_boundary(
 				grounding_required=False,
 				grounding_available=bool(grounded_turn_payload.get("grounded")),
 				knowledge_coverage_state="covered_but_wrong_lane",
-				reclassification_reason="A governed artifact result is available, so reasoning lane is not the appropriate final lane for this turn.",
+				reclassification_reason="An ERP result is available, so reasoning lane is not the appropriate final lane for this turn.",
 				boundary_flags=boundary_flags,
 				allowed_to_answer=True,
 				safe_next_action="route_to_artifact_lane",
@@ -375,7 +377,7 @@ def evaluate_knowledge_boundary(
 				grounding_required=bool(reasoning_activation_payload.get("grounded_context_available") or grounded_turn_payload.get("grounded")),
 				grounding_available=bool(grounded_turn_payload.get("grounded")),
 				knowledge_coverage_state="valid_erp_domain_uncovered",
-				reclassification_reason="This is a valid ERP/business ask, but current grounded or bounded reasoning support is insufficient.",
+				reclassification_reason="This is a valid ERP/business ask, but the currently available reasoning support is insufficient.",
 				boundary_flags=boundary_flags + _clean_list(reasoning_payload.get("grounding_gaps")),
 				allowed_to_answer=False,
 				safe_next_action="respond_uncovered_erp_domain",
@@ -439,32 +441,34 @@ def render_knowledge_boundary_answer(
 	detail = str(detail_answer or "").strip()
 
 	if user_response_mode == "coverage_gap_explanation" or knowledge_coverage_state == "valid_erp_domain_uncovered":
+		if detail:
+			return detail
 		base = (
-			"This stays within ERP/business scope, but I can't answer it safely from the current governed support yet."
+			"I can help with that business question, but I don't have the right ERP result in this chat to answer it accurately yet."
 		)
 		if grounding_required and not grounding_available:
 			base = (
-				"This is a valid ERP/business question, but I don't have the grounded governed source needed to answer it safely yet."
+				"I need the relevant ERP data first before I can answer that accurately."
 			)
 		return _join_boundary_sections(base, detail)
 
 	if user_response_mode == "safe_refusal" or knowledge_coverage_state == "unsupported_non_erp":
 		base = (
-			"This request falls outside the current governed ERP assistant coverage, so I can't answer it confidently here."
+			"This request falls outside the current ERP assistant coverage, so I can't answer it confidently here."
 		)
 		return _join_boundary_sections(base, detail)
 
 	if user_response_mode == "boundary_explanation":
 		action_messages = {
-			"route_to_clarification": "I still need clarification before I can continue safely.",
-			"route_to_artifact_lane": "This turn belongs in the governed ERP artifact lane, not in the current lane.",
-			"route_to_reasoning_lane": "This turn belongs in the grounded ERP reasoning lane, not in the current lane.",
-			"route_to_front_door": "This turn belongs in the front-door conversational lane, not in the current lane.",
+			"route_to_clarification": "I need one more detail before I can answer accurately.",
+			"route_to_artifact_lane": "Let's continue from the ERP result already shown instead of starting a new answer.",
+			"route_to_reasoning_lane": "Let's continue from the ERP analysis already in progress.",
+			"route_to_front_door": "I can answer that as a general assistant question rather than from the current ERP result.",
 		}
 		base = action_messages.get(safe_next_action) or (
-			f"This turn should be handled through {final_lane.replace('_', ' ')}."
+			"I need to use a safer ERP path before answering."
 			if final_lane
-			else "This turn should be handled through a safer governed lane."
+			else "This turn should be handled through a safer ERP path."
 		)
 		return _join_boundary_sections(base, detail or reclassification_reason)
 
@@ -560,7 +564,7 @@ def run_phase7d_boundary_response_probe() -> Dict[str, Any]:
 	)
 	uncovered_answer = render_knowledge_boundary_answer(
 		boundary_contract=uncovered_boundary,
-		detail_answer="This finance area is not yet covered by the current governed answer path.",
+		detail_answer="This finance area is not yet covered by the current answer path.",
 	)
 	if "valid ERP/business question" not in uncovered_answer and "ERP/business scope" not in uncovered_answer:
 		raise RuntimeError("Phase 7D probe failed: uncovered response did not explain the coverage gap.")
@@ -575,9 +579,9 @@ def run_phase7d_boundary_response_probe() -> Dict[str, Any]:
 	)
 	unsupported_answer = render_knowledge_boundary_answer(
 		boundary_contract=unsupported_boundary,
-		detail_answer="I can help with governed ERP reporting and analysis, but not with this request here.",
+		detail_answer="I can help with ERP reporting and analysis, but not with this request here.",
 	)
-	if "outside the current governed ERP assistant coverage" not in unsupported_answer:
+	if "outside the current ERP assistant coverage" not in unsupported_answer:
 		raise RuntimeError("Phase 7D probe failed: unsupported response did not explain the supported boundary.")
 
 	redirect_boundary = evaluate_knowledge_boundary(
@@ -595,9 +599,9 @@ def run_phase7d_boundary_response_probe() -> Dict[str, Any]:
 	)
 	redirect_answer = render_knowledge_boundary_answer(
 		boundary_contract=redirect_boundary,
-		detail_answer="A governed artifact result is already available for this turn.",
+		detail_answer="An ERP result is already available for this turn.",
 	)
-	if "governed ERP artifact lane" not in redirect_answer:
+	if "previous ERP answer" not in redirect_answer:
 		raise RuntimeError("Phase 7D probe failed: redirect response did not explain the safer lane.")
 
 	return {

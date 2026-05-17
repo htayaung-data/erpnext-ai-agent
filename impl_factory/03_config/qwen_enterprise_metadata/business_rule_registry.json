@@ -1,0 +1,147 @@
+{
+  "contract_version": "1.0",
+  "status": "phase2_threshold_semantics_active",
+  "description": "Governed business-rule registry for company-specific KPI clarification policies, threshold usage rules, and approved policy bases.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_rule_types": [
+    "definition_resolution_policy",
+    "threshold_usage_policy",
+    "credit_policy_basis",
+    "risk_presentation_policy"
+  ],
+  "allowed_scope_types": [
+    "global",
+    "definition",
+    "formula",
+    "threshold",
+    "capability",
+    "company"
+  ],
+  "rules": [
+    {
+      "rule_id": "generic_average_order_value_requires_document_basis_clarification",
+      "label": "Generic Average Order Value Requires Document Basis Clarification",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "rule_type": "definition_resolution_policy",
+      "scope_type": "global",
+      "scope_reference": "",
+      "policy_statement": "Generic average order value requests must clarify sales-order versus sales-invoice basis before runtime activation.",
+      "activation_state": "active",
+      "blocked_reason": "",
+      "enforced_behavior": {
+        "lookup_terms": [
+          "average order value",
+          "aov"
+        ],
+        "required_next_action": "clarify_document_basis",
+        "silent_default_allowed": false
+      }
+    },
+    {
+      "rule_id": "generic_tenure_requires_basis_clarification",
+      "label": "Generic Tenure Requires Basis Clarification",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "rule_type": "definition_resolution_policy",
+      "scope_type": "global",
+      "scope_reference": "",
+      "policy_statement": "Generic tenure requests must clarify the approved tenure basis before runtime activation.",
+      "activation_state": "active",
+      "blocked_reason": "",
+      "enforced_behavior": {
+        "lookup_terms": [
+          "tenure",
+          "customer tenure"
+        ],
+        "required_next_action": "clarify_basis",
+        "silent_default_allowed": false
+      }
+    },
+    {
+      "rule_id": "credit_utilization_primary_basis_outstanding_vs_limit",
+      "label": "Credit Utilization Primary Basis Is Outstanding Versus Limit",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "rule_type": "credit_policy_basis",
+      "scope_type": "formula",
+      "scope_reference": "credit_utilization_customer_as_of_date_formula",
+      "policy_statement": "Customer credit utilization must use outstanding amount divided by configured credit limit as the governed primary basis.",
+      "activation_state": "active",
+      "blocked_reason": "",
+      "enforced_behavior": {
+        "comparison_basis": "outstanding_vs_credit_limit",
+        "tenant_master_data": "Customer Credit Limit",
+        "user_facing_policy_status": "approved"
+      }
+    },
+    {
+      "rule_id": "overdue_severity_labels_blocked_until_policy_approved",
+      "label": "Overdue Severity Labels Blocked Until Policy Approval",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "rule_type": "risk_presentation_policy",
+      "scope_type": "threshold",
+      "scope_reference": "customer_overdue_ratio_severity_bands",
+      "policy_statement": "Overdue severity labels must not appear in user-facing runtime answers until finance approves the threshold policy.",
+      "activation_state": "active",
+      "blocked_reason": "",
+      "enforced_behavior": {
+        "user_facing_rendering_allowed": false,
+        "allowed_runtime_behavior": "blocked_safe"
+      }
+    },
+    {
+      "rule_id": "collection_ratio_blocks_without_collected_amount_authority",
+      "label": "Collection Ratio Uses Allocated Customer Receipt Basis",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "rule_type": "threshold_usage_policy",
+      "scope_type": "definition",
+      "scope_reference": "collection_ratio_sales_invoice_period",
+      "policy_statement": "Collection ratio must use allocated customer receipt amounts linked to submitted sales invoices for the requested invoice period as the governed primary basis.",
+      "activation_state": "active",
+      "blocked_reason": "",
+      "enforced_behavior": {
+        "required_source_metric": "allocated_customer_receipt_amount",
+        "denominator_metric": "sales_invoice_grand_total",
+        "comparison_basis": "allocated_receipts_vs_invoiced_total",
+        "user_facing_rendering_allowed": true
+      }
+    },
+    {
+      "rule_id": "collection_ratio_threshold_labels_blocked_until_policy_approved",
+      "label": "Collection Ratio Threshold Labels Blocked Until Policy Approval",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "rule_type": "risk_presentation_policy",
+      "scope_type": "threshold",
+      "scope_reference": "collection_ratio_health_bands",
+      "policy_statement": "Collection-ratio health labels must not appear in user-facing runtime answers until finance approves the threshold policy.",
+      "activation_state": "active",
+      "blocked_reason": "",
+      "enforced_behavior": {
+        "user_facing_rendering_allowed": false,
+        "allowed_runtime_behavior": "blocked_safe"
+      }
+    }
+  ]
+}

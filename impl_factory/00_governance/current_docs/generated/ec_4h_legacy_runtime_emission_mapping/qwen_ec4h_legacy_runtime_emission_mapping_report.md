@@ -1,0 +1,82 @@
+# EC-4H/EC-4I Legacy Runtime Emission Mapping
+
+- Branch: `feature/ai-assistant`
+- Head: `154be1e`
+- Dirty status count: `312`
+- Runtime behavior changed: `True`
+- Hard runtime blocking enabled: `False`
+- Final recommendation: `enterprise_cleanup_ec_4i_ready_for_counterpart_review`
+
+## Legacy Runtime Emitters
+
+| Path | Classification | Answer type | Direct append lines | Audit timing | Recommendation |
+|---|---|---|---:|---|---|
+| legacy_runtime_client_error | active_runtime_error_fallback_migrated_to_authorized_helper | error_fallback_answer |  | authorized_emission_contract_before_error_assistant_append | EC-4I migration complete: runtime errors now emit through the authorized helper as explicit error/control fallback. |
+| legacy_runtime_business_or_boundary_answer | active_runtime_primary_migrated_to_authorized_helper | governed_report_answer_or_policy_boundary_refusal |  | grounded_turn_audit_and_authorized_emission_contract_before_assistant_append | EC-4I migration complete: legacy normal grounded output and grounded-validation boundaries now emit through the authorized helper before assistant append. |
+
+## Service Evidence
+
+- Legacy runtime imported by service: `True`
+- Import lines: `[271]`
+- Handle call sites: `[5773]`
+
+## Authority Timing
+
+Emitter `legacy_runtime_client_error`
+- Authority status: `explicit_error_authority_validated_before_append`
+- Inputs before assistant append:
+- `interaction_contract`
+- `followup_resolution`
+- `execution_path`
+- `safe_runtime_failure_message`
+- `runtime_client_error`
+- `tool_trace_payload`
+- Inputs after assistant append:
+- Missing before append:
+Emitter `legacy_runtime_business_or_boundary_answer`
+- Authority status: `authority_validated_before_assistant_append`
+- Inputs before assistant append:
+- `runtime_payload.ok`
+- `runtime_payload.answer_text`
+- `runtime_payload.tool_trace`
+- `runtime_payload.agent_meta`
+- `runtime_payload.error`
+- `grounded_validation_failed_flag`
+- Inputs after assistant append:
+- Missing before append:
+
+## Completed EC-4I Write Scope
+
+Allowed files:
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/legacy_runtime_lane.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/legacy_runtime_emission_mapping.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_legacy_runtime_authorized_emission_contracts.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_legacy_runtime_emission_mapping_contracts.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/final_answer_emission_dry_run.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_final_answer_emission_dry_run_contracts.py`
+
+Forbidden files:
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/reasoning_lane.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_service_activation.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_governed_requery_activation.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/entity_drilldown_lane.py`
+- `impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/frontdoor_lane.py`
+
+## EC-4I Test Requirements
+
+- `legacy normal governed output emits through authorized helper before assistant answer`
+- `legacy grounded-validation failure emits as policy_boundary_refusal with bounded authority`
+- `legacy runtime-client error emits as explicit error/control fallback and not as business answer`
+- `missing legacy business authority blocks without assistant or returned answer_text leakage`
+- `no duplicate audit envelope after assistant answer`
+- `EC-3 inventory legacy unmanaged count decreases after migration`
+
+## Non-Goals
+
+- `ec4h_was_mapping_only_ec4i_performed_bounded_legacy_runtime_migration`
+- `no_service_py_changes`
+- `no_nbu_entity_lane_migration`
+- `no_root_frontdoor_duplicate_cleanup`
+- `no_model_role_strict_enforcement`
+- `no_release_packaging_cleanup`

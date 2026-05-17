@@ -1,0 +1,181 @@
+{
+  "contract_version": "1.0",
+  "description": "Primary ownership and cross-family sharing policy for governed scopes.",
+  "allowed_family_ids": [
+    "master_data_lookup",
+    "entity_detail",
+    "transaction_listing",
+    "ranking_analytics",
+    "aging",
+    "inventory_snapshot",
+    "product_profitability",
+    "followup_boundary",
+    "clarification"
+  ],
+  "entries": [
+    {
+      "scope_id": "customer_master",
+      "primary_owner_family": "master_data_lookup",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "transaction_listing",
+        "ranking_analytics",
+        "aging",
+        "inventory_snapshot",
+        "product_profitability"
+      ],
+      "ownership_reason": "Customer directory and candidate resolution belong to the shared master-data lookup seam.",
+      "policy_notes": "Customer detail may consume the resolved entity, but directory policy remains lookup-owned."
+    },
+    {
+      "scope_id": "supplier_master",
+      "primary_owner_family": "master_data_lookup",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "transaction_listing",
+        "ranking_analytics",
+        "aging",
+        "inventory_snapshot",
+        "product_profitability"
+      ],
+      "ownership_reason": "Supplier discovery belongs to master-data lookup even though supplier profile detail already exists.",
+      "policy_notes": "The missing governed part is supplier directory activation, not supplier profile evidence."
+    },
+    {
+      "scope_id": "item_master",
+      "primary_owner_family": "master_data_lookup",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "transaction_listing",
+        "ranking_analytics",
+        "aging",
+        "inventory_snapshot",
+        "product_profitability"
+      ],
+      "ownership_reason": "Item directory ownership should stay in the shared lookup seam instead of being trapped in product-performance paths.",
+      "policy_notes": "Entity detail already supports known item identifiers, and shared directory activation is now approved under lookup ownership."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "primary_owner_family": "transaction_listing",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "master_data_lookup",
+        "inventory_snapshot"
+      ],
+      "ownership_reason": "Sales invoice is a document scope primarily owned by shared transaction listing.",
+      "policy_notes": "Entity detail and follow-up layers may consume the same scope under listing ownership."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "primary_owner_family": "transaction_listing",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "master_data_lookup",
+        "ranking_analytics",
+        "inventory_snapshot",
+        "product_profitability"
+      ],
+      "ownership_reason": "Purchase-invoice scope is document listing first, with downstream detail and follow-up reuse.",
+      "policy_notes": "Purchase-invoice listing is active through the shared transaction-listing family, with detail and follow-up consuming the same scope."
+    },
+    {
+      "scope_id": "delivery_note",
+      "primary_owner_family": "transaction_listing",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "master_data_lookup",
+        "inventory_snapshot"
+      ],
+      "ownership_reason": "Delivery-note list behavior is governed as shared document listing.",
+      "policy_notes": "Detail and follow-up consume the same document scope through listing-owned rules."
+    },
+    {
+      "scope_id": "sales_order",
+      "primary_owner_family": "transaction_listing",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "master_data_lookup",
+        "inventory_snapshot"
+      ],
+      "ownership_reason": "Sales-order scope is document listing first, with downstream detail and follow-up reuse.",
+      "policy_notes": "Ranking families may derive analytics from sales-order evidence, but they do not own the document scope."
+    },
+    {
+      "scope_id": "purchase_order",
+      "primary_owner_family": "transaction_listing",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "master_data_lookup",
+        "inventory_snapshot"
+      ],
+      "ownership_reason": "Purchase-order scope is document listing first, with downstream detail and follow-up reuse.",
+      "policy_notes": "Operational detail may consume the same scope under listing ownership."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "primary_owner_family": "transaction_listing",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "master_data_lookup",
+        "ranking_analytics",
+        "inventory_snapshot",
+        "product_profitability"
+      ],
+      "ownership_reason": "Purchase-receipt scope is a procurement document listing scope owned by shared transaction listing.",
+      "policy_notes": "Purchase-receipt listing is active through the shared transaction-listing family. Detail remains future-compatible only until a governed detail authority package is approved."
+    },
+    {
+      "scope_id": "payment_entry",
+      "primary_owner_family": "transaction_listing",
+      "secondary_compatible_families": [
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "master_data_lookup",
+        "ranking_analytics",
+        "inventory_snapshot",
+        "product_profitability"
+      ],
+      "ownership_reason": "Payment entries are document-like operational records whose shared route should be owned by transaction listing.",
+      "policy_notes": "Payment-entry listing is active through the shared transaction-listing family, with follow-up refinement allowed inside the same scope."
+    }
+  ]
+}

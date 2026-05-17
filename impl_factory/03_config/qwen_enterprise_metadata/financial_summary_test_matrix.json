@@ -1,0 +1,127 @@
+{
+  "contract_version": "1.0",
+  "status": "design_only",
+  "not_loaded_by_runtime": true,
+  "description": "Design-only acceptance matrix for future financial_summary migration. These cases define the expected normalize, composite, and clarify outcomes before any runtime implementation is allowed.",
+  "intent_class": "financial_summary",
+  "case_sets": [
+    {
+      "set_id": "financial_summary_normalize_cases",
+      "set_label": "Financial Summary Normalize Cases",
+      "cases": [
+        {
+          "case_id": "financial_summary_statement_normalize",
+          "message": "Show current profit and loss summary",
+          "expected_decision": "normalize_intent",
+          "expected_target_intent_class": "financial_statement",
+          "expected_resolved_summary_domains": [
+            "statement"
+          ],
+          "expected_resolved_summary_focus": "statement_view"
+        },
+        {
+          "case_id": "financial_summary_receivable_normalize",
+          "message": "How much receivable do we have as of now",
+          "expected_decision": "normalize_intent",
+          "expected_target_intent_class": "aging_analysis",
+          "expected_resolved_summary_domains": [
+            "receivable"
+          ],
+          "expected_resolved_summary_focus": "outstanding_amount"
+        },
+        {
+          "case_id": "financial_summary_payable_normalize",
+          "message": "How much payable do we have as of now",
+          "expected_decision": "normalize_intent",
+          "expected_target_intent_class": "aging_analysis",
+          "expected_resolved_summary_domains": [
+            "payable"
+          ],
+          "expected_resolved_summary_focus": "outstanding_amount"
+        },
+        {
+          "case_id": "financial_summary_inventory_normalize",
+          "message": "Show current inventory value by warehouse",
+          "expected_decision": "normalize_intent",
+          "expected_target_intent_class": "inventory_summary",
+          "expected_resolved_summary_domains": [
+            "inventory"
+          ],
+          "expected_resolved_summary_focus": "value_snapshot"
+        },
+        {
+          "case_id": "financial_summary_product_profitability_normalize",
+          "message": "Show product profitability last month",
+          "expected_decision": "normalize_intent",
+          "expected_target_intent_class": "product_performance",
+          "expected_resolved_summary_domains": [
+            "product_profitability"
+          ],
+          "expected_resolved_summary_focus": "profitability_snapshot"
+        }
+      ]
+    },
+    {
+      "set_id": "financial_summary_composite_cases",
+      "set_label": "Financial Summary Composite Cases",
+      "cases": [
+        {
+          "case_id": "financial_summary_working_capital_health",
+          "message": "Analyze AR and AP and evaluate business health",
+          "expected_decision": "execute_composite",
+          "expected_target_composite_plan_id": "working_capital_health",
+          "expected_resolved_summary_domains": [
+            "receivable",
+            "payable"
+          ],
+          "expected_resolved_summary_focus": "cross_domain_health"
+        }
+      ]
+    },
+    {
+      "set_id": "financial_summary_clarify_cases",
+      "set_label": "Financial Summary Clarify Cases",
+      "cases": [
+        {
+          "case_id": "financial_summary_no_domain_clarify",
+          "message": "Show me a summary",
+          "expected_decision": "clarify",
+          "expected_reason_type": "financial_summary_domain_clarification"
+        },
+        {
+          "case_id": "financial_summary_single_domain_missing_focus",
+          "message": "Show inventory summary",
+          "expected_decision": "clarify",
+          "expected_reason_type": "financial_summary_focus_clarification"
+        },
+        {
+          "case_id": "financial_summary_sales_domain_unresolved_target",
+          "message": "Show sales summary",
+          "expected_decision": "clarify",
+          "expected_reason_type": "financial_summary_sales_scope_clarification"
+        },
+        {
+          "case_id": "financial_summary_multi_domain_without_health",
+          "message": "Show receivable and inventory summary",
+          "expected_decision": "clarify",
+          "expected_reason_type": "financial_summary_multi_domain_clarification"
+        },
+        {
+          "case_id": "financial_summary_cross_domain_without_supported_profile",
+          "message": "Analyze sales and inventory health together",
+          "expected_decision": "clarify",
+          "expected_reason_type": "financial_summary_composite_scope_clarification"
+        }
+      ]
+    }
+  ],
+  "migration_gate": {
+    "required_before_runtime_enablement": [
+      "All normalize cases pass through the intermediate decision contract.",
+      "Composite case executes only through a governed composite plan id.",
+      "Clarify cases emit governed clarification reason types and business-facing options.",
+      "Sales-only financial_summary requests remain clarify until a governed normalization target is approved.",
+      "No case depends on raw message keyword matching in runtime routing."
+    ]
+  }
+}
