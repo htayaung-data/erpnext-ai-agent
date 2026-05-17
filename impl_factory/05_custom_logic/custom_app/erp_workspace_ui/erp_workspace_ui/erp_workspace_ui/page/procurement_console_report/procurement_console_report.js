@@ -55,7 +55,7 @@
       '.erpw-procurement-report-card-category { font-size:10px; font-weight:760; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; }',
       '.erpw-procurement-report-card-status { display:inline-flex; align-items:center; justify-content:center; min-height:22px; padding:0 9px; border-radius:999px; border:1px solid #d8e3ef; background:#f8fbff; color:#475569; font-size:10px; font-weight:760; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; }',
       '.erpw-procurement-report-card.is-ready .erpw-procurement-report-card-status { border-color:#9fc4d8; background:#eef9fb; color:#0f5f6d; }',
-      '.erpw-procurement-report-card-title { font-size:15.25px; line-height:1.2; font-weight:760; color:#0f172a; }',
+      '.erpw-procurement-report-card-title { font-size:15.25px; line-height:1.2; font-weight:760; color:#0f172a; word-spacing:0.04em; }',
       '.erpw-procurement-report-card-purpose { font-size:12.2px; line-height:1.36; color:#475569; }',
       '.erpw-procurement-report-card-boundary { margin-top:auto; padding-top:7px; border-top:1px solid rgba(219,230,242,0.82); font-size:11.2px; line-height:1.32; color:#64748b; }',
       '.erpw-procurement-report-card-action { margin-top:0; font-size:12px; font-weight:760; color:#12365f; }',

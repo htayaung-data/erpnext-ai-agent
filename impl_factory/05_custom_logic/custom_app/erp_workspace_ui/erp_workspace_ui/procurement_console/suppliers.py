@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from frappe.utils import cstr
 
 from . import common
@@ -78,12 +80,26 @@ def _supplier_rows(filters: dict[str, str]) -> list[dict[str, object]]:
 						"value": "Disabled" if disabled else "Active",
 						"tone": "danger" if disabled else "positive",
 					},
-					"modified": cstr(record.get("modified") or ""),
+					"modified": _format_supplier_modified(record.get("modified")),
 				},
 				"actions": [{"key": "open_record", "label": "Open"}],
 			}
 		)
 	return rows
+
+
+def _format_supplier_modified(value: object) -> str:
+	if not value:
+		return "-"
+	if hasattr(value, "strftime"):
+		return value.strftime("%d %b %Y")
+	fallback = cstr(value).strip()
+	for pattern in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+		try:
+			return datetime.strptime(fallback, pattern).strftime("%d %b %Y")
+		except Exception:
+			continue
+	return fallback.split(".", 1)[0] if fallback else "-"
 
 
 def _supplier_payload(
@@ -101,9 +117,9 @@ def _supplier_payload(
 		},
 		"controls": {
 			"fields": [
-				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", ""), "placeholder": "Select supplier"},
-				{"key": "keyword", "label": "Search supplier text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search supplier text"},
-				{"key": "supplier_group", "label": "Supplier Group", "type": "link", "linkDoctype": "Supplier Group", "value": filters.get("supplier_group", ""), "placeholder": "Select supplier group"},
+				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", ""), "placeholder": "Supplier"},
+				{"key": "keyword", "label": "Supplier search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search supplier"},
+				{"key": "supplier_group", "label": "Group", "type": "link", "linkDoctype": "Supplier Group", "value": filters.get("supplier_group", ""), "placeholder": "Supplier group"},
 				{
 					"key": "disabled",
 					"label": "Status",
