@@ -1,9 +1,25 @@
 # Procurement Console Phase 6C2C RFQ Test Send Deferral Plan
 
 Date: 2026-05-17
-Current implementation commit: `30e4d8902315becdf58099a460378e450175df56`
+Superseded implementation commit: `30e4d8902315becdf58099a460378e450175df56` introduced controlled RFQ test-send runtime. The corrective commit containing this note removes that runtime.
 Protected baseline before this deferral: Phase 6C2A RFQ Send Readiness at `9450691b131489c5ef41aa886da8d78ed972e859`
-Decision scope: documentation only. This note does not enable supplier email send.
+Decision scope: corrective deferral. This note does not enable supplier email send, and the current protected runtime state must contain no active send endpoint or SMTP send path.
+
+## Corrective Runtime Status
+
+A controlled RFQ test-send implementation was attempted in `30e4d8902315becdf58099a460378e450175df56`. That implementation added SMTP environment handling, a backend test-send path, frontend confirmation hooks, controlled-email governance entries, and a Phase 6C2C send smoke.
+
+That runtime is not accepted because the approved business decision is to defer RFQ email/send. The corrective commit containing this document update removes the attempted test-send runtime from source and must be live-aligned before Phase 6C2C can be considered cleanly deferred.
+
+Current protected runtime expectation after the corrective commit:
+
+- No backend RFQ test-send method.
+- No SMTP password/configuration send path in source.
+- No Python SMTP send runtime in the document output module.
+- No enabled RFQ test-send confirmation flow.
+- No Phase 6C2C send smoke or package script.
+- No controlled email test governance endpoint.
+- Supplier Communication, Preview RFQ, Download RFQ PDF, recipient readiness, and disabled Send RFQ remain protected.
 
 ## Decision
 
@@ -14,7 +30,7 @@ The current system should remain in a safe readiness posture:
 - Supplier-specific RFQ Preview remains available.
 - Supplier-specific RFQ PDF Download remains available.
 - Recipient readiness remains visible.
-- Send RFQ remains disabled unless a separately approved test/demo email transport is configured.
+- Send RFQ remains disabled/non-actionable; no test/demo email transport is active in the protected runtime.
 - No production supplier emails should be sent from the ERP at this stage.
 
 This deferral is intentional. It is not a product failure and not a reason to buy more infrastructure immediately.
@@ -43,7 +59,7 @@ The protected RFQ communication surface remains:
 - Download RFQ PDF uses the controlled backend wrapper and stays supplier-specific.
 - Recipient readiness shows supplier/contact/email availability.
 - Email availability is displayed as a productized state, not a raw framework permission error.
-- Send RFQ is visible but disabled/non-actionable unless a future approved phase enables a safe transport.
+- Send RFQ is visible but disabled/non-actionable; a future approved phase is required before any safe transport is added.
 - New RFQ Supplier, Item, and Warehouse autocomplete dropdowns use the accepted below-first placement behavior.
 
 ## Current Non-Scope
@@ -140,7 +156,7 @@ Implementation should use HTTPS API calls where possible so DigitalOcean SMTP po
 
 When the owner decides to reopen RFQ send, create a new governed phase rather than modifying Phase 6C2A informally.
 
-Suggested future phase: `Phase 6C2C2 RFQ Governed Email Send Provider Integration`.
+Suggested future phase: `Phase 6C2C2 RFQ Governed Email Send Provider Integration`, only after owner approval reopens send.
 
 Required scope:
 

@@ -105,18 +105,6 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("Send RFQ", review_send["label"])
         self.assertIn("blocked", review_send["notes"].lower())
 
-        test_send = actions["procurement-managed-rfq-test-send"]
-        self.assertEqual("productized_secondary_action", test_send["classification"])
-        self.assertEqual("controlled_email_test_endpoint", test_send["target_kind"])
-        self.assertIn("test/demo", test_send["notes"])
-        self.assertIn("no native RFQ send", test_send["notes"])
-
-        review_test_send = actions["procurement-rfq-review-test-send"]
-        self.assertEqual("productized_secondary_action", review_test_send["classification"])
-        self.assertEqual("controlled_email_test_endpoint", review_test_send["target_kind"])
-        self.assertIn("test/demo", review_test_send["notes"])
-        self.assertIn("no native RFQ send", review_test_send["notes"])
-
     def test_registry_route_keys_exist_in_manifest(self):
         sales_routes = get_sales_workspace_definition()["routes"]
         procurement_routes = get_procurement_workspace_definition()["routes"]
