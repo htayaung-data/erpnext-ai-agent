@@ -105,48 +105,6 @@
     return Array.isArray(route) && String(route[0] || "") === PAGE_KEY;
   }
 
-  function cleanupForNativeRoute() {
-    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
-      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true });
-      setTimeout(() => window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true }), 0);
-      setTimeout(() => window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true }), 80);
-    }
-  }
-
-  function procurementNativeContextForDoctype(doctype) {
-    const contexts = {
-      "Material Request": { parentLabel: "Purchase Requests", parentRoute: "/desk/procurement-console-worklist/purchase-request-directory", leafLabel: "New Purchase Request" },
-      "Request for Quotation": { parentLabel: "RFQs", parentRoute: "/desk/procurement-console-worklist/rfq-directory", leafLabel: "New RFQ" },
-      "Supplier Quotation": { parentLabel: "Supplier Quotations", parentRoute: "/desk/procurement-console-worklist/supplier-quotation-directory", leafLabel: "New Supplier Quotation" },
-      "Purchase Order": { parentLabel: "Purchase Orders", parentRoute: "/desk/procurement-console-worklist/purchase-order-directory", leafLabel: "New Purchase Order" },
-      "Supplier": { parentLabel: "Suppliers", parentRoute: "/desk/procurement-console-worklist/supplier-directory", leafLabel: "ERP Supplier Form" },
-      "Item": { parentLabel: "Buying Items", parentRoute: "/desk/procurement-console-worklist/buying-item-directory", leafLabel: "ERP Item Form" },
-    };
-    const context = contexts[doctype];
-    if (!context) return null;
-    return Object.assign({
-      workspace: "procurement",
-      doctype,
-      homeLabel: "Procurement Console",
-      homeRoute: "/desk/procurement-console",
-      createdAt: Date.now(),
-    }, context);
-  }
-
-  function rememberProcurementNativeContext(context) {
-    if (!context) return;
-    const nativeChrome = window.erpWorkspaceUiProcurementNativeChrome || {};
-    if (typeof nativeChrome.remember === "function") {
-      nativeChrome.remember(context);
-      return;
-    }
-    try {
-      window.sessionStorage.setItem("erpwProcurementNativeChromeContext", JSON.stringify(context));
-    } catch (error) {
-      window.__erpwProcurementNativeChromeContext = context;
-    }
-  }
-
   function executeTarget(target) {
     if (!target) return;
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
