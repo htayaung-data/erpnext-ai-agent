@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:supplier",
+ "creation": "2026-05-18 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "supplier",
+  "buying_readiness_status",
+  "preferred_rfq_contact",
+  "rfq_recipient_email_override",
+  "buying_note",
+  "readiness_note"
+ ],
+ "fields": [
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "Ready",
+   "fieldname": "buying_readiness_status",
+   "fieldtype": "Select",
+   "label": "Buying Readiness Status",
+   "options": "Ready\nNeeds email\nNeeds contact review\nHold for sourcing",
+   "reqd": 1
+  },
+  {
+   "fieldname": "preferred_rfq_contact",
+   "fieldtype": "Link",
+   "label": "Preferred RFQ Contact",
+   "options": "Contact"
+  },
+  {
+   "fieldname": "rfq_recipient_email_override",
+   "fieldtype": "Data",
+   "label": "RFQ Recipient Email Override",
+   "options": "Email"
+  },
+  {
+   "fieldname": "buying_note",
+   "fieldtype": "Small Text",
+   "label": "Buying Note"
+  },
+  {
+   "fieldname": "readiness_note",
+   "fieldtype": "Small Text",
+   "label": "Readiness Note"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-05-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Procurement Supplier Readiness Profile",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Purchase Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Purchase Master Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Purchase User"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

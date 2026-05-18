@@ -7,7 +7,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr
 
-from . import common, service
+from . import common, service, supplier_readiness
 
 
 RFQ_DOCTYPE = "Request for Quotation"
@@ -314,11 +314,36 @@ def _rfq_supplier_readiness(doc: object, outgoing_email: dict[str, object]) -> l
     for supplier_row in _rfq_suppliers(doc):
         supplier = supplier_row["supplier"]
         row_contact = cstr(supplier_row.get("contact")).strip()
+        profile = supplier_readiness.get_supplier_profile_for_readiness(supplier)
+        profile_status = cstr(profile.get("buying_readiness_status")).strip()
+        profile_note = cstr(profile.get("readiness_note")).strip()
+        profile_recipient = profile.get("recipient") if isinstance(profile.get("recipient"), dict) else {}
+        controlled_email = cstr(profile_recipient.get("email")).strip()
+        controlled_contact = cstr(profile_recipient.get("contact")).strip()
+        controlled_contact_name = cstr(profile_recipient.get("contact_name")).strip()
+        controlled_source = cstr(profile_recipient.get("source")).strip()
+        controlled_source_label = cstr(profile_recipient.get("source_label")).strip()
+
         contact_info = _contact_info(row_contact) if row_contact else _supplier_linked_contact(supplier)
-        email = cstr(supplier_row.get("email_id") or contact_info.get("email") or _supplier_direct_email(supplier)).strip()
-        contact = cstr(row_contact or contact_info.get("contact")).strip()
-        contact_name = cstr(contact_info.get("contact_name") or contact).strip()
-        if not email:
+        fallback_email = cstr(supplier_row.get("email_id") or contact_info.get("email") or _supplier_direct_email(supplier)).strip()
+        fallback_contact = cstr(row_contact or contact_info.get("contact")).strip()
+        fallback_contact_name = cstr(contact_info.get("contact_name") or fallback_contact).strip()
+        email = controlled_email or fallback_email
+        contact = controlled_contact or fallback_contact
+        contact_name = controlled_contact_name or fallback_contact_name
+        if profile_status == supplier_readiness.HOLD_FOR_SOURCING:
+            status = "blocked"
+            label = "Hold for sourcing"
+            reason = profile_note or "Supplier is on hold for sourcing."
+        elif profile_status == supplier_readiness.NEEDS_EMAIL:
+            status = "missing_email"
+            label = "Missing email"
+            reason = profile_note or "Add supplier contact/email before send can be enabled."
+        elif profile_status == supplier_readiness.NEEDS_CONTACT_REVIEW:
+            status = "needs_review"
+            label = "Needs contact review"
+            reason = profile_note or "Review the supplier RFQ contact before send can be enabled."
+        elif not email:
             status = "missing_email"
             label = "Missing email"
             reason = "Add supplier contact/email before send can be enabled."
@@ -334,6 +359,16 @@ def _rfq_supplier_readiness(doc: object, outgoing_email: dict[str, object]) -> l
             status = "ready"
             label = "Ready"
             reason = "Supplier recipient is ready for a future governed send step."
+        if controlled_source:
+            email_source = controlled_source
+        elif supplier_row.get("email_id"):
+            email_source = "rfq_supplier"
+        elif contact_info.get("email"):
+            email_source = "contact"
+        elif email:
+            email_source = "supplier"
+        else:
+            email_source = ""
         rows.append(
             {
                 "supplier": supplier,
@@ -341,7 +376,10 @@ def _rfq_supplier_readiness(doc: object, outgoing_email: dict[str, object]) -> l
                 "contact": contact,
                 "contact_name": contact_name,
                 "email": email,
-                "email_source": "rfq_supplier" if supplier_row.get("email_id") else "contact" if contact_info.get("email") else "supplier" if email else "",
+                "email_source": email_source,
+                "email_source_label": controlled_source_label or "",
+                "buying_readiness_status": profile_status,
+                "buying_readiness_note": profile_note,
                 "quote_status": supplier_row.get("quote_status") or "",
                 "readiness_status": status,
                 "readiness_label": label,
@@ -354,7 +392,15 @@ def _rfq_supplier_readiness(doc: object, outgoing_email: dict[str, object]) -> l
 def _rfq_send_readiness(doc: object) -> dict[str, object]:
     outgoing_email = _outgoing_email_status()
     suppliers = _rfq_supplier_readiness(doc, outgoing_email)
-    counts = {"total": len(suppliers), "ready": 0, "missing_email": 0, "invalid_email": 0, "email_unavailable": 0}
+    counts = {
+        "total": len(suppliers),
+        "ready": 0,
+        "missing_email": 0,
+        "invalid_email": 0,
+        "email_unavailable": 0,
+        "needs_review": 0,
+        "blocked": 0,
+    }
     for row in suppliers:
         status = cstr(row.get("readiness_status")).strip()
         counts[status] = int(counts.get(status, 0)) + 1

@@ -1,0 +1,104 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-05-18 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "supplier",
+  "profile",
+  "changed_by",
+  "changed_at",
+  "changed_fields",
+  "before_values",
+  "after_values",
+  "readiness_note"
+ ],
+ "fields": [
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "profile",
+   "fieldtype": "Link",
+   "label": "Profile",
+   "options": "Procurement Supplier Readiness Profile",
+   "read_only": 1
+  },
+  {
+   "fieldname": "changed_by",
+   "fieldtype": "Data",
+   "label": "Changed By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "changed_at",
+   "fieldtype": "Datetime",
+   "label": "Changed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "changed_fields",
+   "fieldtype": "Small Text",
+   "label": "Changed Fields",
+   "read_only": 1
+  },
+  {
+   "fieldname": "before_values",
+   "fieldtype": "Long Text",
+   "label": "Before Values",
+   "read_only": 1
+  },
+  {
+   "fieldname": "after_values",
+   "fieldtype": "Long Text",
+   "label": "After Values",
+   "read_only": 1
+  },
+  {
+   "fieldname": "readiness_note",
+   "fieldtype": "Small Text",
+   "label": "Readiness Note",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-05-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Procurement Supplier Readiness Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "Purchase Manager"
+  },
+  {
+   "read": 1,
+   "role": "Purchase Master Manager"
+  },
+  {
+   "read": 1,
+   "role": "Purchase User"
+  },
+  {
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

@@ -18,6 +18,8 @@ READABLE_DOCTYPES = {
     "Purchase Invoice",
     "Request for Quotation",
     "Supplier Quotation",
+    "Procurement Supplier Readiness Profile",
+    "Procurement Supplier Readiness Log",
 }
 WRITEABLE_DOCTYPES = set()
 CREATEABLE_DOCTYPES = set()
@@ -37,6 +39,8 @@ SAVED_MATERIAL_REQUESTS = {}
 SAVED_RFQS = {}
 SAVED_SUPPLIER_QUOTATIONS = {}
 SAVED_PURCHASE_ORDERS = {}
+SUPPLIER_READINESS_PROFILES = {}
+SUPPLIER_READINESS_LOGS = []
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -74,6 +78,14 @@ def _count(doctype, filters=None):
 def _filter_rows(doctype, rows, filters):
     if not filters:
         return rows
+    if isinstance(filters, dict):
+        filtered = list(rows)
+        for fieldname, value in filters.items():
+            if isinstance(value, (list, tuple)) and len(value) == 2 and value[0] == "in":
+                filtered = [row for row in filtered if row.get(fieldname) in set(value[1] or [])]
+            else:
+                filtered = [row for row in filtered if row.get(fieldname) == value]
+        return filtered
     filtered = list(rows)
     for condition in filters:
         if not isinstance(condition, (list, tuple)) or len(condition) < 4:
@@ -305,6 +317,10 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
         if EMAIL_ACCOUNT_GET_ALL_RAISES:
             raise _FakePermissionError("Insufficient Permissions for Email Account")
         return _filter_rows(doctype, list(EMAIL_ACCOUNTS), filters)
+    if doctype == "Procurement Supplier Readiness Profile":
+        return _filter_rows(doctype, list(SUPPLIER_READINESS_PROFILES.values()), filters)
+    if doctype == "Procurement Supplier Readiness Log":
+        return _filter_rows(doctype, list(SUPPLIER_READINESS_LOGS), filters)
     if doctype == "Request for Quotation Supplier":
         rows = [
             {"parent": "RFQ-001", "supplier": "SUP-001", "supplier_name": "Alpha Supplier", "quote_status": "Pending"},
@@ -749,9 +765,68 @@ class _FakePurchaseOrderDoc:
         return self
 
 
+class _FakeReadinessProfileDoc:
+    def __init__(self, name=None, values=None):
+        values = dict(values or {})
+        self.doctype = "Procurement Supplier Readiness Profile"
+        self.name = name or values.get("name") or values.get("supplier") or ""
+        self.supplier = values.get("supplier") or self.name
+        self.buying_readiness_status = values.get("buying_readiness_status") or "Ready"
+        self.preferred_rfq_contact = values.get("preferred_rfq_contact") or ""
+        self.rfq_recipient_email_override = values.get("rfq_recipient_email_override") or ""
+        self.buying_note = values.get("buying_note") or ""
+        self.readiness_note = values.get("readiness_note") or ""
+        self.modified = values.get("modified") or "2026-05-03 00:00:00"
+        self.modified_by = values.get("modified_by") or fake_frappe.session.user
+        self.owner = values.get("owner") or fake_frappe.session.user
+
+    def _row(self):
+        return {
+            "name": self.name,
+            "supplier": self.supplier,
+            "buying_readiness_status": self.buying_readiness_status,
+            "preferred_rfq_contact": self.preferred_rfq_contact,
+            "rfq_recipient_email_override": self.rfq_recipient_email_override,
+            "buying_note": self.buying_note,
+            "readiness_note": self.readiness_note,
+            "modified": self.modified,
+            "modified_by": self.modified_by,
+            "owner": self.owner,
+        }
+
+    def insert(self, ignore_permissions=False):
+        if not self.name:
+            self.name = self.supplier
+        SUPPLIER_READINESS_PROFILES[self.supplier] = self._row()
+        return self
+
+    def save(self, ignore_permissions=False):
+        if not self.name:
+            self.name = self.supplier
+        SUPPLIER_READINESS_PROFILES[self.supplier] = self._row()
+        return self
+
+
+class _FakeReadinessLogDoc:
+    def __init__(self, values=None):
+        values = dict(values or {})
+        self.doctype = "Procurement Supplier Readiness Log"
+        self.name = values.get("name") or f"LOG-{len(SUPPLIER_READINESS_LOGS) + 1:03d}"
+        for key, value in values.items():
+            setattr(self, key, value)
+
+    def insert(self, ignore_permissions=False):
+        SUPPLIER_READINESS_LOGS.append(dict(self.__dict__))
+        return self
+
+
 def _get_doc(*args, **kwargs):
     if args and isinstance(args[0], dict):
         doctype = args[0].get("doctype")
+        if doctype == "Procurement Supplier Readiness Profile":
+            return _FakeReadinessProfileDoc(values=args[0])
+        if doctype == "Procurement Supplier Readiness Log":
+            return _FakeReadinessLogDoc(values=args[0])
         if doctype == "Request for Quotation":
             return _FakeRFQDoc(values=args[0])
         if doctype == "Supplier Quotation":
@@ -759,6 +834,12 @@ def _get_doc(*args, **kwargs):
         if doctype == "Purchase Order":
             return _FakePurchaseOrderDoc(values=args[0])
         return _FakeMaterialRequestDoc(values=args[0])
+    if len(args) >= 2 and args[0] == "Procurement Supplier Readiness Profile":
+        name = args[1]
+        row = next((row for row in SUPPLIER_READINESS_PROFILES.values() if row.get("name") == name or row.get("supplier") == name), None)
+        if row:
+            return _FakeReadinessProfileDoc(name=row.get("name"), values=row)
+        raise Exception("Document not found")
     if len(args) >= 2 and args[0] == "Purchase Order":
         name = args[1]
         if name in SAVED_PURCHASE_ORDERS:
@@ -971,6 +1052,7 @@ fake_frappe.has_permission = _has_permission
 fake_frappe.get_list = _get_list
 fake_frappe.get_all = _get_all
 fake_frappe.get_doc = _get_doc
+fake_frappe.new_doc = lambda doctype: _FakeReadinessProfileDoc(values={"doctype": doctype}) if doctype == "Procurement Supplier Readiness Profile" else _FakeReadinessLogDoc({"doctype": doctype})
 fake_frappe.get_meta = lambda doctype: _FakeMeta(doctype)
 fake_frappe.get_print = lambda doctype, name, print_format=None, doc=None, as_pdf=False, letterhead=None, **kwargs: (
     f"<div class='print-format'><h1>{doctype} {name}</h1><span class='supplier'>{getattr(doc, 'vendor', getattr(doc, 'supplier', ''))}</span></div>".encode("utf-8")
@@ -1034,7 +1116,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_output, document_reviews, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, worklist
+from erp_workspace_ui.procurement_console import document_output, document_reviews, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, supplier_readiness, worklist
 
 
 def _set_user(user, roles):
@@ -1122,6 +1204,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             "Purchase Invoice",
             "Request for Quotation",
             "Supplier Quotation",
+            "Procurement Supplier Readiness Profile",
+            "Procurement Supplier Readiness Log",
         )
         _set_writeable_doctypes()
         _set_createable_doctypes()
@@ -1139,6 +1223,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         SAVED_RFQS.clear()
         SAVED_SUPPLIER_QUOTATIONS.clear()
         SAVED_PURCHASE_ORDERS.clear()
+        SUPPLIER_READINESS_PROFILES.clear()
+        SUPPLIER_READINESS_LOGS.clear()
         fake_frappe.local.response = {}
 
     def test_guest_bootstrap_raises_permission_error(self):
@@ -2239,6 +2325,105 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
                 self.assertNotIn("open_supplier_form", payload["action_targets"])
                 self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_suppliers", "refresh"])
                 self.assertNotIn("Open ERP Supplier Form", str(payload))
+
+    def test_supplier_readiness_profile_is_manager_editable_and_audited(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+
+        payload = supplier_readiness.save_supplier_readiness_profile(
+            "SUP-001",
+            {
+                "buying_readiness_status": "Ready",
+                "preferred_rfq_contact": "CONT-001",
+                "rfq_recipient_email_override": "sourcing@example.com",
+                "buying_note": "Use negotiated packaging.",
+                "readiness_note": "",
+            },
+        )
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(SUPPLIER_READINESS_PROFILES["SUP-001"]["rfq_recipient_email_override"], "sourcing@example.com")
+        self.assertEqual(SUPPLIER_READINESS_PROFILES["SUP-001"]["preferred_rfq_contact"], "CONT-001")
+        self.assertEqual(len(SUPPLIER_READINESS_LOGS), 1)
+        self.assertIn("rfq_recipient_email_override", SUPPLIER_READINESS_LOGS[0]["changed_fields"])
+        detail = supplier_detail.get_supplier_detail_context("SUP-001")
+        self.assertTrue(detail["detail"]["buying_profile"]["can_edit"])
+        self.assertEqual(detail["detail"]["buying_profile"]["recipient"]["email"], "sourcing@example.com")
+        self.assertNotIn("Open ERP Supplier Form", str(detail))
+
+    def test_supplier_readiness_profile_is_read_only_for_purchase_user(self):
+        _set_user("purchase@example.com", ["Purchase User"])
+
+        payload = supplier_readiness.save_supplier_readiness_profile("SUP-001", {"buying_readiness_status": "Ready"})
+
+        self.assertEqual(payload["state"]["kind"], "restricted")
+        self.assertEqual({}, SUPPLIER_READINESS_PROFILES)
+        detail = supplier_detail.get_supplier_detail_context("SUP-001")
+        self.assertFalse(detail["detail"]["buying_profile"]["can_edit"])
+        self.assertIn("Purchase Manager", detail["detail"]["buying_profile"]["read_only_reason"])
+
+    def test_supplier_readiness_rejects_unknown_forbidden_invalid_and_unlinked_payload(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+
+        cases = [
+            {"supplier_group": "Services"},
+            {"unexpected_field": "x"},
+            {"rfq_recipient_email_override": "not-an-email"},
+            {"preferred_rfq_contact": "CONT-999"},
+            {"buying_readiness_status": "Needs email", "readiness_note": ""},
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                response = supplier_readiness.save_supplier_readiness_profile("SUP-001", payload)
+                self.assertEqual(response["state"]["kind"], "error")
+        self.assertEqual({}, SUPPLIER_READINESS_PROFILES)
+        self.assertEqual([], SUPPLIER_READINESS_LOGS)
+
+    def test_supplier_readiness_hold_blocks_rfq_readiness_without_send_side_effects(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        supplier_readiness.save_supplier_readiness_profile(
+            "SUP-001",
+            {
+                "buying_readiness_status": "Hold for sourcing",
+                "preferred_rfq_contact": "CONT-001",
+                "rfq_recipient_email_override": "",
+                "buying_note": "",
+                "readiness_note": "Supplier paused by buyer.",
+            },
+        )
+
+        context = document_output.get_rfq_send_readiness_context("PUR-RFQ-MULTI")
+
+        statuses = {row["supplier"]: row for row in context["suppliers"]}
+        self.assertEqual(statuses["SUP-001"]["readiness_status"], "blocked")
+        self.assertEqual(statuses["SUP-001"]["readiness_label"], "Hold for sourcing")
+        self.assertIn("Supplier paused", statuses["SUP-001"]["reason"])
+        self.assertFalse(context["can_send"])
+        self.assertEqual(context["summary"]["blocked"], 1)
+        self.assertEqual([], [row for row in SUPPLIER_READINESS_LOGS if row.get("doctype") in {"Communication", "Email Queue"}])
+        self.assertEqual({}, SAVED_SUPPLIER_QUOTATIONS)
+        self.assertEqual({}, SAVED_PURCHASE_ORDERS)
+
+    def test_supplier_readiness_override_feeds_rfq_recipient_context(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        EMAIL_ACCOUNTS.append({"name": "Buying", "email_id": "buying@example.com", "enable_outgoing": 1, "default_outgoing": 1, "awaiting_password": 0})
+        supplier_readiness.save_supplier_readiness_profile(
+            "SUP-001",
+            {
+                "buying_readiness_status": "Ready",
+                "preferred_rfq_contact": "",
+                "rfq_recipient_email_override": "rfq.override@example.com",
+                "buying_note": "",
+                "readiness_note": "",
+            },
+        )
+
+        context = document_output.get_rfq_send_readiness_context("PUR-RFQ-MULTI")
+
+        statuses = {row["supplier"]: row for row in context["suppliers"]}
+        self.assertEqual(statuses["SUP-001"]["email"], "rfq.override@example.com")
+        self.assertEqual(statuses["SUP-001"]["email_source"], "readiness_override")
+        self.assertEqual(statuses["SUP-001"]["readiness_status"], "ready")
+        self.assertFalse(context["can_send"])
 
     def test_supplier_detail_restricted_for_finance_executive_only(self):
         _set_user("approver@example.com", ["Finance Lead Approver", "Executive Approver"])

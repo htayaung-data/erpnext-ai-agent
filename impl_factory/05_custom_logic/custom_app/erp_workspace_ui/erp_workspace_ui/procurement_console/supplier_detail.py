@@ -5,7 +5,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt
 
-from . import common, service
+from . import common, service, supplier_readiness
 
 
 SUPPLIER_FIELDS = ["name", "supplier_name", "supplier_group", "disabled", "modified"]
@@ -132,6 +132,7 @@ def _detail_payload(
 				"supplier_group": record.get("supplier_group") or "",
 				"status": "Disabled" if disabled else "Active",
 			},
+			"buying_profile": supplier_readiness.get_supplier_profile_context(name, context),
 			"recent_purchase_orders": _purchase_order_table(recent_purchase_orders, "Recent purchase orders"),
 			"open_purchase_orders": _purchase_order_table(open_purchase_orders, "Open or overdue purchase orders"),
 			"rfqs": _rfq_table(rfqs),

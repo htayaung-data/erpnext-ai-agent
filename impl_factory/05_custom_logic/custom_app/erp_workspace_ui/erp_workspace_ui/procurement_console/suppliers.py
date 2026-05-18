@@ -4,7 +4,7 @@ from datetime import datetime
 
 from frappe.utils import cstr
 
-from . import common
+from . import common, supplier_readiness
 
 
 SUPPLIER_FIELDS = ["name", "supplier_name", "supplier_group", "disabled", "modified"]
@@ -66,6 +66,7 @@ def _supplier_rows(filters: dict[str, str]) -> list[dict[str, object]]:
 		if not name:
 			continue
 		disabled = bool(record.get("disabled"))
+		readiness = supplier_readiness.supplier_readiness_chip(name)
 		rows.append(
 			{
 				"key": name,
@@ -79,6 +80,10 @@ def _supplier_rows(filters: dict[str, str]) -> list[dict[str, object]]:
 					"status": {
 						"value": "Disabled" if disabled else "Active",
 						"tone": "danger" if disabled else "positive",
+					},
+					"readiness": {
+						"value": readiness.get("value") or "No profile",
+						"tone": readiness.get("tone") or "neutral",
 					},
 					"modified": _format_supplier_modified(record.get("modified")),
 				},
@@ -143,6 +148,7 @@ def _supplier_payload(
 				{"key": "supplier", "label": "Supplier"},
 				{"key": "group", "label": "Group"},
 				{"key": "status", "label": "Status"},
+				{"key": "readiness", "label": "Readiness"},
 				{"key": "modified", "label": "Modified"},
 			],
 			"rows": rows,
