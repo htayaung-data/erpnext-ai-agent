@@ -44,6 +44,7 @@ Freeze and governance status:
 - Current freeze marker tag: `sales-console-freeze-v2`.
 - Procurement Console Phase 3 Stable Baseline is accepted on 2026-05-10 after owner manual review confirmed the current Phase 3 surface clean.
 - Procurement Console Phase 7D1 native escape closure is protected on 2026-05-18 after cleanup removed dead native chrome helpers and post-live protected gates passed.
+- Procurement Console Phase 7E operations capability gap audit is documented on 2026-05-18 as a docs-only Purchase Manager roadmap after native escape closure.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -83,10 +84,10 @@ Current routing truth:
 - `/desk/sales-console-worklist/item-detail/<item>` is the productized Item Detail page.
 - bare `/desk/sales-console-worklist` intentionally shows a guard state because no queue key was supplied.
 - `/desk/sales-console-report/<report-key>` is the shared report shell.
-- Procurement Console route names are active Phase 3 registry entries: `procurement-console-home`, `procurement-console`, `procurement-console-worklist`, `procurement-console-report`, `procurement-console-po-follow-up`, `procurement-console-supplier`, `procurement-console-item`, `procurement-console-purchase-request-review`, `procurement-console-rfq-review`, and `procurement-console-supplier-quotation-review`.
+- Procurement Console route names are active protected Procurement entries including `procurement-console-home`, `procurement-console`, `procurement-console-worklist`, `procurement-console-report`, `procurement-console-po-follow-up`, `procurement-console-supplier`, `procurement-console-item`, `procurement-console-purchase-request-review`, `procurement-console-purchase-request-form`, `procurement-console-rfq-review`, `procurement-console-rfq-form`, `procurement-console-supplier-quotation-review`, `procurement-console-supplier-quotation-form`, and `procurement-console-purchase-order-form`.
 - `/desk/procurement-console-worklist/<queue-key>` uses the shared worklist shell.
-- `/desk/procurement-console-report/supplier-quotation-comparison` uses the shared report shell.
-- Procurement native create forms remain governed Phase 3 exceptions until a future owner-approved Managed Procurement Forms phase.
+- `/desk/procurement-console-report/<report-key>` uses the shared report shell for Quote Comparison, Purchase Order Analysis, Demand-to-Order Coverage, and Item Purchase History.
+- Phase 7D1 supersedes normal-role Procurement native create/open form exceptions. Managed PR/RFQ/SQ/PO draft forms are the productized create/edit surfaces; normal Procurement users and managers must not receive raw ERPNext form escape links.
 
 Current visible report keys:
 
@@ -129,6 +130,7 @@ Documents in this folder:
 - `procurement-console-phase6c2c-rfq-test-send-deferral-plan-2026-05-17.md`
 - `procurement-console-phase7d-native-escape-closure-and-manager-capability-plan-2026-05-17.md`
 - `procurement-console-phase7d1-native-escape-closure-baseline-2026-05-18.md`
+- `procurement-console-phase7e-operations-capability-gap-audit-2026-05-18.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
