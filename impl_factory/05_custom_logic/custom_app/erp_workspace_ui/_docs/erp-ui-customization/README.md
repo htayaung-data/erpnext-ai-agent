@@ -43,6 +43,7 @@ Freeze and governance status:
 - Sales Console v2 freeze/protection package is accepted on 2026-05-09 after owner manual Premium UI confirmation.
 - Current freeze marker tag: `sales-console-freeze-v2`.
 - Procurement Console Phase 3 Stable Baseline is accepted on 2026-05-10 after owner manual review confirmed the current Phase 3 surface clean.
+- Procurement Console Phase 7D1 native escape closure is protected on 2026-05-18 after cleanup removed dead native chrome helpers and post-live protected gates passed.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -127,6 +128,7 @@ Documents in this folder:
 - `procurement-console-phase6c2b-rfq-governed-send-design-plan-2026-05-16.md`
 - `procurement-console-phase6c2c-rfq-test-send-deferral-plan-2026-05-17.md`
 - `procurement-console-phase7d-native-escape-closure-and-manager-capability-plan-2026-05-17.md`
+- `procurement-console-phase7d1-native-escape-closure-baseline-2026-05-18.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
