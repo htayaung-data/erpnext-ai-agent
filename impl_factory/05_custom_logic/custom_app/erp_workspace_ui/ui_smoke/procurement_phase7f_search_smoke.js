@@ -100,17 +100,6 @@ async function worklistPayload(page, queueKey, filters = {}) {
   });
 }
 
-async function clientGetList(page, doctype, filters, fields) {
-  return page.evaluate(async ({ doctype, filters, fields }) => {
-    try {
-      const response = await frappe.call({ method: "frappe.client.get_list", args: { doctype, filters, fields, limit_page_length: 20 } });
-      return response.message || [];
-    } catch (error) {
-      return [];
-    }
-  }, { doctype, filters, fields });
-}
-
 function rows(payload) {
   return payload && payload.results && Array.isArray(payload.results.rows) ? payload.results.rows : [];
 }
@@ -169,25 +158,26 @@ async function discoverSearchFixtures(page) {
   const requestPayload = await worklistPayload(page, "purchase_request_directory");
   const requestRow = rows(requestPayload)[0];
   assert(requestRow, "Purchase Request Directory has no rows to test search");
-  const requestItems = await clientGetList(page, "Material Request Item", { parent: requestRow.name }, ["item_code", "item_name", "warehouse"]);
-  const requestItem = requestItems[0] || {};
+  const requestContext = await reviewContext(page, "erp_workspace_ui.procurement_console.document_reviews.get_purchase_request_review_context", "material_request", requestRow.name);
+  const requestItemRow = sectionRows(requestContext, "items")[0] || {};
+  const requestItemCell = requestItemRow.cells && requestItemRow.cells.item;
   fixtures.request = {
     name: requestRow.name,
     idTerm: requestRow.name,
-    itemTerm: firstNonEmpty(requestItem.item_name, requestItem.item_code),
-    warehouseTerm: firstNonEmpty(requestItem.warehouse),
+    itemTerm: firstNonEmpty(requestItemCell && requestItemCell.meta, requestItemCell && requestItemCell.value),
+    warehouseTerm: firstNonEmpty(cellValue(requestItemRow, "warehouse")),
   };
 
   const poPayload = await worklistPayload(page, "purchase_order_directory");
   const poRow = rows(poPayload)[0];
   assert(poRow, "Purchase Order Directory has no rows to test search");
-  const poItems = await clientGetList(page, "Purchase Order Item", { parent: poRow.name }, ["item_code", "item_name"]);
-  const poItem = poItems[0] || {};
+  const poContext = await callMethod(page, "erp_workspace_ui.procurement_console.managed_purchase_order.get_managed_purchase_order_context", { name: poRow.name });
+  const poItem = ((poContext.form && poContext.form.items) || [])[0] || {};
   fixtures.po = {
     name: poRow.name,
     idTerm: poRow.name,
     supplierTerm: firstNonEmpty(poRow.cells && poRow.cells.order && poRow.cells.order.meta, cellValue(poRow, "supplier")),
-    itemTerm: firstNonEmpty(poItem.item_name, poItem.item_code),
+    itemTerm: firstNonEmpty(poItem.item_code),
   };
 
   const rfqPayload = await worklistPayload(page, "rfq_directory");
