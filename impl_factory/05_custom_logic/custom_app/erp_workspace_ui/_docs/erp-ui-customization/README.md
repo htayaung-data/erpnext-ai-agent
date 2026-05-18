@@ -131,6 +131,7 @@ Documents in this folder:
 - `procurement-console-phase7d-native-escape-closure-and-manager-capability-plan-2026-05-17.md`
 - `procurement-console-phase7d1-native-escape-closure-baseline-2026-05-18.md`
 - `procurement-console-phase7e-operations-capability-gap-audit-2026-05-18.md`
+- `procurement-console-phase7e1-supplier-buying-profile-contact-readiness-design-plan-2026-05-18.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
