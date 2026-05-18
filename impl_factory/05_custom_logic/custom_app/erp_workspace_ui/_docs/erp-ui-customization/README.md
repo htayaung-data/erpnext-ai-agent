@@ -45,6 +45,7 @@ Freeze and governance status:
 - Procurement Console Phase 3 Stable Baseline is accepted on 2026-05-10 after owner manual review confirmed the current Phase 3 surface clean.
 - Procurement Console Phase 7D1 native escape closure is protected on 2026-05-18 after cleanup removed dead native chrome helpers and post-live protected gates passed.
 - Procurement Console Phase 7E operations capability gap audit is documented on 2026-05-18 as a docs-only Purchase Manager roadmap after native escape closure.
+- Procurement Console Phase 7G Quick Find operations review is documented on 2026-05-19 as a docs-only design review; implementation is deferred.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -132,6 +133,7 @@ Documents in this folder:
 - `procurement-console-phase7d1-native-escape-closure-baseline-2026-05-18.md`
 - `procurement-console-phase7e-operations-capability-gap-audit-2026-05-18.md`
 - `procurement-console-phase7e1-supplier-buying-profile-contact-readiness-design-plan-2026-05-18.md`
+- `procurement-console-phase7g-quick-find-operations-review-2026-05-19.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
