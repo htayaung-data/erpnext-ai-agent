@@ -27,7 +27,12 @@ def item_filters(filters: dict[str, str] | None = None) -> list[list[object]]:
 		conditions.append(["Item", "name", "=", item])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
-		conditions.append(["Item", "item_name", "like", f"%{keyword}%"])
+		common.apply_keyword_name_filter(
+			conditions,
+			"Item",
+			keyword,
+			common.matching_parent_names_for_keyword("Item", keyword, ["name", "item_code", "item_name", "item_group", "brand"]),
+		)
 	item_group = cstr(applied.get("item_group")).strip()
 	if item_group:
 		conditions.append(["Item", "item_group", "=", item_group])
@@ -108,7 +113,7 @@ def _item_directory_payload(
 		"controls": {
 			"fields": [
 				{"key": "item", "label": "Item", "type": "link", "linkDoctype": "Item", "value": filters.get("item", ""), "placeholder": "Select item"},
-				{"key": "keyword", "label": "Search item text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search item text"},
+				{"key": "keyword", "label": "Search item, name, or group", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search item, name, or group"},
 				{"key": "item_group", "label": "Item Group", "type": "link", "linkDoctype": "Item Group", "value": filters.get("item_group", ""), "placeholder": "Select item group"},
 				{
 					"key": "disabled",

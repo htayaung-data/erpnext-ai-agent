@@ -19,7 +19,12 @@ def supplier_filters(filters: dict[str, str] | None = None) -> list[list[object]
 		conditions.append(["Supplier", "name", "=", supplier])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
-		conditions.append(["Supplier", "supplier_name", "like", f"%{keyword}%"])
+		common.apply_keyword_name_filter(
+			conditions,
+			"Supplier",
+			keyword,
+			common.matching_parent_names_for_keyword("Supplier", keyword, ["name", "supplier_name", "supplier_group"]),
+		)
 	group = cstr(applied.get("supplier_group")).strip()
 	if group:
 		conditions.append(["Supplier", "supplier_group", "=", group])
@@ -123,7 +128,7 @@ def _supplier_payload(
 		"controls": {
 			"fields": [
 				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", ""), "placeholder": "Supplier"},
-				{"key": "keyword", "label": "Supplier search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search supplier"},
+				{"key": "keyword", "label": "Search supplier or group", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search supplier or group"},
 				{"key": "supplier_group", "label": "Group", "type": "link", "linkDoctype": "Supplier Group", "value": filters.get("supplier_group", ""), "placeholder": "Supplier group"},
 				{
 					"key": "disabled",

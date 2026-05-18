@@ -44,7 +44,8 @@
     "test:procurement-phase6c1": "node procurement_phase6c1_smoke.js",
     "test:procurement-phase6c2a": "node procurement_phase6c2a_smoke.js",
     "test:procurement-phase7d1": "node procurement_phase7d1_smoke.js",
-    "test:procurement-phase7e1a": "node procurement_phase7e1a_smoke.js"
+    "test:procurement-phase7e1a": "node procurement_phase7e1a_smoke.js",
+    "test:procurement-phase7f-search": "node procurement_phase7f_search_smoke.js"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

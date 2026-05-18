@@ -50,7 +50,20 @@ def rfq_filters(filters: dict[str, str] | None = None, queue: str = "directory")
 		conditions.append(["Request for Quotation", "name", "=", request_for_quotation])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
-		conditions.append(["Request for Quotation", "name", "like", f"%{keyword}%"])
+		common.apply_keyword_name_filter(
+			conditions,
+			"Request for Quotation",
+			keyword,
+			common.matching_parent_names_for_keyword(
+				"Request for Quotation",
+				keyword,
+				["name", "subject"],
+				[
+					{"doctype": "Request for Quotation Supplier", "fields": ["supplier", "supplier_name"]},
+					{"doctype": "Request for Quotation Item", "fields": ["item_code", "item_name"]},
+				],
+			),
+		)
 	company = cstr(applied.get("company")).strip()
 	if company:
 		conditions.append(["Request for Quotation", "company", "=", company])
@@ -76,7 +89,17 @@ def supplier_quotation_filters(filters: dict[str, str] | None = None, queue: str
 		conditions.append(["Supplier Quotation", "name", "=", supplier_quotation])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
-		conditions.append(["Supplier Quotation", "name", "like", f"%{keyword}%"])
+		common.apply_keyword_name_filter(
+			conditions,
+			"Supplier Quotation",
+			keyword,
+			common.matching_parent_names_for_keyword(
+				"Supplier Quotation",
+				keyword,
+				["name", "supplier", "supplier_name", "request_for_quotation"],
+				[{"doctype": "Supplier Quotation Item", "fields": ["item_code", "item_name", "request_for_quotation"]}],
+			),
+		)
 	supplier = cstr(applied.get("supplier")).strip()
 	if supplier:
 		conditions.append(["Supplier Quotation", "supplier", "=", supplier])
@@ -476,7 +499,7 @@ def _get_all(doctype: str, filters: dict[str, object] | None = None, fields: lis
 def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
 		{"key": "request_for_quotation", "label": "RFQ", "type": "link", "linkDoctype": "Request for Quotation", "value": filters.get("request_for_quotation", ""), "placeholder": "Select RFQ"},
-		{"key": "keyword", "label": "Search RFQ text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search RFQ text"},
+		{"key": "keyword", "label": "Search RFQ, supplier, or item", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search RFQ, supplier, or item"},
 		{
 			"key": "status",
 			"label": "Status",
@@ -497,7 +520,7 @@ def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 def _supplier_quotation_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
 		{"key": "supplier_quotation", "label": "Supplier Quotation", "type": "link", "linkDoctype": "Supplier Quotation", "value": filters.get("supplier_quotation", ""), "placeholder": "Select supplier quotation"},
-		{"key": "keyword", "label": "Search quotation text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search quotation text"},
+		{"key": "keyword", "label": "Search quotation, supplier, or item", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search quotation, supplier, or item"},
 		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", ""), "placeholder": "Select supplier"},
 		{
 			"key": "status",

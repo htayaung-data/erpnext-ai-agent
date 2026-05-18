@@ -83,6 +83,79 @@ def get_list(
 		return []
 
 
+def _get_all_unchecked(
+	doctype: str,
+	fields: list[str],
+	filters: list | dict | None = None,
+	order_by: str | None = None,
+	limit: int = ROW_LIMIT,
+) -> list[dict[str, Any]]:
+	try:
+		return list(
+			frappe.get_all(
+				doctype,
+				fields=fields,
+				filters=filters or [],
+				order_by=order_by,
+				limit_page_length=limit,
+			)
+		)
+	except Exception:
+		return []
+
+
+def _append_unique(target: list[str], seen: set[str], value: object) -> None:
+	name = cstr(value).strip()
+	if name and name not in seen:
+		seen.add(name)
+		target.append(name)
+
+
+def matching_parent_names_for_keyword(
+	parent_doctype: str,
+	keyword: str,
+	parent_fields: list[str],
+	child_specs: list[dict[str, object]] | None = None,
+	limit: int | None = None,
+) -> list[str]:
+	term = cstr(keyword).strip()
+	if not term:
+		return []
+	row_limit = limit or ROW_LIMIT * 4
+	like_value = f"%{term}%"
+	names: list[str] = []
+	seen: set[str] = set()
+	for fieldname in parent_fields:
+		field = cstr(fieldname).strip()
+		if not field or (field != "name" and not has_field(parent_doctype, field)):
+			continue
+		rows = get_list(parent_doctype, fields=["name"], filters=[[parent_doctype, field, "like", like_value]], limit=row_limit)
+		for row in rows:
+			_append_unique(names, seen, row.get("name"))
+	for spec in child_specs or []:
+		child_doctype = cstr(spec.get("doctype")).strip()
+		parent_field = cstr(spec.get("parent_field") or "parent").strip()
+		child_fields = [cstr(field).strip() for field in spec.get("fields") or [] if cstr(field).strip()]
+		if not child_doctype or not parent_field:
+			continue
+		for field in child_fields:
+			if field != "name" and not has_field(child_doctype, field):
+				continue
+			rows = _get_all_unchecked(child_doctype, fields=[parent_field], filters=[[child_doctype, field, "like", like_value]], limit=row_limit)
+			for row in rows:
+				_append_unique(names, seen, row.get(parent_field))
+	return names
+
+
+def apply_keyword_name_filter(conditions: list[list[object]], doctype: str, keyword: str, names: list[str]) -> None:
+	if not cstr(keyword).strip():
+		return
+	if names:
+		conditions.append([doctype, "name", "in", names])
+	else:
+		conditions.append([doctype, "name", "=", "__erpw_no_keyword_match__"])
+
+
 def today_string() -> str:
 	return str(getdate(nowdate()))
 

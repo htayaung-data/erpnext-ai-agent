@@ -34,7 +34,17 @@ def purchase_order_filters(filters: dict[str, str] | None = None, queue: str = "
 		conditions.append(["Purchase Order", "name", "=", purchase_order])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
-		conditions.append(["Purchase Order", "name", "like", f"%{keyword}%"])
+		common.apply_keyword_name_filter(
+			conditions,
+			"Purchase Order",
+			keyword,
+			common.matching_parent_names_for_keyword(
+				"Purchase Order",
+				keyword,
+				["name", "supplier", "supplier_name"],
+				[{"doctype": "Purchase Order Item", "fields": ["item_code", "item_name"]}],
+			),
+		)
 	supplier = cstr(applied.get("supplier")).strip()
 	if supplier:
 		conditions.append(["Purchase Order", "supplier", "=", supplier])
@@ -210,7 +220,7 @@ def _purchase_order_payload(
 		"controls": {
 			"fields": [
 				{"key": "purchase_order", "label": "Purchase Order", "type": "link", "linkDoctype": "Purchase Order", "value": filters.get("purchase_order", ""), "placeholder": "Select purchase order"},
-				{"key": "keyword", "label": "Search order ID or supplier", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search order ID or supplier"},
+				{"key": "keyword", "label": "Search order, supplier, or item", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search order, supplier, or item"},
 				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", ""), "placeholder": "Select supplier"},
 				{
 					"key": "status",

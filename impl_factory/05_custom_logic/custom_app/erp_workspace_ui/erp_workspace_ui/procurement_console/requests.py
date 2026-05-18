@@ -31,7 +31,17 @@ def purchase_request_filters(filters: dict[str, str] | None = None, source_only:
 		conditions.append(["Material Request", "name", "=", material_request])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
-		conditions.append(["Material Request", "name", "like", f"%{keyword}%"])
+		common.apply_keyword_name_filter(
+			conditions,
+			"Material Request",
+			keyword,
+			common.matching_parent_names_for_keyword(
+				"Material Request",
+				keyword,
+				["name", "title"],
+				[{"doctype": "Material Request Item", "fields": ["item_code", "item_name", "warehouse"]}],
+			),
+		)
 	company = cstr(applied.get("company")).strip()
 	if company:
 		conditions.append(["Material Request", "company", "=", company])
@@ -158,7 +168,7 @@ def _purchase_request_payload(
 		"controls": {
 			"fields": [
 				{"key": "material_request", "label": "Purchase Request", "type": "link", "linkDoctype": "Material Request", "value": filters.get("material_request", ""), "placeholder": "Select purchase request"},
-				{"key": "keyword", "label": "Search request text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search request text"},
+				{"key": "keyword", "label": "Search request, item, or warehouse", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search request, item, or warehouse"},
 				{
 					"key": "status",
 					"label": "Status",

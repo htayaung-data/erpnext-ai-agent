@@ -322,18 +322,11 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
     if doctype == "Procurement Supplier Readiness Log":
         return _filter_rows(doctype, list(SUPPLIER_READINESS_LOGS), filters)
     if doctype == "Request for Quotation Supplier":
-        rows = [
+        return _filter_rows(doctype, [
             {"parent": "RFQ-001", "supplier": "SUP-001", "supplier_name": "Alpha Supplier", "quote_status": "Pending"},
             {"parent": "RFQ-001", "supplier": "SUP-002", "supplier_name": "Beta Supplier", "quote_status": "Received"},
             {"parent": "RFQ-002", "supplier": "SUP-003", "supplier_name": "Gamma Supplier", "quote_status": "Pending"},
-        ]
-        status_filter = (filters or {}).get("quote_status") if isinstance(filters, dict) else None
-        if status_filter:
-            rows = [row for row in rows if row["quote_status"] == status_filter]
-        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
-        if isinstance(parent_filter, list) and len(parent_filter) == 2 and parent_filter[0] == "in":
-            rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
-        return rows
+        ], filters)
     if doctype == "Dynamic Link":
         if isinstance(filters, dict) and filters.get("link_doctype") == "Supplier" and filters.get("link_name") == "SUP-001":
             return [{"parent": "CONT-001"}]
@@ -352,7 +345,7 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
             ]
         return []
     if doctype == "Material Request Item":
-        rows = [
+        return _filter_rows(doctype, [
             {
                 "name": "MRI-001",
                 "parent": "MAT-MR-001",
@@ -365,48 +358,36 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "schedule_date": "2026-05-10",
                 "warehouse": "Stores - DC",
             }
-        ]
-        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
-        if isinstance(parent_filter, list) and len(parent_filter) == 2 and parent_filter[0] == "in":
-            rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
-        elif parent_filter:
-            rows = [row for row in rows if row["parent"] == parent_filter]
-        return rows
+        ], filters)
     if doctype == "Request for Quotation Item":
-        if isinstance(filters, dict) and filters.get("parent") == "RFQ-001":
-            return [
-                {
-                    "name": "RFQI-001",
-                    "parent": "RFQ-001",
-                    "item_code": "ITEM-001",
-                    "item_name": "Widget",
-                    "qty": 5,
-                    "uom": "Nos",
-                    "schedule_date": "2026-05-10",
-                    "warehouse": "Stores - DC",
-                    "material_request": "MAT-MR-001",
-                }
-            ]
-        return []
+        return _filter_rows(doctype, [
+            {
+                "name": "RFQI-001",
+                "parent": "RFQ-001",
+                "item_code": "ITEM-001",
+                "item_name": "Widget",
+                "qty": 5,
+                "uom": "Nos",
+                "schedule_date": "2026-05-10",
+                "warehouse": "Stores - DC",
+                "material_request": "MAT-MR-001",
+            }
+        ], filters)
     if doctype == "Supplier Quotation Item":
-        if isinstance(filters, dict) and filters.get("parent") == "SUP-QTN-001":
-            return [
-                {
-                    "name": "SQI-001",
-                    "parent": "SUP-QTN-001",
-                    "item_code": "ITEM-001",
-                    "item_name": "Widget",
-                    "qty": 5,
-                    "uom": "Nos",
-                    "rate": 200,
-                    "amount": 1000,
-                    "request_for_quotation": "RFQ-001",
-                    "material_request": "MAT-MR-001",
-                }
-            ]
-        if isinstance(filters, dict) and filters.get("item_code") == "ITEM-001":
-            return [{"parent": "SUP-QTN-001", "item_code": "ITEM-001"}]
-        return []
+        return _filter_rows(doctype, [
+            {
+                "name": "SQI-001",
+                "parent": "SUP-QTN-001",
+                "item_code": "ITEM-001",
+                "item_name": "Widget",
+                "qty": 5,
+                "uom": "Nos",
+                "rate": 200,
+                "amount": 1000,
+                "request_for_quotation": "RFQ-001",
+                "material_request": "MAT-MR-001",
+            }
+        ], filters)
     if doctype == "Purchase Order Item":
         rows = [
             {
@@ -490,28 +471,7 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "supplier_quotation": "SUP-QTN-004",
             },
         ]
-        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
-        if isinstance(parent_filter, list) and len(parent_filter) == 2 and parent_filter[0] == "in":
-            rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
-        elif parent_filter:
-            rows = [row for row in rows if row["parent"] == parent_filter]
-        mr_filter = (filters or {}).get("material_request") if isinstance(filters, dict) else None
-        if isinstance(mr_filter, list) and len(mr_filter) == 2 and mr_filter[0] == "in":
-            rows = [row for row in rows if row.get("material_request") in set(mr_filter[1])]
-        elif mr_filter:
-            rows = [row for row in rows if row.get("material_request") == mr_filter]
-        mri_filter = (filters or {}).get("material_request_item") if isinstance(filters, dict) else None
-        if isinstance(mri_filter, list) and len(mri_filter) == 2 and mri_filter[0] == "in":
-            rows = [row for row in rows if row.get("material_request_item") in set(mri_filter[1])]
-        elif mri_filter:
-            rows = [row for row in rows if row.get("material_request_item") == mri_filter]
-        item_filter = (filters or {}).get("item_code") if isinstance(filters, dict) else None
-        if item_filter:
-            rows = [row for row in rows if row["item_code"] == item_filter]
-        item_group_filter = (filters or {}).get("item_group") if isinstance(filters, dict) else None
-        if item_group_filter:
-            rows = [row for row in rows if row.get("item_group") == item_group_filter]
-        return rows
+        return _filter_rows(doctype, rows, filters)
     if doctype == "Purchase Receipt Item":
         return [
             {
@@ -1150,6 +1110,10 @@ def _field_by_key(payload, key):
         if field.get("key") == key:
             return field
     return None
+
+
+def _row_names(payload):
+    return [row.get("name") for row in ((payload.get("results") or {}).get("rows") or [])]
 
 def _payload_actions(payload):
     actions = []
@@ -2527,6 +2491,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertNotIn("new_purchase_request", [action["key"] for action in restricted_payload["controls"]["actions"]])
 
     def test_procurement_filters_use_link_metadata_where_business_fields_reference_doctypes(self):
+        supplier_payload = worklist.get_procurement_console_worklist_context("supplier_directory")
         request_payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")
         order_payload = worklist.get_procurement_console_worklist_context("purchase_order_directory")
         follow_up_payload = worklist.get_procurement_console_worklist_context("purchase_orders_overdue")
@@ -2538,12 +2503,12 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(_field_by_key(request_payload, "material_request")["linkDoctype"], "Material Request")
         self.assertIsNone(_field_by_key(request_payload, "company"))
         self.assertEqual(_field_by_key(request_payload, "material_request")["placeholder"], "Select purchase request")
-        self.assertEqual(_field_by_key(request_payload, "keyword")["label"], "Search request text")
+        self.assertEqual(_field_by_key(request_payload, "keyword")["label"], "Search request, item, or warehouse")
         self.assertEqual(_field_by_key(order_payload, "purchase_order")["linkDoctype"], "Purchase Order")
         self.assertEqual(_field_by_key(order_payload, "purchase_order")["placeholder"], "Select purchase order")
         self.assertEqual(_field_by_key(order_payload, "supplier")["linkDoctype"], "Supplier")
         self.assertEqual(_field_by_key(order_payload, "supplier")["placeholder"], "Select supplier")
-        self.assertEqual(_field_by_key(order_payload, "keyword")["label"], "Search order ID or supplier")
+        self.assertEqual(_field_by_key(order_payload, "keyword")["label"], "Search order, supplier, or item")
         self.assertIsNone(_field_by_key(order_payload, "company"))
         self.assertEqual(_field_by_key(order_payload, "date_start")["label"], "PO Date From")
         self.assertEqual(order_payload["metrics"][0]["label"], "Orders in view")
@@ -2569,6 +2534,12 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(_field_by_key(item_payload, "item")["placeholder"], "Select item")
         self.assertEqual(_field_by_key(item_payload, "item_group")["linkDoctype"], "Item Group")
         self.assertEqual(_field_by_key(item_payload, "item_group")["placeholder"], "Select item group")
+        self.assertEqual(_field_by_key(supplier_payload, "keyword")["label"], "Search supplier or group")
+        self.assertEqual(_field_by_key(supplier_payload, "keyword")["placeholder"], "Search supplier or group")
+        self.assertEqual(_field_by_key(follow_up_payload, "keyword")["label"], "Search order, supplier, or item")
+        self.assertEqual(_field_by_key(rfq_payload, "keyword")["label"], "Search RFQ, supplier, or item")
+        self.assertEqual(_field_by_key(quotation_payload, "keyword")["label"], "Search quotation, supplier, or item")
+        self.assertEqual(_field_by_key(item_payload, "keyword")["label"], "Search item, name, or group")
         self.assertIsNone(_field_by_key(comparison_payload, "company"))
         self.assertEqual(_field_by_key(comparison_payload, "item_code")["linkDoctype"], "Item")
         self.assertEqual(_field_by_key(comparison_payload, "item_code")["placeholder"], "Select item")
@@ -2580,6 +2551,40 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(_field_by_key(comparison_payload, "include_expired")["row"], 1)
         self.assertEqual(_field_by_key(comparison_payload, "item_code")["row"], 2)
         self.assertEqual(_field_by_key(comparison_payload, "supplier")["row"], 2)
+
+    def test_procurement_keyword_searches_match_buyer_facing_business_fields(self):
+        cases = [
+            ("supplier_directory", "SUP-001", ["SUP-001"]),
+            ("supplier_directory", "All Supplier Groups", ["SUP-001"]),
+            ("buying_item_directory", "ITEM-001", ["ITEM-001"]),
+            ("buying_item_directory", "Products", ["ITEM-001"]),
+            ("purchase_request_directory", "MAT-MR-001", ["MAT-MR-001"]),
+            ("purchase_request_directory", "Widget", ["MAT-MR-001"]),
+            ("purchase_request_directory", "Stores - DC", ["MAT-MR-001"]),
+            ("purchase_order_directory", "PUR-PARTIAL", ["PUR-PARTIAL-001"]),
+            ("purchase_order_directory", "Beta Supplier", ["PUR-PARTIAL-001"]),
+            ("purchase_order_directory", "Partial Widget", ["PUR-PARTIAL-001"]),
+            ("purchase_orders_supplier_follow_up", "Overdue Widget", ["PUR-OVERDUE-001"]),
+            ("rfq_directory", "RFQ-001", ["RFQ-001"]),
+            ("rfq_directory", "Alpha Supplier", ["RFQ-001"]),
+            ("rfq_directory", "Widget", ["RFQ-001"]),
+            ("supplier_quotation_directory", "SUP-QTN-001", ["SUP-QTN-001"]),
+            ("supplier_quotation_directory", "Alpha Supplier", ["SUP-QTN-001"]),
+            ("supplier_quotation_directory", "Widget", ["SUP-QTN-001"]),
+        ]
+
+        for queue_key, keyword, expected in cases:
+            with self.subTest(queue_key=queue_key, keyword=keyword):
+                payload = worklist.get_procurement_console_worklist_context(queue_key, {"keyword": keyword})
+                self.assertEqual(_row_names(payload), expected)
+
+    def test_keyword_search_remains_parent_permission_aware_after_child_match(self):
+        HIDDEN_RFQ_LIST_NAMES.add("RFQ-001")
+
+        payload = worklist.get_procurement_console_worklist_context("rfq_directory", {"keyword": "Alpha Supplier"})
+
+        self.assertEqual(_row_names(payload), [])
+        self.assertEqual(payload["results"]["state"]["kind"], "empty")
 
     def test_requests_to_source_enforces_purchase_and_not_fully_ordered(self):
         worklist.get_procurement_console_worklist_context("requests_to_source")
