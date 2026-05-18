@@ -58,11 +58,15 @@ Active runtime static checks after cleanup require zero matches for native escap
 
 ## Validation Artifacts
 
-- Focused Phase 7D1 source smoke: `/tmp/procurement-phase7d1-cleanup-focused-source-20260518T035652Z`
+- Focused Phase 7D1 source smoke: `/tmp/procurement-phase7d1-cleanup-focused-source-evidence-20260518T052706Z`
+  - Summary: `/tmp/procurement-phase7d1-cleanup-focused-source-evidence-20260518T052706Z/summary.json`
+  - Native label absence evidence: `/tmp/procurement-phase7d1-cleanup-focused-source-evidence-20260518T052706Z/native-label-absence-evidence.json`
 - Source Sales freeze gate: `/tmp/procurement-phase7d1-cleanup-sales-freeze-20260518T035727Z`
 - Source protected workspace gate: `/tmp/procurement-phase7d1-cleanup-protected-workspaces-20260518T040121Z`
 - Live alignment hashes: `/tmp/procurement-phase7d1-cleanup-live-align-20260518T041757Z/source-live-hashes.txt`
-- Focused Phase 7D1 live smoke: `/tmp/procurement-phase7d1-cleanup-focused-live-20260518T041812Z`
+- Focused Phase 7D1 live smoke: `/tmp/procurement-phase7d1-cleanup-focused-live-evidence-20260518T052706Z`
+  - Summary: `/tmp/procurement-phase7d1-cleanup-focused-live-evidence-20260518T052706Z/summary.json`
+  - Native label absence evidence: `/tmp/procurement-phase7d1-cleanup-focused-live-evidence-20260518T052706Z/native-label-absence-evidence.json`
 - Post-live protected workspace gate: `/tmp/procurement-phase7d1-cleanup-protected-post-live-20260518T041855Z`
 - Post-live Sales freeze gate: `/tmp/procurement-phase7d1-cleanup-protected-post-live-20260518T041855Z/sales-freeze-protection`
 
