@@ -293,6 +293,22 @@
     return "neutral";
   }
 
+  function formatBusinessTimestamp(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?/);
+    if (!match) return raw.replace(/\.\d+$/, "");
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    const day = String(Number(match[3]));
+    const month = months[Number(match[2]) - 1] || match[2];
+    const dateLabel = `${day} ${month} ${match[1]}`;
+    if (match[4] && match[5]) return `${dateLabel}, ${match[4]}:${match[5]}`;
+    return dateLabel;
+  }
+
   function renderReadinessField(label, value, meta) {
     return `
       <div class="erpw-supplier-readiness-field">
@@ -377,7 +393,7 @@
         <div class="erpw-supplier-readiness-grid">
           ${renderReadinessField("Preferred RFQ contact", contactName || "Not selected", data.preferred_contact_email || "")}
           ${renderReadinessField("Recipient email", recipientEmail || "Not set", recipientMeta)}
-          ${renderReadinessField("Last updated", data.modified || "Not saved", data.modified_by || "")}
+          ${renderReadinessField("Last updated", formatBusinessTimestamp(data.modified) || "Not saved", data.modified_by || "")}
           ${renderReadinessField("Buying note", data.buying_note || "-", "")}
           ${renderReadinessField("Readiness note", data.readiness_note || "-", "")}
           ${renderReadinessField("Editing", canEdit ? "Purchase Manager" : "Read-only", data.read_only_reason || "")}
