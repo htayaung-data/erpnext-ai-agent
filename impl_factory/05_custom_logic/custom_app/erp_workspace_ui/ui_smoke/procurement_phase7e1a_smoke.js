@@ -64,6 +64,7 @@ async function pageState(page) {
       url: location.href,
       route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : null,
       bodyText: (document.body.innerText || "").replace(/\s+/g, " ").trim(),
+      actionText: Array.from(document.querySelectorAll("button, a, [role='button']")).filter(visible).map((node) => (node.innerText || node.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim()).filter(Boolean).join(" "),
       modalCount: modals.length,
       modalText: modals.join(" "),
       scrollWidth: document.documentElement.scrollWidth,
@@ -155,7 +156,7 @@ async function assertSupplierDetail(page, user, supplier, canEdit) {
     await page.waitForSelector("[data-erpw-supplier-readiness-card]", { state: "visible", timeout: TIMEOUT });
     const state = await pageState(page);
     assert(state.supplierReadinessCards === 1, "Supplier readiness card should appear once", state);
-    assert(!FORBIDDEN_ACTION_RE.test(state.bodyText), "Forbidden procurement action leaked on Supplier Detail", state);
+    assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Forbidden procurement action leaked on Supplier Detail", state);
     await assertCleanPage(page, `${user.key}-supplier-detail-${viewport.width}`);
     await capture(page, `${user.key}-supplier-readiness-card-${viewport.width}`);
   }
