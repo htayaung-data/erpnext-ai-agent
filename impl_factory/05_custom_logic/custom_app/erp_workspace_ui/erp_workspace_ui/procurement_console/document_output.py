@@ -42,6 +42,14 @@ def _error(title: str, detail: str) -> dict[str, object]:
     return {"state": _state("error", title, detail)}
 
 
+def _clear_frappe_messages() -> None:
+    try:
+        if hasattr(frappe.local, "message_log"):
+            frappe.local.message_log = []
+    except Exception:
+        pass
+
+
 def _authenticated_user() -> bool:
     return cstr(getattr(frappe.session, "user", "")).strip() not in {"", "Guest"}
 
@@ -68,8 +76,14 @@ def _check_read_permission(doc: object) -> None:
     doctype = cstr(getattr(doc, "doctype", "")).strip()
     if not _has_procurement_output_access() or not common.can_read(doctype):
         raise PermissionError("Procurement document output requires read access.")
-    if hasattr(doc, "check_permission"):
-        doc.check_permission("read")
+    if hasattr(doc, "has_permission"):
+        try:
+            allowed = bool(doc.has_permission("read"))
+        except Exception as exc:
+            _clear_frappe_messages()
+            raise PermissionError("Procurement document output requires read access.") from exc
+        if not allowed:
+            raise PermissionError("Procurement document output requires read access.")
 
 
 def _doc_value(doc: object, fieldname: str, default: Any = None) -> Any:
@@ -721,8 +735,10 @@ def get_document_output_context(doctype: str, name: str) -> dict[str, object]:
         _check_read_permission(doc)
         return _output_context(doc)
     except PermissionError as exc:
+        _clear_frappe_messages()
         return _restricted(cstr(exc))
     except Exception as exc:
+        _clear_frappe_messages()
         return _error("Document output unavailable", cstr(exc))
 
 
@@ -733,8 +749,10 @@ def get_rfq_send_readiness_context(rfq_name: str) -> dict[str, object]:
         _check_read_permission(doc)
         return _rfq_send_readiness(doc)
     except PermissionError as exc:
+        _clear_frappe_messages()
         return _restricted(cstr(exc))
     except Exception as exc:
+        _clear_frappe_messages()
         return _error("RFQ send readiness unavailable", cstr(exc))
 
 
