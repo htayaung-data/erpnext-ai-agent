@@ -250,6 +250,11 @@ async function chooseAutocomplete(page, selector, value, screenshotName) {
           distance: Math.round(Math.sqrt(Math.pow(overlayCenterX - centerX, 2) + Math.pow(overlayCenterY - centerY, 2))),
         };
       }).filter(Boolean);
+      const toolbar = document.querySelector(".erpw-child-actions-toolbar");
+      const header = document.querySelector(".erpw-child-summary");
+      const toolbarRect = toolbar ? toolbar.getBoundingClientRect() : null;
+      const headerRect = header ? header.getBoundingClientRect() : null;
+      const overlaps = (a, b) => Boolean(a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top);
       return {
         top: Math.round(rect.top),
         left: Math.round(rect.left),
@@ -265,9 +270,15 @@ async function chooseAutocomplete(page, selector, value, screenshotName) {
         inputLeft: inputRect ? Math.round(inputRect.left) : null,
         inputRight: inputRect ? Math.round(inputRect.right) : null,
         inputBottom: inputRect ? Math.round(inputRect.bottom) : null,
+        belowSpace: inputRect ? Math.round(window.innerHeight - inputRect.bottom - 16) : null,
         verticalGap: inputRect ? Math.round(rect.top - inputRect.bottom) : null,
         leftDelta: inputRect ? Math.round(rect.left - inputRect.left) : null,
+        optionCount: menu.querySelectorAll(".erpw-managed-rfq-suggestion").length,
+        maxHeight: style.maxHeight,
+        overflowY: style.overflowY,
         nearestField: fieldRects.sort((a, b) => a.distance - b.distance)[0] || null,
+        overlapsToolbar: overlaps(rect, toolbarRect),
+        overlapsHeader: overlaps(rect, headerRect),
         visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
       };
     });
@@ -277,8 +288,11 @@ async function chooseAutocomplete(page, selector, value, screenshotName) {
     assert(overlay.top >= 0 && overlay.bottom <= overlay.viewportHeight + 2, `${screenshotName}: autocomplete overlay clipped vertically`, overlay);
     const expectedField = selector.includes("supplier") ? "supplier" : selector.includes("warehouse") ? "warehouse" : "item";
     assert(overlay.parentIsBody && overlay.position === "fixed" && overlay.zIndex >= 1000, `${screenshotName}: autocomplete overlay trapped inside form layer`, overlay);
-    assert(Math.abs(overlay.leftDelta) <= 2 && overlay.verticalGap >= 4 && overlay.verticalGap <= 12, `${screenshotName}: autocomplete overlay is detached from active input`, overlay);
+    assert(Math.abs(overlay.leftDelta) <= 2 && ((overlay.verticalGap >= 4 && overlay.verticalGap <= 12) || overlay.belowSpace < 56), `${screenshotName}: autocomplete overlay is detached from active input`, overlay);
+    assert(!(overlay.belowSpace >= 56) || overlay.verticalGap >= 4, `${screenshotName}: autocomplete should prefer below-field placement when usable space exists`, overlay);
+    assert(!overlay.overlapsToolbar && !overlay.overlapsHeader, `${screenshotName}: autocomplete overlay overlaps header or action toolbar`, overlay);
     assert(overlay.nearestField && overlay.nearestField.key === expectedField, `${screenshotName}: autocomplete overlay is closer to another field`, { expectedField, overlay });
+    assert(overlay.optionCount < 5 || (/auto|scroll/i.test(overlay.overflowY || "") && parseFloat(overlay.maxHeight) <= 240), `${screenshotName}: multi-result autocomplete is not capped and scrollable`, overlay);
     assert(Math.abs(bodyWidthAfter - bodyWidthBefore) <= 1, `${screenshotName}: autocomplete changed body width`, { bodyWidthBefore, bodyWidthAfter, overlay });
     await capture(page, screenshotName);
   }

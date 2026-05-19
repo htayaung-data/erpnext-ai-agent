@@ -377,6 +377,14 @@ async function verifyAutocompleteOverlay(page, user) {
     const menu = document.querySelector(".erpw-managed-pr-suggestions");
     const itemInput = document.querySelector(".erpw-managed-pr-page .item-link");
     const shell = document.querySelector(".erpw-managed-pr-shell");
+    const toolbar = document.querySelector(".erpw-child-actions-toolbar");
+    const header = document.querySelector(".erpw-child-summary");
+    const menuRect = menu ? menu.getBoundingClientRect() : null;
+    const inputRect = itemInput ? itemInput.getBoundingClientRect() : null;
+    const toolbarRect = toolbar ? toolbar.getBoundingClientRect() : null;
+    const headerRect = header ? header.getBoundingClientRect() : null;
+    const overlaps = (a, b) => Boolean(a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top);
+    const menuStyle = menu ? getComputedStyle(menu) : null;
     return {
       bodyWidth: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth)),
       viewportWidth: window.innerWidth,
@@ -384,6 +392,11 @@ async function verifyAutocompleteOverlay(page, user) {
       shellHeight: shell ? Math.round(shell.getBoundingClientRect().height) : 0,
       menu: rect(menu),
       input: rect(itemInput),
+      belowSpace: inputRect ? Math.round(window.innerHeight - inputRect.bottom - 16) : null,
+      maxHeight: menuStyle ? menuStyle.maxHeight : null,
+      overflowY: menuStyle ? menuStyle.overflowY : null,
+      overlapsToolbar: overlaps(menuRect, toolbarRect),
+      overlapsHeader: overlaps(menuRect, headerRect),
       suggestionCount: document.querySelectorAll(".erpw-managed-pr-suggestion").length,
       menuParent: menu && menu.parentElement ? menu.parentElement.tagName : null,
       topElementClass: menu ? (document.elementFromPoint(menu.getBoundingClientRect().left + 12, menu.getBoundingClientRect().top + 12) || {}).className || "" : "",
@@ -393,8 +406,10 @@ async function verifyAutocompleteOverlay(page, user) {
   assert(state.menu && state.menu.position === "fixed", `${user.label}: item autocomplete is not using a floating overlay`, state);
   assert(Number(state.menu.zIndex || 0) >= 1000, `${user.label}: item autocomplete z-index is too low`, state);
   assert(state.menuParent === "BODY", `${user.label}: item autocomplete is still trapped inside the form DOM`, state);
-  assert(state.menu.left >= state.input.left - 2 && state.menu.top >= state.input.bottom, `${user.label}: item autocomplete is not aligned to input`, state);
+  assert(state.menu.left >= state.input.left - 2 && ((state.menu.top >= state.input.bottom && state.belowSpace >= 56) || state.belowSpace < 56), `${user.label}: item autocomplete should prefer below-field placement when usable space exists`, state);
   assert(state.menu.width >= state.input.width, `${user.label}: item autocomplete is narrower than input`, state);
+  assert(!state.overlapsToolbar && !state.overlapsHeader, `${user.label}: item autocomplete overlaps header or action toolbar`, state);
+  assert(state.suggestionCount < 5 || (/auto|scroll/i.test(state.overflowY || "") && parseFloat(state.maxHeight) <= 240), `${user.label}: item autocomplete is not capped and scrollable`, state);
   assert(state.menu.right <= state.viewportWidth + 1 && state.menu.bottom <= state.viewportHeight + 1, `${user.label}: item autocomplete clips outside viewport`, state);
   assert(state.bodyWidth <= state.viewportWidth + 2, `${user.label}: item autocomplete caused horizontal overflow`, state);
   assert(Math.abs(state.bodyWidth - before.bodyWidth) <= 1 && Math.abs(state.shellHeight - before.shellHeight) <= 1, `${user.label}: item autocomplete caused layout shift`, { before, state });

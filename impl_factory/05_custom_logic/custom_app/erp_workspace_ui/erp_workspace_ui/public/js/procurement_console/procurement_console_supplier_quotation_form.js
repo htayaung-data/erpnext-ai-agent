@@ -426,13 +426,30 @@
     const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
     const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
     const width = Math.min(Math.max(rect.width, 300), Math.max(220, viewportWidth - rect.left - 12));
-    const availableBelow = Math.max(40, viewportHeight - rect.bottom - 16);
-    const availableAbove = Math.max(40, rect.top - 16);
-    const naturalHeight = Math.min(240, Math.max(40, $menu.get(0) ? $menu.get(0).scrollHeight : 40));
-    const placeAbove = naturalHeight + 6 > availableBelow && availableAbove > availableBelow;
-    const maxHeight = Math.min(240, placeAbove ? availableAbove : availableBelow);
+    const desiredHeight = 240;
+    const usefulBelowHeight = 128;
+    const minPanelHeight = 56;
+    const availableBelow = Math.max(0, viewportHeight - rect.bottom - 16);
+    const availableAbove = Math.max(0, rect.top - 16);
+    const protectedBottom = [".erpw-child-summary", ".erpw-child-actions-toolbar"].reduce((bottom, selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return bottom;
+      const box = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      if (box.width <= 0 || box.height <= 0 || style.display === "none" || style.visibility === "hidden") return bottom;
+      return Math.max(bottom, box.bottom + 8);
+    }, 12);
+    const naturalHeight = Math.min(desiredHeight, Math.max(minPanelHeight, $menu.get(0) ? $menu.get(0).scrollHeight : minPanelHeight));
+    const aboveHeight = Math.min(desiredHeight, availableAbove);
+    const aboveTop = Math.max(12, rect.top - Math.min(naturalHeight, aboveHeight) - 6);
+    const canUseBelow = availableBelow >= minPanelHeight;
+    const belowIsUseful = availableBelow >= usefulBelowHeight;
+    const aboveIsMateriallyBetter = aboveHeight >= usefulBelowHeight && aboveHeight > availableBelow + 80;
+    const aboveAvoidsChrome = aboveTop >= protectedBottom;
+    const placeAbove = !canUseBelow && aboveIsMateriallyBetter && aboveAvoidsChrome;
+    const maxHeight = Math.max(minPanelHeight, Math.min(desiredHeight, placeAbove ? availableAbove : Math.max(availableBelow, canUseBelow ? availableBelow : minPanelHeight)));
     const menuHeight = Math.min(naturalHeight, maxHeight);
-    const top = placeAbove ? Math.max(12, rect.top - menuHeight - 6) : rect.bottom + 6;
+    const top = placeAbove ? aboveTop : Math.min(rect.bottom + 6, Math.max(12, viewportHeight - menuHeight - 12));
     $menu.css({ left: `${Math.round(rect.left)}px`, top: `${Math.round(top)}px`, width: `${Math.round(width)}px`, maxHeight: `${Math.round(maxHeight)}px` });
   }
 
