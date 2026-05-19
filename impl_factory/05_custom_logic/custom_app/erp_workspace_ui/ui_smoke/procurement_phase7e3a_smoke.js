@@ -14,7 +14,7 @@ const USERS = [
 
 const FORBIDDEN_LABELS = ["Open ERP Form", "Open ERP Supplier Form", "Open ERP Item Form", "Advanced ERP Form", "Insufficient Permissions", "Internal Server Error", "Traceback", ["Confirm", "test", "send"].join(" ")];
 const FORBIDDEN_TEXT_RE = new RegExp(FORBIDDEN_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "i");
-const FORBIDDEN_ACTION_RE = /(send rfq|email suppliers|submit|approve|reject|create supplier quotation|create purchase order|receive|bill|pay|set default supplier|update item price)/i;
+const FORBIDDEN_ACTION_RE = /(email suppliers|submit|approve|reject|create supplier quotation|create purchase order|receive|bill|pay|set default supplier|update item price)/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\//i;
 const PAGE_EVENTS = new WeakMap();
 
@@ -166,6 +166,8 @@ async function assertRfqOutputUnchanged(page, rfqName) {
   assert(/Preview RFQ/i.test(state.actionText), "Preview RFQ missing", state);
   assert(/Download RFQ PDF/i.test(state.actionText), "Download RFQ PDF missing", state);
   assert(/Send RFQ/i.test(state.bodyText), "Disabled Send RFQ state missing", state);
+  const disabledSend = await page.locator("[data-rfq-send-disabled]").count();
+  assert(disabledSend >= 1, "Send RFQ must remain disabled", state);
   assert(!/Email suppliers|Get PDF|Print/i.test(state.actionText), "Native email/print leakage", state);
 }
 
