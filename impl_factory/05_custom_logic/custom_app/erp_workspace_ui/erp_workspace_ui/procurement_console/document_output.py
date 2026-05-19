@@ -48,6 +48,12 @@ def _clear_frappe_messages() -> None:
             frappe.local.message_log = []
     except Exception:
         pass
+    try:
+        response = getattr(frappe.local, "response", None)
+        if isinstance(response, dict):
+            response.pop("_server_messages", None)
+    except Exception:
+        pass
 
 
 def _authenticated_user() -> bool:
@@ -725,7 +731,9 @@ def get_document_output_context(doctype: str, name: str) -> dict[str, object]:
         doctype = _validate_doctype(doctype)
         doc = _get_doc(doctype, name)
         _check_read_permission(doc)
-        return _output_context(doc)
+        context = _output_context(doc)
+        _clear_frappe_messages()
+        return context
     except PermissionError as exc:
         _clear_frappe_messages()
         return _restricted(cstr(exc))
@@ -739,7 +747,9 @@ def get_rfq_send_readiness_context(rfq_name: str) -> dict[str, object]:
     try:
         doc = _get_doc(RFQ_DOCTYPE, rfq_name)
         _check_read_permission(doc)
-        return _rfq_send_readiness(doc)
+        context = _rfq_send_readiness(doc)
+        _clear_frappe_messages()
+        return context
     except PermissionError as exc:
         _clear_frappe_messages()
         return _restricted(cstr(exc))
