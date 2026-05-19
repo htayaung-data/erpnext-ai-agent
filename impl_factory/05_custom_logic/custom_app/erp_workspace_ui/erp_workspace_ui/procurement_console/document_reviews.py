@@ -8,6 +8,25 @@ from frappe.utils import cstr, flt
 from . import common, document_output, readiness, service
 
 
+def _clear_frappe_messages() -> None:
+    try:
+        if hasattr(frappe.local, "message_log"):
+            frappe.local.message_log = []
+    except Exception:
+        pass
+    try:
+        response = getattr(frappe.local, "response", None)
+        if isinstance(response, dict):
+            response.pop("_server_messages", None)
+    except Exception:
+        pass
+
+
+def _finalize_payload(payload: dict[str, object]) -> dict[str, object]:
+    _clear_frappe_messages()
+    return payload
+
+
 MR_FIELDS = [
     "name",
     "title",
@@ -106,16 +125,16 @@ def get_purchase_request_review_context(
     request_name = cstr(material_request or name).strip()
     back_queue = _back_queue(return_queue, "purchase_request_directory")
     if not service.has_procurement_access(context):
-        return _state_payload("purchase_request_review", "Purchase Request Review", request_name, service.restricted_state(), back_queue, "Back to purchase requests")
+        return _finalize_payload(_state_payload("purchase_request_review", "Purchase Request Review", request_name, service.restricted_state(), back_queue, "Back to purchase requests"))
     if not request_name:
-        return _state_payload(
+        return _finalize_payload(_state_payload(
             "purchase_request_review",
             "Purchase Request Review",
             request_name,
             common.unavailable_state("Purchase Request required", "Open a purchase request row to review sourcing demand."),
             back_queue,
             "Back to purchase requests",
-        )
+        ))
     if not common.can_read("Material Request"):
         return _state_payload(
             "purchase_request_review",
@@ -136,7 +155,7 @@ def get_purchase_request_review_context(
             back_queue,
             "Back to purchase requests",
         )
-    return _purchase_request_payload(record, _material_request_items(request_name), context, back_queue)
+    return _finalize_payload(_purchase_request_payload(record, _material_request_items(request_name), context, back_queue))
 
 
 @frappe.whitelist()
@@ -150,16 +169,16 @@ def get_rfq_review_context(
     rfq_name = cstr(request_for_quotation or name).strip()
     back_queue = _back_queue(return_queue, "rfq_directory")
     if not service.has_procurement_access(context):
-        return _state_payload("rfq_review", "RFQ Review", rfq_name, service.restricted_state(), back_queue, "Back to RFQs")
+        return _finalize_payload(_state_payload("rfq_review", "RFQ Review", rfq_name, service.restricted_state(), back_queue, "Back to RFQs"))
     if not rfq_name:
-        return _state_payload("rfq_review", "RFQ Review", rfq_name, common.unavailable_state("RFQ required", "Open an RFQ row to review supplier response context."), back_queue, "Back to RFQs")
+        return _finalize_payload(_state_payload("rfq_review", "RFQ Review", rfq_name, common.unavailable_state("RFQ required", "Open an RFQ row to review supplier response context."), back_queue, "Back to RFQs"))
     if not common.can_read("Request for Quotation"):
-        return _state_payload("rfq_review", "RFQ Review", rfq_name, common.restricted_state("RFQ review restricted", "Request for Quotation"), back_queue, "Back to RFQs")
+        return _finalize_payload(_state_payload("rfq_review", "RFQ Review", rfq_name, common.restricted_state("RFQ review restricted", "Request for Quotation"), back_queue, "Back to RFQs"))
 
     record = _visible_rfq(rfq_name)
     if not record:
-        return _state_payload("rfq_review", "RFQ Review", rfq_name, common.unavailable_state("RFQ not found", "The requested RFQ is not visible for this user."), back_queue, "Back to RFQs")
-    return _rfq_payload(record, _rfq_items(rfq_name), _rfq_suppliers(rfq_name), context, back_queue)
+        return _finalize_payload(_state_payload("rfq_review", "RFQ Review", rfq_name, common.unavailable_state("RFQ not found", "The requested RFQ is not visible for this user."), back_queue, "Back to RFQs"))
+    return _finalize_payload(_rfq_payload(record, _rfq_items(rfq_name), _rfq_suppliers(rfq_name), context, back_queue))
 
 
 @frappe.whitelist()
@@ -173,7 +192,7 @@ def get_supplier_quotation_review_context(
     quotation_name = cstr(supplier_quotation or name).strip()
     back_queue = _back_queue(return_queue, "supplier_quotation_directory")
     if not service.has_procurement_access(context):
-        return _state_payload("supplier_quotation_review", "Supplier Quotation Review", quotation_name, service.restricted_state(), back_queue, "Back to supplier quotations")
+        return _finalize_payload(_state_payload("supplier_quotation_review", "Supplier Quotation Review", quotation_name, service.restricted_state(), back_queue, "Back to supplier quotations"))
     if not quotation_name:
         return _state_payload(
             "supplier_quotation_review",
@@ -203,7 +222,7 @@ def get_supplier_quotation_review_context(
             back_queue,
             "Back to supplier quotations",
         )
-    return _supplier_quotation_payload(record, _supplier_quotation_items(quotation_name), context, back_queue)
+    return _finalize_payload(_supplier_quotation_payload(record, _supplier_quotation_items(quotation_name), context, back_queue))
 
 
 def _purchase_request_payload(record: dict[str, object], items: list[dict[str, object]], context: dict[str, object], back_queue: str) -> dict[str, object]:
