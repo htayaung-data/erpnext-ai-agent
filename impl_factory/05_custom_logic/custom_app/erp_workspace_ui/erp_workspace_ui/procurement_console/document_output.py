@@ -76,14 +76,6 @@ def _check_read_permission(doc: object) -> None:
     doctype = cstr(getattr(doc, "doctype", "")).strip()
     if not _has_procurement_output_access() or not common.can_read(doctype):
         raise PermissionError("Procurement document output requires read access.")
-    if hasattr(doc, "has_permission"):
-        try:
-            allowed = bool(doc.has_permission("read"))
-        except Exception as exc:
-            _clear_frappe_messages()
-            raise PermissionError("Procurement document output requires read access.") from exc
-        if not allowed:
-            raise PermissionError("Procurement document output requires read access.")
 
 
 def _doc_value(doc: object, fieldname: str, default: Any = None) -> Any:
