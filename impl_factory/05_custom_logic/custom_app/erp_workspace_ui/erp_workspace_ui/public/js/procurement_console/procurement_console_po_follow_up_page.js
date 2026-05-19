@@ -11,6 +11,7 @@
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
+    "/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js",
   ];
   let activeViewState = null;
   let runtimePromise = null;
@@ -26,8 +27,13 @@
     return (window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.shellContent) || {};
   }
 
+  function hasReadinessUi() {
+    const readiness = window.erpWorkspaceUiProcurementReadiness || {};
+    return typeof readiness.renderReadinessCard === "function" && typeof readiness.bindReadinessLinks === "function";
+  }
+
   function hasShellRuntime() {
-    return typeof shellContent().renderShellContent === "function";
+    return typeof shellContent().renderShellContent === "function" && hasReadinessUi();
   }
 
   function requireRuntimeAsset(url) {
@@ -212,6 +218,19 @@
     `;
   }
 
+  function readinessUi() {
+    return window.erpWorkspaceUiProcurementReadiness || {};
+  }
+
+  function readinessCardMarkup(context) {
+    const ui = readinessUi();
+    if (!context || typeof ui.renderReadinessCard !== "function") return "";
+    return ui.renderReadinessCard(context, {
+      title: "Readiness Review",
+      note: "Read-only guidance for future governed procurement steps.",
+    });
+  }
+
   function renderDownstreamCard(title, payload) {
     const state = payload && payload.state ? payload.state : {};
     return `
@@ -240,7 +259,7 @@
       `;
     }
     const downstream = detail.downstream || {};
-    return `
+    return readinessCardMarkup(detail.readiness_context) + `
       <section class="erpw-child-card erpw-list-results">
         <div class="erpw-child-section-header">
           <div class="erpw-child-section-header-copy">
@@ -277,6 +296,7 @@
         extraSectionsHtml: extraSections(payload),
         guidance: {},
       });
+      if (typeof readinessUi().bindReadinessLinks === "function") readinessUi().bindReadinessLinks(viewState.$shell);
     }).catch((error) => {
       if (viewState.routeSignature !== routeSignature) return;
       viewState.$shell.html(`
