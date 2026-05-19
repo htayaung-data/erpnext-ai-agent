@@ -68,33 +68,36 @@
     const style = document.createElement("style");
     style.id = "erpw-supplier-readiness-styles";
     style.textContent = `
-      .erpw-supplier-readiness-card { overflow: visible; }
-      .erpw-supplier-readiness-top { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
-      .erpw-supplier-readiness-title { font-size: 15px; font-weight: 650; color: #111827; }
-      .erpw-supplier-readiness-note { margin-top: 3px; color: #6b7280; font-size: 12px; line-height: 1.4; }
-      .erpw-supplier-readiness-chip { display: inline-flex; align-items: center; min-height: 26px; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 650; border: 1px solid #d1d5db; background: #f9fafb; color: #374151; white-space: nowrap; }
-      .erpw-supplier-readiness-chip.good { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
-      .erpw-supplier-readiness-chip.warning { border-color: #fde68a; background: #fffbeb; color: #92400e; }
-      .erpw-supplier-readiness-chip.danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
-      .erpw-supplier-readiness-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-      .erpw-supplier-readiness-field { min-width: 0; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fff; }
-      .erpw-supplier-readiness-label { color: #6b7280; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0; }
-      .erpw-supplier-readiness-value { color: #111827; font-size: 13px; font-weight: 600; margin-top: 4px; overflow-wrap: anywhere; }
-      .erpw-supplier-readiness-meta { color: #6b7280; font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
-      .erpw-supplier-readiness-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-      .erpw-supplier-readiness-button { min-height: 32px; border-radius: 7px; border: 1px solid #d1d5db; background: #fff; color: #111827; padding: 0 12px; font-weight: 650; }
-      .erpw-supplier-readiness-button.primary { border-color: #2563eb; background: #2563eb; color: #fff; }
+      .erpw-supplier-readiness-card { overflow: visible; margin-top: 10px; }
+      .erpw-supplier-readiness-top { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid #e6edf5; }
+      .erpw-supplier-readiness-heading { min-width: 260px; flex: 1 1 420px; }
+      .erpw-supplier-readiness-title { font-size: 16px; line-height: 1.25; font-weight: 760; color: #0f172a; }
+      .erpw-supplier-readiness-note { margin-top: 4px; color: #52637a; font-size: 12.5px; line-height: 1.42; }
+      .erpw-supplier-readiness-chip { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 740; border: 1px solid #d5e2ef; background: #f8fafc; color: #334155; white-space: nowrap; line-height: 1; }
+      .erpw-supplier-readiness-chip.good { border-color: #b7e4ca; background: #f0fbf5; color: #166534; }
+      .erpw-supplier-readiness-chip.warning { border-color: #f3d48b; background: #fff8e6; color: #854d0e; }
+      .erpw-supplier-readiness-chip.danger { border-color: #f1b7b7; background: #fff1f2; color: #991b1b; }
+      .erpw-supplier-readiness-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+      .erpw-supplier-readiness-field { min-width: 0; min-height: 78px; border: 1px solid #dce7f2; border-radius: 8px; padding: 11px 12px; background: #fff; box-shadow: 0 1px 0 rgba(15,23,42,.02); }
+      .erpw-supplier-readiness-label { color: #5b6b80; font-size: 11px; font-weight: 760; text-transform: uppercase; letter-spacing: 0; }
+      .erpw-supplier-readiness-value { color: #0f172a; font-size: 13.5px; font-weight: 700; margin-top: 5px; overflow-wrap: anywhere; }
+      .erpw-supplier-readiness-meta { color: #64748b; font-size: 12px; margin-top: 4px; line-height: 1.35; overflow-wrap: anywhere; }
+      .erpw-supplier-readiness-actions { display: flex; gap: 9px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+      .erpw-supplier-readiness-button { min-height: 34px; border-radius: 10px; border: 1px solid #d5e2ef; background: #fff; color: #12365f; padding: 0 12px; font-size: 12px; font-weight: 740; box-shadow: 0 1px 1px rgba(15,23,42,.03); }
+      .erpw-supplier-readiness-button:hover:not(:disabled) { border-color: #9db7d2; background: #f8fbff; }
+      .erpw-supplier-readiness-button.primary { border-color: #12365f; background: #12365f; color: #fff; }
+      .erpw-supplier-readiness-button.primary:hover:not(:disabled) { border-color: #0f2f52; background: #0f2f52; }
       .erpw-supplier-readiness-button[disabled] { opacity: .6; cursor: not-allowed; }
-      .erpw-supplier-readiness-form { margin-top: 14px; border-top: 1px solid #e5e7eb; padding-top: 14px; }
+      .erpw-supplier-readiness-form { margin-top: 14px; border-top: 1px solid #e6edf5; padding-top: 14px; }
       .erpw-supplier-readiness-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .erpw-supplier-readiness-control { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+      .erpw-supplier-readiness-control { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
       .erpw-supplier-readiness-control.wide { grid-column: 1 / -1; }
-      .erpw-supplier-readiness-control label { color: #374151; font-size: 12px; font-weight: 650; }
+      .erpw-supplier-readiness-control label { color: #334155; font-size: 12px; font-weight: 740; }
       .erpw-supplier-readiness-control input,
       .erpw-supplier-readiness-control select,
-      .erpw-supplier-readiness-control textarea { min-height: 34px; border: 1px solid #d1d5db; border-radius: 7px; padding: 7px 9px; color: #111827; background: #fff; font-size: 13px; width: 100%; }
-      .erpw-supplier-readiness-control textarea { min-height: 70px; resize: vertical; }
-      .erpw-supplier-readiness-message { margin-top: 10px; font-size: 12px; color: #6b7280; }
+      .erpw-supplier-readiness-control textarea { min-height: 36px; border: 1px solid #cbd8e6; border-radius: 9px; padding: 8px 10px; color: #0f172a; background: #fff; font-size: 13px; width: 100%; }
+      .erpw-supplier-readiness-control textarea { min-height: 74px; resize: vertical; }
+      .erpw-supplier-readiness-message { margin-top: 10px; font-size: 12px; color: #64748b; }
       .erpw-supplier-readiness-message.error { color: #b91c1c; }
       .erpw-supplier-readiness-message.ready { color: #047857; }
       @media (max-width: 1180px) {
@@ -381,22 +384,22 @@
     return `
       <section class="erpw-child-card erpw-supplier-readiness-card" data-erpw-supplier-readiness-card data-erpw-supplier="${escapeHtml(data.supplier || "")}">
         <div class="erpw-supplier-readiness-top">
-          <div>
+          <div class="erpw-supplier-readiness-heading">
             <div class="erpw-supplier-readiness-title">Supplier Buying Profile</div>
             <div class="erpw-supplier-readiness-note">${escapeHtml(canEdit ? "Controlled buying readiness for RFQ preparation." : "Read-only buying readiness for RFQ preparation.")}</div>
           </div>
           <div class="erpw-supplier-readiness-actions">
             <span class="erpw-supplier-readiness-chip ${escapeHtml(readinessToneClass(data))}">${escapeHtml(data.readiness_label || data.buying_readiness_status || "No profile")}</span>
-            ${canEdit ? `<button type="button" class="erpw-supplier-readiness-button" data-erpw-readiness-edit>Edit</button>` : ""}
+            ${canEdit ? `<button type="button" class="erpw-supplier-readiness-button" data-erpw-readiness-edit>Edit Profile</button>` : ""}
           </div>
         </div>
         <div class="erpw-supplier-readiness-grid">
           ${renderReadinessField("Preferred RFQ contact", contactName || "Not selected", data.preferred_contact_email || "")}
           ${renderReadinessField("Recipient email", recipientEmail || "Not set", recipientMeta)}
-          ${renderReadinessField("Last updated", formatBusinessTimestamp(data.modified) || "Not saved", data.modified_by || "")}
+          ${renderReadinessField("Last updated", formatBusinessTimestamp(data.modified) || "No profile saved", data.modified_by || "")}
           ${renderReadinessField("Buying note", data.buying_note || "-", "")}
           ${renderReadinessField("Readiness note", data.readiness_note || "-", "")}
-          ${renderReadinessField("Editing", canEdit ? "Purchase Manager" : "Read-only", data.read_only_reason || "")}
+          ${renderReadinessField("Permission", canEdit ? "Editable by Purchase Manager" : "Read-only", data.read_only_reason || "")}
         </div>
         ${renderReadinessForm(Object.assign({}, data, { editing: false })).replace('class="erpw-supplier-readiness-form"', 'class="erpw-supplier-readiness-form" hidden')}
       </section>
