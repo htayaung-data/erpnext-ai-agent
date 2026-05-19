@@ -65,7 +65,7 @@
     const style = document.createElement("style");
     style.id = "erpw-item-buying-profile-styles";
     style.textContent = `
-      .erpw-item-buying-profile-card { overflow: visible; margin-top: 10px; }
+      .erpw-item-buying-profile-card { overflow: visible; margin-top: 10px; padding: 15px 18px 18px; box-sizing: border-box; }
       .erpw-item-buying-profile-top { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid #e6edf5; }
       .erpw-item-buying-profile-heading { min-width: 260px; flex: 1 1 420px; }
       .erpw-item-buying-profile-title { font-size: 16px; font-weight: 760; color: #0f172a; line-height: 1.25; }

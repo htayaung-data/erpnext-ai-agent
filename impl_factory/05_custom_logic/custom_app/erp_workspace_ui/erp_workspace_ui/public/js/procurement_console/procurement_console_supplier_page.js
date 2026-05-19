@@ -68,7 +68,7 @@
     const style = document.createElement("style");
     style.id = "erpw-supplier-readiness-styles";
     style.textContent = `
-      .erpw-supplier-readiness-card { overflow: visible; margin-top: 10px; }
+      .erpw-supplier-readiness-card { overflow: visible; margin-top: 10px; padding: 15px 18px 18px; box-sizing: border-box; }
       .erpw-supplier-readiness-top { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid #e6edf5; }
       .erpw-supplier-readiness-heading { min-width: 260px; flex: 1 1 420px; }
       .erpw-supplier-readiness-title { font-size: 16px; line-height: 1.25; font-weight: 760; color: #0f172a; }
