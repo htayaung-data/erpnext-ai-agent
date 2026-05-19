@@ -6,7 +6,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt, nowdate
 
-from . import common, service
+from . import common, readiness, service
 
 
 DOCTYPE = "Supplier Quotation"
@@ -289,6 +289,7 @@ def _form_payload(
         },
         "controls": {"actions": actions, "summaryToolbar": True},
         "action_targets": targets,
+        "readiness_context": readiness.get_supplier_quotation_readiness_context(name) if saved else {},
         "conversion": {
             "rfq_to_supplier_quotation": "deferred",
             "supplier_quotation_to_purchase_order": "deferred",

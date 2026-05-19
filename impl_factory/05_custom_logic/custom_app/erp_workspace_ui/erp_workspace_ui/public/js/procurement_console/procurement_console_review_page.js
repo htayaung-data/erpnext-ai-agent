@@ -45,6 +45,7 @@
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
+    "/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js",
   ];
   const OUTPUT_PREVIEW_METHOD = "erp_workspace_ui.procurement_console.document_output.get_document_print_preview_context";
   const OUTPUT_PDF_METHOD = "erp_workspace_ui.procurement_console.document_output.download_document_pdf";
@@ -58,8 +59,13 @@
     return (window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.shellContent) || {};
   }
 
+  function hasReadinessUi() {
+    const readiness = window.erpWorkspaceUiProcurementReadiness || {};
+    return typeof readiness.renderReadinessCard === "function" && typeof readiness.bindReadinessLinks === "function";
+  }
+
   function hasShellRuntime() {
-    return typeof shellContent().renderShellContent === "function";
+    return typeof shellContent().renderShellContent === "function" && hasReadinessUi();
   }
 
   function requireRuntimeAsset(url) {
@@ -250,6 +256,19 @@
     `;
   }
 
+  function readinessUi() {
+    return window.erpWorkspaceUiProcurementReadiness || {};
+  }
+
+  function readinessCardMarkup(context) {
+    const ui = readinessUi();
+    if (!context || typeof ui.renderReadinessCard !== "function") return "";
+    return ui.renderReadinessCard(context, {
+      title: "Readiness Review",
+      note: "Read-only guidance for future governed procurement steps.",
+    });
+  }
+
   function renderSection(section) {
     return `
       <section class="erpw-child-card erpw-list-results">
@@ -430,7 +449,7 @@
       `;
     }
     const sections = Array.isArray(detail.sections) ? detail.sections : [];
-    return sections.map(renderSection).join("") + rfqReviewOutputCardMarkup(payload);
+    return readinessCardMarkup(detail.readiness_context) + sections.map(renderSection).join("") + rfqReviewOutputCardMarkup(payload);
   }
 
   function mountPayload(viewState, payload) {
@@ -449,6 +468,7 @@
         guidance: {},
       });
       bindRfqReviewOutputCard(viewState, payload);
+      if (typeof readinessUi().bindReadinessLinks === "function") readinessUi().bindReadinessLinks(viewState.$shell);
     }).catch((error) => {
       if (viewState.routeSignature !== routeSignature) return;
       viewState.$shell.html(`

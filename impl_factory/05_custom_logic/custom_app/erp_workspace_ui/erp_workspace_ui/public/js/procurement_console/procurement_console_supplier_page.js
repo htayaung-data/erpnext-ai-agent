@@ -13,6 +13,7 @@
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
+    "/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js",
   ];
   let runtimePromise = null;
   const SAME_ROUTE_CACHE_TTL_MS = 5000;
@@ -27,8 +28,13 @@
     return (window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.shellContent) || {};
   }
 
+  function hasReadinessUi() {
+    const readiness = window.erpWorkspaceUiProcurementReadiness || {};
+    return typeof readiness.renderReadinessCard === "function" && typeof readiness.bindReadinessLinks === "function";
+  }
+
   function hasShellRuntime() {
-    return typeof shellContent().renderShellContent === "function";
+    return typeof shellContent().renderShellContent === "function" && hasReadinessUi();
   }
 
   function requireRuntimeAsset(url) {
@@ -372,6 +378,19 @@
     `;
   }
 
+  function readinessUi() {
+    return window.erpWorkspaceUiProcurementReadiness || {};
+  }
+
+  function readinessCardMarkup(context) {
+    const ui = readinessUi();
+    if (!context || typeof ui.renderReadinessCard !== "function") return "";
+    return ui.renderReadinessCard(context, {
+      title: "Readiness Review",
+      note: "Supplier readiness guidance only. Use the Supplier Buying Profile for controlled updates.",
+    });
+  }
+
   function renderBuyingProfile(profile) {
     const data = profile || {};
     const recipient = data.recipient || {};
@@ -483,6 +502,7 @@
     }
     return `
       ${renderBuyingProfile(detail.buying_profile || {})}
+      ${readinessCardMarkup(detail.readiness_context)}
       ${renderSection("Open or overdue purchase orders", "Buyer follow-up posture for visible purchase orders.", detail.open_purchase_orders)}
       ${renderSection("Recent purchase orders", "Recent buying activity for this supplier.", detail.recent_purchase_orders)}
       ${renderSection("RFQs", "Visible RFQ invitations and response posture for this supplier.", detail.rfqs)}
@@ -513,6 +533,7 @@
           if (route === PO_DETAIL_ROUTE) routeToPurchaseOrderFollowUp(name);
       });
       bindReadinessProfile(viewState);
+      if (typeof readinessUi().bindReadinessLinks === "function") readinessUi().bindReadinessLinks(viewState.$shell);
     }).catch((error) => {
       if (viewState.routeSignature !== routeSignature) return;
       viewState.$shell.html(`

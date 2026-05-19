@@ -5,7 +5,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt
 
-from . import common, service
+from . import common, readiness, service
 
 
 PO_FIELDS = [
@@ -129,6 +129,7 @@ def _detail_payload(
 		"controls": {"actions": _base_actions(return_queue)},
 		"detail": {
 			"state": common.ready_state(),
+			"readiness_context": readiness.get_purchase_order_readiness_context(name),
 			"header": {
 				"supplier": record.get("supplier_name") or record.get("supplier") or "",
 				"required_date": cstr(record.get("schedule_date") or ""),

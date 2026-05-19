@@ -5,7 +5,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt
 
-from . import common, item_buying_profile, service
+from . import common, item_buying_profile, readiness, service
 
 
 ITEM_DETAIL_ROUTE = "procurement-console-item"
@@ -253,6 +253,7 @@ def _detail_payload(
 			"item_prices": _item_price_table(item_prices),
 			"supplier_quotations": _supplier_quotation_table(supplier_quotations),
 			"purchase_orders": _purchase_order_table(purchase_orders),
+			"readiness_context": readiness.get_item_buying_readiness_context(name),
 		},
 		"action_targets": action_targets,
 		"context": {"role_variant": context.get("role_variant")},

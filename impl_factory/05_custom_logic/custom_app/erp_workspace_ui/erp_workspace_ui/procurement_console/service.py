@@ -155,6 +155,8 @@ def get_procurement_console_bootstrap() -> dict[str, object]:
 	))
 	payload.update(_build_phase1_overview())
 	payload.update(_build_create_action_payload(context))
+	from . import readiness
+	payload["manager_readiness"] = readiness.get_procurement_manager_readiness()
 	return payload
 
 

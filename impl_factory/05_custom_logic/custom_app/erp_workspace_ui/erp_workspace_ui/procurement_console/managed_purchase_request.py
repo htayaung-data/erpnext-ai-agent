@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.utils import cstr, flt, nowdate
 
-from . import common, service
+from . import common, readiness, service
 
 
 DOCTYPE = "Material Request"
@@ -251,6 +251,7 @@ def _form_payload(name: str | None, header: dict[str, Any] | None = None, items:
         },
         "controls": {"actions": actions, "summaryToolbar": True},
         "action_targets": targets,
+        "readiness_context": readiness.get_purchase_request_readiness_context(name) if saved else {},
     }
 
 

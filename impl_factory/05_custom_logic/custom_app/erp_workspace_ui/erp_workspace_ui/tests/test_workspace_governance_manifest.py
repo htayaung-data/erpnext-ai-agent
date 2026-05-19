@@ -137,6 +137,26 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertIn("no Item, Item Supplier, Item Price, Default Supplier", save["notes"])
         self.assertNotEqual("form", save["target_kind"])
 
+    def test_procurement_manager_readiness_actions_are_productized_read_only(self):
+        actions = {action["manifest_key"]: action for action in ACTION_MANIFEST if action["workspace_id"] == "procurement"}
+
+        overview = actions["procurement-manager-readiness-view"]
+        self.assertEqual("productized_secondary_action", overview["classification"])
+        self.assertEqual("current_shell", overview["target_kind"])
+        self.assertIn("read-only", overview["notes"].lower())
+        self.assertIn("no lifecycle", overview["notes"].lower())
+
+        page = actions["procurement-page-readiness-view"]
+        self.assertEqual("productized_secondary_action", page["classification"])
+        self.assertEqual("current_shell", page["target_kind"])
+        self.assertIn("read-only", page["notes"].lower())
+
+        fix = actions["procurement-readiness-productized-fix-link"]
+        self.assertEqual("productized_navigation", fix["classification"])
+        self.assertEqual("page", fix["target_kind"])
+        self.assertEqual("/desk/procurement-console-*", fix["target_route_pattern"])
+        self.assertNotIn("Form", str(fix))
+
     def test_registry_route_keys_exist_in_manifest(self):
         sales_routes = get_sales_workspace_definition()["routes"]
         procurement_routes = get_procurement_workspace_definition()["routes"]

@@ -10,6 +10,7 @@
   const REPORT_ROUTE = procurementRoutes.report || "procurement-console-report";
   const BOOTSTRAP_METHOD = procurementMethods.bootstrap || "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
+  const READINESS_UI_URL = "/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
   let activeOverviewGuardBound = false;
@@ -38,9 +39,14 @@
     }[character] || character));
   }
 
+  function hasReadinessUi() {
+    const readiness = window.erpWorkspaceUiProcurementReadiness || {};
+    return typeof readiness.renderManagerReadiness === "function" && typeof readiness.bindReadinessLinks === "function";
+  }
+
   function hasConsoleRuntime() {
     const runtime = consoleRuntime();
-    return Boolean(runtime && typeof runtime.makeInsightCard === "function" && typeof runtime.makeAction === "function" && typeof runtime.makeQueueItem === "function");
+    return Boolean(runtime && typeof runtime.makeInsightCard === "function" && typeof runtime.makeAction === "function" && typeof runtime.makeQueueItem === "function" && hasReadinessUi());
   }
 
   function ensureConsoleRuntime() {
@@ -48,11 +54,13 @@
     if (consoleRuntimePromise) return consoleRuntimePromise;
     consoleRuntimePromise = new Promise((resolve, reject) => {
       frappe.require(CONSOLE_RUNTIME_URL, () => {
-        if (hasConsoleRuntime()) {
-          resolve(consoleRuntime());
-          return;
-        }
-        reject(new Error("Shared console runtime is not loaded on this page."));
+        frappe.require(READINESS_UI_URL, () => {
+          if (hasConsoleRuntime()) {
+            resolve(consoleRuntime());
+            return;
+          }
+          reject(new Error("Shared console runtime is not loaded on this page."));
+        });
       });
     }).catch((error) => {
       consoleRuntimePromise = null;
@@ -228,6 +236,26 @@
     }
   }
 
+  function readinessUi() {
+    return window.erpWorkspaceUiProcurementReadiness || {};
+  }
+
+  function renderManagerReadiness($root, payload) {
+    const ui = readinessUi();
+    if (typeof ui.renderManagerReadiness !== "function") return;
+    $root.find("[data-procurement-manager-readiness]").remove();
+    const html = ui.renderManagerReadiness(payload && payload.manager_readiness);
+    if (!html) return;
+    const $section = $(html);
+    const $anchor = $root.find('[data-section-key="create-actions"]').first();
+    if ($anchor.length) {
+      $anchor.after($section);
+    } else {
+      $root.append($section);
+    }
+    if (typeof ui.bindReadinessLinks === "function") ui.bindReadinessLinks($section);
+  }
+
   function applyPayload($root, payload) {
     const work = (payload && payload.work) || {};
     const directories = (payload && payload.directories) || {};
@@ -236,6 +264,7 @@
     Object.keys(directories).forEach((key) => applyMetric($root, key, directories[key]));
     Object.keys(insights).forEach((key) => applyMetric($root, key, insights[key]));
     renderCreateActions($root, payload);
+    renderManagerReadiness($root, payload);
   }
 
   function renderCreateActions($root, payload) {

@@ -5,7 +5,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt
 
-from . import common, document_output, service
+from . import common, document_output, readiness, service
 
 
 MR_FIELDS = [
@@ -224,7 +224,7 @@ def _purchase_request_payload(record: dict[str, object], items: list[dict[str, o
             ],
         },
         "controls": {"actions": actions},
-        "detail": {"state": common.ready_state(), "sections": [_section("Requested items", "Purchase demand lines visible to this buyer. Warehouse execution is not exposed here.", _material_request_item_table(items))]},
+        "detail": {"state": common.ready_state(), "readiness_context": readiness.get_purchase_request_readiness_context(name), "sections": [_section("Requested items", "Purchase demand lines visible to this buyer. Warehouse execution is not exposed here.", _material_request_item_table(items))]},
         "action_targets": targets,
         "context": {"role_variant": context.get("role_variant")},
     }
@@ -250,6 +250,7 @@ def _rfq_payload(record: dict[str, object], items: list[dict[str, object]], supp
         "controls": {"actions": actions},
         "detail": {
             "state": common.ready_state(),
+            "readiness_context": readiness.get_rfq_readiness_context(name),
             "sections": [
                 _section("Invited suppliers", "Supplier response posture from the RFQ supplier table.", _rfq_supplier_table(suppliers)),
                 _section("Requested items", "Items and quantities included in this sourcing request.", _rfq_item_table(items)),
@@ -281,7 +282,7 @@ def _supplier_quotation_payload(record: dict[str, object], items: list[dict[str,
             ],
         },
         "controls": {"actions": actions},
-        "detail": {"state": common.ready_state(), "sections": [_section("Quoted items", "Supplier rates, quantities, amount, and source references for buyer comparison.", _supplier_quotation_item_table(items))]},
+        "detail": {"state": common.ready_state(), "readiness_context": readiness.get_supplier_quotation_readiness_context(name), "sections": [_section("Quoted items", "Supplier rates, quantities, amount, and source references for buyer comparison.", _supplier_quotation_item_table(items))]},
         "action_targets": targets,
         "context": {"role_variant": context.get("role_variant")},
     }

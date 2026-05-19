@@ -1168,7 +1168,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_output, document_reviews, item_buying_profile, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, supplier_readiness, worklist
+from erp_workspace_ui.procurement_console import document_output, document_reviews, item_buying_profile, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, readiness, report, service, supplier_detail, supplier_readiness, worklist
 
 
 def _set_user(user, roles):
@@ -3006,6 +3006,119 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
         self.assertEqual(payload["results"]["rows"][0]["name"], "RFQ-001")
+
+
+    def test_manager_overview_readiness_is_manager_only_and_productized(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+
+        payload = service.get_procurement_console_bootstrap()
+
+        manager_queue = payload["manager_readiness"]
+        self.assertTrue(manager_queue["visible"])
+        self.assertGreater(manager_queue["summary"]["total"], 0)
+        self.assertTrue(manager_queue["groups"])
+        text = str(manager_queue)
+        self.assertNotIn("/desk/Form", text)
+        self.assertNotIn("/app/", text)
+        self.assertNotIn("Open ERP", text)
+        for issue in manager_queue["issues"]:
+            self.assertTrue(issue["productized_only"])
+            route = issue.get("fix_route") or {}
+            if route:
+                self.assertEqual(route.get("kind"), "page")
+                self.assertTrue(str(route.get("route") or "").startswith("procurement-console-"))
+
+        _set_user("purchase@example.com", ["Purchase User"])
+        user_payload = service.get_procurement_console_bootstrap()
+        self.assertFalse(user_payload["manager_readiness"]["visible"])
+        self.assertEqual([], user_payload["manager_readiness"]["issues"])
+
+    def test_page_level_readiness_contexts_are_read_only_and_productized(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        supplier_readiness.save_supplier_readiness_profile(
+            "SUP-001",
+            {
+                "buying_readiness_status": "Hold for sourcing",
+                "preferred_rfq_contact": "CONT-001",
+                "rfq_recipient_email_override": "",
+                "buying_note": "",
+                "readiness_note": "Supplier paused.",
+            },
+        )
+        item_buying_profile.save_item_buying_profile(
+            "ITEM-001",
+            {
+                "buying_readiness_status": "Hold for sourcing",
+                "preferred_existing_supplier": "SUP-001",
+                "supplier_part_no_context": "",
+                "procurement_lead_time_days": "",
+                "minimum_order_qty_context": "",
+                "buying_note": "",
+                "readiness_note": "Item paused.",
+            },
+        )
+        before_logs = (len(SUPPLIER_READINESS_LOGS), len(ITEM_BUYING_LOGS))
+
+        supplier_payload = supplier_detail.get_supplier_detail_context("SUP-001")
+        item_payload = items.get_item_detail_context("ITEM-001")
+        rfq_payload = document_reviews.get_rfq_review_context("RFQ-001")
+        sq_payload = document_reviews.get_supplier_quotation_review_context("SUP-QTN-001")
+        po_payload = purchase_order_detail.get_purchase_order_follow_up_detail_context("PUR-DUE-001")
+        pr_payload = document_reviews.get_purchase_request_review_context("MAT-MR-001")
+
+        contexts = [
+            supplier_payload["detail"]["readiness_context"],
+            item_payload["detail"]["readiness_context"],
+            rfq_payload["detail"]["readiness_context"],
+            sq_payload["detail"]["readiness_context"],
+            po_payload["detail"]["readiness_context"],
+            pr_payload["detail"]["readiness_context"],
+        ]
+        for context in contexts:
+            with self.subTest(source=context.get("source_name")):
+                self.assertEqual(context["state"]["kind"], "ready")
+                self.assertTrue(context["productized_only"])
+                self.assertTrue(context["issues"])
+                for issue in context["issues"]:
+                    self.assertTrue(issue["productized_only"])
+                    route = issue.get("fix_route") or {}
+                    if route:
+                        self.assertEqual(route.get("kind"), "page")
+                        self.assertTrue(str(route.get("route") or "").startswith("procurement-console-"))
+                self.assertNotIn("/desk/Form", str(context))
+                self.assertNotIn("/app/", str(context))
+                self.assertNotIn("Open ERP", str(context))
+        self.assertTrue(any(issue["severity"] == "critical" for issue in rfq_payload["detail"]["readiness_context"]["issues"]))
+        self.assertIn("Send remains deferred", str(rfq_payload["detail"]["readiness_context"]))
+        self.assertEqual(before_logs, (len(SUPPLIER_READINESS_LOGS), len(ITEM_BUYING_LOGS)))
+        self.assertEqual({}, SAVED_PURCHASE_ORDERS)
+        self.assertEqual({}, SAVED_SUPPLIER_QUOTATIONS)
+        _assert_no_forbidden_mutation_actions(self, rfq_payload)
+        _assert_no_forbidden_mutation_actions(self, sq_payload)
+        _assert_no_forbidden_mutation_actions(self, po_payload)
+
+    def test_managed_saved_forms_include_readiness_without_lifecycle_actions(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        _set_writeable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation", "Purchase Order")
+        SAVED_MATERIAL_REQUESTS["MAT-MR-DRAFT-001"] = _FakeMaterialRequestDoc(name="MAT-MR-DRAFT-001", values={"items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}]})
+        SAVED_RFQS["PUR-RFQ-DRAFT-001"] = _FakeRFQDoc(name="PUR-RFQ-DRAFT-001", values={"suppliers": [{"supplier": "SUP-001"}], "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}]})
+        SAVED_SUPPLIER_QUOTATIONS["SUP-QTN-DRAFT-001"] = _FakeSupplierQuotationDoc(name="SUP-QTN-DRAFT-001", values={"supplier": "SUP-001", "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100, "uom": "Nos"}]})
+        SAVED_PURCHASE_ORDERS["PUR-ORD-DRAFT-001"] = _FakePurchaseOrderDoc(name="PUR-ORD-DRAFT-001", values={"supplier": "SUP-001", "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}]})
+
+        payloads = [
+            managed_purchase_request.get_managed_purchase_request_context("MAT-MR-DRAFT-001"),
+            managed_rfq.get_managed_rfq_context("PUR-RFQ-DRAFT-001"),
+            managed_supplier_quotation.get_managed_supplier_quotation_context("SUP-QTN-DRAFT-001"),
+            managed_purchase_order.get_managed_purchase_order_context("PUR-ORD-DRAFT-001"),
+        ]
+
+        for payload in payloads:
+            with self.subTest(title=payload["summary"]["title"]):
+                self.assertIn("readiness_context", payload)
+                self.assertEqual(payload["readiness_context"]["state"]["kind"], "ready")
+                self.assertTrue(payload["readiness_context"]["productized_only"])
+                self.assertNotIn("Open ERP Form", str(payload))
+                _assert_no_forbidden_mutation_actions(self, payload)
 
     def test_supplier_quotation_directory_is_read_only(self):
         payload = worklist.get_procurement_console_worklist_context("supplier_quotation_directory")

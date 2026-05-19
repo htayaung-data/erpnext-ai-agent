@@ -6,7 +6,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt, nowdate
 
-from . import common, service
+from . import common, readiness, service
 
 
 DOCTYPE = "Request for Quotation"
@@ -294,6 +294,7 @@ def _form_payload(
         },
         "controls": {"actions": actions, "summaryToolbar": True},
         "action_targets": targets,
+        "readiness_context": readiness.get_rfq_readiness_context(name) if saved else {},
         "conversion": {
             "purchase_request_to_rfq": "deferred",
             "detail": "PR-to-RFQ conversion is deferred because ERPNext native mapping requires submitted Material Requests. Phase 5A currently records internal Purchase Requests as drafts. A governed PR submit/review step is required before productized PR-to-RFQ conversion.",

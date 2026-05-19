@@ -5,7 +5,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt
 
-from . import common, service, supplier_readiness
+from . import common, readiness, service, supplier_readiness
 
 
 SUPPLIER_FIELDS = ["name", "supplier_name", "supplier_group", "disabled", "modified"]
@@ -138,6 +138,7 @@ def _detail_payload(
 			"rfqs": _rfq_table(rfqs),
 			"supplier_quotations": _supplier_quotation_table(supplier_quotations),
 			"contacts": _contact_table(contacts),
+			"readiness_context": readiness.get_supplier_readiness_context(name),
 		},
 		"action_targets": action_targets,
 		"context": {"role_variant": context.get("role_variant")},

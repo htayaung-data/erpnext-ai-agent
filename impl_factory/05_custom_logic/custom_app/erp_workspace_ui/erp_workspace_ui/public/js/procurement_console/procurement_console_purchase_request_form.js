@@ -13,6 +13,7 @@
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
+    "/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js",
   ];
   let runtimePromise = null;
 
@@ -24,8 +25,13 @@
     return (window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.shellContent) || {};
   }
 
+  function hasReadinessUi() {
+    const readiness = window.erpWorkspaceUiProcurementReadiness || {};
+    return typeof readiness.renderReadinessCard === "function" && typeof readiness.bindReadinessLinks === "function";
+  }
+
   function hasRuntime() {
-    return typeof shellContent().renderShellContent === "function";
+    return typeof shellContent().renderShellContent === "function" && hasReadinessUi();
   }
 
   function requireAsset(url) {
@@ -469,11 +475,31 @@
     `;
   }
 
+
+  function readinessUi() {
+    return window.erpWorkspaceUiProcurementReadiness || {};
+  }
+
+  function readinessCardMarkup(payload) {
+    const context = payload && payload.readiness_context ? payload.readiness_context : null;
+    const ui = readinessUi();
+    if (!context || typeof ui.renderReadinessCard !== "function") return "";
+    return ui.renderReadinessCard(context, {
+      title: "Readiness Review",
+      note: "Read-only guidance for future governed procurement steps.",
+    });
+  }
+
+  function bindReadinessCard($shell) {
+    const ui = readinessUi();
+    if (typeof ui.bindReadinessLinks === "function") ui.bindReadinessLinks($shell);
+  }
+
   function renderPayload(viewState, overridePayload) {
     removeSuggestions();
     const payload = overridePayload || viewState.payload || loadingPayload();
     const form = overridePayload && overridePayload.state && overridePayload.state.kind !== "ready" ? viewState.form || stateForm(viewState.payload) : viewState.form || stateForm(payload);
-    const extra = payload.state && payload.state.kind && payload.state.kind !== "ready" && payload.state.kind !== "loading" ? renderState(viewState.$shell, payload) : formMarkup(form);
+    const extra = payload.state && payload.state.kind && payload.state.kind !== "ready" && payload.state.kind !== "loading" ? renderState(viewState.$shell, payload) : formMarkup(form) + readinessCardMarkup(payload);
     shellContent().renderShellContent(viewState.$shell, {
       summary: payload.summary || loadingPayload().summary,
       actions: actionConfig(payload, viewState),
@@ -481,7 +507,10 @@
       extraSectionsHtml: extra,
     });
     viewState.$shell.attr("data-erpw-managed-pr-state", payload.state && payload.state.kind ? payload.state.kind : "ready");
-    if (payload.state && payload.state.kind === "ready") bindForm(viewState.$shell, viewState);
+    if (payload.state && payload.state.kind === "ready") {
+      bindForm(viewState.$shell, viewState);
+      bindReadinessCard(viewState.$shell);
+    }
   }
 
   function loadRoute(viewState, options) {
