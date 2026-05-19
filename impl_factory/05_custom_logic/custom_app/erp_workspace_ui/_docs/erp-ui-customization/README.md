@@ -48,6 +48,7 @@ Freeze and governance status:
 - Procurement Console Phase 7G Quick Find operations review is documented on 2026-05-19 as a docs-only design review; implementation is deferred.
 - Procurement Console Phase 7E2 Buying Item Procurement Context is documented on 2026-05-19 as a docs-only design for app-owned item buying readiness/context; implementation is deferred.
 - Procurement Console Phase 7E2A Buying Item Procurement Context is protected on 2026-05-19; native Item escape remains closed and Item Price, Default Supplier, and Item Supplier mutation remain forbidden. Next recommended step is Phase 7E3 design only.
+- Procurement Console Phase 7E3 Manager Review / Action Readiness is documented on 2026-05-19 as a docs-only design; recommended implementation is readiness/exception guidance without lifecycle mutation. Native escape, send/email, conversion, submit/approval, Item Price, Default Supplier, receiving, billing, and payment remain deferred.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -137,6 +138,7 @@ Documents in this folder:
 - `procurement-console-phase7e1-supplier-buying-profile-contact-readiness-design-plan-2026-05-18.md`
 - `procurement-console-phase7e2-buying-item-procurement-context-design-plan-2026-05-19.md`
 - `procurement-console-phase7e2a-buying-item-procurement-context-baseline-2026-05-19.md`
+- `procurement-console-phase7e3-manager-review-action-readiness-design-plan-2026-05-19.md`
 - `procurement-console-phase7g-quick-find-operations-review-2026-05-19.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
