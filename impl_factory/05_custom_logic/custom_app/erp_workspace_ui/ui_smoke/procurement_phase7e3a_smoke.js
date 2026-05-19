@@ -147,7 +147,7 @@ async function assertReadinessRoute(page, route, label, minCards = 1) {
   for (const viewport of [{ width: 1136, height: 768 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     await openDeskRoute(page, route);
-    await page.waitForSelector("[data-procurement-readiness-card]", { state: "visible", timeout: TIMEOUT });
+    await page.waitForFunction(() => Array.from(document.querySelectorAll("[data-procurement-readiness-card]")).some((node) => { const rect = node.getBoundingClientRect(); const style = window.getComputedStyle(node); return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"; }), null, { timeout: TIMEOUT });
     const state = await pageState(page);
     assert(state.readinessCards >= minCards, `${label} must show readiness card`, state);
     assert(/Readiness Review/i.test(state.bodyText), `${label} readiness heading missing`, state);
