@@ -20,6 +20,8 @@ READABLE_DOCTYPES = {
     "Supplier Quotation",
     "Procurement Supplier Readiness Profile",
     "Procurement Supplier Readiness Log",
+    "Procurement Item Buying Profile",
+    "Procurement Item Buying Log",
 }
 WRITEABLE_DOCTYPES = set()
 CREATEABLE_DOCTYPES = set()
@@ -41,6 +43,8 @@ SAVED_SUPPLIER_QUOTATIONS = {}
 SAVED_PURCHASE_ORDERS = {}
 SUPPLIER_READINESS_PROFILES = {}
 SUPPLIER_READINESS_LOGS = []
+ITEM_BUYING_PROFILES = {}
+ITEM_BUYING_LOGS = []
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -321,6 +325,10 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
         return _filter_rows(doctype, list(SUPPLIER_READINESS_PROFILES.values()), filters)
     if doctype == "Procurement Supplier Readiness Log":
         return _filter_rows(doctype, list(SUPPLIER_READINESS_LOGS), filters)
+    if doctype == "Procurement Item Buying Profile":
+        return _filter_rows(doctype, list(ITEM_BUYING_PROFILES.values()), filters)
+    if doctype == "Procurement Item Buying Log":
+        return _filter_rows(doctype, list(ITEM_BUYING_LOGS), filters)
     if doctype == "Request for Quotation Supplier":
         return _filter_rows(doctype, [
             {"parent": "RFQ-001", "supplier": "SUP-001", "supplier_name": "Alpha Supplier", "quote_status": "Pending"},
@@ -780,6 +788,69 @@ class _FakeReadinessLogDoc:
         return self
 
 
+class _FakeItemBuyingProfileDoc:
+    def __init__(self, name=None, values=None):
+        values = dict(values or {})
+        self.doctype = "Procurement Item Buying Profile"
+        self.name = name or values.get("name") or values.get("item_code") or ""
+        self.item_code = values.get("item_code") or self.name
+        self.buying_readiness_status = values.get("buying_readiness_status") or "Not reviewed"
+        self.preferred_existing_supplier = values.get("preferred_existing_supplier") or ""
+        self.supplier_part_no_context = values.get("supplier_part_no_context") or ""
+        self.procurement_lead_time_days = values.get("procurement_lead_time_days") if values.get("procurement_lead_time_days") not in (None, "") else ""
+        self.minimum_order_qty_context = values.get("minimum_order_qty_context") if values.get("minimum_order_qty_context") not in (None, "") else ""
+        self.buying_note = values.get("buying_note") or ""
+        self.readiness_note = values.get("readiness_note") or ""
+        self.last_context_update_by = values.get("last_context_update_by") or fake_frappe.session.user
+        self.last_context_update_at = values.get("last_context_update_at") or "2026-05-03 00:00:00"
+        self.modified = values.get("modified") or "2026-05-03 00:00:00"
+        self.modified_by = values.get("modified_by") or fake_frappe.session.user
+        self.owner = values.get("owner") or fake_frappe.session.user
+
+    def _row(self):
+        return {
+            "name": self.name,
+            "item_code": self.item_code,
+            "buying_readiness_status": self.buying_readiness_status,
+            "preferred_existing_supplier": self.preferred_existing_supplier,
+            "supplier_part_no_context": self.supplier_part_no_context,
+            "procurement_lead_time_days": self.procurement_lead_time_days,
+            "minimum_order_qty_context": self.minimum_order_qty_context,
+            "buying_note": self.buying_note,
+            "readiness_note": self.readiness_note,
+            "last_context_update_by": self.last_context_update_by,
+            "last_context_update_at": self.last_context_update_at,
+            "modified": self.modified,
+            "modified_by": self.modified_by,
+            "owner": self.owner,
+        }
+
+    def insert(self, ignore_permissions=False):
+        if not self.name:
+            self.name = self.item_code
+        ITEM_BUYING_PROFILES[self.item_code] = self._row()
+        return self
+
+    def save(self, ignore_permissions=False):
+        if not self.name:
+            self.name = self.item_code
+        ITEM_BUYING_PROFILES[self.item_code] = self._row()
+        return self
+
+
+class _FakeItemBuyingLogDoc:
+    def __init__(self, values=None):
+        values = dict(values or {})
+        self.doctype = "Procurement Item Buying Log"
+        self.name = values.get("name") or f"ITEM-LOG-{len(ITEM_BUYING_LOGS) + 1:03d}"
+        for key, value in values.items():
+            setattr(self, key, value)
+
+    def insert(self, ignore_permissions=False):
+        ITEM_BUYING_LOGS.append(dict(self.__dict__))
+        return self
+
+
 def _get_doc(*args, **kwargs):
     if args and isinstance(args[0], dict):
         doctype = args[0].get("doctype")
@@ -787,6 +858,10 @@ def _get_doc(*args, **kwargs):
             return _FakeReadinessProfileDoc(values=args[0])
         if doctype == "Procurement Supplier Readiness Log":
             return _FakeReadinessLogDoc(values=args[0])
+        if doctype == "Procurement Item Buying Profile":
+            return _FakeItemBuyingProfileDoc(values=args[0])
+        if doctype == "Procurement Item Buying Log":
+            return _FakeItemBuyingLogDoc(values=args[0])
         if doctype == "Request for Quotation":
             return _FakeRFQDoc(values=args[0])
         if doctype == "Supplier Quotation":
@@ -799,6 +874,12 @@ def _get_doc(*args, **kwargs):
         row = next((row for row in SUPPLIER_READINESS_PROFILES.values() if row.get("name") == name or row.get("supplier") == name), None)
         if row:
             return _FakeReadinessProfileDoc(name=row.get("name"), values=row)
+        raise Exception("Document not found")
+    if len(args) >= 2 and args[0] == "Procurement Item Buying Profile":
+        name = args[1]
+        row = next((row for row in ITEM_BUYING_PROFILES.values() if row.get("name") == name or row.get("item_code") == name), None)
+        if row:
+            return _FakeItemBuyingProfileDoc(name=row.get("name"), values=row)
         raise Exception("Document not found")
     if len(args) >= 2 and args[0] == "Purchase Order":
         name = args[1]
@@ -1012,7 +1093,18 @@ fake_frappe.has_permission = _has_permission
 fake_frappe.get_list = _get_list
 fake_frappe.get_all = _get_all
 fake_frappe.get_doc = _get_doc
-fake_frappe.new_doc = lambda doctype: _FakeReadinessProfileDoc(values={"doctype": doctype}) if doctype == "Procurement Supplier Readiness Profile" else _FakeReadinessLogDoc({"doctype": doctype})
+def _new_doc(doctype):
+    if doctype == "Procurement Supplier Readiness Profile":
+        return _FakeReadinessProfileDoc(values={"doctype": doctype})
+    if doctype == "Procurement Supplier Readiness Log":
+        return _FakeReadinessLogDoc({"doctype": doctype})
+    if doctype == "Procurement Item Buying Profile":
+        return _FakeItemBuyingProfileDoc(values={"doctype": doctype})
+    if doctype == "Procurement Item Buying Log":
+        return _FakeItemBuyingLogDoc({"doctype": doctype})
+    return _FakeReadinessLogDoc({"doctype": doctype})
+
+fake_frappe.new_doc = _new_doc
 fake_frappe.get_meta = lambda doctype: _FakeMeta(doctype)
 fake_frappe.get_print = lambda doctype, name, print_format=None, doc=None, as_pdf=False, letterhead=None, **kwargs: (
     f"<div class='print-format'><h1>{doctype} {name}</h1><span class='supplier'>{getattr(doc, 'vendor', getattr(doc, 'supplier', ''))}</span></div>".encode("utf-8")
@@ -1076,7 +1168,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_output, document_reviews, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, supplier_readiness, worklist
+from erp_workspace_ui.procurement_console import document_output, document_reviews, item_buying_profile, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, supplier_readiness, worklist
 
 
 def _set_user(user, roles):
@@ -1170,6 +1262,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             "Supplier Quotation",
             "Procurement Supplier Readiness Profile",
             "Procurement Supplier Readiness Log",
+            "Procurement Item Buying Profile",
+            "Procurement Item Buying Log",
         )
         _set_writeable_doctypes()
         _set_createable_doctypes()
@@ -1189,6 +1283,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         SAVED_PURCHASE_ORDERS.clear()
         SUPPLIER_READINESS_PROFILES.clear()
         SUPPLIER_READINESS_LOGS.clear()
+        ITEM_BUYING_PROFILES.clear()
+        ITEM_BUYING_LOGS.clear()
         fake_frappe.local.response = {}
 
     def test_guest_bootstrap_raises_permission_error(self):
@@ -2457,6 +2553,101 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
                 self.assertNotIn("open_item_form", payload["action_targets"])
                 self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_items", "refresh"])
                 self.assertNotIn("Open ERP Item Form", str(payload))
+
+    def test_item_buying_profile_is_manager_editable_and_audited(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+
+        payload = item_buying_profile.save_item_buying_profile(
+            "ITEM-001",
+            {
+                "buying_readiness_status": "Ready for buying",
+                "preferred_existing_supplier": "SUP-001",
+                "supplier_part_no_context": "SUP-WIDGET-CTX",
+                "procurement_lead_time_days": 12,
+                "minimum_order_qty_context": 24,
+                "buying_note": "Use controlled packaging.",
+                "readiness_note": "Ready after sourcing review.",
+            },
+        )
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(ITEM_BUYING_PROFILES["ITEM-001"]["buying_readiness_status"], "Ready for buying")
+        self.assertEqual(ITEM_BUYING_PROFILES["ITEM-001"]["preferred_existing_supplier"], "SUP-001")
+        self.assertEqual(ITEM_BUYING_PROFILES["ITEM-001"]["supplier_part_no_context"], "SUP-WIDGET-CTX")
+        self.assertEqual(len(ITEM_BUYING_LOGS), 1)
+        self.assertIn("preferred_existing_supplier", ITEM_BUYING_LOGS[0]["change_summary"])
+        detail = items.get_item_detail_context("ITEM-001")
+        self.assertTrue(detail["detail"]["buying_profile"]["can_edit"])
+        self.assertEqual(detail["detail"]["buying_profile"]["readiness_label"], "Ready for buying")
+        directory = items.build_buying_item_directory({})
+        self.assertEqual(directory["results"]["columns"][3]["key"], "readiness")
+        self.assertEqual(directory["results"]["rows"][0]["cells"]["readiness"]["value"], "Ready for buying")
+        self.assertNotIn("Open ERP Item Form", str(detail))
+        self.assertEqual({}, SAVED_PURCHASE_ORDERS)
+        self.assertEqual({}, SAVED_SUPPLIER_QUOTATIONS)
+        self.assertEqual([], [row for row in ITEM_BUYING_LOGS if row.get("doctype") in {"Communication", "Email Queue"}])
+
+    def test_item_buying_profile_is_read_only_for_purchase_user(self):
+        _set_user("purchase@example.com", ["Purchase User"])
+
+        payload = item_buying_profile.save_item_buying_profile("ITEM-001", {"buying_readiness_status": "Ready for buying"})
+
+        self.assertEqual(payload["state"]["kind"], "restricted")
+        self.assertEqual({}, ITEM_BUYING_PROFILES)
+        detail = items.get_item_detail_context("ITEM-001")
+        self.assertFalse(detail["detail"]["buying_profile"]["can_edit"])
+        self.assertIn("Purchase Manager", detail["detail"]["buying_profile"]["read_only_reason"])
+
+    def test_item_buying_profile_rejects_unknown_forbidden_and_invalid_payloads(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+
+        cases = [
+            {"item_group": "Products"},
+            {"default_supplier": "SUP-001"},
+            {"price_list_rate": 100},
+            {"unexpected_field": "x"},
+            {"buying_readiness_status": "Ready"},
+            {"preferred_existing_supplier": "SUP-MISSING"},
+            {"procurement_lead_time_days": -1},
+            {"procurement_lead_time_days": 366},
+            {"minimum_order_qty_context": 0},
+            {"minimum_order_qty_context": 1000001},
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                response = item_buying_profile.save_item_buying_profile("ITEM-001", payload)
+                self.assertEqual(response["state"]["kind"], "error")
+        self.assertEqual({}, ITEM_BUYING_PROFILES)
+        self.assertEqual([], ITEM_BUYING_LOGS)
+
+    def test_item_buying_profile_does_not_mutate_erpnext_master_or_send_side_effects(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        before_supplier_rows = _get_all("Item Supplier", filters={"parent": "ITEM-001"}, fields=["supplier", "supplier_part_no"])
+        before_prices = _get_list("Item Price", filters=[["Item Price", "item_code", "=", "ITEM-001"]])
+
+        item_buying_profile.save_item_buying_profile(
+            "ITEM-001",
+            {
+                "buying_readiness_status": "Hold for sourcing",
+                "preferred_existing_supplier": "SUP-001",
+                "supplier_part_no_context": "CONTEXT-ONLY",
+                "procurement_lead_time_days": 30,
+                "minimum_order_qty_context": 5,
+                "buying_note": "Hold until specs are confirmed.",
+                "readiness_note": "Spec review pending.",
+            },
+        )
+
+        after_supplier_rows = _get_all("Item Supplier", filters={"parent": "ITEM-001"}, fields=["supplier", "supplier_part_no"])
+        after_prices = _get_list("Item Price", filters=[["Item Price", "item_code", "=", "ITEM-001"]])
+        self.assertEqual(before_supplier_rows, after_supplier_rows)
+        self.assertEqual(before_prices, after_prices)
+        self.assertEqual(ITEM_BUYING_PROFILES["ITEM-001"]["supplier_part_no_context"], "CONTEXT-ONLY")
+        self.assertNotEqual(ITEM_BUYING_PROFILES["ITEM-001"]["supplier_part_no_context"], after_supplier_rows[0]["supplier_part_no"])
+        self.assertEqual({}, SAVED_RFQS)
+        self.assertEqual({}, SAVED_SUPPLIER_QUOTATIONS)
+        self.assertEqual({}, SAVED_PURCHASE_ORDERS)
+        self.assertEqual([], [row for row in ITEM_BUYING_LOGS if row.get("doctype") in {"Communication", "Email Queue", "Contact", "User"}])
 
     def test_material_request_directory_is_purchase_only(self):
         payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")

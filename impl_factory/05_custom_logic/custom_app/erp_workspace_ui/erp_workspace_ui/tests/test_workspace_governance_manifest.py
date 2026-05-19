@@ -121,6 +121,22 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertIn("no Supplier, Contact, User, email", save["notes"])
         self.assertNotEqual("form", save["target_kind"])
 
+    def test_procurement_item_buying_profile_actions_are_productized(self):
+        actions = {action["manifest_key"]: action for action in ACTION_MANIFEST if action["workspace_id"] == "procurement"}
+
+        view = actions["procurement-item-buying-profile-view"]
+        self.assertEqual("productized_secondary_action", view["classification"])
+        self.assertEqual("current_shell", view["target_kind"])
+        self.assertEqual("Buying Procurement Context", view["label"])
+        self.assertIn("item buying profile", view["notes"].lower())
+
+        save = actions["procurement-item-buying-profile-save"]
+        self.assertEqual("productized_secondary_action", save["classification"])
+        self.assertEqual("current_shell", save["target_kind"])
+        self.assertEqual("Save Context", save["label"])
+        self.assertIn("no Item, Item Supplier, Item Price, Default Supplier", save["notes"])
+        self.assertNotEqual("form", save["target_kind"])
+
     def test_registry_route_keys_exist_in_manifest(self):
         sales_routes = get_sales_workspace_definition()["routes"]
         procurement_routes = get_procurement_workspace_definition()["routes"]

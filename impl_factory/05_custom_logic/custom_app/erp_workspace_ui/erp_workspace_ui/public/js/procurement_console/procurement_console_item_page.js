@@ -9,6 +9,7 @@
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
   const PO_DETAIL_ROUTE = procurementRoutes.poFollowUpDetail || "procurement-console-po-follow-up";
   const CONTEXT_METHOD = procurementMethods.itemDetailContext || "erp_workspace_ui.procurement_console.items.get_item_detail_context";
+  const BUYING_PROFILE_SAVE_METHOD = "erp_workspace_ui.procurement_console.item_buying_profile.save_item_buying_profile";
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
@@ -56,6 +57,52 @@
     const helperEscape = helpers().escapeHtml;
     if (typeof helperEscape === "function") return helperEscape(value);
     return frappe.utils.escape_html(value == null ? "" : String(value));
+  }
+
+
+  function ensureBuyingProfileStyles() {
+    if (document.getElementById("erpw-item-buying-profile-styles")) return;
+    const style = document.createElement("style");
+    style.id = "erpw-item-buying-profile-styles";
+    style.textContent = `
+      .erpw-item-buying-profile-card { overflow: visible; }
+      .erpw-item-buying-profile-top { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+      .erpw-item-buying-profile-title { font-size: 15px; font-weight: 650; color: #111827; }
+      .erpw-item-buying-profile-note { margin-top: 3px; color: #6b7280; font-size: 12px; line-height: 1.4; }
+      .erpw-item-buying-profile-chip { display: inline-flex; align-items: center; min-height: 26px; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 650; border: 1px solid #d1d5db; background: #f9fafb; color: #374151; white-space: nowrap; }
+      .erpw-item-buying-profile-chip.good { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
+      .erpw-item-buying-profile-chip.warning { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+      .erpw-item-buying-profile-chip.danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+      .erpw-item-buying-profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+      .erpw-item-buying-profile-field { min-width: 0; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fff; }
+      .erpw-item-buying-profile-label { color: #6b7280; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0; }
+      .erpw-item-buying-profile-value { color: #111827; font-size: 13px; font-weight: 600; margin-top: 4px; overflow-wrap: anywhere; }
+      .erpw-item-buying-profile-meta { color: #6b7280; font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
+      .erpw-item-buying-profile-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+      .erpw-item-buying-profile-button { min-height: 32px; border-radius: 7px; border: 1px solid #d1d5db; background: #fff; color: #111827; padding: 0 12px; font-weight: 650; }
+      .erpw-item-buying-profile-button.primary { border-color: #2563eb; background: #2563eb; color: #fff; }
+      .erpw-item-buying-profile-button[disabled] { opacity: .6; cursor: not-allowed; }
+      .erpw-item-buying-profile-form { margin-top: 14px; border-top: 1px solid #e5e7eb; padding-top: 14px; }
+      .erpw-item-buying-profile-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .erpw-item-buying-profile-control { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+      .erpw-item-buying-profile-control.wide { grid-column: 1 / -1; }
+      .erpw-item-buying-profile-control label { color: #374151; font-size: 12px; font-weight: 650; }
+      .erpw-item-buying-profile-control input,
+      .erpw-item-buying-profile-control select,
+      .erpw-item-buying-profile-control textarea { min-height: 34px; border: 1px solid #d1d5db; border-radius: 7px; padding: 7px 9px; color: #111827; background: #fff; font-size: 13px; width: 100%; }
+      .erpw-item-buying-profile-control textarea { min-height: 70px; resize: vertical; }
+      .erpw-item-buying-profile-message { margin-top: 10px; font-size: 12px; color: #6b7280; }
+      .erpw-item-buying-profile-message.error { color: #b91c1c; }
+      .erpw-item-buying-profile-message.ready { color: #047857; }
+      @media (max-width: 1180px) {
+        .erpw-item-buying-profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 760px) {
+        .erpw-item-buying-profile-grid,
+        .erpw-item-buying-profile-form-grid { grid-template-columns: 1fr; }
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   function traceDetailLoad(event) {
@@ -231,6 +278,194 @@
     `;
   }
 
+
+  function readinessToneClass(profile) {
+    const tone = String(profile && profile.readiness_tone || "neutral").trim();
+    if (["good", "warning", "danger"].includes(tone)) return tone;
+    return "neutral";
+  }
+
+  function formatBusinessTimestamp(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?/);
+    if (!match) return raw.replace(/\.\d+$/, "");
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const day = String(Number(match[3]));
+    const month = months[Number(match[2]) - 1] || match[2];
+    const dateLabel = `${day} ${month} ${match[1]}`;
+    if (match[4] && match[5]) return `${dateLabel}, ${match[4]}:${match[5]}`;
+    return dateLabel;
+  }
+
+  function formatNumberValue(value, suffix) {
+    const raw = String(value == null ? "" : value).trim();
+    if (!raw) return "-";
+    const number = Number(raw);
+    if (!Number.isFinite(number)) return raw;
+    const text = Number.isInteger(number) ? String(number) : String(number).replace(/\.0+$/, "");
+    return suffix ? `${text} ${suffix}` : text;
+  }
+
+  function renderProfileField(label, value, meta) {
+    return `
+      <div class="erpw-item-buying-profile-field">
+        <div class="erpw-item-buying-profile-label">${escapeHtml(label)}</div>
+        <div class="erpw-item-buying-profile-value">${escapeHtml(value || "-")}</div>
+        ${meta ? `<div class="erpw-item-buying-profile-meta">${escapeHtml(meta)}</div>` : ""}
+      </div>
+    `;
+  }
+
+  function renderBuyingProfileForm(profile) {
+    if (!profile || !profile.can_edit) return "";
+    const status = String(profile.buying_readiness_status || "Not reviewed");
+    const statuses = Array.isArray(profile.status_options) ? profile.status_options : [];
+    const suppliers = Array.isArray(profile.supplier_options) ? profile.supplier_options : [];
+    const preferred = String(profile.preferred_existing_supplier || "");
+    return `
+      <form class="erpw-item-buying-profile-form" data-erpw-item-buying-profile-form hidden>
+        <div class="erpw-item-buying-profile-form-grid">
+          <div class="erpw-item-buying-profile-control">
+            <label for="erpw-item-buying-status">Buying readiness</label>
+            <select id="erpw-item-buying-status" data-erpw-item-profile-field="buying_readiness_status">
+              ${statuses.map((option) => {
+                const value = String(option.value || option.label || "");
+                return `<option value="${escapeHtml(value)}" ${value === status ? "selected" : ""}>${escapeHtml(option.label || value)}</option>`;
+              }).join("")}
+            </select>
+          </div>
+          <div class="erpw-item-buying-profile-control">
+            <label for="erpw-item-buying-supplier">Preferred supplier</label>
+            <input id="erpw-item-buying-supplier" list="erpw-item-buying-supplier-options" data-erpw-item-profile-field="preferred_existing_supplier" value="${escapeHtml(preferred)}" placeholder="Existing Supplier ID">
+            <datalist id="erpw-item-buying-supplier-options">
+              ${suppliers.map((supplier) => `<option value="${escapeHtml(supplier.supplier || "")}">${escapeHtml(supplier.label || supplier.supplier || "")}</option>`).join("")}
+            </datalist>
+          </div>
+          <div class="erpw-item-buying-profile-control">
+            <label for="erpw-item-buying-part-no">Supplier part reference</label>
+            <input id="erpw-item-buying-part-no" data-erpw-item-profile-field="supplier_part_no_context" value="${escapeHtml(profile.supplier_part_no_context || "")}" maxlength="140">
+          </div>
+          <div class="erpw-item-buying-profile-control">
+            <label for="erpw-item-buying-lead-time">Lead time days</label>
+            <input id="erpw-item-buying-lead-time" type="number" min="0" max="365" data-erpw-item-profile-field="procurement_lead_time_days" value="${escapeHtml(profile.procurement_lead_time_days || "")}">
+          </div>
+          <div class="erpw-item-buying-profile-control">
+            <label for="erpw-item-buying-moq">Minimum order quantity</label>
+            <input id="erpw-item-buying-moq" type="number" min="0.000001" max="1000000" step="any" data-erpw-item-profile-field="minimum_order_qty_context" value="${escapeHtml(profile.minimum_order_qty_context || "")}">
+          </div>
+          <div class="erpw-item-buying-profile-control wide">
+            <label for="erpw-item-buying-note">Buying note</label>
+            <textarea id="erpw-item-buying-note" data-erpw-item-profile-field="buying_note" maxlength="1000" placeholder="Internal buying context for this item">${escapeHtml(profile.buying_note || "")}</textarea>
+          </div>
+          <div class="erpw-item-buying-profile-control wide">
+            <label for="erpw-item-readiness-note">Readiness note</label>
+            <textarea id="erpw-item-readiness-note" data-erpw-item-profile-field="readiness_note" maxlength="1000" placeholder="Short reason or follow-up note">${escapeHtml(profile.readiness_note || "")}</textarea>
+          </div>
+        </div>
+        <div class="erpw-item-buying-profile-actions" style="margin-top: 12px;">
+          <button type="button" class="erpw-item-buying-profile-button" data-erpw-item-profile-cancel>Cancel</button>
+          <button type="submit" class="erpw-item-buying-profile-button primary" data-erpw-item-profile-save>Save Context</button>
+        </div>
+        <div class="erpw-item-buying-profile-message" data-erpw-item-profile-message></div>
+      </form>
+    `;
+  }
+
+  function renderBuyingProfile(profile) {
+    const data = profile || {};
+    const canEdit = Boolean(data.can_edit);
+    const supplierLabel = data.preferred_supplier_name || data.preferred_existing_supplier || "Not selected";
+    const updated = formatBusinessTimestamp(data.last_context_update_at || data.modified) || "Not saved";
+    const leadTime = formatNumberValue(data.procurement_lead_time_days, "days");
+    const moq = formatNumberValue(data.minimum_order_qty_context, "");
+    return `
+      <section class="erpw-child-card erpw-item-buying-profile-card" data-erpw-item-buying-profile-card data-erpw-item-code="${escapeHtml(data.item_code || "")}">
+        <div class="erpw-item-buying-profile-top">
+          <div>
+            <div class="erpw-item-buying-profile-title">Buying Procurement Context</div>
+            <div class="erpw-item-buying-profile-note">${escapeHtml(canEdit ? "Controlled buying context for procurement planning." : "Read-only buying context for procurement planning.")}</div>
+          </div>
+          <div class="erpw-item-buying-profile-actions">
+            <span class="erpw-item-buying-profile-chip ${escapeHtml(readinessToneClass(data))}">${escapeHtml(data.readiness_label || data.buying_readiness_status || "Not reviewed")}</span>
+            ${canEdit ? `<button type="button" class="erpw-item-buying-profile-button" data-erpw-item-profile-edit>Edit Context</button>` : ""}
+          </div>
+        </div>
+        <div class="erpw-item-buying-profile-grid">
+          ${renderProfileField("Preferred supplier", supplierLabel, data.preferred_existing_supplier ? "Context only, not Default Supplier" : "No controlled supplier context")}
+          ${renderProfileField("Supplier part reference", data.supplier_part_no_context || "-", "Context only")}
+          ${renderProfileField("Lead time", leadTime, "Procurement context")}
+          ${renderProfileField("Minimum order qty", moq, "Procurement context")}
+          ${renderProfileField("Last updated", updated, data.last_context_update_by || data.modified_by || "")}
+          ${renderProfileField("Editing", canEdit ? "Purchase Manager" : "Read-only", data.read_only_reason || "")}
+          ${renderProfileField("Buying note", data.buying_note || "-", "")}
+          ${renderProfileField("Readiness note", data.readiness_note || "-", "")}
+        </div>
+        ${renderBuyingProfileForm(data)}
+      </section>
+    `;
+  }
+
+  function itemProfileFormPayload($form) {
+    const payload = {};
+    $form.find("[data-erpw-item-profile-field]").each(function () {
+      const $field = $(this);
+      payload[String($field.attr("data-erpw-item-profile-field") || "")] = String($field.val() || "").trim();
+    });
+    return payload;
+  }
+
+  function setItemProfileMessage($card, kind, message) {
+    const $message = $card.find("[data-erpw-item-profile-message]").first();
+    $message.removeClass("ready error").addClass(kind || "").text(message || "");
+  }
+
+  function bindBuyingProfile(viewState) {
+    const $card = viewState.$shell.find("[data-erpw-item-buying-profile-card]").first();
+    if (!$card.length) return;
+    $card.off("click.erpWItemProfileEdit").on("click.erpWItemProfileEdit", "[data-erpw-item-profile-edit]", function () {
+      $card.find("[data-erpw-item-buying-profile-form]").prop("hidden", false);
+      setItemProfileMessage($card, "", "");
+    });
+    $card.off("click.erpWItemProfileCancel").on("click.erpWItemProfileCancel", "[data-erpw-item-profile-cancel]", function () {
+      $card.find("[data-erpw-item-buying-profile-form]").prop("hidden", true);
+      setItemProfileMessage($card, "", "");
+    });
+    $card.off("submit.erpWItemProfileSave").on("submit.erpWItemProfileSave", "[data-erpw-item-buying-profile-form]", function (event) {
+      event.preventDefault();
+      const $form = $(this);
+      const $button = $form.find("[data-erpw-item-profile-save]").first();
+      const itemCode = String($card.attr("data-erpw-item-code") || "").trim();
+      if (!itemCode) {
+        setItemProfileMessage($card, "error", "Item buying context could not identify the item.");
+        return;
+      }
+      $button.prop("disabled", true).text("Saving...");
+      setItemProfileMessage($card, "", "Saving context.");
+      frappe.call({
+        method: BUYING_PROFILE_SAVE_METHOD,
+        args: {
+          item_code: itemCode,
+          payload: JSON.stringify(itemProfileFormPayload($form)),
+        },
+      }).then((response) => {
+        const message = response && response.message ? response.message : {};
+        const state = message.state || {};
+        if (state.kind && state.kind !== "ready") {
+          setItemProfileMessage($card, "error", state.detail || state.title || "Item buying context was not saved.");
+          return;
+        }
+        setItemProfileMessage($card, "ready", "Item buying context saved.");
+        Object.keys(contextRequestCache).forEach((key) => { delete contextRequestCache[key]; });
+        loadRoute(viewState, { refresh: true });
+      }).catch((error) => {
+        setItemProfileMessage($card, "error", error && error.message ? error.message : "Item buying context was not saved.");
+      }).finally(() => {
+        $button.prop("disabled", false).text("Save Context");
+      });
+    });
+  }
+
   function extraSections(payload) {
     const detail = (payload && payload.detail) || {};
     const state = detail.state || {};
@@ -245,6 +480,7 @@
       `;
     }
     return `
+      ${renderBuyingProfile(detail.buying_profile || {})}
       ${renderSection("Approved suppliers", "Supplier relationships configured on the item master.", detail.item_suppliers)}
       ${renderSection("Supplier price review", "Read-only buying Item Price context. No price updates are exposed.", detail.item_prices)}
       ${renderSection("Recent supplier quotations", "Recent quotation context linked to this item.", detail.supplier_quotations)}
@@ -259,6 +495,7 @@
     const routeSignature = viewState.routeSignature || "";
     ensureDetailRuntime().then((runtime) => {
       if (viewState.routeSignature !== routeSignature) return;
+      ensureBuyingProfileStyles();
       runtime.renderShellContent(viewState.$shell, {
         summary: payload.summary || {},
         actions: normalizeActions(payload, viewState),
@@ -272,6 +509,7 @@
         const name = String(this.getAttribute("data-erpw-procurement-detail-name") || "");
         if (route === PO_DETAIL_ROUTE) routeToPurchaseOrderFollowUp(name);
       });
+      bindBuyingProfile(viewState);
     }).catch((error) => {
       if (viewState.routeSignature !== routeSignature) return;
       viewState.$shell.html(`

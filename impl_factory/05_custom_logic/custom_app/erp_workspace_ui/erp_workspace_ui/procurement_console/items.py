@@ -5,7 +5,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt
 
-from . import common, service
+from . import common, item_buying_profile, service
 
 
 ITEM_DETAIL_ROUTE = "procurement-console-item"
@@ -74,12 +74,15 @@ def _item_rows(filters: dict[str, str]) -> list[dict[str, object]]:
 		filters=item_filters(filters),
 		order_by="modified desc",
 	)
+	item_names = [cstr(record.get("name")).strip() for record in records if cstr(record.get("name")).strip()]
+	readiness_by_item = item_buying_profile.readiness_chips_for_items(item_names)
 	rows: list[dict[str, object]] = []
 	for record in records:
 		name = cstr(record.get("name")).strip()
 		if not name:
 			continue
 		disabled = bool(record.get("disabled"))
+		readiness = readiness_by_item.get(name) or {"value": "Not reviewed", "tone": "neutral"}
 		rows.append(
 			{
 				"key": name,
@@ -88,6 +91,7 @@ def _item_rows(filters: dict[str, str]) -> list[dict[str, object]]:
 					"item": {"value": record.get("item_name") or name, "meta": name},
 					"group": record.get("item_group") or "-",
 					"uom": record.get("stock_uom") or "-",
+					"readiness": readiness,
 					"status": {"value": "Disabled" if disabled else "Active", "tone": "danger" if disabled else "positive"},
 					"modified": cstr(record.get("modified") or ""),
 				},
@@ -108,7 +112,7 @@ def _item_directory_payload(
 		"summary": {
 			"title": "Buying Items",
 			"subtitle": "Purchase-enabled item and catalog context for buyers. Stock execution remains with Warehouse.",
-			"chips": [{"label": "Read-only item view"}],
+			"chips": [{"label": "Read-only item view"}, {"label": "Buying readiness context"}],
 		},
 		"controls": {
 			"fields": [
@@ -138,6 +142,7 @@ def _item_directory_payload(
 				{"key": "item", "label": "Item"},
 				{"key": "group", "label": "Item Group"},
 				{"key": "uom", "label": "Stock UOM"},
+				{"key": "readiness", "label": "Readiness"},
 				{"key": "status", "label": "Status"},
 				{"key": "modified", "label": "Modified"},
 			],
@@ -169,6 +174,7 @@ def get_item_detail_context(item: str | None = None, name: str | None = None) ->
 		record,
 		context,
 		item_suppliers=_item_suppliers(item_code),
+		buying_profile=item_buying_profile.get_item_profile_context(item_code, context),
 		item_prices=_item_prices(item_code),
 		supplier_quotations=_supplier_quotations(item_code),
 		purchase_orders=_purchase_orders(item_code),
@@ -189,6 +195,7 @@ def _state_payload(item_code: str, state: dict[str, object], context: dict[str, 
 		"controls": {"actions": _base_actions()},
 		"detail": {
 			"state": state,
+			"buying_profile": {},
 			"item_suppliers": _empty_table(),
 			"item_prices": _empty_table(),
 			"supplier_quotations": _empty_table(),
@@ -203,12 +210,15 @@ def _detail_payload(
 	record: dict[str, object],
 	context: dict[str, object],
 	item_suppliers: list[dict[str, object]],
+	buying_profile: dict[str, object],
 	item_prices: list[dict[str, object]],
 	supplier_quotations: list[dict[str, object]],
 	purchase_orders: list[dict[str, object]],
 ) -> dict[str, object]:
 	name = cstr(record.get("name"))
 	disabled = bool(record.get("disabled"))
+	profile_status = cstr((buying_profile or {}).get("readiness_label") or "Not reviewed")
+	profile_tone = cstr((buying_profile or {}).get("readiness_tone") or "neutral")
 	actions = _base_actions()
 	action_targets = _base_action_targets()
 	return {
@@ -219,7 +229,7 @@ def _detail_payload(
 			"subtitle": "Read-only procurement view of supplier, price, quotation, and order context.",
 			"chips": [
 				{"label": "Disabled" if disabled else "Active", "tone": "danger" if disabled else "good"},
-				{"label": "Read-only", "tone": "good"},
+				{"label": profile_status, "tone": profile_tone},
 			],
 			"facts": [
 				{"label": "Item Code", "value": name, "meta": cstr(record.get("item_group") or "")},
@@ -238,6 +248,7 @@ def _detail_payload(
 				"stock_uom": record.get("stock_uom") or "",
 				"status": "Disabled" if disabled else "Active",
 			},
+			"buying_profile": buying_profile or item_buying_profile.get_item_profile_context(name, context),
 			"item_suppliers": _item_supplier_table(item_suppliers),
 			"item_prices": _item_price_table(item_prices),
 			"supplier_quotations": _supplier_quotation_table(supplier_quotations),
