@@ -65,33 +65,39 @@
     const style = document.createElement("style");
     style.id = "erpw-item-buying-profile-styles";
     style.textContent = `
-      .erpw-item-buying-profile-card { overflow: visible; }
-      .erpw-item-buying-profile-top { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
-      .erpw-item-buying-profile-title { font-size: 15px; font-weight: 650; color: #111827; }
-      .erpw-item-buying-profile-note { margin-top: 3px; color: #6b7280; font-size: 12px; line-height: 1.4; }
-      .erpw-item-buying-profile-chip { display: inline-flex; align-items: center; min-height: 26px; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 650; border: 1px solid #d1d5db; background: #f9fafb; color: #374151; white-space: nowrap; }
-      .erpw-item-buying-profile-chip.good { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
-      .erpw-item-buying-profile-chip.warning { border-color: #fde68a; background: #fffbeb; color: #92400e; }
-      .erpw-item-buying-profile-chip.danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
-      .erpw-item-buying-profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-      .erpw-item-buying-profile-field { min-width: 0; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fff; }
-      .erpw-item-buying-profile-label { color: #6b7280; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0; }
-      .erpw-item-buying-profile-value { color: #111827; font-size: 13px; font-weight: 600; margin-top: 4px; overflow-wrap: anywhere; }
-      .erpw-item-buying-profile-meta { color: #6b7280; font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
-      .erpw-item-buying-profile-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-      .erpw-item-buying-profile-button { min-height: 32px; border-radius: 7px; border: 1px solid #d1d5db; background: #fff; color: #111827; padding: 0 12px; font-weight: 650; }
-      .erpw-item-buying-profile-button.primary { border-color: #2563eb; background: #2563eb; color: #fff; }
+      .erpw-item-buying-profile-card { overflow: visible; margin-top: 10px; }
+      .erpw-item-buying-profile-top { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid #e6edf5; }
+      .erpw-item-buying-profile-heading { min-width: 260px; flex: 1 1 420px; }
+      .erpw-item-buying-profile-title { font-size: 16px; font-weight: 760; color: #0f172a; line-height: 1.25; }
+      .erpw-item-buying-profile-note { margin-top: 4px; color: #52637a; font-size: 12.5px; line-height: 1.42; }
+      .erpw-item-buying-profile-chip,
+      .erpw-item-table-chip { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 740; border: 1px solid #d5e2ef; background: #f8fafc; color: #334155; white-space: nowrap; line-height: 1; }
+      .erpw-item-table-chip { min-height: 24px; padding: 0 9px; }
+      .erpw-item-buying-profile-chip.good, .erpw-item-table-chip.good { border-color: #b7e4ca; background: #f0fbf5; color: #166534; }
+      .erpw-item-buying-profile-chip.warning, .erpw-item-table-chip.warning { border-color: #f3d48b; background: #fff8e6; color: #854d0e; }
+      .erpw-item-buying-profile-chip.danger, .erpw-item-table-chip.danger { border-color: #f1b7b7; background: #fff1f2; color: #991b1b; }
+      .erpw-item-buying-profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+      .erpw-item-buying-profile-field { min-width: 0; min-height: 78px; border: 1px solid #dce7f2; border-radius: 8px; padding: 11px 12px; background: #fff; box-shadow: 0 1px 0 rgba(15, 23, 42, .02); }
+      .erpw-item-buying-profile-field.is-wide { grid-column: span 1; }
+      .erpw-item-buying-profile-label { color: #5b6b80; font-size: 11px; font-weight: 760; text-transform: uppercase; letter-spacing: 0; }
+      .erpw-item-buying-profile-value { color: #0f172a; font-size: 13.5px; font-weight: 700; margin-top: 5px; overflow-wrap: anywhere; }
+      .erpw-item-buying-profile-meta { color: #64748b; font-size: 12px; margin-top: 4px; line-height: 1.35; overflow-wrap: anywhere; }
+      .erpw-item-buying-profile-actions { display: flex; gap: 9px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+      .erpw-item-buying-profile-button { min-height: 34px; border-radius: 10px; border: 1px solid #d5e2ef; background: #fff; color: #12365f; padding: 0 12px; font-size: 12px; font-weight: 740; box-shadow: 0 1px 1px rgba(15, 23, 42, .03); }
+      .erpw-item-buying-profile-button:hover:not(:disabled) { border-color: #9db7d2; background: #f8fbff; }
+      .erpw-item-buying-profile-button.primary { border-color: #12365f; background: #12365f; color: #fff; }
+      .erpw-item-buying-profile-button.primary:hover:not(:disabled) { border-color: #0f2f52; background: #0f2f52; }
       .erpw-item-buying-profile-button[disabled] { opacity: .6; cursor: not-allowed; }
-      .erpw-item-buying-profile-form { margin-top: 14px; border-top: 1px solid #e5e7eb; padding-top: 14px; }
+      .erpw-item-buying-profile-form { margin-top: 14px; border-top: 1px solid #e6edf5; padding-top: 14px; }
       .erpw-item-buying-profile-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .erpw-item-buying-profile-control { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+      .erpw-item-buying-profile-control { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
       .erpw-item-buying-profile-control.wide { grid-column: 1 / -1; }
-      .erpw-item-buying-profile-control label { color: #374151; font-size: 12px; font-weight: 650; }
+      .erpw-item-buying-profile-control label { color: #334155; font-size: 12px; font-weight: 740; }
       .erpw-item-buying-profile-control input,
       .erpw-item-buying-profile-control select,
-      .erpw-item-buying-profile-control textarea { min-height: 34px; border: 1px solid #d1d5db; border-radius: 7px; padding: 7px 9px; color: #111827; background: #fff; font-size: 13px; width: 100%; }
-      .erpw-item-buying-profile-control textarea { min-height: 70px; resize: vertical; }
-      .erpw-item-buying-profile-message { margin-top: 10px; font-size: 12px; color: #6b7280; }
+      .erpw-item-buying-profile-control textarea { min-height: 36px; border: 1px solid #cbd8e6; border-radius: 9px; padding: 8px 10px; color: #0f172a; background: #fff; font-size: 13px; width: 100%; }
+      .erpw-item-buying-profile-control textarea { min-height: 74px; resize: vertical; }
+      .erpw-item-buying-profile-message { margin-top: 10px; font-size: 12px; color: #64748b; }
       .erpw-item-buying-profile-message.error { color: #b91c1c; }
       .erpw-item-buying-profile-message.ready { color: #047857; }
       @media (max-width: 1180px) {
@@ -250,9 +256,13 @@
                   const route = cell && typeof cell === "object" ? String(cell.route || "") : "";
                   const routeParts = cell && typeof cell === "object" && Array.isArray(cell.route_parts) ? cell.route_parts : [];
                   const routeName = routeParts.length ? routeParts[0] : value;
+                  const tone = cell && typeof cell === "object" ? String(cell.tone || "") : "";
+                  const chipColumn = ["readiness", "status"].includes(String(column.key || ""));
                   const valueMarkup = route
                     ? `<button type="button" class="erpw-list-inline-open" data-erpw-procurement-detail-route="${escapeHtml(route)}" data-erpw-procurement-detail-name="${escapeHtml(routeName || "")}"><span class="erpw-list-inline-open-label">${escapeHtml(value || "-")}</span><span class="erpw-list-inline-open-icon" aria-hidden="true">&rarr;</span></button>`
-                    : `<span class="erpw-list-cell-value">${escapeHtml(value || "-")}</span>`;
+                    : chipColumn && tone
+                      ? `<span class="erpw-item-table-chip ${escapeHtml(normalizeToneClass(tone))}">${escapeHtml(value || "-")}</span>`
+                      : `<span class="erpw-list-cell-value">${escapeHtml(value || "-")}</span>`;
                   return `<td>${valueMarkup}${meta ? `<span class="erpw-list-cell-meta">${escapeHtml(meta)}</span>` : ""}</td>`;
                 }).join("")}
               </tr>
@@ -279,10 +289,16 @@
   }
 
 
-  function readinessToneClass(profile) {
-    const tone = String(profile && profile.readiness_tone || "neutral").trim();
-    if (["good", "warning", "danger"].includes(tone)) return tone;
+  function normalizeToneClass(tone) {
+    const value = String(tone || "neutral").trim().toLowerCase();
+    if (["good", "positive", "success", "ready"].includes(value)) return "good";
+    if (["warning", "pending", "review"].includes(value)) return "warning";
+    if (["danger", "blocker", "blocked", "hold", "error"].includes(value)) return "danger";
     return "neutral";
+  }
+
+  function readinessToneClass(profile) {
+    return normalizeToneClass(profile && profile.readiness_tone);
   }
 
   function formatBusinessTimestamp(value) {
@@ -376,15 +392,15 @@
     const data = profile || {};
     const canEdit = Boolean(data.can_edit);
     const supplierLabel = data.preferred_supplier_name || data.preferred_existing_supplier || "Not selected";
-    const updated = formatBusinessTimestamp(data.last_context_update_at || data.modified) || "Not saved";
+    const updated = formatBusinessTimestamp(data.last_context_update_at || data.modified) || "No profile saved";
     const leadTime = formatNumberValue(data.procurement_lead_time_days, "days");
     const moq = formatNumberValue(data.minimum_order_qty_context, "");
     return `
       <section class="erpw-child-card erpw-item-buying-profile-card" data-erpw-item-buying-profile-card data-erpw-item-code="${escapeHtml(data.item_code || "")}">
         <div class="erpw-item-buying-profile-top">
-          <div>
+          <div class="erpw-item-buying-profile-heading">
             <div class="erpw-item-buying-profile-title">Buying Procurement Context</div>
-            <div class="erpw-item-buying-profile-note">${escapeHtml(canEdit ? "Controlled buying context for procurement planning." : "Read-only buying context for procurement planning.")}</div>
+            <div class="erpw-item-buying-profile-note">${escapeHtml(canEdit ? "Controlled item buying context for procurement planning." : "Read-only item buying context for procurement planning.")}</div>
           </div>
           <div class="erpw-item-buying-profile-actions">
             <span class="erpw-item-buying-profile-chip ${escapeHtml(readinessToneClass(data))}">${escapeHtml(data.readiness_label || data.buying_readiness_status || "Not reviewed")}</span>
@@ -392,12 +408,12 @@
           </div>
         </div>
         <div class="erpw-item-buying-profile-grid">
-          ${renderProfileField("Preferred supplier", supplierLabel, data.preferred_existing_supplier ? "Context only, not Default Supplier" : "No controlled supplier context")}
-          ${renderProfileField("Supplier part reference", data.supplier_part_no_context || "-", "Context only")}
-          ${renderProfileField("Lead time", leadTime, "Procurement context")}
-          ${renderProfileField("Minimum order qty", moq, "Procurement context")}
+          ${renderProfileField("Preferred supplier", supplierLabel, data.preferred_existing_supplier ? "Context only; Default Supplier unchanged" : "No controlled supplier selected")}
+          ${renderProfileField("Supplier part reference", data.supplier_part_no_context || "-", data.supplier_part_no_context ? "Context only; Item Supplier unchanged" : "No supplier part context")}
+          ${renderProfileField("Lead time", leadTime, "Buying context only")}
+          ${renderProfileField("Minimum order qty", moq, "Buying context only")}
           ${renderProfileField("Last updated", updated, data.last_context_update_by || data.modified_by || "")}
-          ${renderProfileField("Editing", canEdit ? "Purchase Manager" : "Read-only", data.read_only_reason || "")}
+          ${renderProfileField("Permission", canEdit ? "Editable by Purchase Manager" : "Read-only", data.read_only_reason || "")}
           ${renderProfileField("Buying note", data.buying_note || "-", "")}
           ${renderProfileField("Readiness note", data.readiness_note || "-", "")}
         </div>
