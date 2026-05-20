@@ -134,7 +134,7 @@
         <div class="sales-console-section-head">
           <div>
             <h2 class="sales-console-section-title">Manager Readiness</h2>
-            <div class="sales-console-section-note">Readiness exceptions and productized fix paths</div>
+            <div class="sales-console-section-note">Exception queue with guided fixes</div>
           </div>
           <div class="erpw-readiness-summary">${summaryChips(readiness.summary)}</div>
         </div>
