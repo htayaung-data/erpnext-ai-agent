@@ -17,6 +17,29 @@ REVIEWED_FOR_BUYING_LABEL = "Reviewed for buying"
 NEEDS_SUPPLIER_REVIEW_LABEL = "Needs supplier review"
 
 
+def _clear_frappe_messages() -> None:
+	try:
+		if hasattr(frappe, "clear_messages"):
+			frappe.clear_messages()
+	except Exception:
+		pass
+	local = getattr(frappe, "local", None)
+	if local is None:
+		return
+	try:
+		messages = getattr(local, "message_log", None)
+		if isinstance(messages, list):
+			messages.clear()
+	except Exception:
+		pass
+	try:
+		response = getattr(local, "response", None)
+		if isinstance(response, dict):
+			response.pop("_server_messages", None)
+	except Exception:
+		pass
+
+
 def _safe_get_all(
 	doctype: str,
 	fields: list[str],
@@ -33,8 +56,10 @@ def _safe_get_all(
 		try:
 			return list(frappe.get_all(doctype, **query))
 		except Exception:
+			_clear_frappe_messages()
 			return []
 	except Exception:
+		_clear_frappe_messages()
 		return []
 
 
@@ -67,7 +92,7 @@ def _contact_has_email(contact: str) -> bool:
 	row = _safe_db_value("Contact", contact_name, ["name", "email_id"], as_dict=True) or {}
 	if cstr(row.get("email_id")).strip():
 		return True
-	email_rows = common.get_list(
+	email_rows = _safe_get_all(
 		"Contact Email",
 		fields=["email_id", "is_primary"],
 		filters=[["Contact Email", "parent", "=", contact_name]],
@@ -207,13 +232,16 @@ def item_evidence_for_items(item_codes: list[str]) -> dict[str, dict[str, Any]]:
 			fallback = _safe_get_all("Item Supplier", ["parent", "supplier"], filters={"parent": name}, limit=5)
 			evidence[name]["has_item_supplier"] = bool(fallback)
 
-	price_filters: list = [["Item Price", "item_code", "in", names]]
-	if common.has_field("Item Price", "buying"):
-		price_filters.append(["Item Price", "buying", "=", 1])
-	for row in common.get_list("Item Price", fields=["name", "item_code"], filters=price_filters, limit=max(300, len(names) * 20)):
-		item = cstr(row.get("item_code")).strip()
-		if item in evidence:
-			evidence[item]["has_buying_price"] = True
+	if common.can_read("Item Price"):
+		price_filters: list = [["Item Price", "item_code", "in", names]]
+		if common.has_field("Item Price", "buying"):
+			price_filters.append(["Item Price", "buying", "=", 1])
+		for row in _safe_get_all("Item Price", fields=["name", "item_code"], filters=price_filters, limit=max(300, len(names) * 20)):
+			item = cstr(row.get("item_code")).strip()
+			if item in evidence:
+				evidence[item]["has_buying_price"] = True
+	else:
+		_clear_frappe_messages()
 
 	for name in names:
 		entry = evidence[name]
