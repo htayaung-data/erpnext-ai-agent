@@ -261,9 +261,30 @@ async function assertRfqCommunication(page, userKey, rfqName) {
   await capture(page, `${userKey}-rfq-review-communication`);
 }
 
+async function clearOrphanedModalBackdrops(page) {
+  const state = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const visibleModals = Array.from(document.querySelectorAll(".modal.show")).filter(visible);
+    const backdrops = Array.from(document.querySelectorAll(".modal-backdrop"));
+    if (!visibleModals.length && backdrops.length) {
+      backdrops.forEach((node) => node.remove());
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("padding-right");
+    }
+    return { visibleModalCount: visibleModals.length, backdropCount: backdrops.length };
+  });
+  assert(state.visibleModalCount === 0, "Visible modal must not be present before autocomplete", state);
+}
+
 async function openNewRfqForm(page) {
   await openDeskRoute(page, "/desk/procurement-console-rfq-form/new");
   await page.waitForSelector(".erpw-managed-rfq-page [data-erpw-managed-rfq-form]", { state: "visible", timeout: TIMEOUT });
+  await clearOrphanedModalBackdrops(page);
 }
 
 function shortQuery(value) {
