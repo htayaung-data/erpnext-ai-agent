@@ -18,13 +18,18 @@ from __future__ import annotations
 import json
 import os
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 try:
     import frappe
 except Exception:
     frappe = None
 
+from ai_assistant_ui.qwen_chat.model_backed_helper_metadata import (
+    attach_helper_metadata_to_agent_meta,
+    build_model_backed_helper_runtime_metadata_bundle,
+    build_not_applicable_helper_runtime_metadata_bundle,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import call_qwen_runtime_chat
 
 
@@ -47,15 +52,50 @@ class ClarificationQuestion:
     options: List[str]
     context_type: str  # "followup", "scope", "confirmation", "missing_info"
     generation_method: str = "ai"  # "ai" or "template"
+    agent_meta: Dict[str, Any] = field(default_factory=dict)
     
     def to_payload(self) -> Dict[str, Any]:
         """Convert to tool payload for UI display."""
+        agent_meta = dict(self.agent_meta or {})
+        if not agent_meta.get("runtime_metadata_envelope"):
+            if self.generation_method == "ai":
+                metadata_bundle = build_model_backed_helper_runtime_metadata_bundle(
+                    lane_id="clarification_system_ai_generation",
+                    role_owner="clarification_system",
+                    agent_meta=agent_meta,
+                    runtime_source="clarification_generation_without_runtime_agent_meta",
+                    answer_mode="clarification_generation",
+                    evidence_scope="clarification_question",
+                    authority_source="clarification_runtime",
+                    preflight_status="passed",
+                    fallback_used=True,
+                    fallback_reason="missing_runtime_agent_meta",
+                )
+            else:
+                metadata_bundle = build_not_applicable_helper_runtime_metadata_bundle(
+                    lane_id="clarification_system_template_fallback",
+                    role_owner="clarification_system",
+                    runtime_source="clarification_template_fallback",
+                    answer_mode="clarification_template",
+                    fallback_reason=self.generation_method,
+                )
+            agent_meta = attach_helper_metadata_to_agent_meta(agent_meta, metadata_bundle)
+        else:
+            metadata_bundle = {
+                "model_role_observability": dict(agent_meta.get("model_role_observability") or {}),
+                "model_role_strict_readiness": dict(agent_meta.get("model_role_strict_readiness") or {}),
+                "runtime_metadata_envelope": dict(agent_meta.get("runtime_metadata_envelope") or {}),
+            }
         return {
             "type": "qwen_clarification_question",
             "question": self.question,
             "options": self.options,
             "context_type": self.context_type,
             "generation_method": self.generation_method,
+            "agent_meta": agent_meta,
+            "model_role_observability": metadata_bundle["model_role_observability"],
+            "model_role_strict_readiness": metadata_bundle["model_role_strict_readiness"],
+            "runtime_metadata_envelope": metadata_bundle["runtime_metadata_envelope"],
         }
 
 
@@ -202,11 +242,25 @@ Return ONLY a JSON object with this structure:
         if not options:
             options = ["Continue", "Let me clarify"]
         
+        agent_meta = runtime_payload.get("agent_meta") if isinstance(runtime_payload.get("agent_meta"), dict) else {}
+        metadata_bundle = build_model_backed_helper_runtime_metadata_bundle(
+            lane_id="clarification_system_ai_generation",
+            role_owner="clarification_system",
+            agent_meta=agent_meta,
+            runtime_source="clarification_generation_runtime_agent_meta" if agent_meta else "clarification_generation_without_runtime_agent_meta",
+            answer_mode="clarification_generation",
+            evidence_scope="clarification_question",
+            authority_source="clarification_runtime",
+            preflight_status="passed",
+            fallback_used=False,
+        )
+        agent_meta = attach_helper_metadata_to_agent_meta(agent_meta, metadata_bundle)
         return ClarificationQuestion(
             question=question,
             options=options,
             context_type=context_type,
-            generation_method="ai"
+            generation_method="ai",
+            agent_meta=agent_meta,
         )
         
     except Exception as e:
@@ -446,16 +500,27 @@ def build_clarification_response(
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build full clarification response for the user."""
+    clarification_payload = clarification.to_payload()
+    metadata_bundle = {
+        "model_role_observability": dict(clarification_payload.get("model_role_observability") or {}),
+        "model_role_strict_readiness": dict(clarification_payload.get("model_role_strict_readiness") or {}),
+        "runtime_metadata_envelope": dict(clarification_payload.get("runtime_metadata_envelope") or {}),
+    }
+    agent_meta = {
+        "engine": "clarification_system",
+        "context_type": clarification.context_type,
+        "generation_method": clarification.generation_method,
+        "hybrid_approach": True,
+        **metadata_bundle,
+    }
     return {
         "ok": True,
         "answer_text": clarification.question,
-        "clarification": clarification.to_payload(),
-        "agent_meta": {
-            "engine": "clarification_system",
-            "context_type": clarification.context_type,
-            "generation_method": clarification.generation_method,
-            "hybrid_approach": True,
-        },
+        "clarification": clarification_payload,
+        "agent_meta": agent_meta,
+        "model_role_observability": metadata_bundle["model_role_observability"],
+        "model_role_strict_readiness": metadata_bundle["model_role_strict_readiness"],
+        "runtime_metadata_envelope": metadata_bundle["runtime_metadata_envelope"],
     }
 
 

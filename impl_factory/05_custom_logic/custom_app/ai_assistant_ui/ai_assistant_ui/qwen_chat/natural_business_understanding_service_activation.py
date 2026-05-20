@@ -15,6 +15,11 @@ from .authorized_emission import (
 	ANSWER_TYPE_CONTROL,
 	emit_authorized_assistant_answer,
 )
+from .runtime_metadata_contract import (
+	LANE_CLASS_CONTROL_META,
+	ROLE_CONTROL_META,
+	build_runtime_metadata_envelope,
+)
 from .natural_business_understanding_activation import build_nbu_activation_assessment
 from .natural_business_understanding_arbitration import nbu_activation_level_supports_action
 from .natural_business_understanding_contracts import CONTRACT_VERSION
@@ -97,6 +102,23 @@ def _clean_dict_list(values: Any) -> List[Dict[str, Any]]:
 	if not isinstance(values, list):
 		return []
 	return [dict(value) for value in values if isinstance(value, dict)]
+
+
+def _nbu_safe_response_metadata_envelope(*, activation_mode: str, authority_source: str = "control_meta") -> Dict[str, Any]:
+	return build_runtime_metadata_envelope(
+		lane_id="nbu_safe_response_activation",
+		lane_class=LANE_CLASS_CONTROL_META,
+		model_role=ROLE_CONTROL_META,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source=_clean_text(authority_source) or "control_meta",
+		evidence_scope="nbu_safe_response_activation_contract",
+		answer_mode=_clean_text(activation_mode) or "nbu_safe_response_activation",
+		preflight_status="passed",
+		metadata_source="nbu_safe_response_authorized_emission",
+	)
 
 
 def _normalize_token_text(value: Any) -> str:
@@ -900,19 +922,22 @@ def try_activate_nbu_presentation_response(
 
 	if not user_message_already_appended:
 		append_message(session_doc, "user", raw_message)
+	activation_mode = _clean_text(activation_contract.get("activation_mode")) or "nbu_safe_response_activation"
+	runtime_metadata_envelope = _nbu_safe_response_metadata_envelope(activation_mode=activation_mode)
 	execution_path_payload = {
 		"type": "qwen_execution_path",
 		"contract_version": CONTRACT_VERSION,
 		"request_id": request_id,
-		"path": _clean_text(activation_contract.get("activation_mode")) or "nbu_safe_response_activation",
+		"path": activation_mode,
 		"reason": _clean_text(activation_contract.get("reason")),
 		"requires_runtime": False,
 		"grounded_required": False,
+		"runtime_metadata_envelope": runtime_metadata_envelope,
 	}
 	pre_assistant_payloads: List[Dict[str, Any]] = []
 	if not nbu_trace_already_appended:
 		pre_assistant_payloads.append(trace)
-	pre_assistant_payloads.extend([activation_contract, execution_path_payload])
+	pre_assistant_payloads.extend([activation_contract, execution_path_payload, runtime_metadata_envelope])
 	if interaction_contract is not None:
 		from .contracts import (
 			ExecutionPath,
@@ -920,7 +945,6 @@ def try_activate_nbu_presentation_response(
 			build_followup_resolution_contract,
 		)
 
-		activation_mode = _clean_text(activation_contract.get("activation_mode")) or "nbu_safe_response_activation"
 		execution_path = ExecutionPath(
 			request_id=request_id,
 			path=activation_mode,
@@ -943,10 +967,12 @@ def try_activate_nbu_presentation_response(
 				followup_resolution=resolution,
 				execution_path=execution_path,
 				runtime_trace_payload={
+					"runtime_metadata_envelope": runtime_metadata_envelope,
 					"agent_meta": {
 						"engine": "natural_business_understanding",
 						"action": _clean_text(activation.get("action")),
 						"response_mode": _clean_text(activation.get("response_mode")),
+						"runtime_metadata_envelope": runtime_metadata_envelope,
 					}
 				},
 				grounded_turn_context=_clean_dict(latest_grounded_turn),
@@ -972,11 +998,12 @@ def try_activate_nbu_presentation_response(
 	return True, {
 		"ok": bool(authorized_emission.emitted),
 		"request_id": request_id,
-		"mode": _clean_text(activation_contract.get("activation_mode")) or "nbu_safe_response_activation",
+		"mode": activation_mode,
 		"agent_meta": {
 			"engine": "natural_business_understanding",
 			"action": _clean_text(activation.get("action")),
 			"response_mode": _clean_text(activation.get("response_mode")),
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

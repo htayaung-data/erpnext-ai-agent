@@ -69,6 +69,15 @@ from .authorized_emission import (
 	ANSWER_TYPE_VISIBLE_CONTEXT,
 	emit_authorized_assistant_answer,
 )
+from .runtime_metadata_contract import (
+	LANE_CLASS_CONTROL_META,
+	LANE_CLASS_DETERMINISTIC_VISIBLE_CONTEXT,
+	LANE_CLASS_POLICY_BOUNDARY,
+	ROLE_CONTROL_META,
+	ROLE_DETERMINISTIC as RUNTIME_METADATA_ROLE_DETERMINISTIC,
+	ROLE_POLICY_BOUNDARY,
+	build_runtime_metadata_envelope,
+)
 from .contracts import (
 	ExecutionPath,
 	build_followup_resolution_contract,
@@ -1383,6 +1392,53 @@ def _visible_context_control_meta_authority(
 	}
 
 
+def _visible_context_runtime_metadata_envelope(*, answer_type: str, answer_mode: str) -> Dict[str, Any]:
+	if answer_type == ANSWER_TYPE_POLICY_BOUNDARY:
+		return build_runtime_metadata_envelope(
+			lane_id="visible_context_followup",
+			lane_class=LANE_CLASS_POLICY_BOUNDARY,
+			model_role=ROLE_POLICY_BOUNDARY,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason="",
+			role_compliance="compliant",
+			authority_source="policy_boundary",
+			evidence_scope="visible_context_policy_boundary",
+			answer_mode=_clean_text(answer_mode),
+			preflight_status="bounded",
+			metadata_source="visible_context_followup_authorized_emission",
+		)
+	if answer_type == ANSWER_TYPE_CONTROL:
+		return build_runtime_metadata_envelope(
+			lane_id="visible_context_followup",
+			lane_class=LANE_CLASS_CONTROL_META,
+			model_role=ROLE_CONTROL_META,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason="",
+			role_compliance="compliant",
+			authority_source="control_meta",
+			evidence_scope="visible_context_control_contract",
+			answer_mode=_clean_text(answer_mode),
+			preflight_status="passed",
+			metadata_source="visible_context_followup_authorized_emission",
+		)
+	return build_runtime_metadata_envelope(
+		lane_id="visible_context_followup",
+		lane_class=LANE_CLASS_DETERMINISTIC_VISIBLE_CONTEXT,
+		model_role=RUNTIME_METADATA_ROLE_DETERMINISTIC,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source="frontdoor_composite",
+		evidence_scope="visible_context_trace",
+		answer_mode=_clean_text(answer_mode),
+		preflight_status="passed",
+		metadata_source="visible_context_followup_authorized_emission",
+	)
+
+
 def _visible_context_interaction_contract(
 	*,
 	interaction_contract: Any,
@@ -1454,6 +1510,21 @@ def _emit_authorized_visible_context_answer(
 	)
 	model_role_observability = _clean_dict(trace.get("model_role_observability"))
 	model_role_strict_readiness = _clean_dict(trace.get("model_role_strict_readiness"))
+	runtime_metadata_envelope = _visible_context_runtime_metadata_envelope(
+		answer_type=answer_type,
+		answer_mode=answer_mode,
+	)
+	trace["runtime_metadata_envelope"] = runtime_metadata_envelope
+	trace_agent_meta = trace.get("agent_meta") if isinstance(trace.get("agent_meta"), dict) else {}
+	trace["agent_meta"] = {
+		**trace_agent_meta,
+		"runtime_metadata_envelope": runtime_metadata_envelope,
+	}
+	effective_pre_assistant_payloads = [
+		payload
+		for payload in [*(pre_assistant_tool_payloads or []), runtime_metadata_envelope]
+		if isinstance(payload, dict) and payload
+	]
 	result = emit_authorized_assistant_answer(
 		session_doc=session_doc,
 		answer_text=answer_text,
@@ -1466,11 +1537,13 @@ def _emit_authorized_visible_context_answer(
 		assistant_text_payload=assistant_text_payload,
 		authority_context={"visible_context_trace": trace},
 		runtime_trace_payload={
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"agent_meta": {
 				"engine": "visible_context_followup",
 				"status": status,
 				"model_role_observability": model_role_observability,
 				"model_role_strict_readiness": model_role_strict_readiness,
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 			},
 			"visible_context_trace": trace,
 			"activation_contract": activation_contract,
@@ -1484,9 +1557,11 @@ def _emit_authorized_visible_context_answer(
 			if answer_type == ANSWER_TYPE_CONTROL
 			else None
 		),
-		pre_assistant_tool_payloads=pre_assistant_tool_payloads,
+		pre_assistant_tool_payloads=effective_pre_assistant_payloads,
 	)
-	return result.to_payload()
+	payload = result.to_payload()
+	payload["runtime_metadata_envelope"] = runtime_metadata_envelope
+	return payload
 
 
 def try_activate_visible_context_followup_response(

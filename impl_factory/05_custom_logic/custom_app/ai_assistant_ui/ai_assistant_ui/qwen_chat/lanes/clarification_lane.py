@@ -26,6 +26,11 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 )
 from ai_assistant_ui.qwen_chat.knowledge_boundary import evaluate_knowledge_boundary
 from ai_assistant_ui.qwen_chat.observability import record_phase55_observability_event
+from ai_assistant_ui.qwen_chat.runtime_metadata_contract import (
+	LANE_CLASS_CONTROL_META,
+	ROLE_CONTROL_META,
+	build_runtime_metadata_envelope,
+)
 
 
 def build_pending_clarification_frontdoor_skip(
@@ -77,6 +82,23 @@ def _clarification_control_authority(*, answer_mode: str, reason: str) -> Dict[s
 		"reason": reason,
 		"preflight_status": "passed",
 	}
+
+
+def _clarification_runtime_metadata_envelope(*, answer_mode: str) -> Dict[str, Any]:
+	return build_runtime_metadata_envelope(
+		lane_id="clarification_control",
+		lane_class=LANE_CLASS_CONTROL_META,
+		model_role=ROLE_CONTROL_META,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source="control_meta",
+		evidence_scope="clarification_control_contract",
+		answer_mode=answer_mode,
+		preflight_status="passed",
+		metadata_source="clarification_control_authority",
+	)
 
 
 def _clarification_boundary_payload(
@@ -152,6 +174,8 @@ def handle_pending_clarification_turn(
 			latest_grounded_turn_available=latest_grounded_turn_available,
 			latest_grounded_turn=latest_grounded_turn,
 		)
+		answer_mode = "clarification_show_options"
+		runtime_metadata_envelope = _clarification_runtime_metadata_envelope(answer_mode=answer_mode)
 		authorized_emission = emit_authorized_assistant_answer(
 			session_doc=session_doc,
 			answer_text=answer_text,
@@ -160,10 +184,18 @@ def handle_pending_clarification_turn(
 			append_tool_payload=append_tool_payload,
 			assistant_text_payload=assistant_text_payload,
 			control_meta_authority=_clarification_control_authority(
-				answer_mode="clarification_show_options",
+				answer_mode=answer_mode,
 				reason=str(clarification_response_contract.reason or "").strip()
 				or "The user asked to review the clarification options before continuing.",
 			),
+			runtime_trace_payload={
+				"runtime_metadata_envelope": runtime_metadata_envelope,
+				"agent_meta": {
+					"engine": "pending_clarification_resolver",
+					"mode": "show_options",
+					"runtime_metadata_envelope": runtime_metadata_envelope,
+				},
+			},
 			pre_assistant_tool_payloads=[
 				interaction_contract.to_payload(),
 				frontdoor_semantic_result.to_payload(),
@@ -171,6 +203,7 @@ def handle_pending_clarification_turn(
 				clarification_response_contract.to_payload(),
 				observability_payload,
 				boundary_payload,
+				runtime_metadata_envelope,
 				execution_path.to_payload(),
 				pending_clarification_signal,
 			],
@@ -190,6 +223,7 @@ def handle_pending_clarification_turn(
 			"agent_meta": {
 				"engine": "pending_clarification_resolver",
 				"mode": "show_options",
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
@@ -260,6 +294,8 @@ def handle_pending_clarification_turn(
 				latest_grounded_turn_available=latest_grounded_turn_available,
 				latest_grounded_turn=latest_grounded_turn,
 			)
+			answer_mode = f"clarification_{response_mode}"
+			runtime_metadata_envelope = _clarification_runtime_metadata_envelope(answer_mode=answer_mode)
 			pre_assistant_payloads = [
 				interaction_contract.to_payload(),
 				frontdoor_semantic_result.to_payload(),
@@ -267,6 +303,7 @@ def handle_pending_clarification_turn(
 				clarification_response_contract.to_payload(),
 				observability_payload,
 				boundary_payload,
+				runtime_metadata_envelope,
 				execution_path.to_payload(),
 			]
 			if not clarification_state.max_attempts_reached:
@@ -279,10 +316,18 @@ def handle_pending_clarification_turn(
 				append_tool_payload=append_tool_payload,
 				assistant_text_payload=assistant_text_payload,
 				control_meta_authority=_clarification_control_authority(
-					answer_mode=f"clarification_{response_mode}",
+					answer_mode=answer_mode,
 					reason=str(clarification_response_contract.reason or "").strip()
 					or "A governed clarification is still pending before the ERP lane can continue.",
 				),
+				runtime_trace_payload={
+					"runtime_metadata_envelope": runtime_metadata_envelope,
+					"agent_meta": {
+						"engine": "pending_clarification_resolver",
+						"mode": response_mode,
+						"runtime_metadata_envelope": runtime_metadata_envelope,
+					},
+				},
 				pre_assistant_tool_payloads=pre_assistant_payloads,
 			)
 			if authorized_emission.emitted and clarification_state.max_attempts_reached:
@@ -302,6 +347,7 @@ def handle_pending_clarification_turn(
 				"agent_meta": {
 					"engine": "pending_clarification_resolver",
 					"mode": response_mode,
+					"runtime_metadata_envelope": runtime_metadata_envelope,
 					"authorized_emission": authorized_emission.to_payload(),
 				},
 			}

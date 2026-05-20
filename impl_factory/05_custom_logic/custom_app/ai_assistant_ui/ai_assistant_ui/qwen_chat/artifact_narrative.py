@@ -6,6 +6,10 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	ArtifactNarrativeResponseContract,
 	build_artifact_narrative_response_contract,
 )
+from ai_assistant_ui.qwen_chat.model_backed_helper_metadata import (
+	attach_helper_metadata_to_agent_meta,
+	build_model_backed_helper_runtime_metadata_bundle,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_chat,
@@ -59,6 +63,34 @@ def _block_markdown(block: Dict[str, Any]) -> str:
 		for item in items:
 			lines.append(f"- {item}")
 	return "\n".join(line for line in lines if line).strip()
+
+
+def _attach_artifact_narrative_metadata(
+	runtime_payload: Dict[str, Any],
+	*,
+	fallback_used: bool,
+	fallback_reason: str = "",
+) -> Dict[str, Any]:
+	payload = dict(runtime_payload or {})
+	agent_meta = payload.get("agent_meta") if isinstance(payload.get("agent_meta"), dict) else {}
+	metadata_bundle = build_model_backed_helper_runtime_metadata_bundle(
+		lane_id="artifact_narrative",
+		role_owner="artifact_narrative",
+		agent_meta=agent_meta,
+		runtime_source="artifact_narrative_runtime_agent_meta" if agent_meta else "artifact_narrative_without_runtime_agent_meta",
+		answer_mode="artifact_narrative",
+		evidence_scope="governed_artifact",
+		authority_source="artifact_context",
+		preflight_status="passed",
+		fallback_used=fallback_used,
+		fallback_reason=fallback_reason,
+	)
+	agent_meta = attach_helper_metadata_to_agent_meta(agent_meta, metadata_bundle)
+	payload["agent_meta"] = agent_meta
+	payload["model_role_observability"] = metadata_bundle["model_role_observability"]
+	payload["model_role_strict_readiness"] = metadata_bundle["model_role_strict_readiness"]
+	payload["runtime_metadata_envelope"] = metadata_bundle["runtime_metadata_envelope"]
+	return payload
 
 
 def _presentation_hints(
@@ -150,20 +182,32 @@ def narrate_governed_artifact(
 			request_id=request_id,
 		)
 	except QwenRuntimeClientError as exc:
-		return {
-			"ok": False,
-			"answer_text": "",
-			"agent_meta": {"engine": "artifact_narrative", "mode": "artifact_narrative"},
-			"error": str(exc),
-		}
+		return _attach_artifact_narrative_metadata(
+			{
+				"ok": False,
+				"answer_text": "",
+				"agent_meta": {"engine": "artifact_narrative", "mode": "artifact_narrative"},
+				"error": str(exc),
+			},
+			fallback_used=True,
+			fallback_reason=str(exc),
+		)
 	if not isinstance(runtime_payload, dict):
-		return {
-			"ok": False,
-			"answer_text": "",
-			"agent_meta": {"engine": "artifact_narrative", "mode": "artifact_narrative"},
-			"error": "Artifact narrative runtime returned an invalid payload.",
-		}
-	return runtime_payload
+		return _attach_artifact_narrative_metadata(
+			{
+				"ok": False,
+				"answer_text": "",
+				"agent_meta": {"engine": "artifact_narrative", "mode": "artifact_narrative"},
+				"error": "Artifact narrative runtime returned an invalid payload.",
+			},
+			fallback_used=True,
+			fallback_reason="invalid_runtime_payload",
+		)
+	return _attach_artifact_narrative_metadata(
+		runtime_payload,
+		fallback_used=not bool(runtime_payload.get("ok")),
+		fallback_reason=_clean_text(runtime_payload.get("error")),
+	)
 
 
 def build_artifact_narrative_contract(

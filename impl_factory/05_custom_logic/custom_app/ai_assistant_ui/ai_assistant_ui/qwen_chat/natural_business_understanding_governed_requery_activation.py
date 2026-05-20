@@ -7,6 +7,11 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from .authorized_emission import ANSWER_TYPE_GOVERNED_REPORT, emit_authorized_assistant_answer
 from .contracts import ExecutionPath, build_followup_resolution_contract
+from .runtime_metadata_contract import (
+	LANE_CLASS_DETERMINISTIC_REPORT,
+	ROLE_DETERMINISTIC,
+	build_runtime_metadata_envelope,
+)
 from .governed_scope_registry import entity_detail_runtime_policy
 from .entity_detail_request_support import (
 	entity_detail_capability_id,
@@ -70,6 +75,23 @@ def _clean_list(values: Any) -> List[str]:
 	if not isinstance(values, list):
 		return []
 	return [_clean_text(value) for value in values if _clean_text(value)]
+
+
+def _nbu_governed_requery_metadata_envelope(*, answer_selection_mode: str) -> Dict[str, Any]:
+	return build_runtime_metadata_envelope(
+		lane_id="nbu_governed_requery_entity_detail",
+		lane_class=LANE_CLASS_DETERMINISTIC_REPORT,
+		model_role=ROLE_DETERMINISTIC,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source="deterministic_tool",
+		evidence_scope="entity_detail_grounded_turn_context",
+		answer_mode=_clean_text(answer_selection_mode) or "nbu_governed_requery_entity_detail",
+		preflight_status="passed",
+		metadata_source="nbu_governed_requery_authorized_emission",
+	)
 
 
 def _normalize_key(value: Any) -> str:
@@ -890,11 +912,17 @@ def try_activate_nbu_governed_requery_response(
 		requires_runtime=False,
 		grounded_required=True,
 	)
+	answer_selection_mode = "rich_entity_detail" if prefer_rich_detail_answer else "direct_evidence_first"
+	runtime_metadata_envelope = _nbu_governed_requery_metadata_envelope(
+		answer_selection_mode=answer_selection_mode,
+	)
 	execution_path_payload = {
 		**execution_path.to_payload(),
-		"answer_selection_mode": "rich_entity_detail" if prefer_rich_detail_answer else "direct_evidence_first",
+		"answer_selection_mode": answer_selection_mode,
+		"runtime_metadata_envelope": runtime_metadata_envelope,
 	}
 	pre_assistant_tool_payloads.append(execution_path_payload)
+	pre_assistant_tool_payloads.append(runtime_metadata_envelope)
 	followup_resolution = build_followup_resolution_contract(
 		request_id=request_id,
 		mode="nbu_governed_requery_entity_detail",
@@ -906,10 +934,12 @@ def try_activate_nbu_governed_requery_response(
 	)
 	runtime_latency_ms = int(max(0, round((time.perf_counter() - started_at) * 1000)))
 	runtime_trace_payload = {
+		"runtime_metadata_envelope": runtime_metadata_envelope,
 		"agent_meta": {
 			"engine": "nbu_governed_requery",
 			"mode": "entity_detail",
 			"latency_ms": runtime_latency_ms,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 		},
 		"runtime_latency_ms": runtime_latency_ms,
 	}
@@ -946,6 +976,7 @@ def try_activate_nbu_governed_requery_response(
 			"engine": "nbu_governed_requery",
 			"planner_mode": _clean_text(assessment.get("planner_mode")),
 			"target_entity_type": _clean_text(entity_reference.get("entity_type")),
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

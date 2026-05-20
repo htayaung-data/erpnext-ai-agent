@@ -22,6 +22,17 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_clarification_reason_contract_from_sources,
 )
 from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
+from ai_assistant_ui.qwen_chat.runtime_metadata_contract import (
+	LANE_CLASS_CONTROL_META,
+	LANE_CLASS_DETERMINISTIC_REPORT,
+	LANE_CLASS_ERROR_FALLBACK,
+	LANE_CLASS_POLICY_BOUNDARY,
+	ROLE_CONTROL_META,
+	ROLE_DETERMINISTIC,
+	ROLE_NOT_APPLICABLE,
+	ROLE_POLICY_BOUNDARY,
+	build_runtime_metadata_envelope,
+)
 
 
 def compiled_clarification_reason_contract(*, request_id: str, result: Dict[str, Any]):
@@ -381,6 +392,75 @@ def _compiled_answer_type(
 	return ANSWER_TYPE_ERROR
 
 
+def _compiled_runtime_metadata_envelope(
+	*,
+	answer_type: str,
+	control_meta_authority: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	answer_mode = "compiled_first_turn"
+	if answer_type == ANSWER_TYPE_GOVERNED_REPORT:
+		return build_runtime_metadata_envelope(
+			lane_id="compiled_support_result_answer",
+			lane_class=LANE_CLASS_DETERMINISTIC_REPORT,
+			model_role=ROLE_DETERMINISTIC,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason="",
+			role_compliance="compliant",
+			authority_source="governed_erp_report",
+			evidence_scope="compiled_grounded_turn_context",
+			answer_mode=answer_mode,
+			preflight_status="passed",
+			metadata_source="compiled_support_authorized_emission",
+		)
+	if answer_type == ANSWER_TYPE_POLICY_BOUNDARY:
+		return build_runtime_metadata_envelope(
+			lane_id="compiled_support_result_answer",
+			lane_class=LANE_CLASS_POLICY_BOUNDARY,
+			model_role=ROLE_POLICY_BOUNDARY,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason="",
+			role_compliance="compliant",
+			authority_source="policy_boundary",
+			evidence_scope="knowledge_boundary_contract",
+			answer_mode=answer_mode,
+			preflight_status="bounded",
+			metadata_source="compiled_support_authorized_emission",
+		)
+	if answer_type == ANSWER_TYPE_ERROR:
+		authority_source = _compiled_text((control_meta_authority or {}).get("authority_source")) or "error_fallback"
+		return build_runtime_metadata_envelope(
+			lane_id="compiled_support_result_answer",
+			lane_class=LANE_CLASS_ERROR_FALLBACK,
+			model_role=ROLE_NOT_APPLICABLE,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason=_compiled_text((control_meta_authority or {}).get("reason")),
+			role_compliance="not_applicable",
+			authority_source=authority_source,
+			evidence_scope="compiled_runtime_error_fallback",
+			answer_mode=answer_mode,
+			preflight_status="passed",
+			metadata_source="compiled_support_authorized_emission",
+		)
+	authority_source = _compiled_text((control_meta_authority or {}).get("authority_source")) or "control_meta"
+	return build_runtime_metadata_envelope(
+		lane_id="compiled_support_result_answer",
+		lane_class=LANE_CLASS_CONTROL_META,
+		model_role=ROLE_CONTROL_META,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source=authority_source,
+		evidence_scope="compiled_control_contract",
+		answer_mode=answer_mode,
+		preflight_status="passed",
+		metadata_source="compiled_support_authorized_emission",
+	)
+
+
 def _compiled_control_meta_authority(
 	*,
 	answer_type: str,
@@ -640,6 +720,27 @@ def handle_compiled_first_turn_result(
 		family_payload=family_payload,
 		semantic_payload=semantic_payload,
 	)
+	control_meta_authority = (
+		_compiled_control_meta_authority(
+			answer_type=answer_type,
+			clarification_signal_payload=clarification_signal_payload,
+			runtime_payload=runtime_payload,
+		)
+		if answer_type in {ANSWER_TYPE_CONTROL, ANSWER_TYPE_ERROR}
+		else None
+	)
+	runtime_metadata_envelope = _compiled_runtime_metadata_envelope(
+		answer_type=answer_type,
+		control_meta_authority=control_meta_authority,
+	)
+	if isinstance(runtime_trace_payload, dict):
+		runtime_trace_payload["runtime_metadata_envelope"] = runtime_metadata_envelope
+		trace_agent_meta = runtime_trace_payload.get("agent_meta") if isinstance(runtime_trace_payload.get("agent_meta"), dict) else {}
+		runtime_trace_payload["agent_meta"] = {
+			**trace_agent_meta,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
+		}
+	pre_assistant_tool_payloads.append(runtime_metadata_envelope)
 	authorized_emission = emit_authorized_assistant_answer(
 		session_doc=session_doc,
 		answer_text=answer_text,
@@ -663,15 +764,7 @@ def handle_compiled_first_turn_result(
 			semantic_payload=semantic_payload,
 			compiled_audit_payload=compiled_audit_payload,
 		),
-		control_meta_authority=(
-			_compiled_control_meta_authority(
-				answer_type=answer_type,
-				clarification_signal_payload=clarification_signal_payload,
-				runtime_payload=runtime_payload,
-			)
-			if answer_type in {ANSWER_TYPE_CONTROL, ANSWER_TYPE_ERROR}
-			else None
-		),
+		control_meta_authority=control_meta_authority,
 		pre_assistant_tool_payloads=pre_assistant_tool_payloads,
 	)
 	if authorized_emission.emitted and clarification_signal_payload:
@@ -692,6 +785,7 @@ def handle_compiled_first_turn_result(
 	)
 	save_session(session_doc, ignore_permissions=False)
 	agent_meta_payload = dict(agent_meta)
+	agent_meta_payload["runtime_metadata_envelope"] = runtime_metadata_envelope
 	agent_meta_payload["authorized_emission"] = authorized_emission.to_payload()
 	return True, {
 		"ok": bool(

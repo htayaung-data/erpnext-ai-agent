@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.followup_interpreter import detect_followup_intent
+from ai_assistant_ui.qwen_chat.light_semantic_metadata import (
+	attach_light_semantic_metadata_to_agent_meta,
+	build_light_semantic_runtime_metadata_bundle,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_repair_intent_interpretation,
@@ -38,6 +42,17 @@ class SemanticRepairIntentResult:
 	agent_meta: Dict[str, Any] = field(default_factory=dict)
 
 	def to_payload(self) -> Dict[str, Any]:
+		agent_meta = self.agent_meta if isinstance(self.agent_meta, dict) else {}
+		metadata_bundle = build_light_semantic_runtime_metadata_bundle(
+			lane_id="semantic_repair_intent",
+			role_owner="semantic_repair_intent",
+			agent_meta=agent_meta,
+			runtime_source="repair_intent_runtime_agent_meta" if agent_meta else f"repair_intent_{self.status or 'unknown'}_without_runtime_agent_meta",
+			answer_mode=f"repair_intent_{self.status or 'unknown'}",
+			semantic_status=self.status,
+		)
+		agent_meta = attach_light_semantic_metadata_to_agent_meta(agent_meta, metadata_bundle)
+		runtime_metadata = metadata_bundle["runtime_metadata_envelope"]
 		intent_payload: Dict[str, Any] = {}
 		if self.intent is not None:
 			intent_payload = {
@@ -57,8 +72,13 @@ class SemanticRepairIntentResult:
 			"confidence_threshold": self.confidence_threshold,
 			"runtime_error": self.runtime_error,
 			"validation_error": self.validation_error,
+			"fallback_used": bool(runtime_metadata.get("fallback_used")),
+			"fallback_reason": str(runtime_metadata.get("fallback_reason") or "").strip(),
 			"intent": intent_payload,
-			"agent_meta": self.agent_meta if isinstance(self.agent_meta, dict) else {},
+			"agent_meta": agent_meta,
+			"model_role_observability": metadata_bundle["model_role_observability"],
+			"model_role_strict_readiness": metadata_bundle["model_role_strict_readiness"],
+			"runtime_metadata_envelope": metadata_bundle["runtime_metadata_envelope"],
 		}
 
 

@@ -24,6 +24,8 @@ TARGET_ROLE_BY_LANE = {
 	"frontdoor_semantic_classification": ROLE_LIGHT_SEMANTIC,
 	"fresh_query_interpretation": ROLE_LIGHT_SEMANTIC,
 	"followup_interpretation": ROLE_LIGHT_SEMANTIC,
+	"semantic_reasoning_activation": ROLE_LIGHT_SEMANTIC,
+	"semantic_repair_intent": ROLE_LIGHT_SEMANTIC,
 	"visible_context_followup": ROLE_DETERMINISTIC,
 	"visible_context_frame_resolution": ROLE_DETERMINISTIC,
 	"visible_context_boundary": ROLE_DETERMINISTIC,

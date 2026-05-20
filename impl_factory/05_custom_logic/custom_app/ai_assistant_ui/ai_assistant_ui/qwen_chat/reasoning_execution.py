@@ -7,6 +7,12 @@ from typing import Any, Dict, List
 from ai_assistant_ui.qwen_chat.contracts import (
 	build_erp_business_reasoning_contract,
 )
+from ai_assistant_ui.qwen_chat.model_role_coverage import build_model_role_contract_bundle
+from ai_assistant_ui.qwen_chat.model_role_observability import ROLE_HEAVY_REASONING
+from ai_assistant_ui.qwen_chat.runtime_metadata_contract import (
+	LANE_CLASS_AI_REASONING,
+	build_runtime_metadata_envelope,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_reasoning_render,
@@ -16,6 +22,67 @@ try:
 	import frappe  # type: ignore
 except Exception:  # pragma: no cover
 	frappe = None
+
+
+def _clean_text(value: Any) -> str:
+	return str(value or "").strip()
+
+
+def _clean_dict(value: Any) -> Dict[str, Any]:
+	return dict(value) if isinstance(value, dict) else {}
+
+
+def build_reasoning_runtime_metadata_bundle(
+	*,
+	agent_meta: Dict[str, Any] | None,
+	status: str,
+	answer_mode: str = "",
+) -> Dict[str, Dict[str, Any]]:
+	clean_agent_meta = _clean_dict(agent_meta)
+	runtime_source = (
+		"business_reasoning_runtime_agent_meta"
+		if clean_agent_meta
+		else f"business_reasoning_{_clean_text(status) or 'unknown'}_without_runtime_agent_meta"
+	)
+	model_role_bundle = build_model_role_contract_bundle(
+		lane="business_reasoning_answer",
+		role_owner="reasoning_execution",
+		model_role=ROLE_HEAVY_REASONING,
+		agent_meta=clean_agent_meta,
+		runtime_source=runtime_source,
+		strict_enforcement_enabled=False,
+	)
+	observability = model_role_bundle["model_role_observability"]
+	runtime_metadata_envelope = build_runtime_metadata_envelope(
+		lane_id="business_reasoning_answer",
+		lane_class=LANE_CLASS_AI_REASONING,
+		model_role=_clean_text(observability.get("model_role")),
+		model_name=_clean_text(observability.get("model_name")),
+		fallback_used=observability.get("fallback_used") if "fallback_used" in observability else None,
+		fallback_reason=_clean_text(observability.get("fallback_reason")),
+		role_compliance=_clean_text(observability.get("role_compliance")),
+		authority_source="business_reasoning_runtime_agent_meta",
+		evidence_scope="business_reasoning_runtime",
+		answer_mode=_clean_text(answer_mode) or f"reasoning_{_clean_text(status) or 'unknown'}",
+		preflight_status="not_applicable",
+		metadata_source=runtime_source,
+	)
+	return {
+		"model_role_observability": observability,
+		"model_role_strict_readiness": model_role_bundle["model_role_strict_readiness"],
+		"runtime_metadata_envelope": runtime_metadata_envelope,
+	}
+
+
+def attach_reasoning_runtime_metadata_to_agent_meta(
+	agent_meta: Dict[str, Any] | None,
+	metadata_bundle: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+	clean_agent_meta = _clean_dict(agent_meta)
+	clean_agent_meta["model_role_observability"] = _clean_dict(metadata_bundle.get("model_role_observability"))
+	clean_agent_meta["model_role_strict_readiness"] = _clean_dict(metadata_bundle.get("model_role_strict_readiness"))
+	clean_agent_meta["runtime_metadata_envelope"] = _clean_dict(metadata_bundle.get("runtime_metadata_envelope"))
+	return clean_agent_meta
 
 
 @dataclass(frozen=True)
@@ -28,6 +95,11 @@ class ERPBusinessReasoningExecutionResult:
 	agent_meta: Dict[str, Any] = field(default_factory=dict)
 
 	def to_payload(self) -> Dict[str, Any]:
+		metadata_bundle = build_reasoning_runtime_metadata_bundle(
+			agent_meta=self.agent_meta,
+			status=self.status,
+		)
+		agent_meta = attach_reasoning_runtime_metadata_to_agent_meta(self.agent_meta, metadata_bundle)
 		return {
 			"type": "qwen_erp_business_reasoning_execution",
 			"contract_version": "1.0",
@@ -36,7 +108,10 @@ class ERPBusinessReasoningExecutionResult:
 			"runtime_error": self.runtime_error,
 			"validation_error": self.validation_error,
 			"reasoning_contract": dict(self.reasoning_contract or {}),
-			"agent_meta": dict(self.agent_meta or {}),
+			"agent_meta": agent_meta,
+			"model_role_observability": metadata_bundle["model_role_observability"],
+			"model_role_strict_readiness": metadata_bundle["model_role_strict_readiness"],
+			"runtime_metadata_envelope": metadata_bundle["runtime_metadata_envelope"],
 		}
 
 
