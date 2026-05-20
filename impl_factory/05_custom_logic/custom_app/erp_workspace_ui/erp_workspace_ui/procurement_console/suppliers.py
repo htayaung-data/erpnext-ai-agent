@@ -65,13 +65,14 @@ def _supplier_rows(filters: dict[str, str]) -> list[dict[str, object]]:
 		filters=supplier_filters(filters),
 		order_by="modified desc",
 	)
+	readiness_by_supplier = supplier_readiness.supplier_readiness_chips_for_suppliers([cstr(record.get("name")).strip() for record in records])
 	rows: list[dict[str, object]] = []
 	for record in records:
 		name = cstr(record.get("name")).strip()
 		if not name:
 			continue
 		disabled = bool(record.get("disabled"))
-		readiness = supplier_readiness.supplier_readiness_chip(name)
+		readiness = readiness_by_supplier.get(name) or supplier_readiness.supplier_readiness_chip(name)
 		rows.append(
 			{
 				"key": name,
@@ -87,7 +88,7 @@ def _supplier_rows(filters: dict[str, str]) -> list[dict[str, object]]:
 						"tone": "danger" if disabled else "positive",
 					},
 					"readiness": {
-						"value": readiness.get("value") or "No profile",
+						"value": readiness.get("value") or "New supplier - review needed",
 						"tone": readiness.get("tone") or "neutral",
 					},
 					"modified": _format_supplier_modified(record.get("modified")),

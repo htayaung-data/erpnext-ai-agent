@@ -7,7 +7,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, now_datetime
 
-from . import common, service
+from . import common, readiness_evidence, service
 
 
 PROFILE_DOCTYPE = "Procurement Supplier Readiness Profile"
@@ -258,6 +258,15 @@ def _is_valid_email(value: str) -> bool:
 	return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email))
 
 
+def display_readiness_label(status: str) -> str:
+	value = cstr(status).strip()
+	if value == READY:
+		return readiness_evidence.REVIEWED_FOR_BUYING_LABEL
+	if value in {NEEDS_EMAIL, NEEDS_CONTACT_REVIEW}:
+		return readiness_evidence.NEEDS_SUPPLIER_REVIEW_LABEL
+	return value or NO_PROFILE
+
+
 def _status_tone(status: str) -> str:
 	if status == READY:
 		return "good"
@@ -322,8 +331,14 @@ def _context_from_row(supplier: str, row: dict[str, Any] | None, context: dict[s
 		profile["preferred_contact_phone"] = ""
 	recipient = _derive_recipient(profile)
 	status = cstr(profile.get("buying_readiness_status")).strip() or NO_PROFILE
-	profile["readiness_label"] = status
-	profile["readiness_tone"] = _status_tone(status)
+	evidence = readiness_evidence.supplier_evidence(supplier) if not profile.get("exists") else {}
+	profile["evidence"] = evidence
+	if not profile.get("exists") and evidence:
+		profile["readiness_label"] = cstr(evidence.get("inferred_label")).strip() or readiness_evidence.SUPPLIER_NEW_REVIEW_LABEL
+		profile["readiness_tone"] = cstr(evidence.get("inferred_tone")).strip() or "warning"
+	else:
+		profile["readiness_label"] = display_readiness_label(status)
+		profile["readiness_tone"] = _status_tone(status)
 	profile["recipient"] = recipient
 	profile["contact_options"] = contact_options_for_supplier(supplier)
 	profile["can_edit"] = _can_edit(context)
@@ -349,8 +364,26 @@ def get_supplier_profile_context(supplier: str, context: dict[str, object] | Non
 
 def supplier_readiness_chip(supplier: str) -> dict[str, str]:
 	profile = get_supplier_profile_for_readiness(supplier)
-	status = cstr(profile.get("buying_readiness_status")).strip() or NO_PROFILE
-	return {"value": status, "tone": _status_tone(status)}
+	return {"value": cstr(profile.get("readiness_label") or NO_PROFILE), "tone": cstr(profile.get("readiness_tone") or "neutral")}
+
+
+def supplier_readiness_chips_for_suppliers(suppliers: list[str]) -> dict[str, dict[str, str]]:
+	names = [cstr(name).strip() for name in suppliers if cstr(name).strip()]
+	if not names:
+		return {}
+	rows = _safe_get_all(PROFILE_DOCTYPE, PROFILE_FIELDS, filters={"supplier": ["in", names]}, limit=len(names))
+	profiles = {cstr(row.get("supplier")).strip(): dict(row) for row in rows}
+	evidence = readiness_evidence.supplier_evidence_for_suppliers([name for name in names if name not in profiles])
+	chips: dict[str, dict[str, str]] = {}
+	for name in names:
+		row = profiles.get(name)
+		if row:
+			status = cstr(row.get("buying_readiness_status")).strip() or NO_PROFILE
+			chips[name] = {"value": display_readiness_label(status), "tone": _status_tone(status)}
+		else:
+			entry = evidence.get(name) or {}
+			chips[name] = {"value": cstr(entry.get("inferred_label") or readiness_evidence.SUPPLIER_NEW_REVIEW_LABEL), "tone": cstr(entry.get("inferred_tone") or "warning")}
+	return chips
 
 
 @frappe.whitelist()

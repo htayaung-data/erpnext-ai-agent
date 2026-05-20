@@ -6,7 +6,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt, now_datetime
 
-from . import common, service
+from . import common, readiness_evidence, service
 
 
 PROFILE_DOCTYPE = "Procurement Item Buying Profile"
@@ -227,6 +227,13 @@ def _save_doc(doc: object) -> object:
 		return doc.save()
 
 
+def display_readiness_label(status: str) -> str:
+	value = cstr(status).strip()
+	if value == READY_FOR_BUYING:
+		return readiness_evidence.REVIEWED_FOR_BUYING_LABEL
+	return value or NOT_REVIEWED
+
+
 def _status_tone(status: str) -> str:
 	if status == READY_FOR_BUYING:
 		return "good"
@@ -309,8 +316,14 @@ def _context_from_row(item_code: str, row: dict[str, Any] | None, context: dict[
 	supplier_row = _supplier_row(preferred) if preferred else None
 	profile["preferred_supplier_name"] = cstr((supplier_row or {}).get("supplier_name") or preferred).strip()
 	profile["preferred_supplier_disabled"] = bool((supplier_row or {}).get("disabled")) if supplier_row else False
-	profile["readiness_label"] = status
-	profile["readiness_tone"] = _status_tone(status)
+	evidence = readiness_evidence.item_evidence(item_code) if not profile.get("exists") else {}
+	profile["evidence"] = evidence
+	if not profile.get("exists") and evidence:
+		profile["readiness_label"] = cstr(evidence.get("inferred_label")).strip() or readiness_evidence.ITEM_NEW_REVIEW_LABEL
+		profile["readiness_tone"] = cstr(evidence.get("inferred_tone")).strip() or "warning"
+	else:
+		profile["readiness_label"] = display_readiness_label(status)
+		profile["readiness_tone"] = _status_tone(status)
 	profile["status_options"] = [{"label": status_value, "value": status_value} for status_value in STATUS_OPTIONS]
 	profile["supplier_options"] = _supplier_options_for_item(item_code, preferred)
 	profile["can_edit"] = _can_edit(context)
@@ -330,13 +343,17 @@ def readiness_chips_for_items(item_codes: list[str]) -> dict[str, dict[str, str]
 		return {}
 	rows = _safe_get_all(PROFILE_DOCTYPE, PROFILE_FIELDS, filters={"item_code": ["in", names]}, limit=len(names))
 	by_item = {cstr(row.get("item_code")).strip(): dict(row) for row in rows}
-	return {name: item_readiness_chip_from_row(name, by_item.get(name)) for name in names}
+	evidence = readiness_evidence.item_evidence_for_items([name for name in names if name not in by_item])
+	return {name: item_readiness_chip_from_row(name, by_item.get(name), evidence.get(name)) for name in names}
 
 
-def item_readiness_chip_from_row(item_code: str, row: dict[str, Any] | None) -> dict[str, str]:
+def item_readiness_chip_from_row(item_code: str, row: dict[str, Any] | None, evidence: dict[str, Any] | None = None) -> dict[str, str]:
 	profile = _profile_values(row)
 	status = cstr(profile.get("buying_readiness_status")).strip() or NOT_REVIEWED
-	return {"value": status, "tone": _status_tone(status)}
+	if not row:
+		entry = evidence if evidence is not None else readiness_evidence.item_evidence(item_code)
+		return {"value": cstr((entry or {}).get("inferred_label") or readiness_evidence.ITEM_NEW_REVIEW_LABEL), "tone": cstr((entry or {}).get("inferred_tone") or "warning")}
+	return {"value": display_readiness_label(status), "tone": _status_tone(status)}
 
 
 def get_item_profile_context(item_code: str, context: dict[str, object] | None = None) -> dict[str, Any]:

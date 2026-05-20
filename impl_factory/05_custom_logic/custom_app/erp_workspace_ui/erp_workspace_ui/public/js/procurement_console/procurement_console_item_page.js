@@ -411,7 +411,7 @@
     const data = profile || {};
     const canEdit = Boolean(data.can_edit);
     const supplierLabel = data.preferred_supplier_name || data.preferred_existing_supplier || "Not selected";
-    const updated = formatBusinessTimestamp(data.last_context_update_at || data.modified) || "No profile saved";
+    const updated = formatBusinessTimestamp(data.last_context_update_at || data.modified) || "Not saved";
     const leadTime = formatNumberValue(data.procurement_lead_time_days, "days");
     const moq = formatNumberValue(data.minimum_order_qty_context, "");
     return `

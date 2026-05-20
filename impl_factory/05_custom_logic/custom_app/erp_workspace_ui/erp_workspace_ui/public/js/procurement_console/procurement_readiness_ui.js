@@ -95,7 +95,7 @@
         <div class="erpw-readiness-row-main">
           <div class="erpw-readiness-row-title"><span class="erpw-readiness-chip ${escapeHtml(issue.severity || "info")}">${escapeHtml(severityLabel(issue.severity))}</span>${escapeHtml(issue.title || "Readiness issue")}</div>
           <div class="erpw-readiness-row-detail">${escapeHtml(issue.detail || "Review this record before future governed action.")}</div>
-          <div class="erpw-readiness-row-source">${escapeHtml(issue.group_label || issue.group || "Readiness")} ? ${escapeHtml(issue.source_name || issue.source_type || "Record")}</div>
+          <div class="erpw-readiness-row-source">${escapeHtml(issue.group_label || issue.group || "Readiness")} - ${escapeHtml(issue.source_name || issue.source_type || "Record")}</div>
         </div>
         ${fixRoute && fixLabel ? `<button type="button" class="erpw-readiness-action" data-procurement-readiness-route="${routePayload(fixRoute)}">${escapeHtml(fixLabel)}</button>` : ""}
       </div>

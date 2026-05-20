@@ -82,7 +82,7 @@ def _item_rows(filters: dict[str, str]) -> list[dict[str, object]]:
 		if not name:
 			continue
 		disabled = bool(record.get("disabled"))
-		readiness = readiness_by_item.get(name) or {"value": "Not reviewed", "tone": "neutral"}
+		readiness = readiness_by_item.get(name) or {"value": "New item - review needed", "tone": "warning"}
 		rows.append(
 			{
 				"key": name,
@@ -217,7 +217,7 @@ def _detail_payload(
 ) -> dict[str, object]:
 	name = cstr(record.get("name"))
 	disabled = bool(record.get("disabled"))
-	profile_status = cstr((buying_profile or {}).get("readiness_label") or "Not reviewed")
+	profile_status = cstr((buying_profile or {}).get("readiness_label") or "New item - review needed")
 	profile_tone = cstr((buying_profile or {}).get("readiness_tone") or "neutral")
 	actions = _base_actions()
 	action_targets = _base_action_targets()

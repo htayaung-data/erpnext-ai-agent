@@ -241,6 +241,17 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "supplier": "SUP-001",
                 "buying": 1,
                 "modified": "2026-05-03",
+            },
+            {
+                "name": "PRICE-CATALOG-001",
+                "item_code": "ITEM-CATALOG",
+                "price_list": "Standard Buying",
+                "price_list_rate": 500,
+                "currency": "MMK",
+                "uom": "Nos",
+                "supplier": "SUP-001",
+                "buying": 1,
+                "modified": "2026-05-03",
             }
         ], filters)
     if doctype == "Material Request":
@@ -340,18 +351,25 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
             return [{"parent": "CONT-001"}]
         return []
     if doctype == "Item Supplier":
-        if isinstance(filters, dict) and filters.get("parent") == "ITEM-001":
-            return [
-                {
-                    "name": "ITEM-SUP-001",
-                    "parent": "ITEM-001",
-                    "supplier": "SUP-001",
-                    "supplier_part_no": "SUP-WIDGET-001",
-                    "lead_time_days": 5,
-                    "modified": "2026-05-03",
-                }
-            ]
-        return []
+        rows = [
+            {
+                "name": "ITEM-SUP-001",
+                "parent": "ITEM-001",
+                "supplier": "SUP-001",
+                "supplier_part_no": "SUP-WIDGET-001",
+                "lead_time_days": 5,
+                "modified": "2026-05-03",
+            },
+            {
+                "name": "ITEM-SUP-CATALOG-001",
+                "parent": "ITEM-CATALOG",
+                "supplier": "SUP-001",
+                "supplier_part_no": "SUP-CATALOG-001",
+                "lead_time_days": 7,
+                "modified": "2026-05-03",
+            },
+        ]
+        return _filter_rows(doctype, rows, filters)
     if doctype == "Material Request Item":
         return _filter_rows(doctype, [
             {
@@ -1168,7 +1186,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_output, document_reviews, item_buying_profile, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, readiness, report, service, supplier_detail, supplier_readiness, worklist
+from erp_workspace_ui.procurement_console import document_output, document_reviews, item_buying_profile, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, readiness, readiness_evidence, report, service, supplier_detail, supplier_readiness, worklist
 
 
 def _set_user(user, roles):
@@ -2485,6 +2503,51 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(statuses["SUP-001"]["readiness_status"], "ready")
         self.assertFalse(context["can_send"])
 
+
+    def test_supplier_readiness_infers_known_trading_record_without_profile(self):
+        context = readiness.get_supplier_readiness_context("SUP-001")
+        chip = supplier_readiness.supplier_readiness_chip("SUP-001")
+
+        self.assertEqual(context["issues"][0]["severity"], "ready")
+        self.assertEqual(context["issues"][0]["title"], readiness_evidence.SUPPLIER_KNOWN_TRADING_LABEL)
+        self.assertEqual(chip["value"], readiness_evidence.SUPPLIER_KNOWN_TRADING_LABEL)
+        self.assertTrue(readiness_evidence.supplier_evidence("SUP-001")["has_linked_contact_email"])
+
+    def test_supplier_readiness_warns_for_new_supplier_without_history(self):
+        context = readiness.get_supplier_readiness_context("SUP-NEW")
+
+        self.assertEqual(context["issues"][0]["severity"], "warning")
+        self.assertEqual(context["issues"][0]["title"], readiness_evidence.SUPPLIER_NEW_REVIEW_LABEL)
+
+    def test_supplier_readiness_manual_hold_overrides_history(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        supplier_readiness.save_supplier_readiness_profile(
+            "SUP-001",
+            {
+                "buying_readiness_status": "Hold for sourcing",
+                "preferred_rfq_contact": "CONT-001",
+                "rfq_recipient_email_override": "",
+                "buying_note": "",
+                "readiness_note": "Paused for sourcing review.",
+            },
+        )
+
+        context = readiness.get_supplier_readiness_context("SUP-001")
+
+        self.assertEqual(context["issues"][0]["severity"], "critical")
+        self.assertIn("hold", context["issues"][0]["title"].lower())
+
+    def test_manager_readiness_excludes_historical_no_profile_supplier_item(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+
+        queue = readiness.get_procurement_manager_readiness()
+        titles = [issue["title"] for issue in queue["issues"]]
+
+        self.assertNotIn("Supplier profile not reviewed", titles)
+        self.assertNotIn("Item buying context not reviewed", titles)
+        self.assertNotIn(readiness_evidence.SUPPLIER_KNOWN_TRADING_LABEL, titles)
+        self.assertNotIn(readiness_evidence.ITEM_EXISTING_BUYING_LABEL, titles)
+
     def test_supplier_detail_restricted_for_finance_executive_only(self):
         _set_user("approver@example.com", ["Finance Lead Approver", "Executive Approver"])
 
@@ -2501,8 +2564,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_record", "label": "Open"}])
         self.assertEqual(payload["action_targets"]["row:ITEM-001:open_record"]["kind"], "page")
         self.assertEqual(payload["action_targets"]["row:ITEM-001:open_record"]["route"], "procurement-console-item")
-        filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
-        self.assertTrue(_filter_contains(filters, ["Item", "is_purchase_item", "=", 1]))
+        self.assertTrue(any(call["doctype"] == "Item" and _filter_contains(call["filters"], ["Item", "is_purchase_item", "=", 1]) for call in CAPTURED_GET_LIST_CALLS))
         _assert_no_forbidden_mutation_actions(self, payload)
 
     def test_buying_item_detail_is_read_only_productized_context(self):
@@ -2578,14 +2640,57 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("preferred_existing_supplier", ITEM_BUYING_LOGS[0]["change_summary"])
         detail = items.get_item_detail_context("ITEM-001")
         self.assertTrue(detail["detail"]["buying_profile"]["can_edit"])
-        self.assertEqual(detail["detail"]["buying_profile"]["readiness_label"], "Ready for buying")
+        self.assertEqual(detail["detail"]["buying_profile"]["readiness_label"], "Reviewed for buying")
         directory = items.build_buying_item_directory({})
         self.assertEqual(directory["results"]["columns"][3]["key"], "readiness")
-        self.assertEqual(directory["results"]["rows"][0]["cells"]["readiness"]["value"], "Ready for buying")
+        self.assertEqual(directory["results"]["rows"][0]["cells"]["readiness"]["value"], "Reviewed for buying")
         self.assertNotIn("Open ERP Item Form", str(detail))
         self.assertEqual({}, SAVED_PURCHASE_ORDERS)
         self.assertEqual({}, SAVED_SUPPLIER_QUOTATIONS)
         self.assertEqual([], [row for row in ITEM_BUYING_LOGS if row.get("doctype") in {"Communication", "Email Queue"}])
+
+
+    def test_item_readiness_infers_existing_buying_activity_without_profile(self):
+        context = readiness.get_item_buying_readiness_context("ITEM-001")
+        chip = item_buying_profile.item_readiness_chip("ITEM-001")
+
+        self.assertEqual(context["issues"][0]["severity"], "ready")
+        self.assertEqual(context["issues"][0]["title"], readiness_evidence.ITEM_EXISTING_BUYING_LABEL)
+        self.assertEqual(chip["value"], readiness_evidence.ITEM_EXISTING_BUYING_LABEL)
+
+    def test_item_readiness_infers_catalog_evidence_without_transaction_history(self):
+        context = readiness.get_item_buying_readiness_context("ITEM-CATALOG")
+        chip = item_buying_profile.item_readiness_chip("ITEM-CATALOG")
+
+        self.assertEqual(context["issues"][0]["severity"], "ready")
+        self.assertEqual(context["issues"][0]["title"], readiness_evidence.ITEM_CATALOG_EVIDENCE_LABEL)
+        self.assertEqual(chip["value"], readiness_evidence.ITEM_CATALOG_EVIDENCE_LABEL)
+
+    def test_item_readiness_warns_for_new_purchase_item_without_evidence(self):
+        context = readiness.get_item_buying_readiness_context("ITEM-NEW")
+
+        self.assertEqual(context["issues"][0]["severity"], "warning")
+        self.assertEqual(context["issues"][0]["title"], readiness_evidence.ITEM_NEW_REVIEW_LABEL)
+
+    def test_item_readiness_manual_hold_overrides_history(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        item_buying_profile.save_item_buying_profile(
+            "ITEM-001",
+            {
+                "buying_readiness_status": "Hold for sourcing",
+                "preferred_existing_supplier": "SUP-001",
+                "supplier_part_no_context": "",
+                "procurement_lead_time_days": "",
+                "minimum_order_qty_context": "",
+                "buying_note": "",
+                "readiness_note": "Paused for source review.",
+            },
+        )
+
+        context = readiness.get_item_buying_readiness_context("ITEM-001")
+
+        self.assertEqual(context["issues"][0]["severity"], "critical")
+        self.assertIn("hold", context["issues"][0]["title"].lower())
 
     def test_item_buying_profile_is_read_only_for_purchase_user(self):
         _set_user("purchase@example.com", ["Purchase User"])

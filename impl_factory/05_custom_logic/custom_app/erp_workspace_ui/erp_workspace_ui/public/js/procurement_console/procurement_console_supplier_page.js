@@ -408,14 +408,14 @@
             <div class="erpw-supplier-readiness-note">${escapeHtml(canEdit ? "Controlled buying readiness for RFQ preparation." : "Read-only buying readiness for RFQ preparation.")}</div>
           </div>
           <div class="erpw-supplier-readiness-actions">
-            <span class="erpw-supplier-readiness-chip ${escapeHtml(readinessToneClass(data))}">${escapeHtml(data.readiness_label || data.buying_readiness_status || "No profile")}</span>
+            <span class="erpw-supplier-readiness-chip ${escapeHtml(readinessToneClass(data))}">${escapeHtml(data.readiness_label || data.buying_readiness_status || "New supplier - review needed")}</span>
             ${canEdit ? `<button type="button" class="erpw-supplier-readiness-button" data-erpw-readiness-edit>Edit Profile</button>` : ""}
           </div>
         </div>
         <div class="erpw-supplier-readiness-grid">
           ${renderReadinessField("Preferred RFQ contact", contactName || "Not selected", data.preferred_contact_email || "")}
           ${renderReadinessField("Recipient email", recipientEmail || "Not set", recipientMeta)}
-          ${renderReadinessField("Last updated", formatBusinessTimestamp(data.modified) || "No profile saved", data.modified_by || "")}
+          ${renderReadinessField("Last updated", formatBusinessTimestamp(data.modified) || "Not saved", data.modified_by || "")}
           ${renderReadinessField("Buying note", data.buying_note || "-", "")}
           ${renderReadinessField("Readiness note", data.readiness_note || "-", "")}
           ${renderReadinessField("Permission", canEdit ? "Editable by Purchase Manager" : "Read-only", data.read_only_reason || "")}

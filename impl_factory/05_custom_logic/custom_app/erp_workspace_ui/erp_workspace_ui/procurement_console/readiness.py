@@ -5,7 +5,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt
 
-from . import common, item_buying_profile, service, supplier_readiness
+from . import common, item_buying_profile, readiness_evidence, service, supplier_readiness
 
 
 MANAGER_ROLES = {"Purchase Manager", "Purchase Master Manager"}
@@ -167,20 +167,9 @@ def get_supplier_readiness_context(supplier: str) -> dict[str, object]:
 		return _context_payload("Supplier", "", [])
 	profile = supplier_readiness.get_supplier_profile_for_readiness(supplier_name)
 	status = cstr(profile.get("buying_readiness_status") or profile.get("readiness_label")).strip() or supplier_readiness.NO_PROFILE
+	evidence = readiness_evidence.supplier_evidence(supplier_name)
 	issues: list[dict[str, object]] = []
-	if not profile.get("exists") or status == supplier_readiness.NO_PROFILE:
-		issues.append(_issue(
-			f"supplier:{supplier_name}:profile_missing",
-			"supplier_readiness",
-			"warning",
-			"Supplier profile not reviewed",
-			"Review the Supplier Buying Profile before relying on this supplier for sourcing decisions.",
-			"Supplier",
-			supplier_name,
-			fix_label="Review supplier profile",
-			fix_route=_route("procurement-console-supplier", supplier_name),
-		))
-	elif status == supplier_readiness.HOLD_FOR_SOURCING:
+	if profile.get("exists") and status == supplier_readiness.HOLD_FOR_SOURCING:
 		issues.append(_issue(
 			f"supplier:{supplier_name}:hold",
 			"supplier_readiness",
@@ -192,20 +181,34 @@ def get_supplier_readiness_context(supplier: str) -> dict[str, object]:
 			fix_label="Review supplier profile",
 			fix_route=_route("procurement-console-supplier", supplier_name),
 		))
-	elif status in {supplier_readiness.NEEDS_EMAIL, supplier_readiness.NEEDS_CONTACT_REVIEW}:
+	elif profile.get("exists") and status in {supplier_readiness.NEEDS_EMAIL, supplier_readiness.NEEDS_CONTACT_REVIEW}:
 		issues.append(_issue(
 			f"supplier:{supplier_name}:needs_review",
 			"supplier_readiness",
 			"warning",
-			status,
-			cstr(profile.get("readiness_note")).strip() or "Supplier contact readiness needs manager review.",
+			readiness_evidence.NEEDS_SUPPLIER_REVIEW_LABEL,
+			cstr(profile.get("readiness_note")).strip() or "Supplier buying readiness needs manager review.",
 			"Supplier",
 			supplier_name,
 			fix_label="Review supplier profile",
 			fix_route=_route("procurement-console-supplier", supplier_name),
 		))
+	elif profile.get("exists"):
+		issues.append(_ready_issue("supplier_readiness", "Supplier", supplier_name, readiness_evidence.REVIEWED_FOR_BUYING_LABEL, "Supplier Buying Profile has no blocking readiness issue."))
+	elif evidence.get("has_trading_history"):
+		issues.append(_ready_issue("supplier_readiness", "Supplier", supplier_name, readiness_evidence.SUPPLIER_KNOWN_TRADING_LABEL, "Buying history exists. This is operational evidence, not formal approval."))
 	else:
-		issues.append(_ready_issue("supplier_readiness", "Supplier", supplier_name, "Supplier profile ready", "Supplier Buying Profile has no blocking readiness issue."))
+		issues.append(_issue(
+			f"supplier:{supplier_name}:review_needed",
+			"supplier_readiness",
+			"warning",
+			readiness_evidence.SUPPLIER_NEW_REVIEW_LABEL,
+			"Review the Supplier Buying Profile before relying on this supplier for sourcing decisions.",
+			"Supplier",
+			supplier_name,
+			fix_label="Review supplier profile",
+			fix_route=_route("procurement-console-supplier", supplier_name),
+		))
 	return _context_payload("Supplier", supplier_name, issues)
 
 
@@ -215,20 +218,9 @@ def get_item_buying_readiness_context(item_code: str) -> dict[str, object]:
 		return _context_payload("Item", "", [])
 	profile = item_buying_profile.get_item_profile_context(item_name)
 	status = cstr(profile.get("buying_readiness_status") or profile.get("readiness_label")).strip() or item_buying_profile.NOT_REVIEWED
+	evidence = readiness_evidence.item_evidence(item_name)
 	issues: list[dict[str, object]] = []
-	if not profile.get("exists") or status == item_buying_profile.NOT_REVIEWED:
-		issues.append(_issue(
-			f"item:{item_name}:not_reviewed",
-			"item_readiness",
-			"warning",
-			"Item buying context not reviewed",
-			"Review the Buying Procurement Context before using this item in sourcing or order decisions.",
-			"Item",
-			item_name,
-			fix_label="Review item context",
-			fix_route=_route("procurement-console-item", item_name),
-		))
-	elif status == item_buying_profile.HOLD_FOR_SOURCING:
+	if profile.get("exists") and status == item_buying_profile.HOLD_FOR_SOURCING:
 		issues.append(_issue(
 			f"item:{item_name}:hold",
 			"item_readiness",
@@ -240,7 +232,7 @@ def get_item_buying_readiness_context(item_code: str) -> dict[str, object]:
 			fix_label="Review item context",
 			fix_route=_route("procurement-console-item", item_name),
 		))
-	elif status == item_buying_profile.NEEDS_SOURCING_REVIEW:
+	elif profile.get("exists") and status == item_buying_profile.NEEDS_SOURCING_REVIEW:
 		issues.append(_issue(
 			f"item:{item_name}:needs_review",
 			"item_readiness",
@@ -252,8 +244,36 @@ def get_item_buying_readiness_context(item_code: str) -> dict[str, object]:
 			fix_label="Review item context",
 			fix_route=_route("procurement-console-item", item_name),
 		))
+	elif profile.get("exists") and status == item_buying_profile.NOT_REVIEWED:
+		issues.append(_issue(
+			f"item:{item_name}:not_reviewed",
+			"item_readiness",
+			"warning",
+			"Item buying context not reviewed",
+			"Review the Buying Procurement Context before using this item in sourcing or order decisions.",
+			"Item",
+			item_name,
+			fix_label="Review item context",
+			fix_route=_route("procurement-console-item", item_name),
+		))
+	elif profile.get("exists"):
+		issues.append(_ready_issue("item_readiness", "Item", item_name, readiness_evidence.REVIEWED_FOR_BUYING_LABEL, "Buying Procurement Context has no blocking readiness issue."))
+	elif evidence.get("has_transaction_history"):
+		issues.append(_ready_issue("item_readiness", "Item", item_name, readiness_evidence.ITEM_EXISTING_BUYING_LABEL, "Buying activity exists. This is operational evidence, not formal approval."))
+	elif evidence.get("has_catalog_evidence"):
+		issues.append(_ready_issue("item_readiness", "Item", item_name, readiness_evidence.ITEM_CATALOG_EVIDENCE_LABEL, "Catalog buying evidence exists. This is context only, not formal approval."))
 	else:
-		issues.append(_ready_issue("item_readiness", "Item", item_name, "Item buying context ready", "Buying Procurement Context has no blocking readiness issue."))
+		issues.append(_issue(
+			f"item:{item_name}:review_needed",
+			"item_readiness",
+			"warning",
+			readiness_evidence.ITEM_NEW_REVIEW_LABEL,
+			"Review the Buying Procurement Context before using this item in sourcing or order decisions.",
+			"Item",
+			item_name,
+			fix_label="Review item context",
+			fix_route=_route("procurement-console-item", item_name),
+		))
 	return _context_payload("Item", item_name, issues)
 
 
@@ -271,6 +291,8 @@ def _supplier_issues_for_document(suppliers: list[object], parent_key: str, grou
 			deferred_action="Future governed sourcing step",
 		))
 		return issues
+	supplier_names = [cstr(_value(row, "supplier") or _value(row, "supplier_name")).strip() for row in suppliers]
+	evidence_by_supplier = readiness_evidence.supplier_evidence_for_suppliers(supplier_names)
 	for row in suppliers:
 		supplier = cstr(_value(row, "supplier") or _value(row, "supplier_name")).strip()
 		if not supplier:
@@ -286,6 +308,7 @@ def _supplier_issues_for_document(suppliers: list[object], parent_key: str, grou
 			continue
 		profile = supplier_readiness.get_supplier_profile_for_readiness(supplier)
 		status = cstr(profile.get("buying_readiness_status") or profile.get("readiness_label")).strip() or supplier_readiness.NO_PROFILE
+		evidence = evidence_by_supplier.get(supplier) or {}
 		if status == supplier_readiness.HOLD_FOR_SOURCING:
 			issues.append(_issue(
 				f"{parent_key}:supplier:{supplier}:hold",
@@ -298,13 +321,25 @@ def _supplier_issues_for_document(suppliers: list[object], parent_key: str, grou
 				fix_label="Review supplier profile",
 				fix_route=_route("procurement-console-supplier", supplier),
 			))
-		elif status in {supplier_readiness.NO_PROFILE, supplier_readiness.NEEDS_EMAIL, supplier_readiness.NEEDS_CONTACT_REVIEW}:
+		elif profile.get("exists") and status in {supplier_readiness.NEEDS_EMAIL, supplier_readiness.NEEDS_CONTACT_REVIEW}:
 			issues.append(_issue(
 				f"{parent_key}:supplier:{supplier}:review",
 				group,
 				"warning",
-				"Supplier readiness needs review",
-				f"{_supplier_label(supplier)} readiness is {status}.",
+				readiness_evidence.NEEDS_SUPPLIER_REVIEW_LABEL,
+				f"{_supplier_label(supplier)} buying readiness needs manager review.",
+				"Supplier",
+				supplier,
+				fix_label="Review supplier profile",
+				fix_route=_route("procurement-console-supplier", supplier),
+			))
+		elif not profile.get("exists") and not evidence.get("has_trading_history"):
+			issues.append(_issue(
+				f"{parent_key}:supplier:{supplier}:review_needed",
+				group,
+				"warning",
+				readiness_evidence.SUPPLIER_NEW_REVIEW_LABEL,
+				f"{_supplier_label(supplier)} has no buying history or Supplier Buying Profile yet.",
 				"Supplier",
 				supplier,
 				fix_label="Review supplier profile",
@@ -327,6 +362,8 @@ def _item_issues_for_document(items: list[object], parent_key: str, group: str) 
 			deferred_action="Future governed document step",
 		))
 		return issues
+	item_names = [cstr(_value(row, "item_code")).strip() for row in items]
+	evidence_by_item = readiness_evidence.item_evidence_for_items(item_names)
 	for index, row in enumerate(items, start=1):
 		item = cstr(_value(row, "item_code")).strip()
 		if not item:
@@ -342,6 +379,7 @@ def _item_issues_for_document(items: list[object], parent_key: str, group: str) 
 			continue
 		profile = item_buying_profile.get_item_profile_context(item)
 		status = cstr(profile.get("buying_readiness_status") or profile.get("readiness_label")).strip() or item_buying_profile.NOT_REVIEWED
+		evidence = evidence_by_item.get(item) or {}
 		if status == item_buying_profile.HOLD_FOR_SOURCING:
 			issues.append(_issue(
 				f"{parent_key}:item:{item}:hold",
@@ -354,13 +392,25 @@ def _item_issues_for_document(items: list[object], parent_key: str, group: str) 
 				fix_label="Review item context",
 				fix_route=_route("procurement-console-item", item),
 			))
-		elif status in {item_buying_profile.NOT_REVIEWED, item_buying_profile.NEEDS_SOURCING_REVIEW}:
+		elif profile.get("exists") and status in {item_buying_profile.NOT_REVIEWED, item_buying_profile.NEEDS_SOURCING_REVIEW}:
 			issues.append(_issue(
 				f"{parent_key}:item:{item}:review",
 				group,
 				"warning",
 				"Item buying context needs review",
-				f"{item} readiness is {status}.",
+				f"{item} readiness is {item_buying_profile.display_readiness_label(status)}.",
+				"Item",
+				item,
+				fix_label="Review item context",
+				fix_route=_route("procurement-console-item", item),
+			))
+		elif not profile.get("exists") and not evidence.get("has_any_evidence"):
+			issues.append(_issue(
+				f"{parent_key}:item:{item}:review_needed",
+				group,
+				"warning",
+				readiness_evidence.ITEM_NEW_REVIEW_LABEL,
+				f"{item} has no buying history, catalog evidence, or Buying Procurement Context yet.",
 				"Item",
 				item,
 				fix_label="Review item context",
@@ -414,6 +464,27 @@ def get_rfq_readiness_context(name: str) -> dict[str, object]:
 	items = _child_rows(doc, "items")
 	issues.extend(_item_issues_for_document(items, parent_key, "rfq_readiness"))
 	issues.extend(_line_quality_issues(items, parent_key, "rfq_readiness", require_schedule=True))
+	try:
+		from . import document_output
+
+		send_context = document_output.get_rfq_send_readiness_context(cstr(name).strip())
+		for row in send_context.get("suppliers") or []:
+			status = cstr(row.get("readiness_status")).strip()
+			if status in {"missing_email", "invalid_email"}:
+				supplier = cstr(row.get("supplier")).strip()
+				issues.append(_issue(
+					f"{parent_key}:communication:{supplier or 'supplier'}:{status}",
+					"rfq_readiness",
+					"warning",
+					"RFQ recipient needs review",
+					cstr(row.get("reason")).strip() or "Supplier recipient email is not ready for future governed RFQ send.",
+					"Supplier",
+					supplier,
+					fix_label="Review supplier profile",
+					fix_route=_route("procurement-console-supplier", supplier) if supplier else None,
+				))
+	except Exception:
+		pass
 	issues.append(_issue(
 		f"{parent_key}:send_deferred",
 		"rfq_readiness",
@@ -504,10 +575,10 @@ def _issues_for_document_row(doctype: str, name: str) -> list[dict[str, object]]
 
 def _visible_manager_issues(context: dict[str, object]) -> list[dict[str, object]]:
 	issues: list[dict[str, object]] = []
-	for supplier in _top_visible_suppliers():
-		issues.extend(issue for issue in get_supplier_readiness_context(cstr(supplier.get("name"))).get("issues") or [] if issue.get("severity") != "ready")
-	for item in _top_visible_items():
-		issues.extend(issue for issue in get_item_buying_readiness_context(cstr(item.get("name"))).get("issues") or [] if issue.get("severity") != "ready")
+	for supplier in _top_visible_suppliers(24):
+		issues.extend(issue for issue in get_supplier_readiness_context(cstr(supplier.get("name"))).get("issues") or [] if issue.get("severity") in {"critical", "warning"})
+	for item in _top_visible_items(50):
+		issues.extend(issue for issue in get_item_buying_readiness_context(cstr(item.get("name"))).get("issues") or [] if issue.get("severity") in {"critical", "warning"})
 	for doctype, fields in (
 		("Material Request", ["name", "modified"]),
 		("Request for Quotation", ["name", "modified"]),
@@ -515,7 +586,7 @@ def _visible_manager_issues(context: dict[str, object]) -> list[dict[str, object
 		("Purchase Order", ["name", "supplier", "modified"]),
 	):
 		for row in _top_visible_documents(doctype, fields):
-			issues.extend(issue for issue in _issues_for_document_row(doctype, cstr(row.get("name"))) if issue.get("severity") != "ready")
+			issues.extend(issue for issue in _issues_for_document_row(doctype, cstr(row.get("name"))) if issue.get("severity") in {"critical", "warning"})
 	return _sort_issues(issues)[:ISSUE_LIMIT]
 
 
