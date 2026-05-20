@@ -133,11 +133,11 @@ async function assertOverview(page, user) {
   await page.waitForFunction(() => /Procurement Console/i.test(document.body.innerText || ""), null, { timeout: TIMEOUT });
   const state = await pageState(page);
   if (user.key === "manager") {
-    assert(state.managerReadinessCards === 1, "Purchase Manager overview must show Manager Readiness", state);
-    assert(/Manager Readiness/i.test(state.bodyText), "Manager Readiness heading missing", state);
+    assert(state.managerReadinessCards === 1, "Purchase Manager overview must show Readiness Review Queue", state);
+    assert(/Readiness Review Queue/i.test(state.bodyText), "Readiness Review Queue heading missing", state);
   } else {
-    assert(state.managerReadinessCards === 0, "Purchase User overview must not show Manager Readiness", state);
-    assert(!/Manager Readiness/i.test(state.bodyText), "Purchase User saw manager readiness heading", state);
+    assert(state.managerReadinessCards === 0, "Purchase User overview must not show Readiness Review Queue", state);
+    assert(!/Readiness Review Queue/i.test(state.bodyText), "Purchase User saw manager readiness heading", state);
   }
   await assertCleanPage(page, `${user.key}-overview`);
   await capture(page, `${user.key}-overview-readiness`);

@@ -203,7 +203,7 @@ async function assertOverview(page, user, fixtures) {
   await page.waitForFunction(() => /Procurement Console/i.test(document.body.innerText || ""), null, { timeout: TIMEOUT });
   const state = await pageState(page);
   if (user.key === "manager") {
-    assert(state.managerReadinessCards === 1, "Purchase Manager overview must show Manager Readiness", state);
+    assert(state.managerReadinessCards === 1, "Purchase Manager overview must show Readiness Review Queue", state);
     const queueText = String(state.managerReadinessText || "");
     assert(!queueText.includes(fixtures.supplier.name), "Historical supplier must not appear as manager exception", { queueText, fixture: fixtures.supplier });
     assert(!queueText.includes(fixtures.item.name), "Historical item must not appear as manager exception", { queueText, fixture: fixtures.item });
@@ -212,8 +212,8 @@ async function assertOverview(page, user, fixtures) {
       assert(/New supplier - review needed|New item - review needed|Hold for sourcing/i.test(queueText), "Manager queue did not show available real exceptions", { queueText, newSupplier: fixtures.newSupplier, newItem: fixtures.newItem });
     }
   } else {
-    assert(state.managerReadinessCards === 0, "Purchase User overview must not show Manager Readiness", state);
-    assert(!/Manager Readiness/i.test(state.bodyText), "Purchase User saw manager readiness heading", state);
+    assert(state.managerReadinessCards === 0, "Purchase User overview must not show Readiness Review Queue", state);
+    assert(!/Readiness Review Queue/i.test(state.bodyText), "Purchase User saw manager readiness heading", state);
   }
   await assertCleanPage(page, `${user.key}-overview`);
   await capture(page, `${user.key}-overview`);
