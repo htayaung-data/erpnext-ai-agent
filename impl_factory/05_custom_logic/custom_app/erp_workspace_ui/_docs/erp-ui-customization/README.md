@@ -51,6 +51,7 @@ Freeze and governance status:
 - Procurement Console Phase 7E3 Manager Review / Action Readiness is documented on 2026-05-19 as a docs-only design; recommended implementation is readiness/exception guidance without lifecycle mutation. Native escape, send/email, conversion, submit/approval, Item Price, Default Supplier, receiving, billing, and payment remain deferred.
 - Procurement Console Phase 7H1 Readiness Inference and Exception Queue Realism is protected on 2026-05-20; fake historical `No profile` / `Not reviewed` backlog is removed, Manager Readiness is exception-oriented, and no lifecycle/send/master-data mutations were introduced. Next recommended step is Phase 7I full Procurement freeze audit.
 - Procurement Console Phase 7I Full Freeze Audit is closed on 2026-05-20 as a protected freeze baseline for the current accepted Procurement scope; artifact root `/tmp/procurement-phase7i-freeze-audit-20260520T130503Z`, final Sales freeze `/tmp/sales-freeze-protection-20260520T141113Z`, and final protected workspace gate `/tmp/protected-workspaces-20260520T141521Z` passed. Future planned Procurement phases may continue only without regressing this protected baseline.
+- Procurement Console Phase 7J UX Information Architecture redesign is documented on 2026-05-20 as a docs-only plan for compressing Manager Readiness, tabbing supplier/item detail activity, polishing managed form/review hierarchy, and improving report/directory comprehension without changing the protected Phase 7I runtime baseline.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -145,6 +146,7 @@ Documents in this folder:
 - `procurement-console-phase7h-operations-realism-audit-main-agent-handover-2026-05-20.md`
 - `procurement-console-phase7h1-readiness-inference-exception-queue-baseline-2026-05-20.md`
 - `procurement-console-phase7i-full-freeze-audit-baseline-2026-05-20.md`
+- `procurement-console-phase7j-ux-information-architecture-redesign-plan-2026-05-20.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
