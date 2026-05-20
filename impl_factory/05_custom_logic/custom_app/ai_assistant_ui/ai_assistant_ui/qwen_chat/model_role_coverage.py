@@ -22,6 +22,8 @@ ACTIVE_MODEL_ROLE_COVERAGE_LANES = [
 	"frontdoor_semantic_classification",
 	"fresh_query_interpretation",
 	"followup_interpretation",
+	"semantic_reasoning_activation",
+	"semantic_repair_intent",
 	"visible_context_followup",
 	"visible_context_trace_inspection",
 	"erp_report_execution",

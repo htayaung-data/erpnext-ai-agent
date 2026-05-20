@@ -27,6 +27,9 @@ from .natural_business_understanding_requery_planner import build_nbu_governed_r
 from .natural_business_understanding_response_renderer import render_nbu_professional_response
 from .natural_business_understanding_schema_hardening import validate_nbu_trace_schema_hardening
 from .natural_business_understanding_validation import evaluate_nbu_candidate_against_context
+from .model_role_coverage import build_model_role_contract_bundle
+from .model_role_observability import ROLE_SHADOW_OBSERVER
+from .runtime_metadata_contract import LANE_CLASS_SHADOW_OBSERVER, build_runtime_metadata_envelope
 
 
 NBU_RUNTIME_ENDPOINT_PATH = "/interpret-business-understanding"
@@ -67,6 +70,78 @@ def _allowed_values_payload() -> Dict[str, List[str]]:
 		"evidence_needs": sorted(ALLOWED_EVIDENCE_NEEDS),
 		"authority_classes": sorted(ALLOWED_AUTHORITY_CLASSES),
 	}
+
+
+
+
+def _nbu_shadow_runtime_metadata_bundle(
+	*,
+	agent_meta: Dict[str, Any] | None,
+	answer_mode: str,
+	fallback_used: bool | None = None,
+	fallback_reason: str = "",
+) -> Dict[str, Dict[str, Any]]:
+	clean_agent_meta = _clean_dict(agent_meta)
+	runtime_source = (
+		"nbu_shadow_runtime_agent_meta"
+		if clean_agent_meta
+		else f"nbu_shadow_{_clean_text(answer_mode) or 'unknown'}_without_runtime_agent_meta"
+	)
+	model_role_bundle = build_model_role_contract_bundle(
+		lane="nbu_shadow_observation",
+		role_owner="natural_business_understanding_runtime",
+		model_role=ROLE_SHADOW_OBSERVER,
+		agent_meta=clean_agent_meta,
+		fallback_used=fallback_used,
+		fallback_reason=_clean_text(fallback_reason),
+		runtime_source=runtime_source,
+		strict_enforcement_enabled=False,
+	)
+	observability = model_role_bundle["model_role_observability"]
+	runtime_metadata_envelope = build_runtime_metadata_envelope(
+		lane_id="nbu_shadow_observation",
+		lane_class=LANE_CLASS_SHADOW_OBSERVER,
+		model_role=_clean_text(observability.get("model_role")),
+		model_name=_clean_text(observability.get("model_name")),
+		fallback_used=observability.get("fallback_used") if "fallback_used" in observability else None,
+		fallback_reason=_clean_text(observability.get("fallback_reason")),
+		role_compliance=_clean_text(observability.get("role_compliance")),
+		authority_source="nbu_shadow_runtime_agent_meta",
+		evidence_scope="nbu_shadow_trace",
+		answer_mode=_clean_text(answer_mode) or "nbu_shadow_observation",
+		preflight_status="not_applicable",
+		metadata_source=runtime_source,
+	)
+	return {
+		"model_role_observability": observability,
+		"model_role_strict_readiness": model_role_bundle["model_role_strict_readiness"],
+		"runtime_metadata_envelope": runtime_metadata_envelope,
+	}
+
+
+def _attach_nbu_shadow_runtime_metadata(
+	payload: Dict[str, Any],
+	*,
+	agent_meta: Dict[str, Any] | None,
+	answer_mode: str,
+	fallback_used: bool | None = None,
+	fallback_reason: str = "",
+) -> Dict[str, Any]:
+	metadata_bundle = _nbu_shadow_runtime_metadata_bundle(
+		agent_meta=agent_meta,
+		answer_mode=answer_mode,
+		fallback_used=fallback_used,
+		fallback_reason=fallback_reason,
+	)
+	clean_agent_meta = _clean_dict(agent_meta)
+	clean_agent_meta["model_role_observability"] = _clean_dict(metadata_bundle.get("model_role_observability"))
+	clean_agent_meta["model_role_strict_readiness"] = _clean_dict(metadata_bundle.get("model_role_strict_readiness"))
+	clean_agent_meta["runtime_metadata_envelope"] = _clean_dict(metadata_bundle.get("runtime_metadata_envelope"))
+	payload["agent_meta"] = clean_agent_meta
+	payload["model_role_observability"] = metadata_bundle["model_role_observability"]
+	payload["model_role_strict_readiness"] = metadata_bundle["model_role_strict_readiness"]
+	payload["runtime_metadata_envelope"] = metadata_bundle["runtime_metadata_envelope"]
+	return payload
 
 
 def _compact_conversation_control_evidence(message: str) -> Dict[str, Any]:
@@ -270,6 +345,7 @@ def _runtime_failure_trace(
 	session_id: str,
 	message: str,
 	error: str,
+	agent_meta: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	trace = build_nbu_trace_contract(
 		request_id=request_id,
@@ -294,7 +370,13 @@ def _runtime_failure_trace(
 	payload["professional_response"] = response
 	payload["schema_hardening_assessment"] = validate_nbu_trace_schema_hardening(payload, response_payload=response)
 	payload["activation_assessment"] = build_nbu_activation_assessment(payload)
-	return payload
+	return _attach_nbu_shadow_runtime_metadata(
+		payload,
+		agent_meta=agent_meta,
+		answer_mode="runtime_unavailable",
+		fallback_used=True,
+		fallback_reason=_clean_text(error) or "runtime_unavailable",
+	)
 
 
 def _resolve_runtime_call(runtime_call: RuntimeCall | None) -> RuntimeCall:
@@ -391,12 +473,14 @@ def interpret_natural_business_understanding_shadow(
 			error=str(exc),
 		)
 
+	runtime_agent_meta = _clean_dict(runtime_response.get("agent_meta")) if isinstance(runtime_response, dict) else {}
 	if not isinstance(runtime_response, dict) or not bool(runtime_response.get("ok", True)):
 		return _runtime_failure_trace(
 			request_id=request_id,
 			session_id=session_id,
 			message=message,
 			error=str((runtime_response or {}).get("error") or "NBU runtime returned an unsuccessful response."),
+			agent_meta=runtime_agent_meta,
 		)
 
 	interpretation = _extract_interpretation_payload(runtime_response)
@@ -519,4 +603,8 @@ def interpret_natural_business_understanding_shadow(
 	payload["professional_response"] = response
 	payload["schema_hardening_assessment"] = validate_nbu_trace_schema_hardening(payload, response_payload=response)
 	payload["activation_assessment"] = build_nbu_activation_assessment(payload)
-	return payload
+	return _attach_nbu_shadow_runtime_metadata(
+		payload,
+		agent_meta=runtime_agent_meta,
+		answer_mode="nbu_shadow_observation",
+	)

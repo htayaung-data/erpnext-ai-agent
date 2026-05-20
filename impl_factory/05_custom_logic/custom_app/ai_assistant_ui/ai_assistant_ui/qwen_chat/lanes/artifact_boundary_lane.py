@@ -11,6 +11,45 @@ from ai_assistant_ui.qwen_chat.authorized_emission import (
 )
 from ai_assistant_ui.qwen_chat.contracts import ExecutionPath
 from ai_assistant_ui.qwen_chat.knowledge_boundary import render_knowledge_boundary_answer
+from ai_assistant_ui.qwen_chat.runtime_metadata_contract import (
+	LANE_CLASS_DETERMINISTIC_REPORT,
+	LANE_CLASS_POLICY_BOUNDARY,
+	ROLE_DETERMINISTIC,
+	ROLE_POLICY_BOUNDARY,
+	build_runtime_metadata_envelope,
+)
+
+
+def _artifact_boundary_metadata_envelope(*, answer_type: str, answer_mode: str) -> Dict[str, Any]:
+	if answer_type == ANSWER_TYPE_POLICY_BOUNDARY:
+		return build_runtime_metadata_envelope(
+			lane_id="artifact_boundary",
+			lane_class=LANE_CLASS_POLICY_BOUNDARY,
+			model_role=ROLE_POLICY_BOUNDARY,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason="",
+			role_compliance="compliant",
+			authority_source="policy_boundary",
+			evidence_scope="knowledge_boundary_contract",
+			answer_mode=answer_mode,
+			preflight_status="bounded",
+			metadata_source="artifact_boundary_authorized_emission",
+		)
+	return build_runtime_metadata_envelope(
+		lane_id="artifact_boundary",
+		lane_class=LANE_CLASS_DETERMINISTIC_REPORT,
+		model_role=ROLE_DETERMINISTIC,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source="governed_erp_report",
+		evidence_scope="artifact_boundary_grounded_evidence",
+		answer_mode=answer_mode,
+		preflight_status="passed",
+		metadata_source="artifact_boundary_authorized_emission",
+	)
 
 
 class _ToolPayloadCollector:
@@ -153,6 +192,12 @@ def handle_artifact_boundary_turn(
 			narrative_contract_payload.get("narrative_engine")
 			or "local_grounded_evidence"
 		).strip()
+		answer_mode = "grounded_evidence_answer"
+		runtime_metadata_envelope = _artifact_boundary_metadata_envelope(
+			answer_type=ANSWER_TYPE_GOVERNED_REPORT,
+			answer_mode=answer_mode,
+		)
+		pre_assistant_tool_payloads.append(runtime_metadata_envelope)
 		# EC-4R1 evidence authority checkpoint: staged evidence payloads are appended only by this helper.
 		authorized_emission = emit_authorized_assistant_answer(
 			session_doc=session_doc,
@@ -165,9 +210,11 @@ def handle_artifact_boundary_turn(
 			followup_resolution=followup_resolution,
 			execution_path=execution_path,
 			runtime_trace_payload={
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"agent_meta": {
 					"engine": narrative_engine,
-					"mode": "grounded_evidence_answer",
+					"mode": answer_mode,
+					"runtime_metadata_envelope": runtime_metadata_envelope,
 				}
 			},
 			grounded_turn_context=latest_grounded_turn,
@@ -179,9 +226,10 @@ def handle_artifact_boundary_turn(
 			return False, {
 				"ok": False,
 				"request_id": request_id,
-				"mode": "grounded_evidence_answer",
+				"mode": answer_mode,
 				"agent_meta": {
 					"engine": narrative_engine,
+					"runtime_metadata_envelope": runtime_metadata_envelope,
 					"authorized_emission": authorized_emission.to_payload(),
 				},
 			}
@@ -193,9 +241,10 @@ def handle_artifact_boundary_turn(
 		return True, {
 			"ok": True,
 			"request_id": request_id,
-			"mode": "grounded_evidence_answer",
+			"mode": answer_mode,
 			"agent_meta": {
 				"engine": narrative_engine,
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
@@ -247,6 +296,11 @@ def handle_artifact_boundary_turn(
 			recovery_payload=recovery_payload,
 			grounded_turn_available=bool(latest_grounded_turn),
 		)
+		answer_mode = "grounded_evidence_boundary"
+		runtime_metadata_envelope = _artifact_boundary_metadata_envelope(
+			answer_type=ANSWER_TYPE_POLICY_BOUNDARY,
+			answer_mode=answer_mode,
+		)
 		# EC-4R1 grounded-boundary authority checkpoint: recovery payloads stay staged until allowed.
 		authorized_emission = emit_authorized_assistant_answer(
 			session_doc=session_doc,
@@ -259,9 +313,11 @@ def handle_artifact_boundary_turn(
 			followup_resolution=followup_resolution,
 			execution_path=execution_path,
 			runtime_trace_payload={
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"agent_meta": {
 					"engine": "local_grounded_boundary",
-					"mode": "grounded_evidence_boundary",
+					"mode": answer_mode,
+					"runtime_metadata_envelope": runtime_metadata_envelope,
 				}
 			},
 			grounded_turn_context={},
@@ -270,6 +326,7 @@ def handle_artifact_boundary_turn(
 				*boundary_payloads,
 				*recovery_payloads,
 				*observability_payloads,
+				runtime_metadata_envelope,
 				execution_path.to_payload(),
 			],
 		)
@@ -278,9 +335,10 @@ def handle_artifact_boundary_turn(
 			return False, {
 				"ok": False,
 				"request_id": request_id,
-				"mode": "grounded_evidence_boundary",
+				"mode": answer_mode,
 				"agent_meta": {
 					"engine": "local_grounded_boundary",
+					"runtime_metadata_envelope": runtime_metadata_envelope,
 					"authorized_emission": authorized_emission.to_payload(),
 				},
 			}
@@ -290,9 +348,10 @@ def handle_artifact_boundary_turn(
 		return True, {
 			"ok": True,
 			"request_id": request_id,
-			"mode": "grounded_evidence_boundary",
+			"mode": answer_mode,
 			"agent_meta": {
 				"engine": "local_grounded_boundary",
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
@@ -346,6 +405,11 @@ def handle_artifact_boundary_turn(
 		recovery_payload=recovery_payload,
 		grounded_turn_available=bool(latest_grounded_turn),
 	)
+	answer_mode = "artifact_enrichment_boundary"
+	runtime_metadata_envelope = _artifact_boundary_metadata_envelope(
+		answer_type=ANSWER_TYPE_POLICY_BOUNDARY,
+		answer_mode=answer_mode,
+	)
 	# EC-4R1 enrichment-boundary authority checkpoint: recovery payloads stay staged until allowed.
 	authorized_emission = emit_authorized_assistant_answer(
 		session_doc=session_doc,
@@ -358,9 +422,11 @@ def handle_artifact_boundary_turn(
 		followup_resolution=followup_resolution,
 		execution_path=execution_path,
 		runtime_trace_payload={
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"agent_meta": {
 				"engine": "local_grounded_boundary",
-				"mode": "artifact_enrichment_boundary",
+				"mode": answer_mode,
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 			}
 		},
 		grounded_turn_context={},
@@ -369,6 +435,7 @@ def handle_artifact_boundary_turn(
 			*boundary_payloads,
 			*recovery_payloads,
 			*observability_payloads,
+			runtime_metadata_envelope,
 			execution_path.to_payload(),
 		],
 	)
@@ -377,9 +444,10 @@ def handle_artifact_boundary_turn(
 		return False, {
 			"ok": False,
 			"request_id": request_id,
-			"mode": "artifact_enrichment_boundary",
+			"mode": answer_mode,
 			"agent_meta": {
 				"engine": "local_grounded_boundary",
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
@@ -389,9 +457,10 @@ def handle_artifact_boundary_turn(
 	return True, {
 		"ok": True,
 		"request_id": request_id,
-		"mode": "artifact_enrichment_boundary",
+		"mode": answer_mode,
 		"agent_meta": {
 			"engine": "local_grounded_boundary",
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

@@ -8,6 +8,28 @@ from ai_assistant_ui.qwen_chat.authorized_emission import (
 	emit_authorized_assistant_answer,
 )
 from ai_assistant_ui.qwen_chat.contracts import ExecutionPath
+from ai_assistant_ui.qwen_chat.runtime_metadata_contract import (
+	LANE_CLASS_DETERMINISTIC_VISIBLE_CONTEXT,
+	ROLE_DETERMINISTIC,
+	build_runtime_metadata_envelope,
+)
+
+
+def _local_followup_metadata_envelope(*, answer_mode: str) -> Dict[str, Any]:
+	return build_runtime_metadata_envelope(
+		lane_id="local_followup_transform",
+		lane_class=LANE_CLASS_DETERMINISTIC_VISIBLE_CONTEXT,
+		model_role=ROLE_DETERMINISTIC,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source="frontdoor_composite",
+		evidence_scope="grounded_visible_context_transform",
+		answer_mode=answer_mode,
+		preflight_status="passed",
+		metadata_source="local_followup_transform_authorized_emission",
+	)
 
 
 def _payload_from_tool_message(value: Any) -> Dict[str, Any]:
@@ -346,6 +368,8 @@ def try_local_followup_transform(
 		requires_runtime=False,
 		grounded_required=True,
 	)
+	answer_mode = "local_grounded_transform"
+	runtime_metadata_envelope = _local_followup_metadata_envelope(answer_mode=answer_mode)
 	pre_assistant_tool_payloads: List[Dict[str, Any]] = []
 	if family_artifact_update_payload:
 		pre_assistant_tool_payloads.append(family_artifact_update_payload)
@@ -354,7 +378,18 @@ def try_local_followup_transform(
 	if narrative_contract_payload:
 		pre_assistant_tool_payloads.append(narrative_contract_payload)
 	if local_transform_trace_payload:
+		local_transform_trace_payload["runtime_metadata_envelope"] = runtime_metadata_envelope
+		trace_agent_meta = (
+			local_transform_trace_payload.get("agent_meta")
+			if isinstance(local_transform_trace_payload.get("agent_meta"), dict)
+			else {}
+		)
+		local_transform_trace_payload["agent_meta"] = {
+			**trace_agent_meta,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
+		}
 		pre_assistant_tool_payloads.append(local_transform_trace_payload)
+	pre_assistant_tool_payloads.append(runtime_metadata_envelope)
 	pre_assistant_tool_payloads.append(execution_path.to_payload())
 
 	# EC-4R2 local-transform authority checkpoint: transformed evidence stays staged until allowed.
@@ -377,10 +412,11 @@ def try_local_followup_transform(
 	return True, {
 		"ok": bool(authorized_emission.emitted),
 		"request_id": request_id,
-		"mode": "local_grounded_transform",
+		"mode": answer_mode,
 		"agent_meta": {
 			"engine": "local_transform",
 			"transforms": applied_transforms,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

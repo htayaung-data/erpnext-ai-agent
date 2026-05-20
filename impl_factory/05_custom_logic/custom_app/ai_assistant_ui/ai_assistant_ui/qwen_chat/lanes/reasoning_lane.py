@@ -10,10 +10,13 @@ from ai_assistant_ui.qwen_chat.authorized_emission import (
 )
 from ai_assistant_ui.qwen_chat.contracts import ExecutionPath, build_followup_resolution_contract
 from ai_assistant_ui.qwen_chat.knowledge_boundary import render_knowledge_boundary_answer
-from ai_assistant_ui.qwen_chat.model_role_coverage import build_model_role_contract_bundle
-from ai_assistant_ui.qwen_chat.model_role_observability import ROLE_HEAVY_REASONING, ROLE_UNKNOWN
 from ai_assistant_ui.qwen_chat.observability import record_phase6_observability_event, record_phase6_performance_metric
-from ai_assistant_ui.qwen_chat.reasoning_execution import build_reasoning_boundary_answer, execute_erp_business_reasoning
+from ai_assistant_ui.qwen_chat.reasoning_execution import (
+	attach_reasoning_runtime_metadata_to_agent_meta,
+	build_reasoning_boundary_answer,
+	build_reasoning_runtime_metadata_bundle,
+	execute_erp_business_reasoning,
+)
 
 
 def _reasoning_runtime_trace_payload(
@@ -21,6 +24,7 @@ def _reasoning_runtime_trace_payload(
 	reasoning_agent_meta: Dict[str, Any],
 	model_role_observability: Dict[str, Any],
 	model_role_strict_readiness: Dict[str, Any],
+	runtime_metadata_envelope: Dict[str, Any],
 ) -> Dict[str, Any]:
 	telemetry = (
 		reasoning_agent_meta.get("telemetry")
@@ -32,7 +36,9 @@ def _reasoning_runtime_trace_payload(
 			**dict(reasoning_agent_meta or {}),
 			"model_role_observability": model_role_observability,
 			"model_role_strict_readiness": model_role_strict_readiness,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 		},
+		"runtime_metadata_envelope": runtime_metadata_envelope,
 		"runtime_latency_ms": int(max(0, telemetry.get("latency_ms") or 0)),
 	}
 
@@ -106,16 +112,14 @@ def handle_reasoning_turn(
 	)
 	reasoning_execution_latency_ms = int(max(0, round((time.perf_counter() - reasoning_execution_started_at) * 1000)))
 	reasoning_agent_meta = reasoning_execution.agent_meta if isinstance(reasoning_execution.agent_meta, dict) else {}
-	model_role_bundle = build_model_role_contract_bundle(
-		lane="business_reasoning_answer",
-		role_owner="reasoning_lane",
-		model_role=ROLE_HEAVY_REASONING if reasoning_agent_meta else ROLE_UNKNOWN,
+	metadata_bundle = build_reasoning_runtime_metadata_bundle(
 		agent_meta=reasoning_agent_meta,
-		runtime_source="business_reasoning_runtime_agent_meta" if reasoning_agent_meta else "business_reasoning_without_runtime_agent_meta",
-		strict_enforcement_enabled=False,
+		status=reasoning_execution.status,
 	)
-	model_role_observability = model_role_bundle["model_role_observability"]
-	model_role_strict_readiness = model_role_bundle["model_role_strict_readiness"]
+	reasoning_agent_meta = attach_reasoning_runtime_metadata_to_agent_meta(reasoning_agent_meta, metadata_bundle)
+	model_role_observability = metadata_bundle["model_role_observability"]
+	model_role_strict_readiness = metadata_bundle["model_role_strict_readiness"]
+	runtime_metadata_envelope = metadata_bundle["runtime_metadata_envelope"]
 	append_tool_payload(
 		session_doc,
 		record_phase6_observability_event(
@@ -181,6 +185,7 @@ def handle_reasoning_turn(
 		append_tool_payload(session_doc, reasoning_semantic_result.to_payload())
 		append_tool_payload(session_doc, model_role_observability)
 		append_tool_payload(session_doc, model_role_strict_readiness)
+		append_tool_payload(session_doc, runtime_metadata_envelope)
 		pre_assistant_tool_payloads = [reasoning_execution.to_payload()]
 		if reasoning_execution.reasoning_contract:
 			pre_assistant_tool_payloads.append(reasoning_execution.reasoning_contract)
@@ -211,6 +216,7 @@ def handle_reasoning_turn(
 				reasoning_agent_meta=reasoning_agent_meta,
 				model_role_observability=model_role_observability,
 				model_role_strict_readiness=model_role_strict_readiness,
+				runtime_metadata_envelope=runtime_metadata_envelope,
 			),
 			grounded_turn_context=latest_grounded_turn,
 			authority_context=_reasoning_authority_context(
@@ -229,6 +235,7 @@ def handle_reasoning_turn(
 				**dict(reasoning_agent_meta or {}),
 				"model_role_observability": model_role_observability,
 				"model_role_strict_readiness": model_role_strict_readiness,
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
@@ -266,6 +273,7 @@ def handle_reasoning_turn(
 	append_tool_payload(session_doc, reasoning_semantic_result.to_payload())
 	append_tool_payload(session_doc, model_role_observability)
 	append_tool_payload(session_doc, model_role_strict_readiness)
+	append_tool_payload(session_doc, runtime_metadata_envelope)
 	pre_assistant_tool_payloads = [reasoning_execution.to_payload()]
 	if reasoning_execution.reasoning_contract:
 		pre_assistant_tool_payloads.append(reasoning_execution.reasoning_contract)
@@ -299,6 +307,7 @@ def handle_reasoning_turn(
 			reasoning_agent_meta=reasoning_agent_meta,
 			model_role_observability=model_role_observability,
 			model_role_strict_readiness=model_role_strict_readiness,
+			runtime_metadata_envelope=runtime_metadata_envelope,
 		),
 		grounded_turn_context={},
 		authority_context=_reasoning_authority_context(
@@ -318,6 +327,7 @@ def handle_reasoning_turn(
 			"status": str(reasoning_execution.status or "").strip(),
 			"model_role_observability": model_role_observability,
 			"model_role_strict_readiness": model_role_strict_readiness,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

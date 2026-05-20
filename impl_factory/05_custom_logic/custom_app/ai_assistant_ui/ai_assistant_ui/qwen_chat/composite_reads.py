@@ -32,6 +32,9 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	list_composite_read_specs,
 	ontology_detect_concepts,
 )
+from ai_assistant_ui.qwen_chat.model_backed_helper_metadata import (
+	attach_governed_tool_runtime_metadata_to_payload,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	build_qwen_runtime_chat_request_config,
@@ -347,6 +350,7 @@ def _execute_composite_step(
 		request_message=message,
 	)
 	if not bool(runtime_payload.get("ok")) or not list(runtime_payload.get("tool_trace") or []):
+		fallback_reason = "governed_report_runtime_unavailable"
 		try:
 			runtime_payload = call_qwen_runtime_chat(
 				session_id=f"{session_id}:{compiled_request.request_id}",
@@ -362,12 +366,24 @@ def _execute_composite_step(
 				request_config=runtime_request_config if isinstance(runtime_request_config, dict) else None,
 			)
 		except QwenRuntimeClientError as exc:
+			fallback_reason = str(exc)
 			runtime_payload = {
 				"ok": False,
 				"tool_trace": [],
 				"agent_meta": {"engine": "unavailable", "mode": "compiled_read_query"},
 				"error": str(exc),
 			}
+		runtime_payload = attach_governed_tool_runtime_metadata_to_payload(
+			runtime_payload,
+			lane_id="composite_read_step_runtime",
+			role_owner="composite_reads",
+			runtime_source="composite_compiled_read_runtime_agent_meta",
+			answer_mode="compiled_read_query",
+			evidence_scope="composite_step_runtime_payload",
+			authority_source="compiled_query_contract",
+			fallback_used=True,
+			fallback_reason=fallback_reason,
+		)
 	runtime_latency_ms = int((time.perf_counter() - runtime_started) * 1000)
 	adapter_outcome: FamilyArtifactOutcome = build_normalized_family_artifact(
 		request_id=compiled_request.request_id,

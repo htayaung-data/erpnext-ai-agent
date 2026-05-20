@@ -20,6 +20,11 @@ from .model_role_coverage import (
 )
 from .model_role_strict_readiness import build_model_role_strict_readiness_contract
 from .policy_boundary_uniformity import build_policy_boundary_uniformity_contract
+from .runtime_metadata_contract import (
+	LANE_CLASS_CONTROL_META,
+	ROLE_CONTROL_META,
+	build_runtime_metadata_envelope,
+)
 from .visible_context_frame_stack import (
 	build_visible_context_frame_stack,
 	resolve_visible_context_frame_arbitration,
@@ -47,6 +52,23 @@ def _clean_dict(value: Any) -> Dict[str, Any]:
 
 def _clean_list(value: Any) -> List[Any]:
 	return list(value) if isinstance(value, list) else []
+
+
+def _trace_inspection_runtime_metadata_envelope() -> Dict[str, Any]:
+	return build_runtime_metadata_envelope(
+		lane_id="visible_context_trace_inspection",
+		lane_class=LANE_CLASS_CONTROL_META,
+		model_role=ROLE_CONTROL_META,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source="trace_debug",
+		evidence_scope="visible_context_authority_trace",
+		answer_mode="visible_context_trace_inspection",
+		preflight_status="passed",
+		metadata_source="visible_context_trace_inspection_authorized_emission",
+	)
 
 
 def _normalize(value: Any) -> str:
@@ -949,8 +971,10 @@ def try_activate_visible_context_trace_inspection_response(
 		lane="visible_context_trace_inspection",
 		strict_enforcement_enabled=False,
 	)
+	runtime_metadata_envelope = _trace_inspection_runtime_metadata_envelope()
 	inspection_payload["model_role_observability"] = model_role_observability
 	inspection_payload["model_role_strict_readiness"] = model_role_strict_readiness
+	inspection_payload["runtime_metadata_envelope"] = runtime_metadata_envelope
 	execution_path_payload = {
 		"type": "qwen_execution_path",
 		"contract_version": CONTRACT_VERSION,
@@ -961,13 +985,14 @@ def try_activate_visible_context_trace_inspection_response(
 		"grounded_required": False,
 		"model_role_observability": model_role_observability,
 		"model_role_strict_readiness": model_role_strict_readiness,
+		"runtime_metadata_envelope": runtime_metadata_envelope,
 	}
 	pre_assistant_payloads = [
 		payload
 		for payload in (additional_tool_payloads or [])
 		if isinstance(payload, dict) and payload
 	]
-	pre_assistant_payloads.extend([inspection_payload, execution_path_payload])
+	pre_assistant_payloads.extend([inspection_payload, execution_path_payload, runtime_metadata_envelope])
 	authorized_emission = emit_authorized_assistant_answer(
 		session_doc=session_doc,
 		answer_text=answer_text,
@@ -993,6 +1018,7 @@ def try_activate_visible_context_trace_inspection_response(
 			"trace_available": bool(trace_payload),
 			"model_role_observability": model_role_observability,
 			"model_role_strict_readiness": model_role_strict_readiness,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"status": _normalized_trace_status(
 				arbitration=_clean_dict(trace_payload.get("frame_arbitration")),
 				resolution=_clean_dict(trace_payload.get("resolution")),

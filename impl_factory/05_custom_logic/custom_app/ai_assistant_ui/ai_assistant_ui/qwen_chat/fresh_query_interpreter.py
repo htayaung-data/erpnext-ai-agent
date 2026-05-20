@@ -62,6 +62,13 @@ from ai_assistant_ui.qwen_chat.semantic_validator import (
 	validate_compiled_semantic_result,
 )
 from ai_assistant_ui.qwen_chat.intent_rules_engine import apply_intent_rules
+from ai_assistant_ui.qwen_chat.light_semantic_metadata import (
+	attach_light_semantic_metadata_to_agent_meta,
+	build_light_semantic_runtime_metadata_bundle,
+)
+from ai_assistant_ui.qwen_chat.model_backed_helper_metadata import (
+	attach_governed_tool_runtime_metadata_to_payload,
+)
 
 try:
 	import frappe  # type: ignore
@@ -93,6 +100,17 @@ class SemanticFreshQueryResult:
 	agent_meta: Dict[str, Any] = field(default_factory=dict)
 
 	def to_payload(self) -> Dict[str, Any]:
+		agent_meta = self.agent_meta if isinstance(self.agent_meta, dict) else {}
+		metadata_bundle = build_light_semantic_runtime_metadata_bundle(
+			lane_id="fresh_query_interpretation",
+			role_owner="fresh_query_interpreter",
+			agent_meta=agent_meta,
+			runtime_source="fresh_query_runtime_agent_meta" if agent_meta else f"fresh_query_{self.status or 'unknown'}_without_runtime_agent_meta",
+			answer_mode=f"fresh_query_{self.status or 'unknown'}",
+			semantic_status=self.status,
+		)
+		agent_meta = attach_light_semantic_metadata_to_agent_meta(agent_meta, metadata_bundle)
+		runtime_metadata = metadata_bundle["runtime_metadata_envelope"]
 		return {
 			"type": "qwen_semantic_fresh_query_interpretation",
 			"contract_version": "1.0",
@@ -100,9 +118,34 @@ class SemanticFreshQueryResult:
 			"confidence_threshold": self.confidence_threshold,
 			"runtime_error": self.runtime_error,
 			"validation_error": self.validation_error,
+			"fallback_used": bool(runtime_metadata.get("fallback_used")),
+			"fallback_reason": str(runtime_metadata.get("fallback_reason") or "").strip(),
 			"interpretation": self.interpretation.to_payload() if self.interpretation else {},
-			"agent_meta": self.agent_meta if isinstance(self.agent_meta, dict) else {},
+			"agent_meta": agent_meta,
+			"model_role_observability": metadata_bundle["model_role_observability"],
+			"model_role_strict_readiness": metadata_bundle["model_role_strict_readiness"],
+			"runtime_metadata_envelope": metadata_bundle["runtime_metadata_envelope"],
 		}
+
+
+
+def _attach_fresh_compiled_read_runtime_metadata(
+	runtime_payload: Dict[str, Any],
+	*,
+	fallback_used: bool,
+	fallback_reason: str = "",
+) -> Dict[str, Any]:
+	return attach_governed_tool_runtime_metadata_to_payload(
+		runtime_payload,
+		lane_id="fresh_query_compiled_read_runtime",
+		role_owner="fresh_query_interpreter",
+		runtime_source="fresh_query_compiled_read_runtime_agent_meta",
+		answer_mode="compiled_read_query",
+		evidence_scope="compiled_read_runtime_payload",
+		authority_source="compiled_query_contract",
+		fallback_used=fallback_used,
+		fallback_reason=fallback_reason,
+	)
 
 
 def _clean_list(values: Any) -> List[str]:
@@ -1682,6 +1725,10 @@ def _phase4b_financial_statement_case_result(
 			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
 			request_id=interaction_contract.request_id,
 		)
+		runtime_payload = _attach_fresh_compiled_read_runtime_metadata(
+			runtime_payload,
+			fallback_used=False,
+		)
 	adapter_outcome = build_normalized_family_artifact(
 		request_id=interaction_contract.request_id,
 		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
@@ -1900,6 +1947,10 @@ def _phase4b_aging_case_result(
 			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
 			request_id=interaction_contract.request_id,
 		)
+		runtime_payload = _attach_fresh_compiled_read_runtime_metadata(
+			runtime_payload,
+			fallback_used=False,
+		)
 	adapter_outcome = build_normalized_family_artifact(
 		request_id=interaction_contract.request_id,
 		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
@@ -2062,6 +2113,10 @@ def _phase4b_ranking_trend_case_result(
 			mode="compiled_read_query",
 			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
 			request_id=interaction_contract.request_id,
+		)
+		runtime_payload = _attach_fresh_compiled_read_runtime_metadata(
+			runtime_payload,
+			fallback_used=False,
 		)
 	adapter_outcome = build_normalized_family_artifact(
 		request_id=interaction_contract.request_id,
@@ -2262,6 +2317,10 @@ def _phase4b_inventory_product_case_result(
 			mode="compiled_read_query",
 			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
 			request_id=interaction_contract.request_id,
+		)
+		runtime_payload = _attach_fresh_compiled_read_runtime_metadata(
+			runtime_payload,
+			fallback_used=False,
 		)
 	adapter_outcome = build_normalized_family_artifact(
 		request_id=interaction_contract.request_id,
@@ -2769,6 +2828,7 @@ def execute_compiled_fresh_query_message(
 		request_message=message,
 	)
 	if not bool(runtime_payload.get("ok")) or not list(runtime_payload.get("tool_trace") or []):
+		compiled_read_fallback_reason = "governed_report_runtime_unavailable"
 		try:
 			runtime_payload = call_qwen_runtime_chat(
 				session_id=session_id,
@@ -2783,12 +2843,18 @@ def execute_compiled_fresh_query_message(
 				request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
 			)
 		except QwenRuntimeClientError as exc:
+			compiled_read_fallback_reason = str(exc)
 			runtime_payload = {
 				"ok": False,
 				"tool_trace": [],
 				"agent_meta": {"engine": "unavailable", "mode": "compiled_read_query"},
 				"error": str(exc),
 			}
+		runtime_payload = _attach_fresh_compiled_read_runtime_metadata(
+			runtime_payload,
+			fallback_used=True,
+			fallback_reason=compiled_read_fallback_reason,
+		)
 	runtime_execution_latency_ms = int((time.perf_counter() - runtime_started) * 1000)
 	adapter_outcome = build_normalized_family_artifact(
 		request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),

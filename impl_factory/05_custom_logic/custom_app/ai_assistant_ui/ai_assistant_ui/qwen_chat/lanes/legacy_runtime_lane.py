@@ -17,6 +17,15 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_interaction_contract,
 )
 from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, call_qwen_runtime_chat
+from ai_assistant_ui.qwen_chat.runtime_metadata_contract import (
+	LANE_CLASS_DETERMINISTIC_REPORT,
+	LANE_CLASS_ERROR_FALLBACK,
+	LANE_CLASS_POLICY_BOUNDARY,
+	ROLE_DETERMINISTIC,
+	ROLE_NOT_APPLICABLE,
+	ROLE_POLICY_BOUNDARY,
+	build_runtime_metadata_envelope,
+)
 
 
 def _legacy_runtime_family_tool_surface_allowed(
@@ -32,6 +41,58 @@ def _legacy_runtime_error_control_authority(*, error: str, mode: str) -> Dict[st
 		"reason": str(error or "Legacy runtime client failed before governed answer authority was available.").strip(),
 		"preflight_status": "passed",
 	}
+
+
+def _legacy_runtime_metadata_envelope(
+	*,
+	answer_type: str,
+	mode: str,
+	error: str = "",
+) -> Dict[str, Any]:
+	if answer_type == ANSWER_TYPE_POLICY_BOUNDARY:
+		return build_runtime_metadata_envelope(
+			lane_id="legacy_runtime_business_or_boundary_answer",
+			lane_class=LANE_CLASS_POLICY_BOUNDARY,
+			model_role=ROLE_POLICY_BOUNDARY,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason="",
+			role_compliance="compliant",
+			authority_source="policy_boundary",
+			evidence_scope="knowledge_boundary_contract",
+			answer_mode=mode,
+			preflight_status="bounded",
+			metadata_source="legacy_runtime_authorized_emission",
+		)
+	if answer_type == ANSWER_TYPE_ERROR:
+		return build_runtime_metadata_envelope(
+			lane_id="legacy_runtime_business_or_boundary_answer",
+			lane_class=LANE_CLASS_ERROR_FALLBACK,
+			model_role=ROLE_NOT_APPLICABLE,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason=str(error or "").strip(),
+			role_compliance="not_applicable",
+			authority_source="error_fallback",
+			evidence_scope="legacy_runtime_client_error",
+			answer_mode=mode,
+			preflight_status="passed",
+			metadata_source="legacy_runtime_authorized_emission",
+		)
+	return build_runtime_metadata_envelope(
+		lane_id="legacy_runtime_business_or_boundary_answer",
+		lane_class=LANE_CLASS_DETERMINISTIC_REPORT,
+		model_role=ROLE_DETERMINISTIC,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source="governed_erp_report",
+		evidence_scope="legacy_runtime_grounded_turn_context",
+		answer_mode=mode,
+		preflight_status="passed",
+		metadata_source="legacy_runtime_authorized_emission",
+	)
 
 
 def _legacy_runtime_boundary_payload() -> Dict[str, Any]:
@@ -151,14 +212,24 @@ def handle_legacy_runtime_turn(
 	except QwenRuntimeClientError as exc:
 		runtime_latency_ms = int((time.perf_counter() - start) * 1000)
 		error_text = safe_runtime_failure_message(exc)
+		runtime_metadata_envelope = _legacy_runtime_metadata_envelope(
+			answer_type=ANSWER_TYPE_ERROR,
+			mode="legacy_runtime_error",
+			error=str(exc),
+		)
 		trace_payload = tool_trace_payload(
 			request_id=request_id,
 			ok=False,
 			tool_trace=[],
-			agent_meta={"engine": "unavailable", "mode": "read_only"},
+			agent_meta={
+				"engine": "unavailable",
+				"mode": "read_only",
+				"runtime_metadata_envelope": runtime_metadata_envelope,
+			},
 			error=str(exc),
 			runtime_latency_ms=runtime_latency_ms,
 		)
+		trace_payload["runtime_metadata_envelope"] = runtime_metadata_envelope
 		append_tool_payload(session_doc, trace_payload)
 		authorized_emission = emit_authorized_assistant_answer(
 			session_doc=session_doc,
@@ -171,13 +242,18 @@ def handle_legacy_runtime_turn(
 				error=str(exc),
 				mode="legacy_runtime_error",
 			),
+			runtime_trace_payload=trace_payload,
+			pre_assistant_tool_payloads=[runtime_metadata_envelope],
 		)
 		save_session(session_doc, ignore_permissions=False)
 		payload: Dict[str, Any] = {
 			"ok": False,
 			"request_id": request_id,
 			"error": str(exc),
-			"agent_meta": {"authorized_emission": authorized_emission.to_payload()},
+			"agent_meta": {
+				"runtime_metadata_envelope": runtime_metadata_envelope,
+				"authorized_emission": authorized_emission.to_payload(),
+			},
 		}
 		if isinstance(compiled_rollout_fallback, dict):
 			payload["mode"] = "legacy_runtime_rollout_fallback"
@@ -240,6 +316,21 @@ def handle_legacy_runtime_turn(
 		pre_assistant_tool_payloads.append(grounded_turn_payload)
 	answer_type = ANSWER_TYPE_POLICY_BOUNDARY if grounded_validation_failed else ANSWER_TYPE_GOVERNED_REPORT
 	boundary_payload = _legacy_runtime_boundary_payload() if grounded_validation_failed else {}
+	answer_mode = "grounded_evidence_boundary" if grounded_validation_failed else "legacy_runtime"
+	runtime_metadata_envelope = _legacy_runtime_metadata_envelope(
+		answer_type=answer_type,
+		mode=answer_mode,
+		error=error,
+	)
+	runtime_trace_payload["runtime_metadata_envelope"] = runtime_metadata_envelope
+	runtime_trace_agent_meta = (
+		runtime_trace_payload.get("agent_meta") if isinstance(runtime_trace_payload.get("agent_meta"), dict) else {}
+	)
+	runtime_trace_payload["agent_meta"] = {
+		**runtime_trace_agent_meta,
+		"runtime_metadata_envelope": runtime_metadata_envelope,
+	}
+	pre_assistant_tool_payloads.append(runtime_metadata_envelope)
 	authorized_emission = emit_authorized_assistant_answer(
 		session_doc=session_doc,
 		answer_text=answer_text,
@@ -264,7 +355,11 @@ def handle_legacy_runtime_turn(
 		"ok": bool(authorized_emission.emitted) and (True if grounded_validation_failed else ok),
 		"request_id": request_id,
 		"error": error,
-		"agent_meta": {**agent_meta, "authorized_emission": authorized_emission.to_payload()},
+		"agent_meta": {
+			**agent_meta,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
+			"authorized_emission": authorized_emission.to_payload(),
+		},
 	}
 	if isinstance(compiled_rollout_fallback, dict):
 		payload["mode"] = "legacy_runtime_rollout_fallback"

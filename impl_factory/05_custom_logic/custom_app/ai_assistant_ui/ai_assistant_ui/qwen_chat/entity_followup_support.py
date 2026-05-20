@@ -9,6 +9,13 @@ from .authorized_emission import (
 	emit_authorized_assistant_answer,
 )
 from .contracts import ExecutionPath, build_followup_resolution_contract
+from .runtime_metadata_contract import (
+	LANE_CLASS_DETERMINISTIC_REPORT,
+	LANE_CLASS_ERROR_FALLBACK,
+	ROLE_DETERMINISTIC,
+	ROLE_NOT_APPLICABLE,
+	build_runtime_metadata_envelope,
+)
 
 
 def _clean_text(value: Any) -> str:
@@ -38,6 +45,43 @@ def _entity_followup_error_control_authority(*, error: str) -> Dict[str, Any]:
 		"reason": _clean_text(error) or "Entity detail follow-up failed before governed answer authority was available.",
 		"preflight_status": "passed",
 	}
+
+
+def _entity_followup_metadata_envelope(
+	*,
+	answer_type: str,
+	answer_mode: str,
+	authority_source: str = "",
+) -> Dict[str, Any]:
+	if answer_type == ANSWER_TYPE_ERROR:
+		return build_runtime_metadata_envelope(
+			lane_id="entity_followup",
+			lane_class=LANE_CLASS_ERROR_FALLBACK,
+			model_role=ROLE_NOT_APPLICABLE,
+			model_name="none",
+			fallback_used=False,
+			fallback_reason="",
+			role_compliance="not_applicable",
+			authority_source=_clean_text(authority_source) or "error_fallback",
+			evidence_scope="entity_followup_error_fallback",
+			answer_mode=_clean_text(answer_mode) or "entity_followup_error",
+			preflight_status="passed",
+			metadata_source="entity_followup_authorized_emission",
+		)
+	return build_runtime_metadata_envelope(
+		lane_id="entity_followup",
+		lane_class=LANE_CLASS_DETERMINISTIC_REPORT,
+		model_role=ROLE_DETERMINISTIC,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source=_clean_text(authority_source) or "deterministic_tool",
+		evidence_scope="entity_detail_grounded_turn_context",
+		answer_mode=_clean_text(answer_mode) or "entity_followup_detail",
+		preflight_status="passed",
+		metadata_source="entity_followup_authorized_emission",
+	)
 
 
 def _entity_followup_grounded_turn_payload(
@@ -100,6 +144,11 @@ def try_entity_detail_followup(
 	except Exception as exc:
 		log_error("Qwen Assistant: entity drilldown failed")
 		error_text = "I couldn't complete that entity detail confidently from governed ERP data."
+		runtime_metadata_envelope = _entity_followup_metadata_envelope(
+			answer_type=ANSWER_TYPE_ERROR,
+			answer_mode="entity_followup_error",
+			authority_source="error_fallback",
+		)
 		trace_payload = _payload_dict(
 			tool_trace_message(
 				request_id=request_id,
@@ -120,6 +169,13 @@ def try_entity_detail_followup(
 				runtime_latency_ms=0,
 			)
 		)
+		if trace_payload:
+			trace_agent_meta = trace_payload.get("agent_meta") if isinstance(trace_payload.get("agent_meta"), dict) else {}
+			trace_payload["runtime_metadata_envelope"] = runtime_metadata_envelope
+			trace_payload["agent_meta"] = {
+				**trace_agent_meta,
+				"runtime_metadata_envelope": runtime_metadata_envelope,
+			}
 		authorized_emission = emit_authorized_assistant_answer(
 			session_doc=session_doc,
 			answer_text=error_text,
@@ -128,7 +184,7 @@ def try_entity_detail_followup(
 			append_tool_payload=append_tool_payload,
 			assistant_text_payload=assistant_text_payload,
 			control_meta_authority=_entity_followup_error_control_authority(error=str(exc or "").strip()),
-			pre_assistant_tool_payloads=[trace_payload],
+			pre_assistant_tool_payloads=[payload for payload in [trace_payload, runtime_metadata_envelope] if payload],
 		)
 		save_session(session_doc, ignore_permissions=False)
 		return True, {
@@ -137,6 +193,7 @@ def try_entity_detail_followup(
 			"error": str(exc or "").strip(),
 			"agent_meta": {
 				"engine": "entity_detail",
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
@@ -149,6 +206,12 @@ def try_entity_detail_followup(
 	rendered_payload = outcome.get("rendered_response_payload") if isinstance(outcome.get("rendered_response_payload"), dict) else {}
 	narrative_contract_payload = outcome.get("narrative_contract_payload") if isinstance(outcome.get("narrative_contract_payload"), dict) else {}
 	grounded_turn_payload = outcome.get("grounded_turn_payload") if isinstance(outcome.get("grounded_turn_payload"), dict) else {}
+	answer_mode = "entity_followup_detail"
+	runtime_metadata_envelope = _entity_followup_metadata_envelope(
+		answer_type=ANSWER_TYPE_GOVERNED_REPORT,
+		answer_mode=answer_mode,
+		authority_source="deterministic_tool",
+	)
 	trace_payload = _payload_dict(tool_trace_message(
 		request_id=request_id,
 		ok=True,
@@ -167,6 +230,13 @@ def try_entity_detail_followup(
 		error="",
 		runtime_latency_ms=0,
 	))
+	if trace_payload:
+		trace_agent_meta = trace_payload.get("agent_meta") if isinstance(trace_payload.get("agent_meta"), dict) else {}
+		trace_payload["runtime_metadata_envelope"] = runtime_metadata_envelope
+		trace_payload["agent_meta"] = {
+			**trace_agent_meta,
+			"runtime_metadata_envelope": runtime_metadata_envelope,
+		}
 	pre_assistant_tool_payloads = [
 		payload
 		for payload in [
@@ -175,12 +245,13 @@ def try_entity_detail_followup(
 			narrative_contract_payload,
 			grounded_turn_payload,
 			trace_payload,
+			runtime_metadata_envelope,
 		]
 		if payload
 	]
 	followup_resolution = build_followup_resolution_contract(
 		request_id=request_id,
-		mode="entity_followup_detail",
+		mode=answer_mode,
 		requested_modes=["entity_followup_detail"],
 		depends_on_grounded_turn=True,
 		self_contained=False,
@@ -189,7 +260,7 @@ def try_entity_detail_followup(
 	)
 	execution_path = ExecutionPath(
 		request_id=request_id,
-		path="entity_followup_detail",
+		path=answer_mode,
 		reason="Entity follow-up executed a governed entity-detail lookup from current grounded context.",
 		requires_runtime=False,
 		grounded_required=True,
@@ -205,7 +276,12 @@ def try_entity_detail_followup(
 		followup_resolution=followup_resolution,
 		execution_path=execution_path,
 		runtime_trace_payload={
-			"agent_meta": {"engine": "entity_detail", "mode": "entity_drilldown"},
+			"runtime_metadata_envelope": runtime_metadata_envelope,
+			"agent_meta": {
+				"engine": "entity_detail",
+				"mode": "entity_drilldown",
+				"runtime_metadata_envelope": runtime_metadata_envelope,
+			},
 			"runtime_latency_ms": 0,
 		},
 		grounded_turn_context=_entity_followup_grounded_turn_payload(
@@ -223,6 +299,7 @@ def try_entity_detail_followup(
 		"agent_meta": {
 			"engine": "entity_detail",
 			"mode": "entity_drilldown",
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

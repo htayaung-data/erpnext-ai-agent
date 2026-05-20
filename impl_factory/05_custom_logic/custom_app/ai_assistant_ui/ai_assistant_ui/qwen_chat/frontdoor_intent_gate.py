@@ -13,8 +13,14 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	get_frontdoor_intent_spec,
 	list_frontdoor_intent_specs,
 )
-from ai_assistant_ui.qwen_chat.model_role_coverage import build_model_role_contract_bundle
-from ai_assistant_ui.qwen_chat.model_role_observability import ROLE_LIGHT_SEMANTIC, ROLE_UNKNOWN
+from ai_assistant_ui.qwen_chat.model_backed_helper_metadata import (
+	attach_helper_metadata_to_agent_meta,
+	build_model_backed_helper_runtime_metadata_bundle,
+)
+from ai_assistant_ui.qwen_chat.light_semantic_metadata import (
+	attach_light_semantic_metadata_to_agent_meta,
+	build_light_semantic_runtime_metadata_bundle,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_frontdoor_interpretation,
@@ -46,18 +52,20 @@ class SemanticFrontDoorResult:
 
 	def to_payload(self) -> Dict[str, Any]:
 		agent_meta = dict(self.agent_meta or {})
-		model_role_bundle = build_model_role_contract_bundle(
-			lane="frontdoor_semantic_classification",
+		metadata_bundle = build_light_semantic_runtime_metadata_bundle(
+			lane_id="frontdoor_semantic_classification",
 			role_owner="frontdoor_intent_gate",
-			model_role=ROLE_LIGHT_SEMANTIC if agent_meta else ROLE_UNKNOWN,
 			agent_meta=agent_meta,
 			runtime_source=(
 				"frontdoor_runtime_agent_meta"
 				if agent_meta
 				else f"frontdoor_{self.status or 'unknown'}_without_runtime_agent_meta"
 			),
-			strict_enforcement_enabled=False,
+			answer_mode=f"frontdoor_{self.status or 'unknown'}",
+			semantic_status=self.status,
 		)
+		agent_meta = attach_light_semantic_metadata_to_agent_meta(agent_meta, metadata_bundle)
+		runtime_metadata = metadata_bundle["runtime_metadata_envelope"]
 		return {
 			"type": "qwen_semantic_frontdoor_interpretation",
 			"contract_version": "1.0",
@@ -65,6 +73,8 @@ class SemanticFrontDoorResult:
 			"confidence_threshold": self.confidence_threshold,
 			"runtime_error": self.runtime_error,
 			"validation_error": self.validation_error,
+			"fallback_used": bool(runtime_metadata.get("fallback_used")),
+			"fallback_reason": str(runtime_metadata.get("fallback_reason") or "").strip(),
 			"intent": {
 				"intent_class": self.intent.intent_class,
 				"confidence": self.intent.confidence,
@@ -74,8 +84,9 @@ class SemanticFrontDoorResult:
 			if self.intent
 			else {},
 			"agent_meta": agent_meta,
-			"model_role_observability": model_role_bundle["model_role_observability"],
-			"model_role_strict_readiness": model_role_bundle["model_role_strict_readiness"],
+			"model_role_observability": metadata_bundle["model_role_observability"],
+			"model_role_strict_readiness": metadata_bundle["model_role_strict_readiness"],
+			"runtime_metadata_envelope": metadata_bundle["runtime_metadata_envelope"],
 		}
 
 
@@ -87,13 +98,31 @@ class FrontDoorRenderResult:
 	agent_meta: Dict[str, Any] | None = None
 
 	def to_payload(self) -> Dict[str, Any]:
+		agent_meta = dict(self.agent_meta or {})
+		runtime_error = str(self.runtime_error or "").strip()
+		metadata_bundle = build_model_backed_helper_runtime_metadata_bundle(
+			lane_id="frontdoor_render",
+			role_owner="frontdoor_intent_gate",
+			agent_meta=agent_meta,
+			runtime_source="frontdoor_render_runtime_agent_meta" if agent_meta else "frontdoor_render_without_runtime_agent_meta",
+			answer_mode="frontdoor_render",
+			evidence_scope="frontdoor_response_payload",
+			authority_source="frontdoor_contract",
+			preflight_status="passed",
+			fallback_used=not bool(self.ok),
+			fallback_reason=runtime_error if not bool(self.ok) else "",
+		)
+		agent_meta = attach_helper_metadata_to_agent_meta(agent_meta, metadata_bundle)
 		return {
 			"type": "qwen_frontdoor_render_result",
 			"contract_version": "1.0",
 			"ok": bool(self.ok),
 			"answer_text": str(self.answer_text or "").strip(),
-			"runtime_error": str(self.runtime_error or "").strip(),
-			"agent_meta": dict(self.agent_meta or {}),
+			"runtime_error": runtime_error,
+			"agent_meta": agent_meta,
+			"model_role_observability": metadata_bundle["model_role_observability"],
+			"model_role_strict_readiness": metadata_bundle["model_role_strict_readiness"],
+			"runtime_metadata_envelope": metadata_bundle["runtime_metadata_envelope"],
 		}
 
 

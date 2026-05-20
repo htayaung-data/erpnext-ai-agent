@@ -12,6 +12,11 @@ from ai_assistant_ui.qwen_chat.contracts import build_known_unsupported_scope_de
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
 from ai_assistant_ui.qwen_chat.knowledge_boundary import evaluate_knowledge_boundary, render_knowledge_boundary_answer
 from ai_assistant_ui.qwen_chat.observability import record_phase6_observability_event, record_phase6_performance_metric
+from ai_assistant_ui.qwen_chat.runtime_metadata_contract import (
+	LANE_CLASS_POLICY_BOUNDARY,
+	ROLE_POLICY_BOUNDARY,
+	build_runtime_metadata_envelope,
+)
 
 
 def _payload(value: Any) -> Dict[str, Any]:
@@ -22,6 +27,23 @@ def _payload(value: Any) -> Dict[str, Any]:
 			payload = {}
 		return dict(payload) if isinstance(payload, dict) else {}
 	return dict(value) if isinstance(value, dict) else {}
+
+
+def _runtime_gate_metadata_envelope(*, answer_mode: str) -> Dict[str, Any]:
+	return build_runtime_metadata_envelope(
+		lane_id="runtime_gate",
+		lane_class=LANE_CLASS_POLICY_BOUNDARY,
+		model_role=ROLE_POLICY_BOUNDARY,
+		model_name="none",
+		fallback_used=False,
+		fallback_reason="",
+		role_compliance="compliant",
+		authority_source="policy_boundary",
+		evidence_scope="knowledge_boundary_contract",
+		answer_mode=answer_mode,
+		preflight_status="bounded",
+		metadata_source="runtime_gate_policy_boundary",
+	)
 
 
 def _knowledge_boundary_observability_payloads(
@@ -178,6 +200,8 @@ def handle_runtime_gate_turn(
 			detail_answer=legacy_out_of_scope_answer,
 		)
 		latency_ms = int(max(0, round((time.perf_counter() - boundary_started_at) * 1000)))
+		answer_mode = "known_unsupported_erp_domain"
+		runtime_metadata_envelope = _runtime_gate_metadata_envelope(answer_mode=answer_mode)
 		pre_assistant_payloads: List[Dict[str, Any]] = [
 			boundary_payload,
 			*_knowledge_boundary_observability_payloads(
@@ -186,11 +210,14 @@ def handle_runtime_gate_turn(
 				boundary_payload=boundary_payload,
 				latency_ms=latency_ms,
 			),
+			runtime_metadata_envelope,
 		]
 		runtime_trace_payload = {
+			"runtime_metadata_envelope": runtime_metadata_envelope,
 			"agent_meta": {
 				"engine": "runtime_gate_lane",
 				"status": "policy_boundary",
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 			}
 		}
 		# EC-4S1 runtime-gate authority checkpoint: boundary payloads stay staged until allowed.
@@ -214,9 +241,10 @@ def handle_runtime_gate_turn(
 			"ok": bool(authorized_emission.emitted),
 			"request_id": request_id,
 			"session_id": session_id,
-			"mode": "known_unsupported_erp_domain",
+			"mode": answer_mode,
 			"agent_meta": {
 				"engine": "local_governed_scope_guard",
+				"runtime_metadata_envelope": runtime_metadata_envelope,
 				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
