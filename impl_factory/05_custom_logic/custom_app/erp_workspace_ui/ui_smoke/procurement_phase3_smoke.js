@@ -178,6 +178,30 @@ async function openDeskRoute(page, route) {
   }
 }
 
+async function waitForListFilterDeck(page, route, label) {
+  const targetPath = new URL(routeUrl(route)).pathname;
+  const expectedText = String(label || "").toLowerCase().replace(/\s+directory$/, "").replace(/\s+/g, " ").trim();
+  await page.waitForFunction(
+    ({ targetPath, expectedText }) => {
+      const visible = (node) => {
+        if (!node) return false;
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      if (window.location.pathname !== targetPath) return false;
+      const shell = document.querySelector(".erpw-list-shell");
+      const deck = shell && shell.querySelector(".erpw-list-filter-deck");
+      const main = deck && deck.querySelector(".erpw-list-filter-main-row");
+      const text = String((shell && shell.textContent) || "").toLowerCase().replace(/\s+/g, " ");
+      const expectedReady = !expectedText || text.includes(expectedText);
+      return visible(shell) && visible(deck) && visible(main) && expectedReady;
+    },
+    { targetPath, expectedText },
+    { timeout: Math.min(TIMEOUT, 15000) }
+  ).catch(() => {});
+}
+
 async function callMethod(page, method, args = {}) {
   return page.evaluate(
     async ({ method, args, timeout }) => {
@@ -1987,6 +2011,7 @@ async function checkDocumentCodeWrapping(page, purchaseOrderName) {
 async function assertEnterpriseListFilterLayout(page, route, label) {
   await openDeskRoute(page, route);
   await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await waitForListFilterDeck(page, route, label);
   const layout = await page.evaluate(() => {
     const visible = (node) => {
       if (!node) return false;
@@ -2270,6 +2295,7 @@ async function assertNarrowFilterActionsDoNotOverlap(page, route, label) {
   await page.setViewportSize({ width: 1138, height: 768 });
   await openDeskRoute(page, route);
   await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await waitForListFilterDeck(page, route, label);
   const layout = await page.evaluate(() => {
     const visible = (node) => {
       if (!node) return false;
