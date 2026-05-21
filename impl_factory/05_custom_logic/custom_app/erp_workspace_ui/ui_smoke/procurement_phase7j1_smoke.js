@@ -41,9 +41,9 @@ function safeFileName(value) {
   return String(value || 'artifact').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
 }
 
-async function capture(page, name) {
+async function capture(page, name, options = {}) {
   const file = path.join(ARTIFACT_DIR, `${safeFileName(name)}.png`);
-  await page.screenshot({ path: file, fullPage: true });
+  await page.screenshot({ path: file, fullPage: Boolean(options.fullPage), animations: 'disabled' });
   return file;
 }
 
@@ -121,9 +121,24 @@ async function overviewState(page) {
     const bodyText = (document.body.innerText || '').replace(/\s+/g, ' ').trim();
     const actionText = Array.from(document.querySelectorAll('button, a, [role=button]')).filter(isVisible).map((node) => (node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ');
     const shellNodes = Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace=procurement]')).filter(isVisible);
-    const shellTitleCount = shellNodes.length
-      ? Array.from(shellNodes[0].querySelectorAll('h1, .sales-console-hero-title, [data-erpw-console-title]')).filter(isVisible).filter((node) => ((node.innerText || '').replace(/\s+/g, ' ').trim()) === 'Procurement Console').length
-      : 0;
+    const textFor = (node) => (node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    const nodeInfo = (node) => ({
+      tag: node.tagName ? node.tagName.toLowerCase() : '',
+      className: node.className || '',
+      dataRole: node.getAttribute('data-erpw-console-title') || node.getAttribute('data-page-route') || '',
+      text: textFor(node),
+      rect: rectFor(node),
+    });
+    const shellTitleNodes = shellNodes.length
+      ? Array.from(shellNodes[0].querySelectorAll('h1, .sales-console-hero-title, [data-erpw-console-title]')).filter(isVisible).filter((node) => textFor(node) === 'Procurement Console')
+      : [];
+    const procurementConsoleTextNodes = Array.from(document.querySelectorAll('body *'))
+      .filter(isVisible)
+      .filter((node) => textFor(node) === 'Procurement Console')
+      .map(nodeInfo);
+    const mainProcurementHeaderNodes = procurementConsoleTextNodes.filter((node) => node.rect && node.rect.top < window.innerHeight + 4 && (/sales-console-title|sales-console-hero-title/.test(node.className || '') || node.dataRole));
+    const sidebarBrandNodes = procurementConsoleTextNodes.filter((node) => node.rect && node.rect.top < window.innerHeight + 4 && (/sidebar-item-label|desk-sidebar|layout-side-section/.test(node.className || '') || node.rect.left < 220));
+    const shellTitleCount = shellTitleNodes.length;
     return {
       url: location.href,
       route: window.frappe && typeof frappe.get_route === 'function' ? frappe.get_route() : null,
@@ -131,6 +146,12 @@ async function overviewState(page) {
       actionText,
       shellCount: shellNodes.length,
       shellTitleCount,
+      mainProcurementHeaderCount: mainProcurementHeaderNodes.length,
+      sidebarBrandCount: sidebarBrandNodes.length,
+      procurementConsoleTextNodes,
+      mainProcurementHeaderNodes,
+      sidebarBrandNodes,
+      viewport: { width: window.innerWidth, height: window.innerHeight, scrollY: window.scrollY },
       managerReadinessCount: Array.from(document.querySelectorAll('[data-procurement-manager-readiness]')).filter(isVisible).length,
       title: section ? ((section.querySelector('[data-procurement-manager-readiness-title]') || {}).innerText || '').trim() : '',
       subtitle: section ? ((section.querySelector('.sales-console-section-note') || {}).innerText || '').trim() : '',
@@ -155,6 +176,8 @@ async function overviewState(page) {
 function assertClean(state, label) {
   assert(state.shellCount === 1, `${label}: expected one Procurement overview shell`, state);
   assert(state.shellTitleCount <= 1, `${label}: duplicate Procurement overview header`, state);
+  assert((state.mainProcurementHeaderCount || 0) <= 1, `${label}: duplicate Procurement Console header text in main content`, state);
+  assert((state.sidebarBrandCount || 0) <= 1, `${label}: duplicate Procurement Console sidebar branding`, state);
   assert(state.horizontalOverflow <= 2, `${label}: page-level horizontal overflow`, state);
   assert(!NATIVE_ROUTE_RE.test(state.url), `${label}: native route leaked`, state);
   assert(!FORBIDDEN_TEXT_RE.test(state.actionText), `${label}: forbidden action text visible`, state);
@@ -190,6 +213,7 @@ async function assertManagerOverview(page, viewport) {
   const initialRoute = JSON.stringify(state.route || []);
 
   await page.locator('[data-procurement-readiness-toggle]').click();
+  const expandedImmediateScreenshot = await capture(page, `manager-${viewport.key}-overview-expanded-immediate`);
   await page.waitForFunction(() => {
     const section = document.querySelector('[data-procurement-manager-readiness]');
     const expanded = section && section.querySelector('[data-procurement-readiness-expanded-list]');
@@ -206,6 +230,22 @@ async function assertManagerOverview(page, viewport) {
   assert(expandedState.expandedVisibleRows > 0, `manager ${viewport.key}: expanded list has no visible rows`, expandedState);
   assert(expandedState.expandedVisibleRows >= expandedState.topIssues.length, `manager ${viewport.key}: expanded list did not reveal grouped issues`, expandedState);
 
+  await page.waitForTimeout(350);
+  const expandedSettledScreenshot = await capture(page, `manager-${viewport.key}-overview-expanded-settled`);
+  const expandedSettledState = await overviewState(page);
+  assertClean(expandedSettledState, `manager ${viewport.key} expanded settled`);
+  assert(expandedSettledState.expandedHidden === false, `manager ${viewport.key}: expanded list became hidden after settle`, expandedSettledState);
+  assert(expandedSettledState.expandedVisibleRows > 0, `manager ${viewport.key}: expanded list lost visible rows after settle`, expandedSettledState);
+
+  await page.evaluate(() => window.scrollBy(0, Math.min(140, Math.max(0, document.documentElement.scrollHeight - window.innerHeight))));
+  await page.waitForTimeout(150);
+  const expandedScrolledScreenshot = await capture(page, `manager-${viewport.key}-overview-expanded-scrolled`);
+  const expandedScrolledState = await overviewState(page);
+  assertClean(expandedScrolledState, `manager ${viewport.key} expanded scrolled`);
+  assert(new URL(expandedScrolledState.url).pathname === initialPath, `manager ${viewport.key}: scroll changed route path`, { before: expandedState, after: expandedScrolledState });
+  assert(JSON.stringify(expandedScrolledState.route || []) === initialRoute, `manager ${viewport.key}: scroll changed Frappe route`, { before: expandedState, after: expandedScrolledState });
+  await page.evaluate(() => window.scrollTo(0, 0));
+
   await page.locator('[data-procurement-readiness-toggle]').click();
   await page.waitForFunction(() => {
     const section = document.querySelector('[data-procurement-manager-readiness]');
@@ -220,8 +260,13 @@ async function assertManagerOverview(page, viewport) {
     viewport: viewport.key,
     defaultScreenshot,
     expandedScreenshot,
+    expandedImmediateScreenshot,
+    expandedSettledScreenshot,
+    expandedScrolledScreenshot,
     state,
     expandedState,
+    expandedSettledState,
+    expandedScrolledState,
     collapsedState,
     expansionEvidence: {
       compressed: {
@@ -231,6 +276,9 @@ async function assertManagerOverview(page, viewport) {
         toggleText: state.toggleText,
         shellCount: state.shellCount,
         shellTitleCount: state.shellTitleCount,
+        mainProcurementHeaderCount: state.mainProcurementHeaderCount,
+        sidebarBrandCount: state.sidebarBrandCount,
+        procurementConsoleTextNodes: state.procurementConsoleTextNodes,
         route: state.route,
         url: state.url,
       },
@@ -241,8 +289,37 @@ async function assertManagerOverview(page, viewport) {
         toggleText: expandedState.toggleText,
         shellCount: expandedState.shellCount,
         shellTitleCount: expandedState.shellTitleCount,
+        mainProcurementHeaderCount: expandedState.mainProcurementHeaderCount,
+        sidebarBrandCount: expandedState.sidebarBrandCount,
+        procurementConsoleTextNodes: expandedState.procurementConsoleTextNodes,
         route: expandedState.route,
         url: expandedState.url,
+      },
+      expandedSettled: {
+        expandedHidden: expandedSettledState.expandedHidden,
+        expandedVisibleRows: expandedSettledState.expandedVisibleRows,
+        toggleExpanded: expandedSettledState.toggleExpanded,
+        toggleText: expandedSettledState.toggleText,
+        shellCount: expandedSettledState.shellCount,
+        shellTitleCount: expandedSettledState.shellTitleCount,
+        mainProcurementHeaderCount: expandedSettledState.mainProcurementHeaderCount,
+        sidebarBrandCount: expandedSettledState.sidebarBrandCount,
+        procurementConsoleTextNodes: expandedSettledState.procurementConsoleTextNodes,
+        route: expandedSettledState.route,
+        url: expandedSettledState.url,
+      },
+      expandedScrolled: {
+        expandedHidden: expandedScrolledState.expandedHidden,
+        expandedVisibleRows: expandedScrolledState.expandedVisibleRows,
+        toggleExpanded: expandedScrolledState.toggleExpanded,
+        toggleText: expandedScrolledState.toggleText,
+        shellCount: expandedScrolledState.shellCount,
+        shellTitleCount: expandedScrolledState.shellTitleCount,
+        mainProcurementHeaderCount: expandedScrolledState.mainProcurementHeaderCount,
+        sidebarBrandCount: expandedScrolledState.sidebarBrandCount,
+        procurementConsoleTextNodes: expandedScrolledState.procurementConsoleTextNodes,
+        route: expandedScrolledState.route,
+        url: expandedScrolledState.url,
       },
       collapsed: {
         expandedHidden: collapsedState.expandedHidden,
@@ -251,6 +328,9 @@ async function assertManagerOverview(page, viewport) {
         toggleText: collapsedState.toggleText,
         shellCount: collapsedState.shellCount,
         shellTitleCount: collapsedState.shellTitleCount,
+        mainProcurementHeaderCount: collapsedState.mainProcurementHeaderCount,
+        sidebarBrandCount: collapsedState.sidebarBrandCount,
+        procurementConsoleTextNodes: collapsedState.procurementConsoleTextNodes,
         route: collapsedState.route,
         url: collapsedState.url,
       },

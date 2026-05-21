@@ -103,7 +103,11 @@ async function openReport(page, report) {
   await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
   await page.waitForFunction(() => {
     const shell = document.querySelector(".erpw-report-shell");
-    return shell && shell.getAttribute("aria-busy") !== "true";
+    if (!shell || shell.getAttribute("aria-busy") === "true") return false;
+    const stateNode = document.querySelector(".erpw-report-state");
+    if (!stateNode) return true;
+    const stateKind = Array.from(stateNode.classList).find((name) => name !== "erpw-report-state") || "";
+    return stateKind && stateKind !== "loading";
   }, null, { timeout: TIMEOUT });
 }
 
@@ -178,7 +182,11 @@ async function assertNoFullReload(page, label, action) {
 async function waitUntilNotBusy(page) {
   await page.waitForFunction(() => {
     const shell = document.querySelector(".erpw-report-shell");
-    return shell && shell.getAttribute("aria-busy") !== "true";
+    if (!shell || shell.getAttribute("aria-busy") === "true") return false;
+    const stateNode = document.querySelector(".erpw-report-state");
+    if (!stateNode) return true;
+    const stateKind = Array.from(stateNode.classList).find((name) => name !== "erpw-report-state") || "";
+    return stateKind && stateKind !== "loading";
   }, null, { timeout: TIMEOUT });
 }
 
