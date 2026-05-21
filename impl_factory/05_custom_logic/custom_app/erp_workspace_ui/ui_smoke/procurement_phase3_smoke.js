@@ -1074,6 +1074,18 @@ async function checkProcurementReportsIndex(page) {
   await openDeskRoute(page, "/desk/procurement-console-report");
   await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
   await assertSingleProcurementShell(page, "report", "Reports Index direct route");
+  await page.waitForFunction(() => {
+    const shell = document.querySelector(".erpw-report-shell");
+    if (!shell) return false;
+    const text = (shell.innerText || "").replace(/\s+/g, " ").trim();
+    const cardCount = shell.querySelectorAll(".erpw-procurement-report-card").length;
+    return /Procurement Reports/i.test(text)
+      && /Sourcing review/i.test(text)
+      && /Order review/i.test(text)
+      && /Demand coverage/i.test(text)
+      && /Item and price review/i.test(text)
+      && cardCount >= 4;
+  }, null, { timeout: TIMEOUT });
   const shellText = normalizeText(await page.locator(".erpw-report-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Procurement Reports/i.test(shellText), "Reports Index title missing", { shellText });
   assert(/Sourcing review/i.test(shellText) && /Order review/i.test(shellText) && /Demand coverage/i.test(shellText) && /Item and price review/i.test(shellText), "Reports Index grouping missing", { shellText });
