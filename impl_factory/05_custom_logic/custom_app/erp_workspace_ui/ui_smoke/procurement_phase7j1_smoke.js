@@ -120,12 +120,17 @@ async function overviewState(page) {
     const nextSection = section ? section.nextElementSibling : null;
     const bodyText = (document.body.innerText || '').replace(/\s+/g, ' ').trim();
     const actionText = Array.from(document.querySelectorAll('button, a, [role=button]')).filter(isVisible).map((node) => (node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ');
+    const shellNodes = Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace=procurement]')).filter(isVisible);
+    const shellTitleCount = shellNodes.length
+      ? Array.from(shellNodes[0].querySelectorAll('h1, .sales-console-hero-title, [data-erpw-console-title]')).filter(isVisible).filter((node) => ((node.innerText || '').replace(/\s+/g, ' ').trim()) === 'Procurement Console').length
+      : 0;
     return {
       url: location.href,
       route: window.frappe && typeof frappe.get_route === 'function' ? frappe.get_route() : null,
       bodyText,
       actionText,
-      shellCount: Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace=procurement]')).filter(isVisible).length,
+      shellCount: shellNodes.length,
+      shellTitleCount,
       managerReadinessCount: Array.from(document.querySelectorAll('[data-procurement-manager-readiness]')).filter(isVisible).length,
       title: section ? ((section.querySelector('[data-procurement-manager-readiness-title]') || {}).innerText || '').trim() : '',
       subtitle: section ? ((section.querySelector('.sales-console-section-note') || {}).innerText || '').trim() : '',
@@ -149,6 +154,7 @@ async function overviewState(page) {
 
 function assertClean(state, label) {
   assert(state.shellCount === 1, `${label}: expected one Procurement overview shell`, state);
+  assert(state.shellTitleCount <= 1, `${label}: duplicate Procurement overview header`, state);
   assert(state.horizontalOverflow <= 2, `${label}: page-level horizontal overflow`, state);
   assert(!NATIVE_ROUTE_RE.test(state.url), `${label}: native route leaked`, state);
   assert(!FORBIDDEN_TEXT_RE.test(state.actionText), `${label}: forbidden action text visible`, state);
@@ -178,7 +184,10 @@ async function assertManagerOverview(page, viewport) {
   assert(state.visibleIssueRows === state.topIssues.length, `manager ${viewport.key}: default issue list is longer than top issues`, state);
   assert(state.expandedHidden === true, `manager ${viewport.key}: full issue list should be collapsed by default`, state);
   assert(state.toggleText === 'View all readiness issues', `manager ${viewport.key}: expand control missing`, state);
+  assert(state.toggleExpanded === 'false', `manager ${viewport.key}: expand control should advertise collapsed state`, state);
   assert(state.sectionRect && state.sectionRect.height <= 720, `manager ${viewport.key}: readiness queue is too tall for overview`, state);
+  const initialPath = new URL(state.url).pathname;
+  const initialRoute = JSON.stringify(state.route || []);
 
   await page.locator('[data-procurement-readiness-toggle]').click();
   await page.waitForFunction(() => {
@@ -189,7 +198,12 @@ async function assertManagerOverview(page, viewport) {
   const expandedScreenshot = await capture(page, `manager-${viewport.key}-overview-expanded`);
   const expandedState = await overviewState(page);
   assertClean(expandedState, `manager ${viewport.key} expanded`);
+  assert(new URL(expandedState.url).pathname === initialPath, `manager ${viewport.key}: expand changed route path`, { before: state, after: expandedState });
+  assert(JSON.stringify(expandedState.route || []) === initialRoute, `manager ${viewport.key}: expand changed Frappe route`, { before: state, after: expandedState });
+  assert(expandedState.expandedHidden === false, `manager ${viewport.key}: full issue list remained hidden after expand`, expandedState);
+  assert(expandedState.toggleExpanded === 'true', `manager ${viewport.key}: expand control did not advertise expanded state`, expandedState);
   assert(expandedState.toggleText === 'Show top readiness issues', `manager ${viewport.key}: collapse control missing after expand`, expandedState);
+  assert(expandedState.expandedVisibleRows > 0, `manager ${viewport.key}: expanded list has no visible rows`, expandedState);
   assert(expandedState.expandedVisibleRows >= expandedState.topIssues.length, `manager ${viewport.key}: expanded list did not reveal grouped issues`, expandedState);
 
   await page.locator('[data-procurement-readiness-toggle]').click();
@@ -200,7 +214,48 @@ async function assertManagerOverview(page, viewport) {
   }, null, { timeout: TIMEOUT });
   const collapsedState = await overviewState(page);
   assert(collapsedState.expandedHidden === true, `manager ${viewport.key}: readiness queue did not collapse`, collapsedState);
-  return { viewport: viewport.key, defaultScreenshot, expandedScreenshot, state, expandedState, collapsedState };
+  assert(collapsedState.toggleExpanded === 'false', `manager ${viewport.key}: collapse control did not return to collapsed state`, collapsedState);
+  assert(collapsedState.expandedVisibleRows === 0, `manager ${viewport.key}: collapsed grouped issue rows remain visible`, collapsedState);
+  return {
+    viewport: viewport.key,
+    defaultScreenshot,
+    expandedScreenshot,
+    state,
+    expandedState,
+    collapsedState,
+    expansionEvidence: {
+      compressed: {
+        expandedHidden: state.expandedHidden,
+        expandedVisibleRows: state.expandedVisibleRows,
+        toggleExpanded: state.toggleExpanded,
+        toggleText: state.toggleText,
+        shellCount: state.shellCount,
+        shellTitleCount: state.shellTitleCount,
+        route: state.route,
+        url: state.url,
+      },
+      expanded: {
+        expandedHidden: expandedState.expandedHidden,
+        expandedVisibleRows: expandedState.expandedVisibleRows,
+        toggleExpanded: expandedState.toggleExpanded,
+        toggleText: expandedState.toggleText,
+        shellCount: expandedState.shellCount,
+        shellTitleCount: expandedState.shellTitleCount,
+        route: expandedState.route,
+        url: expandedState.url,
+      },
+      collapsed: {
+        expandedHidden: collapsedState.expandedHidden,
+        expandedVisibleRows: collapsedState.expandedVisibleRows,
+        toggleExpanded: collapsedState.toggleExpanded,
+        toggleText: collapsedState.toggleText,
+        shellCount: collapsedState.shellCount,
+        shellTitleCount: collapsedState.shellTitleCount,
+        route: collapsedState.route,
+        url: collapsedState.url,
+      },
+    },
+  };
 }
 
 async function assertUserOverview(page, viewport) {
