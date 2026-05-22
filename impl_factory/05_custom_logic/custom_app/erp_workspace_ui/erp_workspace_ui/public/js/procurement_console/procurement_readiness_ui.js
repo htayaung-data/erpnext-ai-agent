@@ -73,7 +73,12 @@
       .erpw-manager-readiness-category.has-critical { border-color: #fecaca; box-shadow: inset 3px 0 0 #dc2626; }
       .erpw-manager-readiness-category-title { color: #0f172a; font-size: 12.6px; font-weight: 800; line-height: 1.2; }
       .erpw-manager-readiness-category .erpw-readiness-chip { min-height: 22px; padding: 0 7px; font-size: 11px; }
+      .erpw-manager-readiness-category-status { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+      .erpw-manager-readiness-category-status .erpw-readiness-chip.clear { border-color: #d9eadf; background: #f3faf6; color: #166534; }
       .erpw-manager-readiness-category-preview { color: #64748b; font-size: 11.5px; line-height: 1.28; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+      .erpw-manager-readiness-hero { display: grid; gap: 3px; border: 1px solid #e2ebf5; border-radius: 13px; padding: 12px 13px; background: linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%); }
+      .erpw-manager-readiness-hero-main { color: #0f172a; font-size: 15px; line-height: 1.25; font-weight: 820; }
+      .erpw-manager-readiness-hero-note { color: #475569; font-size: 12.1px; line-height: 1.35; }
       .erpw-manager-readiness-top { display: grid; gap: 8px; }
       .erpw-manager-readiness-top-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: #334155; font-size: 12px; font-weight: 760; }
       .erpw-manager-readiness-top .erpw-readiness-row { padding: 9px 10px; }
@@ -81,11 +86,16 @@
       .erpw-manager-readiness-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
       .erpw-manager-readiness-toggle { min-height: 31px; border: 1px solid #d5e2ef; border-radius: 9px; background: #fff; color: #12365f; font-weight: 760; font-size: 12px; padding: 0 10px; white-space: nowrap; }
       .erpw-manager-readiness-toggle:hover { border-color: #9db7d2; background: #f8fbff; }
-      .erpw-manager-readiness-expanded { display: grid; gap: 10px; border-top: 1px solid #edf2f7; padding-top: 12px; }
+      .erpw-manager-readiness-expanded { display: grid; gap: 10px; border-top: 1px solid #edf2f7; padding-top: 12px; max-height: min(460px, 58vh); overflow: auto; overscroll-behavior: contain; padding-right: 3px; }
       .erpw-manager-readiness-expanded[hidden] { display: none !important; }
       .erpw-manager-readiness-group { display: grid; gap: 8px; border: 1px solid #edf2f7; border-radius: 13px; padding: 11px; background: #fbfdff; }
       .erpw-manager-readiness-group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
       .erpw-manager-readiness-group-title { color: #0f172a; font-size: 13px; font-weight: 790; }
+      .erpw-manager-readiness.is-loading .erpw-readiness-empty, .erpw-manager-readiness.is-error .erpw-readiness-empty { min-height: 58px; display: flex; align-items: center; }
+      .erpw-readiness-skeleton-line { display: block; height: 10px; border-radius: 999px; background: linear-gradient(90deg, #e8eef6 0%, #f6f9fc 45%, #e8eef6 100%); background-size: 180% 100%; animation: erpwReadinessPulse 1.35s ease-in-out infinite; }
+      .erpw-readiness-skeleton-line.short { width: 42%; }
+      .erpw-readiness-skeleton-line.medium { width: 64%; }
+      @keyframes erpwReadinessPulse { 0% { background-position: 0% 0; } 100% { background-position: -180% 0; } }
       @media (max-width: 1280px) { .erpw-manager-readiness-layout { grid-template-columns: 1fr; } .erpw-manager-readiness-top { order: -1; } }
       @media (max-width: 640px) { .erpw-manager-readiness-copy { min-width: 0; } .erpw-manager-readiness-groups { grid-template-columns: 1fr; } }
       @media (max-width: 760px) { .erpw-readiness-row { grid-template-columns: 1fr; align-items: start; } .erpw-readiness-action { justify-self: start; } }
@@ -197,6 +207,51 @@
     return (issues || []).filter((issue) => groupSet.has(String(issue.group || '')));
   }
 
+  function pluralize(count, singular, plural) {
+    return `${count} ${count === 1 ? singular : (plural || `${singular}s`)}`;
+  }
+
+  function statusChipForCounts(counts) {
+    const data = counts || {};
+    if (data.critical) return `<span class='erpw-readiness-chip critical'>${escapeHtml(pluralize(data.critical, 'Critical'))}</span>`;
+    if (data.warning) return `<span class='erpw-readiness-chip warning'>${escapeHtml(pluralize(data.warning, 'Warning'))}</span>`;
+    if (data.info) return `<span class='erpw-readiness-chip info'>${escapeHtml(pluralize(data.info, 'Info'))}</span>`;
+    return `<span class='erpw-readiness-chip clear'>Clear</span>`;
+  }
+
+  function categoryAdvice(category, counts) {
+    if (!counts || !counts.total) return 'No current exception';
+    if (category.key === 'item_readiness') return 'Review item context before sourcing.';
+    if (category.key === 'supplier_readiness') return 'Review supplier profile before sourcing.';
+    if (category.key === 'rfq_communication') return 'Review communication readiness before supplier outreach.';
+    if (category.key === 'document_quality') return 'Review draft evidence before governed workflow steps.';
+    if (category.key === 'order_follow_up') return 'Review buyer follow-up context for active orders.';
+    return 'Review the productized context before action.';
+  }
+
+  function readinessMessageLabel(category) {
+    if (!category) return 'readiness';
+    if (category.key === 'item_readiness') return 'item buying';
+    if (category.key === 'supplier_readiness') return 'supplier';
+    if (category.key === 'rfq_communication') return 'RFQ communication';
+    if (category.key === 'document_quality') return 'document quality';
+    if (category.key === 'order_follow_up') return 'order follow-up';
+    return String(category.label || 'readiness').toLowerCase();
+  }
+
+  function mainReadinessMessage(categories) {
+    const active = (categories || []).filter((entry) => entry.counts && entry.counts.total).sort((a, b) => {
+      if (b.counts.critical !== a.counts.critical) return b.counts.critical - a.counts.critical;
+      if (b.counts.warning !== a.counts.warning) return b.counts.warning - a.counts.warning;
+      return b.counts.total - a.counts.total;
+    })[0];
+    if (!active) return 'No readiness exceptions need manager attention.';
+    const counts = active.counts || {};
+    const count = counts.critical || counts.warning || counts.info || counts.total;
+    const severity = counts.critical ? 'critical' : (counts.warning ? 'warning' : 'info');
+    return `${count} ${readinessMessageLabel(active.category)} ${count === 1 ? severity : `${severity}s`} need review`;
+  }
+
   function renderManagerCategory(category, issues) {
     const counts = issueCounts(issues);
     const preview = issues.find((issue) => issueSeverity(issue) === 'critical') || issues[0] || null;
@@ -204,8 +259,8 @@
     return `
       <div class='erpw-manager-readiness-category${stateClass}' data-procurement-readiness-group-card='${escapeHtml(category.key)}'>
         <div class='erpw-manager-readiness-category-title'>${escapeHtml(category.label)}</div>
-        <div class='erpw-readiness-summary'>${managerSummaryChips(counts)}</div>
-        <div class='erpw-manager-readiness-category-preview'>${preview ? escapeHtml(preview.title || 'Readiness issue') : 'No current exception'}</div>
+        <div class='erpw-manager-readiness-category-status'>${statusChipForCounts(counts)}</div>
+        <div class='erpw-manager-readiness-category-preview'>${escapeHtml(preview ? categoryAdvice(category, counts) : 'No current exception')}</div>
       </div>
     `;
   }
@@ -216,11 +271,48 @@
       <div class='erpw-manager-readiness-group' data-procurement-readiness-group='${escapeHtml(category.key)}'>
         <div class='erpw-manager-readiness-group-head'>
           <div class='erpw-manager-readiness-group-title'>${escapeHtml(category.label)}</div>
-          <div class='erpw-readiness-summary'>${managerSummaryChips(issueCounts(issues))}</div>
+          <div class='erpw-readiness-summary'>${statusChipForCounts(issueCounts(issues))}</div>
         </div>
         <div class='erpw-readiness-list'>${issues.map(renderIssue).join('')}</div>
       </div>
     `;
+  }
+
+  function renderManagerReadinessShell(content, stateClass, stateAttr) {
+    return `
+      <section class='sales-console-card sales-console-section erpw-manager-readiness ${escapeHtml(stateClass || '')}' data-section-key='manager-readiness' data-procurement-manager-readiness data-procurement-manager-readiness-state='${escapeHtml(stateAttr || 'ready')}' data-readiness-expanded='false'>
+        ${content}
+      </section>
+    `;
+  }
+
+  function renderManagerReadinessLoading() {
+    ensureStyles();
+    return renderManagerReadinessShell(`
+      <div class='sales-console-section-head'>
+        <div class='erpw-manager-readiness-copy'>
+          <h2 class='sales-console-section-title' data-procurement-manager-readiness-title>Readiness Review Queue</h2>
+          <div class='sales-console-section-note'>Loading manager exceptions without blocking the workbench.</div>
+        </div>
+      </div>
+      <div class='erpw-readiness-empty'>
+        <span class='erpw-readiness-skeleton-line medium'></span>
+        <span class='erpw-readiness-skeleton-line short' style='margin-top:8px;'></span>
+      </div>
+    `, 'is-loading', 'loading');
+  }
+
+  function renderManagerReadinessError(message) {
+    ensureStyles();
+    return renderManagerReadinessShell(`
+      <div class='sales-console-section-head'>
+        <div class='erpw-manager-readiness-copy'>
+          <h2 class='sales-console-section-title' data-procurement-manager-readiness-title>Readiness Review Queue</h2>
+          <div class='sales-console-section-note'>Manager exceptions could not be refreshed. The rest of the Overview remains usable.</div>
+        </div>
+      </div>
+      <div class='erpw-readiness-empty'>${escapeHtml(message || 'Readiness review could not be loaded right now.')}</div>
+    `, 'is-error', 'error');
   }
 
   function renderManagerReadiness(readiness) {
@@ -229,18 +321,22 @@
     const issues = managerIssues(readiness).filter(issueIsQueued);
     const topIssues = topManagerIssues(issues);
     const hasMore = issues.length > topIssues.length;
-    const categories = MANAGER_READINESS_CATEGORIES.map((category) => ({
-      category,
-      issues: categoryIssues(issues, category),
-    }));
-    return `
-      <section class='sales-console-card sales-console-section erpw-manager-readiness' data-section-key='manager-readiness' data-procurement-manager-readiness data-readiness-expanded='false'>
+    const categories = MANAGER_READINESS_CATEGORIES.map((category) => {
+      const list = categoryIssues(issues, category);
+      return { category, issues: list, counts: issueCounts(list) };
+    });
+    const headline = mainReadinessMessage(categories);
+    const content = `
         <div class='sales-console-section-head'>
           <div class='erpw-manager-readiness-copy'>
             <h2 class='sales-console-section-title' data-procurement-manager-readiness-title>Readiness Review Queue</h2>
-            <div class='sales-console-section-note'>Supplier, item, document, and communication exceptions needing manager attention.</div>
+            <div class='sales-console-section-note'>Business readiness exceptions needing manager attention.</div>
           </div>
           <div class='erpw-manager-readiness-severity' data-procurement-readiness-severity-strip>${managerSummaryChips(readiness.summary)}</div>
+        </div>
+        <div class='erpw-manager-readiness-hero' data-procurement-readiness-main-message>
+          <div class='erpw-manager-readiness-hero-main'>${escapeHtml(headline)}</div>
+          <div class='erpw-manager-readiness-hero-note'>Review the highest-priority productized context first. Deferred send and lifecycle steps are not counted as action blockers.</div>
         </div>
         ${issues.length ? `
           <div class='erpw-manager-readiness-layout'>
@@ -261,8 +357,8 @@
             ${categories.map((entry) => renderExpandedManagerGroup(entry.category, entry.issues)).join('')}
           </div>
         ` : `<div class='erpw-readiness-empty'>${escapeHtml(readiness.empty_message || 'No readiness issues found for current checks.')}</div>`}
-      </section>
     `;
+    return renderManagerReadinessShell(content, '', 'ready');
   }
 
   function executeRoute(target) {
@@ -303,6 +399,8 @@
   window.erpWorkspaceUiProcurementReadiness = {
     renderReadinessCard,
     renderManagerReadiness,
+    renderManagerReadinessLoading,
+    renderManagerReadinessError,
     bindReadinessLinks,
   };
 })();

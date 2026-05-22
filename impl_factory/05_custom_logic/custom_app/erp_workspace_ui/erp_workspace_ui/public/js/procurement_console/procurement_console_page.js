@@ -9,11 +9,13 @@
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
   const REPORT_ROUTE = procurementRoutes.report || "procurement-console-report";
   const BOOTSTRAP_METHOD = procurementMethods.bootstrap || "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap";
+  const READINESS_METHOD = procurementMethods.manager_readiness || "erp_workspace_ui.procurement_console.readiness.get_procurement_manager_readiness";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const READINESS_UI_URL = "/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
   let activeOverviewGuardBound = false;
+  let overviewRenderSerial = 0;
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
   }
@@ -240,20 +242,73 @@
     return window.erpWorkspaceUiProcurementReadiness || {};
   }
 
-  function renderManagerReadiness($root, payload) {
-    const ui = readinessUi();
-    if (typeof ui.renderManagerReadiness !== "function") return;
+  function canSeeManagerReadiness(payload) {
+    const context = (payload && payload.context) || {};
+    const variant = String(context.role_variant || "");
+    const roles = Array.isArray(context.roles) ? context.roles : [];
+    return variant === "purchase_manager" || variant === "purchase_master_manager" || roles.indexOf("Purchase Manager") !== -1 || roles.indexOf("Purchase Master Manager") !== -1;
+  }
+
+  function isCurrentOverviewRoot($root, token) {
+    return token === overviewRenderSerial && isActiveProcurementRoute() && $root && $root.length && document.body.contains($root.get(0));
+  }
+
+  function insertManagerReadinessSection($root, $section) {
     $root.find("[data-procurement-manager-readiness]").remove();
-    const html = ui.renderManagerReadiness(payload && payload.manager_readiness);
-    if (!html) return;
-    const $section = $(html);
+    if (!$section || !$section.length) return;
     const $anchor = $root.find('[data-section-key="create-actions"]').first();
     if ($anchor.length) {
       $anchor.after($section);
     } else {
       $root.append($section);
     }
+    const ui = readinessUi();
     if (typeof ui.bindReadinessLinks === "function") ui.bindReadinessLinks($section);
+  }
+
+  function renderManagerReadinessLoading($root) {
+    const ui = readinessUi();
+    if (typeof ui.renderManagerReadinessLoading !== "function") return;
+    insertManagerReadinessSection($root, $(ui.renderManagerReadinessLoading()));
+  }
+
+  function renderManagerReadinessError($root, error) {
+    const ui = readinessUi();
+    if (typeof ui.renderManagerReadinessError !== "function") return;
+    const message = error && error.message ? error.message : "Readiness review could not be loaded right now.";
+    insertManagerReadinessSection($root, $(ui.renderManagerReadinessError(message)));
+  }
+
+  function renderManagerReadinessPayload($root, readiness) {
+    const ui = readinessUi();
+    if (typeof ui.renderManagerReadiness !== "function") return;
+    const html = ui.renderManagerReadiness(readiness);
+    if (!html) {
+      $root.find("[data-procurement-manager-readiness]").remove();
+      return;
+    }
+    insertManagerReadinessSection($root, $(html));
+  }
+
+  function loadManagerReadiness($root, payload, token) {
+    if (!canSeeManagerReadiness(payload)) {
+      $root.find("[data-procurement-manager-readiness]").remove();
+      return;
+    }
+    renderManagerReadinessLoading($root);
+    const startedAt = Date.now();
+    frappe.call({ method: READINESS_METHOD }).then((response) => {
+      if (!isCurrentOverviewRoot($root, token)) return;
+      const readiness = response && response.message ? response.message : {};
+      renderManagerReadinessPayload($root, readiness);
+      const $section = $root.find("[data-procurement-manager-readiness]").first();
+      if ($section.length) {
+        $section.attr("data-procurement-manager-readiness-fetch-ms", String(Date.now() - startedAt));
+      }
+    }).catch((error) => {
+      if (!isCurrentOverviewRoot($root, token)) return;
+      renderManagerReadinessError($root, error);
+    });
   }
 
   function applyPayload($root, payload) {
@@ -264,7 +319,6 @@
     Object.keys(directories).forEach((key) => applyMetric($root, key, directories[key]));
     Object.keys(insights).forEach((key) => applyMetric($root, key, insights[key]));
     renderCreateActions($root, payload);
-    renderManagerReadiness($root, payload);
   }
 
   function renderCreateActions($root, payload) {
@@ -323,7 +377,9 @@
 
   function renderWorkbench(page) {
     const pageState = { payload: {} };
+    const renderToken = ++overviewRenderSerial;
     const $root = $('<div class="sales-console-shell" data-erpw-workspace="procurement" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="loading"></div>');
+    $root.attr("data-erpw-overview-render-token", String(renderToken));
 
     const $header = $(`
       <section class="sales-console-card sales-console-header">
@@ -607,7 +663,7 @@
     setTimeout(cleanupOverviewPageHeads, 120);
 
     fetchBootstrapWithRetry($root, 0).then((response) => {
-      if (!isActiveProcurementRoute()) return;
+      if (!isCurrentOverviewRoot($root, renderToken)) return;
       const payload = response && response.message ? response.message : {};
       pageState.payload = payload;
       if (payload.state && payload.state.kind === "restricted") {
@@ -616,8 +672,9 @@
       }
       applyPayload($root, payload);
       $root.attr("data-erpw-console-bootstrap", "ready");
+      loadManagerReadiness($root, payload, renderToken);
     }).catch((error) => {
-      if (!isActiveProcurementRoute()) return;
+      if (!isCurrentOverviewRoot($root, renderToken)) return;
       renderState(page, {
         kind: "error",
         title: "Procurement Console could not be loaded",

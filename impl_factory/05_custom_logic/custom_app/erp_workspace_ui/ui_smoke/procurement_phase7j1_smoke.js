@@ -4,8 +4,9 @@ const path = require('path');
 
 const BASE_URL = process.env.ERPW_BASE_URL || 'https://meet.erpbosai.com';
 const TIMEOUT = Number(process.env.ERPW_PROCUREMENT_PHASE7J1_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_PROCUREMENT_PHASE7J1_ARTIFACT_DIR || path.join(fs.existsSync('/freeze-artifacts') ? '/freeze-artifacts' : path.join(__dirname, 'artifacts'), `procurement-phase7j1-${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`);
-const ASSET_OVERRIDE_ROOT = process.env.ERPW_PROCUREMENT_PHASE7J1_ASSET_ROOT || '';
+const ARTIFACT_DIR = process.env.ERPW_PROCUREMENT_PHASE7J1B_ARTIFACT_DIR || process.env.ERPW_PROCUREMENT_PHASE7J1_ARTIFACT_DIR || path.join(fs.existsSync('/freeze-artifacts') ? '/freeze-artifacts' : path.join(__dirname, 'artifacts'), `procurement-phase7j1b-${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`);
+const ASSET_OVERRIDE_ROOT = process.env.ERPW_PROCUREMENT_PHASE7J1B_ASSET_ROOT || process.env.ERPW_PROCUREMENT_PHASE7J1_ASSET_ROOT || '';
+const READINESS_METHOD_FRAGMENT = '/api/method/erp_workspace_ui.procurement_console.readiness.get_procurement_manager_readiness';
 
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
@@ -49,13 +50,19 @@ async function capture(page, name, options = {}) {
 
 async function installAssetOverrides(context) {
   if (!ASSET_OVERRIDE_ROOT) return;
-  await context.route('**/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js*', async (route) => {
-    const file = path.join(ASSET_OVERRIDE_ROOT, 'procurement_readiness_ui.js');
-    if (fs.existsSync(file)) {
-      return route.fulfill({ path: file, contentType: 'application/javascript' });
-    }
-    return route.continue();
-  });
+  const overrides = [
+    { pattern: '**/assets/erp_workspace_ui/js/procurement_console/procurement_console_page.js*', file: 'procurement_console_page.js' },
+    { pattern: '**/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js*', file: 'procurement_readiness_ui.js' },
+  ];
+  for (const item of overrides) {
+    await context.route(item.pattern, async (route) => {
+      const file = path.join(ASSET_OVERRIDE_ROOT, item.file);
+      if (fs.existsSync(file)) {
+        return route.fulfill({ path: file, contentType: 'application/javascript' });
+      }
+      return route.continue();
+    });
+  }
 }
 
 async function login(page, user) {
@@ -106,6 +113,7 @@ async function overviewState(page) {
       return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
     };
     const section = document.querySelector('[data-procurement-manager-readiness]');
+    const createActions = document.querySelector('[data-section-key="create-actions"]');
     const rectFor = (node) => {
       if (!node) return null;
       const rect = node.getBoundingClientRect();
@@ -153,12 +161,18 @@ async function overviewState(page) {
       sidebarBrandNodes,
       viewport: { width: window.innerWidth, height: window.innerHeight, scrollY: window.scrollY },
       managerReadinessCount: Array.from(document.querySelectorAll('[data-procurement-manager-readiness]')).filter(isVisible).length,
+      createActionsVisible: Boolean(createActions && isVisible(createActions)),
+      kpiCardCount: Array.from(document.querySelectorAll('.sales-console-kpi-card')).filter(isVisible).length,
+      queueCardCount: Array.from(document.querySelectorAll('.sales-console-queue-card')).filter(isVisible).length,
+      readinessState: section ? section.getAttribute('data-procurement-manager-readiness-state') : null,
       title: section ? ((section.querySelector('[data-procurement-manager-readiness-title]') || {}).innerText || '').trim() : '',
       subtitle: section ? ((section.querySelector('.sales-console-section-note') || {}).innerText || '').trim() : '',
+      mainMessage: section ? ((section.querySelector('[data-procurement-readiness-main-message]') || {}).innerText || '').replace(/\s+/g, ' ').trim() : '',
       sectionRect: rectFor(section),
       nextSectionRect: rectFor(nextSection),
       severityChips: chips,
       groupCards,
+      categoryZeroChipNoise: groupCards.filter((card) => /0 Critical\s+0 Warning\s+0 Info/i.test(card.text)).map((card) => card.key),
       requiredGroupsPresent: requiredGroups.filter((label) => groupCards.some((card) => card.text.includes(label))),
       topIssues,
       visibleIssueRows: visibleRows.length,
@@ -170,7 +184,7 @@ async function overviewState(page) {
       modalText: Array.from(document.querySelectorAll('.modal.show')).filter(isVisible).map((node) => (node.innerText || '').replace(/\s+/g, ' ').trim()).join(' '),
     };
   }, REQUIRED_GROUPS);
-  return Object.assign(state, { console: events.console || [], pageErrors: events.pageErrors || [] });
+  return Object.assign(state, { console: events.console || [], pageErrors: events.pageErrors || [], readinessApiCalls: events.readinessApiCalls || [] });
 }
 
 function assertClean(state, label) {
@@ -189,18 +203,29 @@ async function assertManagerOverview(page, viewport) {
   await page.setViewportSize({ width: viewport.width, height: viewport.height });
   await openOverview(page);
   await page.waitForSelector('[data-procurement-manager-readiness]', { state: 'visible', timeout: TIMEOUT });
+  const initialReadinessState = await overviewState(page);
+  const loadingScreenshot = await capture(page, `manager-${viewport.key}-overview-readiness-${initialReadinessState.readinessState || 'initial'}`);
+  if (initialReadinessState.readinessState === 'loading') {
+    assert(initialReadinessState.createActionsVisible, `manager ${viewport.key}: create actions are blocked while readiness loads`, initialReadinessState);
+    assert(initialReadinessState.kpiCardCount >= 3, `manager ${viewport.key}: KPI cards are blocked while readiness loads`, initialReadinessState);
+    assert(initialReadinessState.queueCardCount >= 1, `manager ${viewport.key}: queue cards are blocked while readiness loads`, initialReadinessState);
+  }
   await page.waitForSelector('[data-procurement-readiness-top-issue]', { state: 'visible', timeout: TIMEOUT });
   const defaultScreenshot = await capture(page, `manager-${viewport.key}-overview-compressed`);
   const state = await overviewState(page);
   assertClean(state, `manager ${viewport.key}`);
   assert(state.managerReadinessCount === 1, `manager ${viewport.key}: compressed readiness queue missing`, state);
+  assert((state.readinessApiCalls || []).length >= 1, `manager ${viewport.key}: manager readiness API was not called asynchronously`, state);
+  assert(state.readinessState === 'ready', `manager ${viewport.key}: readiness queue did not reach ready state`, state);
   assert(state.title === 'Readiness Review Queue', `manager ${viewport.key}: readiness title mismatch`, state);
-  assert(/Supplier, item, document, and communication exceptions needing manager attention\./.test(state.subtitle), `manager ${viewport.key}: readiness subtitle mismatch`, state);
+  assert(/Business readiness exceptions needing manager attention\./.test(state.subtitle), `manager ${viewport.key}: readiness subtitle mismatch`, state);
+  assert(/warning|critical|No readiness exceptions/i.test(state.mainMessage), `manager ${viewport.key}: readiness main message missing`, state);
   assert(state.severityChips.length >= 3, `manager ${viewport.key}: severity count chips missing`, state);
   for (const severity of ['critical', 'warning', 'info']) {
     assert(state.severityChips.some((chip) => chip.severity === severity), `manager ${viewport.key}: ${severity} chip missing`, state);
   }
   assert(state.groupCards.length === REQUIRED_GROUPS.length, `manager ${viewport.key}: readiness category cards missing`, state);
+  assert((state.categoryZeroChipNoise || []).length === 0, `manager ${viewport.key}: category cards show repeated zero-chip noise`, state);
   assert(state.requiredGroupsPresent.length === REQUIRED_GROUPS.length, `manager ${viewport.key}: readiness category labels missing`, state);
   assert(state.topIssues.length >= 1 && state.topIssues.length <= 3, `manager ${viewport.key}: default visible top issue count is not compressed`, state);
   assert(state.topIssues[0].rect.top < viewport.height + 40, `manager ${viewport.key}: first top issue is too far below the initial viewport`, state);
@@ -259,6 +284,8 @@ async function assertManagerOverview(page, viewport) {
   return {
     viewport: viewport.key,
     defaultScreenshot,
+    loadingScreenshot,
+    initialReadinessState,
     expandedScreenshot,
     expandedImmediateScreenshot,
     expandedSettledScreenshot,
@@ -274,6 +301,9 @@ async function assertManagerOverview(page, viewport) {
         expandedVisibleRows: state.expandedVisibleRows,
         toggleExpanded: state.toggleExpanded,
         toggleText: state.toggleText,
+        readinessState: state.readinessState,
+        mainMessage: state.mainMessage,
+        categoryZeroChipNoise: state.categoryZeroChipNoise,
         shellCount: state.shellCount,
         shellTitleCount: state.shellTitleCount,
         mainProcurementHeaderCount: state.mainProcurementHeaderCount,
@@ -350,6 +380,7 @@ async function assertUserOverview(page, viewport) {
   const state = await overviewState(page);
   assertClean(state, `user ${viewport.key}`);
   assert(state.managerReadinessCount === 0, `user ${viewport.key}: manager readiness must remain absent`, state);
+  assert((state.readinessApiCalls || []).length === 0, `user ${viewport.key}: manager readiness API must not be called`, state);
   assert(!/Readiness Review Queue/i.test(state.bodyText), `user ${viewport.key}: manager readiness title leaked`, state);
   return { viewport: viewport.key, screenshot, state };
 }
@@ -358,7 +389,13 @@ async function runForUser(browser, user) {
   const context = await browser.newContext();
   await installAssetOverrides(context);
   const page = await context.newPage();
-  PAGE_EVENTS.set(page, { console: [], pageErrors: [] });
+  PAGE_EVENTS.set(page, { console: [], pageErrors: [], readinessApiCalls: [] });
+  page.on('response', (response) => {
+    const events = PAGE_EVENTS.get(page);
+    if (events && response.url().includes(READINESS_METHOD_FRAGMENT)) {
+      events.readinessApiCalls.push({ status: response.status(), url: response.url() });
+    }
+  });
   page.on('console', (message) => {
     if (message.type() === 'error') PAGE_EVENTS.get(page).console.push(message.text());
   });

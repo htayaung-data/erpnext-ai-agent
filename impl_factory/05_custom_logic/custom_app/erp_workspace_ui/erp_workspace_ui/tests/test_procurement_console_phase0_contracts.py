@@ -3118,7 +3118,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         payload = service.get_procurement_console_bootstrap()
 
-        manager_queue = payload["manager_readiness"]
+        self.assertNotIn("manager_readiness", payload)
+        manager_queue = readiness.get_procurement_manager_readiness()
         self.assertTrue(manager_queue["visible"])
         self.assertGreater(manager_queue["summary"]["total"], 0)
         self.assertTrue(manager_queue["groups"])
@@ -3135,8 +3136,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         _set_user("purchase@example.com", ["Purchase User"])
         user_payload = service.get_procurement_console_bootstrap()
-        self.assertFalse(user_payload["manager_readiness"]["visible"])
-        self.assertEqual([], user_payload["manager_readiness"]["issues"])
+        self.assertNotIn("manager_readiness", user_payload)
+        user_queue = readiness.get_procurement_manager_readiness()
+        self.assertFalse(user_queue["visible"])
+        self.assertEqual([], user_queue["issues"])
 
     def test_page_level_readiness_contexts_are_read_only_and_productized(self):
         _set_user("manager@example.com", ["Purchase Manager"])
