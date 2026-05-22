@@ -124,6 +124,9 @@ async function overviewState(page) {
     const topIssues = section ? Array.from(section.querySelectorAll('[data-procurement-readiness-top-issue]')).filter(isVisible).map((node) => ({ severity: node.getAttribute('data-readiness-severity'), group: node.getAttribute('data-readiness-group'), text: (node.innerText || '').replace(/\s+/g, ' ').trim(), rect: rectFor(node) })) : [];
     const expanded = section ? section.querySelector('[data-procurement-readiness-expanded-list]') : null;
     const toggle = section ? section.querySelector('[data-procurement-readiness-toggle]') : null;
+    const mainMessageNode = section ? section.querySelector('[data-procurement-readiness-main-message]') : null;
+    const mainCount = section ? section.querySelector('[data-procurement-readiness-main-count]') : null;
+    const mainText = section ? section.querySelector('[data-procurement-readiness-main-text]') : null;
     const visibleRows = section ? Array.from(section.querySelectorAll('[data-procurement-readiness-issue]')).filter(isVisible) : [];
     const nextSection = section ? section.nextElementSibling : null;
     const bodyText = (document.body.innerText || '').replace(/\s+/g, ' ').trim();
@@ -167,7 +170,13 @@ async function overviewState(page) {
       readinessState: section ? section.getAttribute('data-procurement-manager-readiness-state') : null,
       title: section ? ((section.querySelector('[data-procurement-manager-readiness-title]') || {}).innerText || '').trim() : '',
       subtitle: section ? ((section.querySelector('.sales-console-section-note') || {}).innerText || '').trim() : '',
-      mainMessage: section ? ((section.querySelector('[data-procurement-readiness-main-message]') || {}).innerText || '').replace(/\s+/g, ' ').trim() : '',
+      mainMessage: mainMessageNode ? (mainMessageNode.innerText || '').replace(/\s+/g, ' ').trim() : '',
+      mainMessageLabel: mainMessageNode ? (mainMessageNode.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim() : '',
+      mainCountText: mainCount ? (mainCount.innerText || '').replace(/\s+/g, ' ').trim() : '',
+      mainTextText: mainText ? (mainText.innerText || '').replace(/\s+/g, ' ').trim() : '',
+      mainCountRect: rectFor(mainCount),
+      mainTextRect: rectFor(mainText),
+      mainCountTextGap: mainCount && mainText ? Math.round((mainText.getBoundingClientRect().left - mainCount.getBoundingClientRect().right) * 100) / 100 : null,
       sectionRect: rectFor(section),
       nextSectionRect: rectFor(nextSection),
       severityChips: chips,
@@ -219,7 +228,12 @@ async function assertManagerOverview(page, viewport) {
   assert(state.readinessState === 'ready', `manager ${viewport.key}: readiness queue did not reach ready state`, state);
   assert(state.title === 'Readiness Review Queue', `manager ${viewport.key}: readiness title mismatch`, state);
   assert(/Business readiness exceptions needing manager attention\./.test(state.subtitle), `manager ${viewport.key}: readiness subtitle mismatch`, state);
-  assert(/warning|critical|No readiness exceptions/i.test(state.mainMessage), `manager ${viewport.key}: readiness main message missing`, state);
+  assert(/warning|critical|No readiness exceptions/i.test(state.mainMessageLabel || state.mainMessage), `manager ${viewport.key}: readiness main message missing`, state);
+  assert(!/\d(?=[^\d\s])/.test(state.mainMessageLabel || state.mainMessage), `manager ${viewport.key}: readiness main message count is visually concatenated`, state);
+  if (/^\d+$/.test(state.mainCountText || '')) {
+    assert((state.mainCountTextGap || 0) >= 6, `manager ${viewport.key}: readiness main count and message are too tight`, state);
+    assert(/item buying warnings need review|critical.*need review|info.*need review/i.test(state.mainTextText), `manager ${viewport.key}: readiness main message text missing`, state);
+  }
   assert(state.severityChips.length >= 3, `manager ${viewport.key}: severity count chips missing`, state);
   for (const severity of ['critical', 'warning', 'info']) {
     assert(state.severityChips.some((chip) => chip.severity === severity), `manager ${viewport.key}: ${severity} chip missing`, state);

@@ -235,6 +235,30 @@ async function openOverviewAndMeasure(page, viewport, user) {
   };
 }
 
+async function warmOverviewRoute(page, viewport, user) {
+  await page.setViewportSize({ width: viewport.width, height: viewport.height });
+  await page.goto(routeUrl('/desk/procurement-console'), { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+  await page.waitForSelector('.sales-console-shell[data-erpw-workspace=procurement]', { state: 'visible', timeout: TIMEOUT });
+  await page.waitForFunction(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const shell = document.querySelector('.sales-console-shell[data-erpw-workspace=procurement]');
+    return shell && shell.getAttribute('data-erpw-console-bootstrap') === 'ready'
+      && Array.from(document.querySelectorAll('.sales-console-kpi-card')).filter(visible).length >= 3
+      && visible(document.querySelector('[data-section-key="create-actions"]'))
+      && Array.from(document.querySelectorAll('.sales-console-queue-card')).filter(visible).length >= 1;
+  }, null, { timeout: TIMEOUT });
+  if (user.key === 'manager') {
+    await page.waitForSelector('[data-procurement-manager-readiness-state="ready"]', { state: 'visible', timeout: TIMEOUT });
+  } else {
+    await page.waitForTimeout(250);
+  }
+}
+
 async function runForUser(browser, user) {
   const context = await browser.newContext();
   await installAssetOverrides(context);
@@ -243,6 +267,7 @@ async function runForUser(browser, user) {
   const direct = await measureDirectMethods(page, user);
   const browserMeasurements = [];
   for (const viewport of VIEWPORTS) {
+    await warmOverviewRoute(page, viewport, user);
     browserMeasurements.push(await openOverviewAndMeasure(page, viewport, user));
   }
   await context.close();

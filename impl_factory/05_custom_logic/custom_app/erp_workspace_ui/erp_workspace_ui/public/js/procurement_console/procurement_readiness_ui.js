@@ -76,9 +76,12 @@
       .erpw-manager-readiness-category-status { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
       .erpw-manager-readiness-category-status .erpw-readiness-chip.clear { border-color: #d9eadf; background: #f3faf6; color: #166534; }
       .erpw-manager-readiness-category-preview { color: #64748b; font-size: 11.5px; line-height: 1.28; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-      .erpw-manager-readiness-hero { display: grid; gap: 3px; border: 1px solid #e2ebf5; border-radius: 13px; padding: 12px 13px; background: linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%); }
-      .erpw-manager-readiness-hero-main { color: #0f172a; font-size: 15px; line-height: 1.25; font-weight: 820; }
-      .erpw-manager-readiness-hero-note { color: #475569; font-size: 12.1px; line-height: 1.35; }
+      .erpw-manager-readiness-hero { display: grid; gap: 6px; border: 1px solid #dbe8f5; border-radius: 13px; padding: 12px 14px; background: linear-gradient(180deg, #fbfdff 0%, #f7fbff 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
+      .erpw-manager-readiness-hero-main { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; color: #0f172a; line-height: 1.2; font-weight: 820; }
+      .erpw-manager-readiness-hero-count { display: inline-flex; align-items: baseline; color: #10233f; font-size: 19px; font-weight: 880; letter-spacing: 0; line-height: 1; }
+      .erpw-manager-readiness-hero-text { display: inline-flex; min-width: 0; color: #17243a; font-size: 14.3px; font-weight: 820; letter-spacing: 0; }
+      .erpw-manager-readiness-hero-main.is-clear .erpw-manager-readiness-hero-count { color: #166534; font-size: 15px; }
+      .erpw-manager-readiness-hero-note { color: #475569; font-size: 12.1px; line-height: 1.35; max-width: 860px; }
       .erpw-manager-readiness-top { display: grid; gap: 8px; }
       .erpw-manager-readiness-top-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: #334155; font-size: 12px; font-weight: 760; }
       .erpw-manager-readiness-top .erpw-readiness-row { padding: 9px 10px; }
@@ -239,17 +242,30 @@
     return String(category.label || 'readiness').toLowerCase();
   }
 
-  function mainReadinessMessage(categories) {
+  function mainReadinessSummary(categories) {
     const active = (categories || []).filter((entry) => entry.counts && entry.counts.total).sort((a, b) => {
       if (b.counts.critical !== a.counts.critical) return b.counts.critical - a.counts.critical;
       if (b.counts.warning !== a.counts.warning) return b.counts.warning - a.counts.warning;
       return b.counts.total - a.counts.total;
     })[0];
-    if (!active) return 'No readiness exceptions need manager attention.';
+    if (!active) {
+      return {
+        count: 'Clear',
+        text: 'No readiness exceptions need manager attention.',
+        severity: 'clear',
+      };
+    }
     const counts = active.counts || {};
     const count = counts.critical || counts.warning || counts.info || counts.total;
     const severity = counts.critical ? 'critical' : (counts.warning ? 'warning' : 'info');
-    return `${count} ${readinessMessageLabel(active.category)} ${count === 1 ? severity : `${severity}s`} need review`;
+    const severityText = counts.critical
+      ? (count === 1 ? 'critical issue' : 'critical issues')
+      : (counts.warning ? (count === 1 ? 'warning' : 'warnings') : (count === 1 ? 'info item' : 'info items'));
+    return {
+      count: String(count),
+      text: `${readinessMessageLabel(active.category)} ${severityText} need review`,
+      severity,
+    };
   }
 
   function renderManagerCategory(category, issues) {
@@ -325,7 +341,8 @@
       const list = categoryIssues(issues, category);
       return { category, issues: list, counts: issueCounts(list) };
     });
-    const headline = mainReadinessMessage(categories);
+    const headline = mainReadinessSummary(categories);
+    const headlineText = headline.count === 'Clear' ? headline.text : `${headline.count} ${headline.text}`;
     const content = `
         <div class='sales-console-section-head'>
           <div class='erpw-manager-readiness-copy'>
@@ -334,8 +351,11 @@
           </div>
           <div class='erpw-manager-readiness-severity' data-procurement-readiness-severity-strip>${managerSummaryChips(readiness.summary)}</div>
         </div>
-        <div class='erpw-manager-readiness-hero' data-procurement-readiness-main-message>
-          <div class='erpw-manager-readiness-hero-main'>${escapeHtml(headline)}</div>
+        <div class='erpw-manager-readiness-hero'>
+          <div class='erpw-manager-readiness-hero-main${headline.severity === 'clear' ? ' is-clear' : ''}' data-procurement-readiness-main-message aria-label='${escapeHtml(headlineText)}'>
+            <span class='erpw-manager-readiness-hero-count' data-procurement-readiness-main-count>${escapeHtml(headline.count)}</span>
+            <span class='erpw-manager-readiness-hero-text' data-procurement-readiness-main-text>${escapeHtml(headline.text)}</span>
+          </div>
           <div class='erpw-manager-readiness-hero-note'>Review the highest-priority productized context first. Deferred send and lifecycle steps are not counted as action blockers.</div>
         </div>
         ${issues.length ? `
