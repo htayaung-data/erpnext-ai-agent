@@ -219,8 +219,28 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "is_purchase_item": 1,
                 "has_variants": 0,
                 "modified": "2026-05-03",
-            }
-        ], filters)
+            },
+			{
+				"name": "ITEM-SOLD",
+				"item_name": "Sold Widget",
+				"item_group": "Sales Evidence",
+				"stock_uom": "Nos",
+				"disabled": 0,
+				"is_purchase_item": 1,
+				"has_variants": 0,
+				"modified": "2026-05-03",
+			},
+			{
+				"name": "ITEM-RECEIVED",
+				"item_name": "Received Widget",
+				"item_group": "Buying Evidence",
+				"stock_uom": "Nos",
+				"disabled": 0,
+				"is_purchase_item": 1,
+				"has_variants": 0,
+				"modified": "2026-05-03",
+			}
+		], filters)
     if doctype == "Warehouse":
         return _filter_rows(doctype, [
             {"name": "Stores - DC", "warehouse_name": "Stores", "company": "Demo Company", "modified": "2026-05-03"}
@@ -499,7 +519,7 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
         ]
         return _filter_rows(doctype, rows, filters)
     if doctype == "Purchase Receipt Item":
-        return [
+        return _filter_rows(doctype, [
             {
                 "parent": "MAT-PRE-001",
                 "item_code": "ITEM-003",
@@ -508,18 +528,64 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "rejected_qty": 0,
                 "warehouse": "Stores - DC",
                 "billed_amt": 500,
+            },
+            {
+                "parent": "MAT-PRE-002",
+                "item_code": "ITEM-RECEIVED",
+                "qty": 2,
+                "received_qty": 2,
+                "rejected_qty": 0,
+                "warehouse": "Stores - DC",
+                "billed_amt": 250,
             }
-        ]
+        ], filters)
     if doctype == "Purchase Invoice Item":
-        return [
+        return _filter_rows(doctype, [
             {
                 "parent": "ACC-PINV-001",
                 "item_code": "ITEM-003",
                 "qty": 2,
                 "amount": 500,
                 "purchase_receipt": "MAT-PRE-001",
+            },
+            {
+                "parent": "ACC-PINV-002",
+                "item_code": "ITEM-RECEIVED",
+                "qty": 2,
+                "amount": 250,
+                "purchase_receipt": "MAT-PRE-002",
             }
-        ]
+        ], filters)
+    if doctype == "Sales Order Item":
+        return _filter_rows(doctype, [
+            {
+                "parent": "SAL-ORD-001",
+                "item_code": "ITEM-SOLD",
+                "item_name": "Sold Widget",
+                "qty": 1,
+                "docstatus": 1,
+            }
+        ], filters)
+    if doctype == "Delivery Note Item":
+        return _filter_rows(doctype, [
+            {
+                "parent": "MAT-DN-001",
+                "item_code": "ITEM-SOLD",
+                "item_name": "Sold Widget",
+                "qty": 1,
+                "docstatus": 1,
+            }
+        ], filters)
+    if doctype == "Sales Invoice Item":
+        return _filter_rows(doctype, [
+            {
+                "parent": "ACC-SINV-001",
+                "item_code": "ITEM-SOLD",
+                "item_name": "Sold Widget",
+                "qty": 1,
+                "docstatus": 1,
+            }
+        ], filters)
     return []
 
 
@@ -2657,6 +2723,31 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(context["issues"][0]["severity"], "ready")
         self.assertEqual(context["issues"][0]["title"], readiness_evidence.ITEM_EXISTING_BUYING_LABEL)
         self.assertEqual(chip["value"], readiness_evidence.ITEM_EXISTING_BUYING_LABEL)
+
+    def test_item_readiness_infers_existing_receipt_or_invoice_activity_without_profile(self):
+        context = readiness.get_item_buying_readiness_context("ITEM-RECEIVED")
+        chip = item_buying_profile.item_readiness_chip("ITEM-RECEIVED")
+        evidence = readiness_evidence.item_evidence("ITEM-RECEIVED")
+
+        self.assertEqual(context["issues"][0]["severity"], "ready")
+        self.assertEqual(context["issues"][0]["title"], readiness_evidence.ITEM_EXISTING_BUYING_LABEL)
+        self.assertEqual(chip["value"], readiness_evidence.ITEM_EXISTING_BUYING_LABEL)
+        self.assertTrue(evidence["has_buying_transaction_history"])
+        self.assertTrue(evidence["has_purchase_receipt_history"])
+        self.assertTrue(evidence["has_purchase_invoice_history"])
+
+    def test_item_readiness_infers_existing_sales_activity_without_profile(self):
+        context = readiness.get_item_buying_readiness_context("ITEM-SOLD")
+        chip = item_buying_profile.item_readiness_chip("ITEM-SOLD")
+        evidence = readiness_evidence.item_evidence("ITEM-SOLD")
+
+        self.assertEqual(context["issues"][0]["severity"], "ready")
+        self.assertEqual(context["issues"][0]["title"], readiness_evidence.ITEM_EXISTING_SALES_LABEL)
+        self.assertEqual(chip["value"], readiness_evidence.ITEM_EXISTING_SALES_LABEL)
+        self.assertTrue(evidence["has_sales_history"])
+        self.assertTrue(evidence["has_sales_order_history"])
+        self.assertTrue(evidence["has_delivery_note_history"])
+        self.assertTrue(evidence["has_sales_invoice_history"])
 
     def test_item_readiness_infers_catalog_evidence_without_transaction_history(self):
         context = readiness.get_item_buying_readiness_context("ITEM-CATALOG")

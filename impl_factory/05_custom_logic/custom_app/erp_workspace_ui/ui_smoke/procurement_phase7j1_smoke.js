@@ -121,7 +121,8 @@ async function overviewState(page) {
     };
     const chips = section ? Array.from(section.querySelectorAll('[data-procurement-readiness-severity]')).filter(isVisible).map((node) => ({ severity: node.getAttribute('data-procurement-readiness-severity'), text: (node.innerText || '').trim(), rect: rectFor(node) })) : [];
     const groupCards = section ? Array.from(section.querySelectorAll('[data-procurement-readiness-group-card]')).filter(isVisible).map((node) => ({ key: node.getAttribute('data-procurement-readiness-group-card'), text: (node.innerText || '').replace(/\s+/g, ' ').trim(), rect: rectFor(node), critical: node.classList.contains('has-critical') })) : [];
-    const clearGroups = section ? Array.from(section.querySelectorAll('[data-procurement-readiness-clear-group]')).filter(isVisible).map((node) => ({ key: node.getAttribute('data-procurement-readiness-clear-group'), text: (node.innerText || '').replace(/\s+/g, ' ').trim(), rect: rectFor(node) })) : [];
+    const clearLine = section ? section.querySelector('[data-procurement-readiness-clear-line]') : null;
+    const clearGroups = section ? Array.from(section.querySelectorAll('[data-procurement-readiness-clear-group]')).filter(isVisible).map((node) => ({ key: node.getAttribute('data-procurement-readiness-clear-group'), text: (node.innerText || '').replace(/\s+/g, ' ').trim(), className: node.className || '', rect: rectFor(node) })) : [];
     const topIssues = section ? Array.from(section.querySelectorAll('[data-procurement-readiness-top-issue]')).filter(isVisible).map((node) => ({ severity: node.getAttribute('data-readiness-severity'), group: node.getAttribute('data-readiness-group'), text: (node.innerText || '').replace(/\s+/g, ' ').trim(), rect: rectFor(node) })) : [];
     const expanded = section ? section.querySelector('[data-procurement-readiness-expanded-list]') : null;
     const toggle = section ? section.querySelector('[data-procurement-readiness-toggle]') : null;
@@ -192,6 +193,7 @@ async function overviewState(page) {
       severityChips: chips,
       groupCards,
       clearGroups,
+      clearLineRect: rectFor(clearLine),
       categoryZeroChipNoise: groupCards.filter((card) => /0 Critical\s+0 Warning\s+0 Info/i.test(card.text)).map((card) => card.key),
       requiredGroupsPresent: requiredGroups.filter((label) => groupCards.some((card) => card.text.includes(label)) || clearGroups.some((entry) => entry.text.includes(label))),
       topIssues,
@@ -257,6 +259,8 @@ async function assertManagerOverview(page, viewport) {
   assert((state.categoryZeroChipNoise || []).length === 0, `manager ${viewport.key}: category cards show repeated zero-chip noise`, state);
   assert(state.requiredGroupsPresent.length === REQUIRED_GROUPS.length, `manager ${viewport.key}: readiness category labels missing`, state);
   assert(state.clearGroups.length >= 1, `manager ${viewport.key}: clear readiness groups should be compact status text`, state);
+  assert(state.clearGroups.every((entry) => /clear-pill/.test(entry.className || '') && entry.rect && entry.rect.height <= 32), `manager ${viewport.key}: clear groups should render as compact status pills`, state);
+  assert(state.clearLineRect && state.clearLineRect.height <= 96, `manager ${viewport.key}: clear group strip is too tall`, state);
   assert(state.groupCards.some((card) => /Item buying readiness/i.test(card.text) && /Warning/i.test(card.text)), `manager ${viewport.key}: active item buying warning group is not prominent`, state);
   assert(state.topIssues.length >= 1 && state.topIssues.length <= 3, `manager ${viewport.key}: default visible top issue count is not compressed`, state);
   assert(state.topIssues.every((issue) => /Buying context not reviewed|readiness context needs review|profile needs review|readiness needs review|evidence needs review|follow-up context needs review/i.test(issue.text)), `manager ${viewport.key}: top issue wording is not business-readable`, state);

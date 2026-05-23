@@ -398,8 +398,10 @@ def _item_readiness_issues(
 		)]
 	if profile:
 		return [_ready_issue(group, source_type, source_name, readiness_evidence.REVIEWED_FOR_BUYING_LABEL, "Buying Procurement Context has no blocking readiness issue.")]
-	if evidence.get("has_transaction_history"):
+	if evidence.get("has_buying_transaction_history"):
 		return [_ready_issue(group, source_type, source_name, readiness_evidence.ITEM_EXISTING_BUYING_LABEL, "Buying activity exists. This is operational evidence, not formal approval.")]
+	if evidence.get("has_sales_history"):
+		return [_ready_issue(group, source_type, source_name, readiness_evidence.ITEM_EXISTING_SALES_LABEL, "Sales history exists. This is operational evidence, not formal buying approval.")]
 	if evidence.get("has_catalog_evidence"):
 		return [_ready_issue(group, source_type, source_name, readiness_evidence.ITEM_CATALOG_EVIDENCE_LABEL, "Catalog buying evidence exists. This is context only, not formal approval.")]
 	return [_issue(
@@ -512,8 +514,10 @@ def get_item_buying_readiness_context(item_code: str) -> dict[str, object]:
 		))
 	elif profile.get("exists"):
 		issues.append(_ready_issue("item_readiness", "Item", item_name, readiness_evidence.REVIEWED_FOR_BUYING_LABEL, "Buying Procurement Context has no blocking readiness issue."))
-	elif evidence.get("has_transaction_history"):
+	elif evidence.get("has_buying_transaction_history"):
 		issues.append(_ready_issue("item_readiness", "Item", item_name, readiness_evidence.ITEM_EXISTING_BUYING_LABEL, "Buying activity exists. This is operational evidence, not formal approval."))
+	elif evidence.get("has_sales_history"):
+		issues.append(_ready_issue("item_readiness", "Item", item_name, readiness_evidence.ITEM_EXISTING_SALES_LABEL, "Sales history exists. This is operational evidence, not formal buying approval."))
 	elif evidence.get("has_catalog_evidence"):
 		issues.append(_ready_issue("item_readiness", "Item", item_name, readiness_evidence.ITEM_CATALOG_EVIDENCE_LABEL, "Catalog buying evidence exists. This is context only, not formal approval."))
 	else:

@@ -78,8 +78,10 @@
       .erpw-manager-readiness-category-status { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
       .erpw-manager-readiness-category-status .erpw-readiness-chip.clear { border-color: #d9eadf; background: #f3faf6; color: #166534; }
       .erpw-manager-readiness-category-preview { color: #64748b; font-size: 11.5px; line-height: 1.28; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-      .erpw-manager-readiness-clear-line { display: flex; flex-wrap: wrap; gap: 5px 9px; align-items: center; color: #64748b; font-size: 11.8px; line-height: 1.35; }
-      .erpw-manager-readiness-clear-line span:not(:last-child)::after { content: "·"; margin-left: 9px; color: #cbd5e1; }
+      .erpw-manager-readiness-clear-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: #64748b; font-size: 11.6px; line-height: 1.3; }
+      .erpw-manager-readiness-clear-title { display: inline-flex; align-items: center; min-height: 23px; color: #475569; font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; margin-right: 2px; }
+      .erpw-manager-readiness-clear-pill { display: inline-flex; align-items: center; min-height: 23px; padding: 0 8px; border-radius: 999px; border: 1px solid #d9eadf; background: #f5fbf7; color: #166534; font-size: 11.2px; font-weight: 740; white-space: nowrap; }
+      .erpw-manager-readiness-clear-pill::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: #22c55e; margin-right: 6px; }
       .erpw-manager-readiness-hero { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; border: 1px solid #dbe8f5; border-radius: 13px; padding: 13px 14px; background: linear-gradient(180deg, #fbfdff 0%, #f7fbff 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
       .erpw-manager-readiness-hero-copy { display: grid; gap: 6px; min-width: 0; }
       .erpw-manager-readiness-hero-main { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; color: #0f172a; line-height: 1.2; font-weight: 820; }
@@ -297,7 +299,8 @@
     if (!clearEntries.length) return '';
     return `
       <div class='erpw-manager-readiness-clear-line' data-procurement-readiness-clear-line>
-        ${clearEntries.map((entry) => `<span data-procurement-readiness-clear-group='${escapeHtml(entry.category.key)}'>${escapeHtml(entry.category.label)} clear</span>`).join('')}
+        <span class='erpw-manager-readiness-clear-title'>Clear areas</span>
+        ${clearEntries.map((entry) => `<span class='erpw-manager-readiness-clear-pill' data-procurement-readiness-clear-group='${escapeHtml(entry.category.key)}'>${escapeHtml(entry.category.label)} clear</span>`).join('')}
       </div>
     `;
   }

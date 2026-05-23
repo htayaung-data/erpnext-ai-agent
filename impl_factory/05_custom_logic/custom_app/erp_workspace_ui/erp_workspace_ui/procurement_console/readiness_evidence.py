@@ -11,6 +11,7 @@ from . import common
 SUPPLIER_KNOWN_TRADING_LABEL = "Known trading record"
 SUPPLIER_NEW_REVIEW_LABEL = "New supplier - review needed"
 ITEM_EXISTING_BUYING_LABEL = "Existing buying activity"
+ITEM_EXISTING_SALES_LABEL = "Existing sales activity"
 ITEM_CATALOG_EVIDENCE_LABEL = "Catalog evidence found"
 ITEM_NEW_REVIEW_LABEL = "New item - review needed"
 REVIEWED_FOR_BUYING_LABEL = "Reviewed for buying"
@@ -198,6 +199,13 @@ def item_evidence_for_items(item_codes: list[str]) -> dict[str, dict[str, Any]]:
 			"has_rfq_history": False,
 			"has_supplier_quotation_history": False,
 			"has_purchase_order_history": False,
+			"has_purchase_receipt_history": False,
+			"has_purchase_invoice_history": False,
+			"has_sales_order_history": False,
+			"has_delivery_note_history": False,
+			"has_sales_invoice_history": False,
+			"has_buying_transaction_history": False,
+			"has_sales_history": False,
 			"has_transaction_history": False,
 			"has_item_supplier": False,
 			"has_buying_price": False,
@@ -217,8 +225,23 @@ def item_evidence_for_items(item_codes: list[str]) -> dict[str, dict[str, Any]]:
 		("Request for Quotation Item", "item_code", "has_rfq_history"),
 		("Supplier Quotation Item", "item_code", "has_supplier_quotation_history"),
 		("Purchase Order Item", "item_code", "has_purchase_order_history"),
+		("Purchase Receipt Item", "item_code", "has_purchase_receipt_history"),
+		("Purchase Invoice Item", "item_code", "has_purchase_invoice_history"),
 	):
 		for row in _safe_get_all(doctype, [field, "parent"], filters={field: ["in", names]}, limit=max(300, len(names) * 30)):
+			item = cstr(row.get(field)).strip()
+			if item in evidence:
+				evidence[item][flag] = True
+
+	for doctype, field, flag in (
+		("Sales Order Item", "item_code", "has_sales_order_history"),
+		("Delivery Note Item", "item_code", "has_delivery_note_history"),
+		("Sales Invoice Item", "item_code", "has_sales_invoice_history"),
+	):
+		filters: list = [[doctype, field, "in", names]]
+		if common.has_field(doctype, "docstatus"):
+			filters.append([doctype, "docstatus", "=", 1])
+		for row in _safe_get_all(doctype, [field, "parent"], filters=filters, limit=max(300, len(names) * 30)):
 			item = cstr(row.get(field)).strip()
 			if item in evidence:
 				evidence[item][flag] = True
@@ -245,11 +268,22 @@ def item_evidence_for_items(item_codes: list[str]) -> dict[str, dict[str, Any]]:
 
 	for name in names:
 		entry = evidence[name]
-		entry["has_transaction_history"] = bool(entry["has_rfq_history"] or entry["has_supplier_quotation_history"] or entry["has_purchase_order_history"])
+		entry["has_buying_transaction_history"] = bool(
+			entry["has_rfq_history"]
+			or entry["has_supplier_quotation_history"]
+			or entry["has_purchase_order_history"]
+			or entry["has_purchase_receipt_history"]
+			or entry["has_purchase_invoice_history"]
+		)
+		entry["has_sales_history"] = bool(entry["has_sales_order_history"] or entry["has_delivery_note_history"] or entry["has_sales_invoice_history"])
+		entry["has_transaction_history"] = bool(entry["has_buying_transaction_history"] or entry["has_sales_history"])
 		entry["has_catalog_evidence"] = bool(entry["has_item_supplier"] or entry["has_buying_price"])
 		entry["has_any_evidence"] = bool(entry["has_transaction_history"] or entry["has_catalog_evidence"])
-		if entry["has_transaction_history"]:
+		if entry["has_buying_transaction_history"]:
 			entry["inferred_label"] = ITEM_EXISTING_BUYING_LABEL
+			entry["inferred_tone"] = "neutral"
+		elif entry["has_sales_history"]:
+			entry["inferred_label"] = ITEM_EXISTING_SALES_LABEL
 			entry["inferred_tone"] = "neutral"
 		elif entry["has_catalog_evidence"]:
 			entry["inferred_label"] = ITEM_CATALOG_EVIDENCE_LABEL
