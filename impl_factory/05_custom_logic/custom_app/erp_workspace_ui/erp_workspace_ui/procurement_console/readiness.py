@@ -161,6 +161,260 @@ def _supplier_label(supplier: str) -> str:
 		return name
 
 
+def _unique_names(values: list[object]) -> list[str]:
+	names: list[str] = []
+	seen: set[str] = set()
+	for value in values:
+		name = cstr(value).strip()
+		if name and name not in seen:
+			seen.add(name)
+			names.append(name)
+	return names
+
+
+def _readiness_cache() -> dict[str, dict[str, object]]:
+	return {
+		"supplier_profiles": {},
+		"supplier_evidence": {},
+		"supplier_labels": {},
+		"item_profiles": {},
+		"item_evidence": {},
+	}
+
+
+def _supplier_profile_rows(suppliers: list[str]) -> dict[str, dict[str, object] | None]:
+	names = _unique_names(suppliers)
+	if not names:
+		return {}
+	rows = supplier_readiness._safe_get_all(  # type: ignore[attr-defined]
+		supplier_readiness.PROFILE_DOCTYPE,  # type: ignore[attr-defined]
+		supplier_readiness.PROFILE_FIELDS,  # type: ignore[attr-defined]
+		filters={"supplier": ["in", names]},
+		limit=len(names),
+	)
+	by_supplier = {cstr(row.get("supplier")).strip(): dict(row) for row in rows}
+	return {name: by_supplier.get(name) for name in names}
+
+
+def _item_profile_rows(item_codes: list[str]) -> dict[str, dict[str, object] | None]:
+	names = _unique_names(item_codes)
+	if not names:
+		return {}
+	rows = item_buying_profile._safe_get_all(  # type: ignore[attr-defined]
+		item_buying_profile.PROFILE_DOCTYPE,  # type: ignore[attr-defined]
+		item_buying_profile.PROFILE_FIELDS,  # type: ignore[attr-defined]
+		filters={"item_code": ["in", names]},
+		limit=len(names),
+	)
+	by_item = {cstr(row.get("item_code")).strip(): dict(row) for row in rows}
+	return {name: by_item.get(name) for name in names}
+
+
+def _supplier_trading_evidence_for_suppliers(suppliers: list[str]) -> dict[str, dict[str, object]]:
+	names = _unique_names(suppliers)
+	evidence = {name: {"supplier": name, "has_trading_history": False} for name in names}
+	if not names:
+		return evidence
+	for row in readiness_evidence._safe_get_all(  # type: ignore[attr-defined]
+		"Request for Quotation Supplier",
+		["supplier", "parent"],
+		filters={"supplier": ["in", names]},
+		limit=max(200, len(names) * 20),
+	):
+		supplier = cstr(row.get("supplier")).strip()
+		if supplier in evidence:
+			evidence[supplier]["has_trading_history"] = True
+	for doctype in ("Supplier Quotation", "Purchase Order"):
+		if not common.can_read(doctype):
+			continue
+		for row in common.get_list(
+			doctype,
+			fields=["name", "supplier"],
+			filters=[[doctype, "supplier", "in", names], [doctype, "docstatus", "not in", [2]]],
+			limit=max(200, len(names) * 20),
+		):
+			supplier = cstr(row.get("supplier")).strip()
+			if supplier in evidence:
+				evidence[supplier]["has_trading_history"] = True
+	return evidence
+
+
+def _ensure_supplier_inputs(cache: dict[str, dict[str, object]], suppliers: list[str]) -> None:
+	names = _unique_names(suppliers)
+	profiles = cache.setdefault("supplier_profiles", {})
+	missing_profiles = [name for name in names if name not in profiles]
+	if missing_profiles:
+		profiles.update(_supplier_profile_rows(missing_profiles))
+	evidence = cache.setdefault("supplier_evidence", {})
+	missing_evidence = [name for name in names if name not in evidence and not profiles.get(name)]
+	if missing_evidence:
+		evidence.update(_supplier_trading_evidence_for_suppliers(missing_evidence))
+
+
+def _ensure_item_inputs(cache: dict[str, dict[str, object]], item_codes: list[str]) -> None:
+	names = _unique_names(item_codes)
+	profiles = cache.setdefault("item_profiles", {})
+	missing_profiles = [name for name in names if name not in profiles]
+	if missing_profiles:
+		profiles.update(_item_profile_rows(missing_profiles))
+	evidence = cache.setdefault("item_evidence", {})
+	missing_evidence = [name for name in names if name not in evidence and not profiles.get(name)]
+	if missing_evidence:
+		evidence.update(readiness_evidence.item_evidence_for_items(missing_evidence))
+
+
+def _ensure_supplier_labels(cache: dict[str, dict[str, object]], suppliers: list[str]) -> None:
+	names = _unique_names(suppliers)
+	labels = cache.setdefault("supplier_labels", {})
+	missing = [name for name in names if name not in labels]
+	if not missing:
+		return
+	for name in missing:
+		labels[name] = name
+	if not common.can_read("Supplier"):
+		return
+	for row in common.get_list("Supplier", fields=["name", "supplier_name"], filters=[["Supplier", "name", "in", missing]], limit=len(missing)):
+		name = cstr(row.get("name")).strip()
+		if name:
+			labels[name] = cstr(row.get("supplier_name") or name).strip()
+
+
+def _cached_supplier_label(supplier: str, cache: dict[str, dict[str, object]] | None = None) -> str:
+	name = cstr(supplier).strip()
+	if not name:
+		return "Supplier"
+	if cache is None:
+		return _supplier_label(name)
+	_ensure_supplier_labels(cache, [name])
+	return cstr(cache.get("supplier_labels", {}).get(name) or name).strip()
+
+
+def _supplier_readiness_issues(
+	supplier: str,
+	group: str,
+	key_prefix: str,
+	source_type: str,
+	source_name: str,
+	cache: dict[str, dict[str, object]],
+) -> list[dict[str, object]]:
+	supplier_name = cstr(supplier).strip()
+	if not supplier_name:
+		return []
+	_ensure_supplier_inputs(cache, [supplier_name])
+	profile = cache.get("supplier_profiles", {}).get(supplier_name)
+	evidence = cache.get("supplier_evidence", {}).get(supplier_name) or {}
+	status = cstr((profile or {}).get("buying_readiness_status")).strip() or supplier_readiness.NO_PROFILE
+	if profile and status == supplier_readiness.HOLD_FOR_SOURCING:
+		return [_issue(
+			f"{key_prefix}:hold",
+			group,
+			"critical",
+			"Supplier is on hold for sourcing" if group == "supplier_readiness" else "Supplier on hold",
+			cstr(profile.get("readiness_note")).strip() or ("Supplier readiness is blocked by the buying profile." if group == "supplier_readiness" else f"{_cached_supplier_label(supplier_name, cache)} is held in Supplier Buying Profile."),
+			source_type,
+			source_name,
+			fix_label="Review supplier profile",
+			fix_route=_route("procurement-console-supplier", supplier_name),
+		)]
+	if profile and status in {supplier_readiness.NEEDS_EMAIL, supplier_readiness.NEEDS_CONTACT_REVIEW}:
+		return [_issue(
+			f"{key_prefix}:needs_review" if group == "supplier_readiness" else f"{key_prefix}:review",
+			group,
+			"warning",
+			readiness_evidence.NEEDS_SUPPLIER_REVIEW_LABEL,
+			cstr(profile.get("readiness_note")).strip() or ("Supplier buying readiness needs manager review." if group == "supplier_readiness" else f"{_cached_supplier_label(supplier_name, cache)} buying readiness needs manager review."),
+			source_type,
+			source_name,
+			fix_label="Review supplier profile",
+			fix_route=_route("procurement-console-supplier", supplier_name),
+		)]
+	if profile:
+		return [_ready_issue(group, source_type, source_name, readiness_evidence.REVIEWED_FOR_BUYING_LABEL, "Supplier Buying Profile has no blocking readiness issue.")]
+	if evidence.get("has_trading_history"):
+		return [_ready_issue(group, source_type, source_name, readiness_evidence.SUPPLIER_KNOWN_TRADING_LABEL, "Buying history exists. This is operational evidence, not formal approval.")]
+	return [_issue(
+		f"{key_prefix}:review_needed",
+		group,
+		"warning",
+		readiness_evidence.SUPPLIER_NEW_REVIEW_LABEL,
+		"Review the Supplier Buying Profile before relying on this supplier for sourcing decisions." if group == "supplier_readiness" else f"{_cached_supplier_label(supplier_name, cache)} has no buying history or Supplier Buying Profile yet.",
+		source_type,
+		source_name,
+		fix_label="Review supplier profile",
+		fix_route=_route("procurement-console-supplier", supplier_name),
+	)]
+
+
+def _item_readiness_issues(
+	item_code: str,
+	group: str,
+	key_prefix: str,
+	source_type: str,
+	source_name: str,
+	cache: dict[str, dict[str, object]],
+) -> list[dict[str, object]]:
+	item_name = cstr(item_code).strip()
+	if not item_name:
+		return []
+	_ensure_item_inputs(cache, [item_name])
+	profile = cache.get("item_profiles", {}).get(item_name)
+	evidence = cache.get("item_evidence", {}).get(item_name) or {}
+	status = cstr((profile or {}).get("buying_readiness_status")).strip() or item_buying_profile.NOT_REVIEWED
+	if profile and status == item_buying_profile.HOLD_FOR_SOURCING:
+		return [_issue(
+			f"{key_prefix}:hold",
+			group,
+			"critical",
+			"Item is on hold for sourcing" if group == "item_readiness" else "Item on hold",
+			cstr(profile.get("readiness_note")).strip() or ("Item buying readiness blocks sourcing use." if group == "item_readiness" else f"{item_name} is held in Buying Procurement Context."),
+			source_type,
+			source_name,
+			fix_label="Review item context",
+			fix_route=_route("procurement-console-item", item_name),
+		)]
+	if profile and status == item_buying_profile.NEEDS_SOURCING_REVIEW:
+		return [_issue(
+			f"{key_prefix}:needs_review" if group == "item_readiness" else f"{key_prefix}:review",
+			group,
+			"warning",
+			"Item needs sourcing review" if group == "item_readiness" else "Item buying context needs review",
+			cstr(profile.get("readiness_note")).strip() or ("Item buying context needs manager review." if group == "item_readiness" else f"{item_name} readiness is {item_buying_profile.display_readiness_label(status)}."),
+			source_type,
+			source_name,
+			fix_label="Review item context",
+			fix_route=_route("procurement-console-item", item_name),
+		)]
+	if profile and status == item_buying_profile.NOT_REVIEWED:
+		return [_issue(
+			f"{key_prefix}:not_reviewed" if group == "item_readiness" else f"{key_prefix}:review",
+			group,
+			"warning",
+			"Item buying context not reviewed" if group == "item_readiness" else "Item buying context needs review",
+			"Review the Buying Procurement Context before using this item in sourcing or order decisions." if group == "item_readiness" else f"{item_name} readiness is {item_buying_profile.display_readiness_label(status)}.",
+			source_type,
+			source_name,
+			fix_label="Review item context",
+			fix_route=_route("procurement-console-item", item_name),
+		)]
+	if profile:
+		return [_ready_issue(group, source_type, source_name, readiness_evidence.REVIEWED_FOR_BUYING_LABEL, "Buying Procurement Context has no blocking readiness issue.")]
+	if evidence.get("has_transaction_history"):
+		return [_ready_issue(group, source_type, source_name, readiness_evidence.ITEM_EXISTING_BUYING_LABEL, "Buying activity exists. This is operational evidence, not formal approval.")]
+	if evidence.get("has_catalog_evidence"):
+		return [_ready_issue(group, source_type, source_name, readiness_evidence.ITEM_CATALOG_EVIDENCE_LABEL, "Catalog buying evidence exists. This is context only, not formal approval.")]
+	return [_issue(
+		f"{key_prefix}:review_needed",
+		group,
+		"warning",
+		readiness_evidence.ITEM_NEW_REVIEW_LABEL,
+		"Review the Buying Procurement Context before using this item in sourcing or order decisions." if group == "item_readiness" else f"{item_name} has no buying history, catalog evidence, or Buying Procurement Context yet.",
+		source_type,
+		source_name,
+		fix_label="Review item context",
+		fix_route=_route("procurement-console-item", item_name),
+	)]
+
+
 def get_supplier_readiness_context(supplier: str) -> dict[str, object]:
 	supplier_name = cstr(supplier).strip()
 	if not supplier_name:
@@ -277,7 +531,7 @@ def get_item_buying_readiness_context(item_code: str) -> dict[str, object]:
 	return _context_payload("Item", item_name, issues)
 
 
-def _supplier_issues_for_document(suppliers: list[object], parent_key: str, group: str) -> list[dict[str, object]]:
+def _supplier_issues_for_document(suppliers: list[object], parent_key: str, group: str, cache: dict[str, dict[str, object]] | None = None) -> list[dict[str, object]]:
 	issues: list[dict[str, object]] = []
 	if not suppliers:
 		issues.append(_issue(
@@ -292,7 +546,8 @@ def _supplier_issues_for_document(suppliers: list[object], parent_key: str, grou
 		))
 		return issues
 	supplier_names = [cstr(_value(row, "supplier") or _value(row, "supplier_name")).strip() for row in suppliers]
-	evidence_by_supplier = readiness_evidence.supplier_evidence_for_suppliers(supplier_names)
+	local_cache = cache or _readiness_cache()
+	_ensure_supplier_inputs(local_cache, supplier_names)
 	for row in suppliers:
 		supplier = cstr(_value(row, "supplier") or _value(row, "supplier_name")).strip()
 		if not supplier:
@@ -306,49 +561,18 @@ def _supplier_issues_for_document(suppliers: list[object], parent_key: str, grou
 				parent_key.split(":", 1)[-1],
 			))
 			continue
-		profile = supplier_readiness.get_supplier_profile_for_readiness(supplier)
-		status = cstr(profile.get("buying_readiness_status") or profile.get("readiness_label")).strip() or supplier_readiness.NO_PROFILE
-		evidence = evidence_by_supplier.get(supplier) or {}
-		if status == supplier_readiness.HOLD_FOR_SOURCING:
-			issues.append(_issue(
-				f"{parent_key}:supplier:{supplier}:hold",
-				group,
-				"critical",
-				"Supplier on hold",
-				f"{_supplier_label(supplier)} is held in Supplier Buying Profile.",
-				"Supplier",
-				supplier,
-				fix_label="Review supplier profile",
-				fix_route=_route("procurement-console-supplier", supplier),
-			))
-		elif profile.get("exists") and status in {supplier_readiness.NEEDS_EMAIL, supplier_readiness.NEEDS_CONTACT_REVIEW}:
-			issues.append(_issue(
-				f"{parent_key}:supplier:{supplier}:review",
-				group,
-				"warning",
-				readiness_evidence.NEEDS_SUPPLIER_REVIEW_LABEL,
-				f"{_supplier_label(supplier)} buying readiness needs manager review.",
-				"Supplier",
-				supplier,
-				fix_label="Review supplier profile",
-				fix_route=_route("procurement-console-supplier", supplier),
-			))
-		elif not profile.get("exists") and not evidence.get("has_trading_history"):
-			issues.append(_issue(
-				f"{parent_key}:supplier:{supplier}:review_needed",
-				group,
-				"warning",
-				readiness_evidence.SUPPLIER_NEW_REVIEW_LABEL,
-				f"{_supplier_label(supplier)} has no buying history or Supplier Buying Profile yet.",
-				"Supplier",
-				supplier,
-				fix_label="Review supplier profile",
-				fix_route=_route("procurement-console-supplier", supplier),
-			))
+		issues.extend(_supplier_readiness_issues(
+			supplier,
+			group,
+			f"{parent_key}:supplier:{supplier}",
+			"Supplier",
+			supplier,
+			local_cache,
+		))
 	return issues
 
 
-def _item_issues_for_document(items: list[object], parent_key: str, group: str) -> list[dict[str, object]]:
+def _item_issues_for_document(items: list[object], parent_key: str, group: str, cache: dict[str, dict[str, object]] | None = None) -> list[dict[str, object]]:
 	issues: list[dict[str, object]] = []
 	if not items:
 		issues.append(_issue(
@@ -363,7 +587,8 @@ def _item_issues_for_document(items: list[object], parent_key: str, group: str) 
 		))
 		return issues
 	item_names = [cstr(_value(row, "item_code")).strip() for row in items]
-	evidence_by_item = readiness_evidence.item_evidence_for_items(item_names)
+	local_cache = cache or _readiness_cache()
+	_ensure_item_inputs(local_cache, item_names)
 	for index, row in enumerate(items, start=1):
 		item = cstr(_value(row, "item_code")).strip()
 		if not item:
@@ -377,45 +602,14 @@ def _item_issues_for_document(items: list[object], parent_key: str, group: str) 
 				parent_key.split(":", 1)[-1],
 			))
 			continue
-		profile = item_buying_profile.get_item_profile_context(item)
-		status = cstr(profile.get("buying_readiness_status") or profile.get("readiness_label")).strip() or item_buying_profile.NOT_REVIEWED
-		evidence = evidence_by_item.get(item) or {}
-		if status == item_buying_profile.HOLD_FOR_SOURCING:
-			issues.append(_issue(
-				f"{parent_key}:item:{item}:hold",
-				group,
-				"critical",
-				"Item on hold",
-				f"{item} is held in Buying Procurement Context.",
-				"Item",
-				item,
-				fix_label="Review item context",
-				fix_route=_route("procurement-console-item", item),
-			))
-		elif profile.get("exists") and status in {item_buying_profile.NOT_REVIEWED, item_buying_profile.NEEDS_SOURCING_REVIEW}:
-			issues.append(_issue(
-				f"{parent_key}:item:{item}:review",
-				group,
-				"warning",
-				"Item buying context needs review",
-				f"{item} readiness is {item_buying_profile.display_readiness_label(status)}.",
-				"Item",
-				item,
-				fix_label="Review item context",
-				fix_route=_route("procurement-console-item", item),
-			))
-		elif not profile.get("exists") and not evidence.get("has_any_evidence"):
-			issues.append(_issue(
-				f"{parent_key}:item:{item}:review_needed",
-				group,
-				"warning",
-				readiness_evidence.ITEM_NEW_REVIEW_LABEL,
-				f"{item} has no buying history, catalog evidence, or Buying Procurement Context yet.",
-				"Item",
-				item,
-				fix_label="Review item context",
-				fix_route=_route("procurement-console-item", item),
-			))
+		issues.extend(_item_readiness_issues(
+			item,
+			group,
+			f"{parent_key}:item:{item}",
+			"Item",
+			item,
+			local_cache,
+		))
 	return issues
 
 
@@ -434,13 +628,13 @@ def _line_quality_issues(items: list[object], parent_key: str, group: str, *, re
 	return issues
 
 
-def get_purchase_request_readiness_context(name: str) -> dict[str, object]:
+def get_purchase_request_readiness_context(name: str, cache: dict[str, dict[str, object]] | None = None) -> dict[str, object]:
 	doc = _safe_get_doc("Material Request", name)
 	if not doc:
 		return _context_payload("Material Request", cstr(name).strip(), [])
 	items = _child_rows(doc, "items")
 	parent_key = f"Material Request:{cstr(name).strip()}"
-	issues = _item_issues_for_document(items, parent_key, "purchase_request_readiness")
+	issues = _item_issues_for_document(items, parent_key, "purchase_request_readiness", cache)
 	issues.extend(_line_quality_issues(items, parent_key, "purchase_request_readiness", require_schedule=True))
 	issues.append(_issue(
 		f"{parent_key}:future_step",
@@ -455,14 +649,14 @@ def get_purchase_request_readiness_context(name: str) -> dict[str, object]:
 	return _context_payload("Material Request", cstr(name).strip(), issues)
 
 
-def get_rfq_readiness_context(name: str) -> dict[str, object]:
+def get_rfq_readiness_context(name: str, cache: dict[str, dict[str, object]] | None = None) -> dict[str, object]:
 	doc = _safe_get_doc("Request for Quotation", name)
 	if not doc:
 		return _context_payload("Request for Quotation", cstr(name).strip(), [])
 	parent_key = f"Request for Quotation:{cstr(name).strip()}"
-	issues = _supplier_issues_for_document(_child_rows(doc, "suppliers"), parent_key, "rfq_readiness")
+	issues = _supplier_issues_for_document(_child_rows(doc, "suppliers"), parent_key, "rfq_readiness", cache)
 	items = _child_rows(doc, "items")
-	issues.extend(_item_issues_for_document(items, parent_key, "rfq_readiness"))
+	issues.extend(_item_issues_for_document(items, parent_key, "rfq_readiness", cache))
 	issues.extend(_line_quality_issues(items, parent_key, "rfq_readiness", require_schedule=True))
 	try:
 		from . import document_output
@@ -498,7 +692,7 @@ def get_rfq_readiness_context(name: str) -> dict[str, object]:
 	return _context_payload("Request for Quotation", cstr(name).strip(), issues)
 
 
-def get_supplier_quotation_readiness_context(name: str) -> dict[str, object]:
+def get_supplier_quotation_readiness_context(name: str, cache: dict[str, dict[str, object]] | None = None) -> dict[str, object]:
 	doc = _safe_get_doc("Supplier Quotation", name)
 	if not doc:
 		return _context_payload("Supplier Quotation", cstr(name).strip(), [])
@@ -509,9 +703,9 @@ def get_supplier_quotation_readiness_context(name: str) -> dict[str, object]:
 	if not supplier:
 		issues.append(_issue(f"{parent_key}:supplier_missing", "supplier_quotation_readiness", "critical", "Supplier missing", "Supplier quotation needs a supplier before future comparison or award review.", "Supplier Quotation", quotation))
 	else:
-		issues.extend(_supplier_issues_for_document([{"supplier": supplier}], parent_key, "supplier_quotation_readiness"))
+		issues.extend(_supplier_issues_for_document([{"supplier": supplier}], parent_key, "supplier_quotation_readiness", cache))
 	items = _child_rows(doc, "items")
-	issues.extend(_item_issues_for_document(items, parent_key, "supplier_quotation_readiness"))
+	issues.extend(_item_issues_for_document(items, parent_key, "supplier_quotation_readiness", cache))
 	issues.extend(_line_quality_issues(items, parent_key, "supplier_quotation_readiness", require_rate=True))
 	if _missing(_value(doc, "valid_till")):
 		issues.append(_issue(f"{parent_key}:valid_till", "supplier_quotation_readiness", "warning", "Validity date missing", "Quotation validity is missing for future comparison readiness.", "Supplier Quotation", quotation))
@@ -519,7 +713,7 @@ def get_supplier_quotation_readiness_context(name: str) -> dict[str, object]:
 	return _context_payload("Supplier Quotation", quotation, issues)
 
 
-def get_purchase_order_readiness_context(name: str) -> dict[str, object]:
+def get_purchase_order_readiness_context(name: str, cache: dict[str, dict[str, object]] | None = None) -> dict[str, object]:
 	doc = _safe_get_doc("Purchase Order", name)
 	if not doc:
 		return _context_payload("Purchase Order", cstr(name).strip(), [])
@@ -530,9 +724,9 @@ def get_purchase_order_readiness_context(name: str) -> dict[str, object]:
 	if not supplier:
 		issues.append(_issue(f"{parent_key}:supplier_missing", "purchase_order_readiness", "critical", "Supplier missing", "Purchase Order needs supplier context before future release readiness.", "Purchase Order", po_name))
 	else:
-		issues.extend(_supplier_issues_for_document([{"supplier": supplier}], parent_key, "purchase_order_readiness"))
+		issues.extend(_supplier_issues_for_document([{"supplier": supplier}], parent_key, "purchase_order_readiness", cache))
 	items = _child_rows(doc, "items")
-	issues.extend(_item_issues_for_document(items, parent_key, "purchase_order_readiness"))
+	issues.extend(_item_issues_for_document(items, parent_key, "purchase_order_readiness", cache))
 	issues.extend(_line_quality_issues(items, parent_key, "purchase_order_readiness", require_rate=True, require_schedule=True))
 	if _missing(_value(doc, "currency")):
 		issues.append(_issue(f"{parent_key}:currency", "purchase_order_readiness", "warning", "Currency missing", "Purchase Order currency is required before future release readiness.", "Purchase Order", po_name))
@@ -561,24 +755,29 @@ def _top_visible_documents(doctype: str, fields: list[str], limit: int = 4) -> l
 	return common.get_list(doctype, fields=fields, order_by="modified desc", limit=limit)
 
 
-def _issues_for_document_row(doctype: str, name: str) -> list[dict[str, object]]:
+def _issues_for_document_row(doctype: str, name: str, cache: dict[str, dict[str, object]] | None = None) -> list[dict[str, object]]:
 	if doctype == "Material Request":
-		return get_purchase_request_readiness_context(name).get("issues") or []
+		return get_purchase_request_readiness_context(name, cache).get("issues") or []
 	if doctype == "Request for Quotation":
-		return get_rfq_readiness_context(name).get("issues") or []
+		return get_rfq_readiness_context(name, cache).get("issues") or []
 	if doctype == "Supplier Quotation":
-		return get_supplier_quotation_readiness_context(name).get("issues") or []
+		return get_supplier_quotation_readiness_context(name, cache).get("issues") or []
 	if doctype == "Purchase Order":
-		return get_purchase_order_readiness_context(name).get("issues") or []
+		return get_purchase_order_readiness_context(name, cache).get("issues") or []
 	return []
 
 
 def _visible_manager_issues(context: dict[str, object]) -> list[dict[str, object]]:
 	issues: list[dict[str, object]] = []
-	for supplier in _top_visible_suppliers(24):
-		issues.extend(issue for issue in get_supplier_readiness_context(cstr(supplier.get("name"))).get("issues") or [] if issue.get("severity") in {"critical", "warning"})
-	for item in _top_visible_items(50):
-		issues.extend(issue for issue in get_item_buying_readiness_context(cstr(item.get("name"))).get("issues") or [] if issue.get("severity") in {"critical", "warning"})
+	cache = _readiness_cache()
+	suppliers = [cstr(supplier.get("name")).strip() for supplier in _top_visible_suppliers(24)]
+	_ensure_supplier_inputs(cache, suppliers)
+	for supplier in suppliers:
+		issues.extend(issue for issue in _supplier_readiness_issues(supplier, "supplier_readiness", f"supplier:{supplier}", "Supplier", supplier, cache) if issue.get("severity") in {"critical", "warning"})
+	items = [cstr(item.get("name")).strip() for item in _top_visible_items(50)]
+	_ensure_item_inputs(cache, items)
+	for item in items:
+		issues.extend(issue for issue in _item_readiness_issues(item, "item_readiness", f"item:{item}", "Item", item, cache) if issue.get("severity") in {"critical", "warning"})
 	for doctype, fields in (
 		("Material Request", ["name", "modified"]),
 		("Request for Quotation", ["name", "modified"]),
@@ -586,7 +785,7 @@ def _visible_manager_issues(context: dict[str, object]) -> list[dict[str, object
 		("Purchase Order", ["name", "supplier", "modified"]),
 	):
 		for row in _top_visible_documents(doctype, fields):
-			issues.extend(issue for issue in _issues_for_document_row(doctype, cstr(row.get("name"))) if issue.get("severity") in {"critical", "warning"})
+			issues.extend(issue for issue in _issues_for_document_row(doctype, cstr(row.get("name")), cache) if issue.get("severity") in {"critical", "warning"})
 	return _sort_issues(issues)[:ISSUE_LIMIT]
 
 

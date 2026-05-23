@@ -11,9 +11,12 @@ const BOOTSTRAP_METHOD = 'erp_workspace_ui.procurement_console.service.get_procu
 const READINESS_METHOD = 'erp_workspace_ui.procurement_console.readiness.get_procurement_manager_readiness';
 const READINESS_METHOD_FRAGMENT = `/api/method/${READINESS_METHOD}`;
 const BROWSER_SAMPLE_COUNT = Number(process.env.ERPW_PROCUREMENT_PHASE7J1B_BROWSER_SAMPLES || 3);
+const READINESS_SAMPLE_COUNT = Number(process.env.ERPW_PROCUREMENT_PHASE7J1B_READINESS_SAMPLES || 5);
 const FIRST_USEFUL_TARGET_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7J1B_FIRST_USEFUL_TARGET_MS || 1800);
 const FIRST_USEFUL_MAX_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7J1B_FIRST_USEFUL_MAX_MS || 3200);
 const BOOTSTRAP_TARGET_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7J1B_BOOTSTRAP_TARGET_MS || 1200);
+const READINESS_TARGET_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7J1B_READINESS_TARGET_MS || 1000);
+const READINESS_MAX_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7J1B_READINESS_MAX_MS || 1500);
 
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
@@ -124,7 +127,7 @@ async function measureDirectMethods(page, user) {
   }
   if (user.key === 'manager') {
     await callMethod(page, READINESS_METHOD);
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < READINESS_SAMPLE_COUNT; index += 1) {
       readinessSamples.push(await callMethod(page, READINESS_METHOD));
     }
   }
@@ -294,6 +297,10 @@ function validateResult(result) {
     assert(sample.ok, `${result.user}: readiness API call failed`, sample);
     assert(sample.readinessVisible === true, `${result.user}: readiness endpoint did not return visible manager payload`, sample);
   }
+  if (EXPECT_ASYNC && result.user === 'manager') {
+    assert(result.direct.readinessStats.median <= READINESS_TARGET_MS, `${result.user}: readiness median exceeds target`, { stats: result.direct.readinessStats, targetMs: READINESS_TARGET_MS });
+    assert(result.direct.readinessStats.max <= READINESS_MAX_MS, `${result.user}: readiness max exceeds guardrail`, { stats: result.direct.readinessStats, maxTargetMs: READINESS_MAX_MS });
+  }
   for (const measurement of result.browserMeasurements) {
     assert(measurement.failedResponses.length === 0, `${result.user} ${measurement.viewport}: failed HTTP responses detected`, measurement);
     assert(measurement.pageErrors.length === 0, `${result.user} ${measurement.viewport}: page errors detected`, measurement);
@@ -340,9 +347,12 @@ function validateResult(result) {
       artifactDir: ARTIFACT_DIR,
       assetOverrideRoot: ASSET_OVERRIDE_ROOT || null,
       bootstrapTargetMs: BOOTSTRAP_TARGET_MS,
+      readinessTargetMs: READINESS_TARGET_MS,
+      readinessMaxMs: READINESS_MAX_MS,
       firstUsefulTargetMs: FIRST_USEFUL_TARGET_MS,
       firstUsefulMaxMs: FIRST_USEFUL_MAX_MS,
       browserSampleCount: BROWSER_SAMPLE_COUNT,
+      readinessSampleCount: READINESS_SAMPLE_COUNT,
       results,
     };
     fs.writeFileSync(path.join(ARTIFACT_DIR, 'phase7j1b-performance-summary.json'), JSON.stringify(summary, null, 2));

@@ -3141,6 +3141,29 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertFalse(user_queue["visible"])
         self.assertEqual([], user_queue["issues"])
 
+    def test_manager_overview_readiness_does_not_build_full_profile_contexts(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        original_item_context = item_buying_profile.get_item_profile_context
+        original_supplier_context = supplier_readiness.get_supplier_profile_for_readiness
+
+        def _blocked_context(*args, **kwargs):
+            raise AssertionError("Overview readiness must use batched lightweight context")
+
+        try:
+            item_buying_profile.get_item_profile_context = _blocked_context
+            supplier_readiness.get_supplier_profile_for_readiness = _blocked_context
+            payload = readiness.get_procurement_manager_readiness()
+        finally:
+            item_buying_profile.get_item_profile_context = original_item_context
+            supplier_readiness.get_supplier_profile_for_readiness = original_supplier_context
+
+        self.assertTrue(payload["visible"])
+        self.assertEqual(payload["summary"]["total"], len(payload["issues"]))
+        self.assertIn("groups", payload)
+        for issue in payload["issues"]:
+            self.assertTrue(issue["productized_only"])
+            self.assertNotIn("/desk/Form", str(issue))
+
     def test_page_level_readiness_contexts_are_read_only_and_productized(self):
         _set_user("manager@example.com", ["Purchase Manager"])
         supplier_readiness.save_supplier_readiness_profile(

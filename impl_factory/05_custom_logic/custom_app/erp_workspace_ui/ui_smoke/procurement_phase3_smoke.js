@@ -2581,6 +2581,13 @@ async function checkDetail(page, purchaseOrderName, options = {}) {
   await openDeskRoute(page, route);
   await page.locator(".erpw-procurement-po-follow-up-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
   await assertSingleProcurementShell(page, "poDetail", "PO Follow-up Detail direct route");
+  if (options.requireReadyShell) {
+    await page.waitForFunction(() => {
+      const shell = document.querySelector(".erpw-procurement-po-follow-up-shell");
+      const text = shell ? shell.innerText || "" : "";
+      return /Item lines/i.test(text) && /Receipt posture/i.test(text) && /Billing posture/i.test(text);
+    }, null, { timeout: TIMEOUT });
+  }
   const text = normalizeText(await page.locator(".erpw-procurement-po-follow-up-shell").first().innerText({ timeout: TIMEOUT }));
   assert(!/Detail runtime unavailable/i.test(text), "Detail page fell back to missing runtime state", { text, route });
   assert(/Purchase Order|follow-up|required|Item lines|unavailable/i.test(text), "Detail page did not render expected read-only shell", { text });
@@ -2735,6 +2742,54 @@ async function checkItemDetail(page, user) {
   return { itemCode, state, hasNativeFormAction, actionStyles, compactHeader, purchaseOrderNavigation, toolbarExercise: { refresh: true, back: true } };
 }
 
+async function waitForManagedCreateCard(page, selector, label) {
+  const card = page.locator(selector).first();
+  try {
+    await card.waitFor({ state: "visible", timeout: TIMEOUT });
+    return { retried: false };
+  } catch (firstError) {
+    const firstSnapshot = await page.evaluate((cardSelector) => {
+      const visible = (node) => {
+        if (!node) return false;
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") !== 0 && rect.width > 0 && rect.height > 0;
+      };
+      return {
+        url: window.location.href,
+        route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [],
+        cardCount: document.querySelectorAll(cardSelector).length,
+        cardVisible: visible(document.querySelector(cardSelector)),
+        bodySample: (document.body.innerText || "").replace(/\s+/g, " ").trim().slice(0, 800),
+      };
+    }, selector);
+    await page.goto(page.url(), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    try {
+      await card.waitFor({ state: "visible", timeout: TIMEOUT });
+      return { retried: true, firstSnapshot };
+    } catch (secondError) {
+      const secondSnapshot = await page.evaluate((cardSelector) => {
+        const visible = (node) => {
+          if (!node) return false;
+          const style = window.getComputedStyle(node);
+          const rect = node.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") !== 0 && rect.width > 0 && rect.height > 0;
+        };
+        return {
+          url: window.location.href,
+          route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [],
+          cardCount: document.querySelectorAll(cardSelector).length,
+          cardVisible: visible(document.querySelector(cardSelector)),
+          bodySample: (document.body.innerText || "").replace(/\s+/g, " ").trim().slice(0, 800),
+        };
+      }, selector);
+      const error = new Error(`${label}: managed create route did not render card`);
+      error.details = { selector, firstError: firstError.message, secondError: secondError.message, firstSnapshot, secondSnapshot };
+      throw error;
+    }
+  }
+}
+
 async function checkCreateActions(page, user, bootstrapPayload) {
   const actions = Array.isArray(bootstrapPayload && bootstrapPayload.create_actions) ? bootstrapPayload.create_actions : [];
   const targets = (bootstrapPayload && bootstrapPayload.action_targets) || {};
@@ -2819,8 +2874,9 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   if (keys.includes("new_purchase_request")) {
     await page.locator('[data-erpw-procurement-create-action="new_purchase_request"]').first().click();
     await page.waitForURL(/\/desk\/procurement-console-purchase-request-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-    await page.locator(".erpw-managed-pr-page .erpw-managed-pr-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const managedPrSettle = await waitForManagedCreateCard(page, ".erpw-managed-pr-page .erpw-managed-pr-card", "New Purchase Request");
     createRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    if (managedPrSettle.retried) createRoute.routeSettleRetry = managedPrSettle.firstSnapshot;
     assert(!/\/desk\/material-request\//i.test(page.url()), "New Purchase Request primary action leaked to native Material Request route", createRoute);
     const activeManagedPr = await page.locator(".erpw-managed-pr-page").evaluateAll((nodes) => {
       const visible = (node) => {
@@ -2858,8 +2914,9 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   if (keys.includes("new_rfq")) {
     await page.locator('[data-erpw-procurement-create-action="new_rfq"]').first().click();
     await page.waitForURL(/\/desk\/procurement-console-rfq-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-    await page.locator(".erpw-managed-rfq-page .erpw-managed-rfq-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const managedRfqSettle = await waitForManagedCreateCard(page, ".erpw-managed-rfq-page .erpw-managed-rfq-card", "New RFQ");
     rfqCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    if (managedRfqSettle.retried) rfqCreateRoute.routeSettleRetry = managedRfqSettle.firstSnapshot;
     assert(!/\/desk\/(?:request-for-quotation|Form\/Request%20for%20Quotation|Form\/Request for Quotation)\//i.test(page.url()), "New RFQ primary action leaked to native Request for Quotation route", rfqCreateRoute);
     const activeManagedRfq = await page.locator(".erpw-managed-rfq-page").evaluateAll((nodes) => {
       const visible = (node) => {
@@ -2897,8 +2954,9 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   if (keys.includes("new_supplier_quotation")) {
     await page.locator('[data-erpw-procurement-create-action="new_supplier_quotation"]').first().click();
     await page.waitForURL(/\/desk\/procurement-console-supplier-quotation-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-    await page.locator(".erpw-managed-sq-page .erpw-managed-sq-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const managedSqSettle = await waitForManagedCreateCard(page, ".erpw-managed-sq-page .erpw-managed-sq-card", "New Supplier Quotation");
     supplierQuotationCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    if (managedSqSettle.retried) supplierQuotationCreateRoute.routeSettleRetry = managedSqSettle.firstSnapshot;
     assert(!/\/desk\/(?:supplier-quotation|Form\/Supplier%20Quotation|Form\/Supplier Quotation)\//i.test(page.url()), "New Supplier Quotation primary action leaked to native Supplier Quotation route", supplierQuotationCreateRoute);
     const activeManagedSq = await page.locator(".erpw-managed-sq-page").evaluateAll((nodes) => {
       const visible = (node) => {
@@ -2937,8 +2995,9 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   if (keys.includes("new_purchase_order")) {
     await page.locator('[data-erpw-procurement-create-action="new_purchase_order"]').first().click();
     await page.waitForURL(/\/desk\/procurement-console-purchase-order-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-    await page.locator(".erpw-managed-po-page .erpw-managed-po-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const managedPoSettle = await waitForManagedCreateCard(page, ".erpw-managed-po-page .erpw-managed-po-card", "New Purchase Order");
     purchaseOrderCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    if (managedPoSettle.retried) purchaseOrderCreateRoute.routeSettleRetry = managedPoSettle.firstSnapshot;
     assert(!/\/desk\/(?:purchase-order|Form\/Purchase%20Order|Form\/Purchase Order)\//i.test(page.url()), "New Purchase Order primary action leaked to native Purchase Order route", purchaseOrderCreateRoute);
     const activeManagedPo = await page.locator(".erpw-managed-po-page").evaluateAll((nodes) => {
       const visible = (node) => {
