@@ -17,6 +17,8 @@
   ];
   let runtimePromise = null;
   const SAME_ROUTE_CACHE_TTL_MS = 5000;
+  const DETAIL_ROW_LIMIT = 5;
+  const DETAIL_EXPANDED_ROW_LIMIT = 12;
   const globalContextRequestCache = window.__erpwProcurementDetailContextCache = window.__erpwProcurementDetailContextCache || Object.create(null);
   const contextRequestCache = globalContextRequestCache[PAGE_KEY] = globalContextRequestCache[PAGE_KEY] || Object.create(null);
 
@@ -106,8 +108,28 @@
       .erpw-item-buying-profile-message { margin-top: 10px; font-size: 12px; color: #64748b; }
       .erpw-item-buying-profile-message.error { color: #b91c1c; }
       .erpw-item-buying-profile-message.ready { color: #047857; }
+      .erpw-object-profile { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+      .erpw-object-profile-brief { border: 1px solid #dbe7f3; border-radius: 8px; background: #f9fbfd; padding: 13px 15px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .erpw-object-profile-brief-copy { min-width: 240px; flex: 1 1 420px; }
+      .erpw-object-profile-brief-title { color: #0f172a; font-size: 14px; line-height: 1.25; font-weight: 780; }
+      .erpw-object-profile-brief-note { color: #52637a; font-size: 12.5px; line-height: 1.42; margin-top: 4px; }
+      .erpw-object-profile-brief-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+      .erpw-object-profile-chip { display: inline-flex; align-items: center; min-height: 26px; border-radius: 999px; border: 1px solid #d5e2ef; background: #fff; color: #334155; padding: 0 10px; font-size: 12px; font-weight: 720; white-space: nowrap; }
+      .erpw-object-tab-shell { border: 1px solid #dbe7f3; border-radius: 8px; background: #fff; overflow: hidden; }
+      .erpw-object-tabs { display: flex; gap: 4px; align-items: center; overflow-x: auto; padding: 8px; border-bottom: 1px solid #e6edf5; background: #f8fafc; }
+      .erpw-object-tab { border: 1px solid transparent; background: transparent; color: #42526a; min-height: 34px; border-radius: 8px; padding: 0 12px; font-size: 12.5px; font-weight: 740; white-space: nowrap; }
+      .erpw-object-tab:hover { border-color: #c8d7e8; background: #fff; color: #12365f; }
+      .erpw-object-tab.is-active { border-color: #12365f; background: #12365f; color: #fff; box-shadow: 0 6px 16px rgba(18, 54, 95, .14); }
+      .erpw-object-tab-panels { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+      .erpw-object-tab-panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+      .erpw-object-tab-panel[hidden] { display: none !important; }
+      .erpw-object-panel-empty { border: 1px dashed #cbd8e6; border-radius: 8px; padding: 16px; color: #64748b; font-size: 13px; background: #fbfdff; }
+      .erpw-list-row-reveal { margin-top: 10px; display: flex; justify-content: flex-end; }
+      .erpw-list-row-reveal-button { min-height: 32px; border-radius: 8px; border: 1px solid #d5e2ef; background: #fff; color: #12365f; padding: 0 12px; font-size: 12px; font-weight: 740; }
+      .erpw-list-row-reveal-button:hover { border-color: #9db7d2; background: #f8fbff; }
       @media (max-width: 1180px) {
         .erpw-item-buying-profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .erpw-object-tab-panels { padding: 10px; }
       }
       @media (max-width: 760px) {
         .erpw-item-buying-profile-grid,
@@ -236,10 +258,22 @@
     }));
   }
 
-  function renderTable(table) {
+  function tableRows(table) {
+    return Array.isArray(table && table.rows) ? table.rows : [];
+  }
+
+  function rowCountLabel(table, singular, plural) {
+    const count = tableRows(table).length;
+    const label = count === 1 ? singular : plural;
+    return `${count} ${label}`;
+  }
+
+  function renderTable(table, options) {
+    const settings = options && typeof options === "object" ? options : {};
     const columns = Array.isArray(table && table.columns) ? table.columns : [];
-    const rows = Array.isArray(table && table.rows) ? table.rows : [];
+    const rows = tableRows(table);
     const state = table && table.state ? table.state : null;
+    const rowLimit = Number.isFinite(settings.rowLimit) ? settings.rowLimit : rows.length;
     if (!rows.length) {
       return `
         <div class="erpw-list-state ${escapeHtml(state && state.kind || "empty")}">
@@ -253,8 +287,8 @@
         <table class="erpw-list-table">
           <thead><tr>${columns.map((column) => `<th>${escapeHtml(column.label || column.key)}</th>`).join("")}</tr></thead>
           <tbody>
-            ${rows.map((row) => `
-              <tr>
+            ${rows.map((row, index) => `
+              <tr ${index >= rowLimit ? "hidden data-erpw-extra-row" : ""}>
                 ${columns.map((column) => {
                   const cell = row.cells && row.cells[column.key] !== undefined ? row.cells[column.key] : "";
                   const value = cell && typeof cell === "object" ? cell.value : cell;
@@ -279,19 +313,85 @@
     `;
   }
 
-  function renderSection(title, note, table) {
+  function renderSection(title, note, table, statusLabel, options) {
+    const settings = options && typeof options === "object" ? options : {};
+    const rows = tableRows(table);
+    const rowLimit = Number.isFinite(settings.rowLimit) ? settings.rowLimit : DETAIL_ROW_LIMIT;
+    const revealLimit = Math.min(rows.length, DETAIL_EXPANDED_ROW_LIMIT);
+    const revealLabel = rows.length > rowLimit ? `Show ${revealLimit} recent` : "";
     return `
-      <section class="erpw-child-card erpw-list-results">
+      <section class="erpw-child-card erpw-list-results" data-erpw-object-section="${escapeHtml(settings.key || title || "")}">
         <div class="erpw-child-section-header">
           <div class="erpw-child-section-header-copy">
             <div class="erpw-child-section-header-title">${escapeHtml(title)}</div>
             <div class="erpw-child-section-header-note">${escapeHtml(note)}</div>
           </div>
-          <div class="erpw-child-section-header-status">Visibility only</div>
+          <div class="erpw-child-section-header-status">${escapeHtml(statusLabel || "Reference")}</div>
         </div>
-        ${renderTable(table || {})}
+        ${renderTable(table || {}, { rowLimit })}
+        ${revealLabel ? `<div class="erpw-list-row-reveal"><button type="button" class="erpw-list-row-reveal-button" data-erpw-show-recent data-erpw-row-limit="${escapeHtml(String(revealLimit))}">${escapeHtml(revealLabel)}</button></div>` : ""}
       </section>
     `;
+  }
+
+  function renderObjectBrief(detail) {
+    const profile = detail.buying_profile || {};
+    const readinessLabel = profile.readiness_label || profile.buying_readiness_status || "Readiness review";
+    return `
+      <section class="erpw-object-profile-brief" data-erpw-object-profile-brief>
+        <div class="erpw-object-profile-brief-copy">
+          <div class="erpw-object-profile-brief-title">Item buying context</div>
+          <div class="erpw-object-profile-brief-note">Supplier relationships, price references, demand, and readiness are grouped for buying review.</div>
+        </div>
+        <div class="erpw-object-profile-brief-chips" aria-label="Buying item detail summary">
+          <span class="erpw-object-profile-chip">${escapeHtml(readinessLabel)}</span>
+          <span class="erpw-object-profile-chip">${escapeHtml(rowCountLabel(detail.item_suppliers, "supplier", "suppliers"))}</span>
+          <span class="erpw-object-profile-chip">${escapeHtml(rowCountLabel(detail.item_prices, "price reference", "price references"))}</span>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderTabButton(tab, isActive) {
+    return `<button type="button" class="erpw-object-tab ${isActive ? "is-active" : ""}" role="tab" aria-selected="${isActive ? "true" : "false"}" data-erpw-object-tab="${escapeHtml(tab.key)}">${escapeHtml(tab.label)}</button>`;
+  }
+
+  function renderTabPanel(tab, isActive) {
+    return `<div class="erpw-object-tab-panel" role="tabpanel" data-erpw-object-tab-panel="${escapeHtml(tab.key)}" ${isActive ? "" : "hidden"}>${tab.content || `<div class="erpw-object-panel-empty">No content is available for this tab.</div>`}</div>`;
+  }
+
+  function renderObjectTabs(tabs, defaultKey) {
+    const activeKey = defaultKey || (tabs[0] && tabs[0].key) || "";
+    return `
+      <section class="erpw-object-tab-shell" data-erpw-object-tabs>
+        <div class="erpw-object-tabs" role="tablist" aria-label="Buying item detail sections">
+          ${tabs.map((tab) => renderTabButton(tab, tab.key === activeKey)).join("")}
+        </div>
+        <div class="erpw-object-tab-panels">
+          ${tabs.map((tab) => renderTabPanel(tab, tab.key === activeKey)).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function bindObjectTabs(viewState) {
+    viewState.$shell.off("click.erpWObjectTabs").on("click.erpWObjectTabs", "[data-erpw-object-tab]", function () {
+      const key = String(this.getAttribute("data-erpw-object-tab") || "");
+      const $tabs = $(this).closest("[data-erpw-object-tabs]");
+      $tabs.find("[data-erpw-object-tab]").removeClass("is-active").attr("aria-selected", "false");
+      $(this).addClass("is-active").attr("aria-selected", "true");
+      $tabs.find("[data-erpw-object-tab-panel]").prop("hidden", true);
+      $tabs.find(`[data-erpw-object-tab-panel="${key}"]`).prop("hidden", false);
+    });
+    viewState.$shell.off("click.erpWObjectReveal").on("click.erpWObjectReveal", "[data-erpw-show-recent]", function () {
+      const $button = $(this);
+      const limit = Number($button.attr("data-erpw-row-limit") || DETAIL_EXPANDED_ROW_LIMIT);
+      const $section = $button.closest("[data-erpw-object-section]");
+      $section.find("[data-erpw-extra-row]").each(function (index) {
+        if (index + DETAIL_ROW_LIMIT < limit) $(this).prop("hidden", false);
+      });
+      $button.closest(".erpw-list-row-reveal").remove();
+    });
   }
 
 
@@ -403,8 +503,8 @@
     if (!context || typeof ui.renderReadinessCard !== "function") return "";
     return ui.renderReadinessCard(context, {
       title: "Readiness Review",
-      note: "Item buying guidance only. Use Buying Procurement Context for controlled updates.",
-    });
+      note: "Item buying guidance only. Use Item Buying Context for controlled updates.",
+    }).replace(/Buying Procurement Context/g, "Item Buying Context");
   }
 
   function renderBuyingProfile(profile) {
@@ -418,7 +518,7 @@
       <section class="erpw-child-card erpw-item-buying-profile-card" data-erpw-item-buying-profile-card data-erpw-item-code="${escapeHtml(data.item_code || "")}">
         <div class="erpw-item-buying-profile-top">
           <div class="erpw-item-buying-profile-heading">
-            <div class="erpw-item-buying-profile-title">Buying Procurement Context</div>
+            <div class="erpw-item-buying-profile-title">Item Buying Context</div>
             <div class="erpw-item-buying-profile-note">${escapeHtml(canEdit ? "Controlled item buying context for procurement planning." : "Read-only item buying context for procurement planning.")}</div>
           </div>
           <div class="erpw-item-buying-profile-actions">
@@ -514,13 +614,41 @@
         </section>
       `;
     }
+    const tabs = [
+      {
+        key: "suppliers-prices",
+        label: "Suppliers & Prices",
+        content: `
+          ${renderSection("Approved suppliers", "Supplier relationships configured on the item master.", detail.item_suppliers, "Supplier reference", { key: "suppliers" })}
+          ${renderSection("Supplier price review", "Read-only buying Item Price context. No price updates are exposed.", detail.item_prices, "Price reference", { key: "prices" })}
+        `,
+      },
+      {
+        key: "readiness",
+        label: "Readiness Guidance",
+        content: readinessCardMarkup(detail.readiness_context) || `<div class="erpw-object-panel-empty">No readiness guidance is available for this item.</div>`,
+      },
+      {
+        key: "demand-orders",
+        label: "Demand & Orders",
+        content: renderSection("Open purchase orders", "Purchase order posture for buyer follow-up. Warehouse and Finance retain downstream ownership.", detail.purchase_orders, "Buyer follow-up", { key: "orders" }),
+      },
+      {
+        key: "quotation-history",
+        label: "Quotation History",
+        content: renderSection("Recent supplier quotations", "Recent quotation context linked to this item.", detail.supplier_quotations, "Supplier reference", { key: "quotations" }),
+      },
+      {
+        key: "references",
+        label: "References",
+        content: renderBuyingProfile(detail.buying_profile || {}),
+      },
+    ];
     return `
-      ${renderBuyingProfile(detail.buying_profile || {})}
-      ${readinessCardMarkup(detail.readiness_context)}
-      ${renderSection("Approved suppliers", "Supplier relationships configured on the item master.", detail.item_suppliers)}
-      ${renderSection("Supplier price review", "Read-only buying Item Price context. No price updates are exposed.", detail.item_prices)}
-      ${renderSection("Recent supplier quotations", "Recent quotation context linked to this item.", detail.supplier_quotations)}
-      ${renderSection("Open purchase orders", "Purchase order posture for buyer follow-up. Warehouse and Finance retain downstream ownership.", detail.purchase_orders)}
+      <div class="erpw-object-profile" data-erpw-object-profile="buying-item">
+        ${renderObjectBrief(detail)}
+        ${renderObjectTabs(tabs, "suppliers-prices")}
+      </div>
     `;
   }
 
@@ -545,6 +673,7 @@
         const name = String(this.getAttribute("data-erpw-procurement-detail-name") || "");
         if (route === PO_DETAIL_ROUTE) routeToPurchaseOrderFollowUp(name);
       });
+      bindObjectTabs(viewState);
       bindBuyingProfile(viewState);
       if (typeof readinessUi().bindReadinessLinks === "function") readinessUi().bindReadinessLinks(viewState.$shell);
     }).catch((error) => {
