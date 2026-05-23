@@ -2679,6 +2679,16 @@ async function checkSupplierDetail(page, user) {
   return { supplierName, state, hasNativeFormAction, actionStyles, compactHeader, purchaseOrderNavigation, toolbarExercise: { refresh: true, back: true } };
 }
 
+async function activateDetailTab(page, shellSelector, tabLabel) {
+  const tab = page.locator(`${shellSelector} [data-erpw-object-tab]`).filter({ hasText: tabLabel }).first();
+  await tab.waitFor({ state: "visible", timeout: TIMEOUT });
+  await tab.click();
+  await page.waitForFunction(({ selector, label }) => {
+    const active = document.querySelector(`${selector} [data-erpw-object-tab].is-active`);
+    return active && (active.innerText || "").replace(/\s+/g, " ").trim() === label;
+  }, { selector: shellSelector, label: tabLabel }, { timeout: TIMEOUT });
+}
+
 async function checkItemDetail(page, user) {
   const directoryResponse = await callMethod(page, "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context", {
     queue_key: "buying_item_directory",
@@ -2697,8 +2707,18 @@ async function checkItemDetail(page, user) {
   await assertSingleProcurementShell(page, "itemDetail", "Buying Item Detail direct route");
   const text = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Buying item profile|Buying Item Detail/i.test(text), "Item Detail shell did not render item summary", { text });
-  assert(/Approved suppliers|Supplier price review/i.test(text), "Item Detail did not render supplier or price context", { text });
-  assert(/Recent supplier quotations|Open purchase orders/i.test(text), "Item Detail did not render buying movement context", { text });
+  assert(/Suppliers & Prices|Readiness Guidance|Demand & Orders|Quotation History|References/i.test(text), "Item Detail did not render object-profile tabs", { text });
+  assert(/Approved suppliers|Supplier price review/i.test(text), "Item Detail default tab did not render supplier or price context", { text });
+  await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Demand & Orders");
+  const demandText = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Open purchase orders/i.test(demandText), "Item Detail Demand & Orders tab did not render buying movement context", { demandText });
+  await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Quotation History");
+  const quotationText = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Recent supplier quotations/i.test(quotationText), "Item Detail Quotation History tab did not render quotation context", { quotationText });
+  await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "References");
+  const referenceText = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Item Buying Context/i.test(referenceText), "Item Detail References tab did not render Item Buying Context", { referenceText });
+  assert(!/Buying Procurement Context/i.test(referenceText), "Item Detail References tab retained stale Buying Procurement Context label", { referenceText });
   assert(!/Detail runtime unavailable/i.test(text), "Item Detail fell back to missing runtime state", { text });
   const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-item-detail-shell", "Item Detail");
   const compactHeader = await checkCompactDetailHeader(page, ".erpw-procurement-item-detail-shell", "Item Detail");
@@ -2717,6 +2737,7 @@ async function checkItemDetail(page, user) {
   const purchaseRows = (((payload.detail || {}).purchase_orders || {}).rows || []);
   let purchaseOrderNavigation = { skipped: "no visible open purchase orders" };
   if (purchaseRows.length) {
+    await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Demand & Orders");
     const firstPurchaseOrder = purchaseRows[0];
     const purchaseOrderCell = ((firstPurchaseOrder.cells || {}).purchase_order || {});
     const purchaseOrderName = purchaseOrderCell.value || firstPurchaseOrder.key || "";
