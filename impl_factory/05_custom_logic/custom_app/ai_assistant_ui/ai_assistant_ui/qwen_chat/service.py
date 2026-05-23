@@ -5842,11 +5842,19 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 
 
 def run_phase4_compiled_rollout_smoke() -> Dict[str, Any]:
-	return _run_phase4_compiled_rollout_smoke_helper()
+	from ai_assistant_ui.qwen_chat.service_smoke_governance_facade import (
+		run_phase4_compiled_rollout_smoke as _facade_run_phase4_compiled_rollout_smoke,
+	)
+
+	return _facade_run_phase4_compiled_rollout_smoke()
 
 
 def run_phase4_compiled_rollout_governance_selftests() -> Dict[str, Any]:
-	return _run_phase4_compiled_rollout_governance_selftests_helper()
+	from ai_assistant_ui.qwen_chat.service_smoke_governance_facade import (
+		run_phase4_compiled_rollout_governance_selftests as _facade_run_phase4_compiled_rollout_governance_selftests,
+	)
+
+	return _facade_run_phase4_compiled_rollout_governance_selftests()
 
 
 def summarize_compiled_first_turn_audits(
@@ -5862,7 +5870,11 @@ def summarize_compiled_first_turn_audits(
 
 
 def run_phase4_compiled_rollout_monitoring_smoke() -> Dict[str, Any]:
-	return _run_phase4_compiled_rollout_monitoring_smoke_helper()
+	from ai_assistant_ui.qwen_chat.service_smoke_governance_facade import (
+		run_phase4_compiled_rollout_monitoring_smoke as _facade_run_phase4_compiled_rollout_monitoring_smoke,
+	)
+
+	return _facade_run_phase4_compiled_rollout_monitoring_smoke()
 
 
 def run_first_turn_regression_suite(messages: List[str] | None = None) -> Dict[str, Any]:
