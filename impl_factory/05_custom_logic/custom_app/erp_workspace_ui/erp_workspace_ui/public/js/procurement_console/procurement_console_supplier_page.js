@@ -602,18 +602,13 @@
     }
     const tabs = [
       {
-        key: "activity",
-        label: "Activity",
+        key: "profile",
+        label: "Profile",
         content: `
-          ${renderSection("Open or overdue purchase orders", "Current buyer follow-up posture for visible purchase orders.", detail.open_purchase_orders, "Buyer follow-up", { key: "activity-open-orders" })}
-          ${renderSection("Recent purchase orders", "Recent buying activity for this supplier.", detail.recent_purchase_orders, "Reference", { key: "activity-recent-orders" })}
-          ${renderSection("Supplier quotations", "Recent quotation context linked to this supplier.", detail.supplier_quotations, "Supplier reference", { key: "activity-quotations" })}
+          ${renderBuyingProfile(detail.buying_profile || {})}
+          ${readinessCardMarkup(detail.readiness_context) || `<div class="erpw-object-panel-empty">No readiness guidance is available for this supplier.</div>`}
+          ${renderSection("Buying contacts", "Visible contact records linked to this supplier.", detail.contacts, "Supplier reference", { key: "contacts" })}
         `,
-      },
-      {
-        key: "readiness",
-        label: "Readiness Guidance",
-        content: readinessCardMarkup(detail.readiness_context) || `<div class="erpw-object-panel-empty">No readiness guidance is available for this supplier.</div>`,
       },
       {
         key: "orders",
@@ -633,19 +628,10 @@
         label: "Quotations",
         content: renderSection("Supplier quotations", "Recent visible supplier quotation context.", detail.supplier_quotations, "Supplier reference", { key: "quotations" }),
       },
-      {
-        key: "references",
-        label: "References",
-        content: `
-          ${renderBuyingProfile(detail.buying_profile || {})}
-          ${renderSection("Buying contacts", "Visible contact records linked to this supplier.", detail.contacts, "Supplier reference", { key: "contacts" })}
-        `,
-      },
     ];
     return `
       <div class="erpw-object-profile" data-erpw-object-profile="supplier">
-        ${renderObjectBrief(detail)}
-        ${renderObjectTabs(tabs, "activity")}
+        ${renderObjectTabs(tabs, "profile")}
       </div>
     `;
   }

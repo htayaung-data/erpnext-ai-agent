@@ -5,6 +5,7 @@ const path = require("path");
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
 const TIMEOUT = Number(process.env.ERPW_PROCUREMENT_SMOKE_TIMEOUT || 60000);
 const ARTIFACT_DIR = process.env.ERPW_PROCUREMENT_ARTIFACT_DIR || path.join(__dirname, "artifacts", "procurement-phase3-assurance");
+const ASSET_OVERRIDE_ROOT = process.env.ERPW_PROCUREMENT_PHASE7J2C_ASSET_ROOT || "";
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 const USERS = [
@@ -66,6 +67,23 @@ function routeUrl(route) {
 
 function safeFileName(value) {
   return String(value || "shot").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+}
+
+async function installAssetOverrides(context) {
+  if (!ASSET_OVERRIDE_ROOT) return;
+  const overrides = [
+    { pattern: "**/assets/erp_workspace_ui/js/procurement_console/procurement_console_supplier_page.js*", file: "procurement_console_supplier_page.js" },
+    { pattern: "**/assets/erp_workspace_ui/js/procurement_console/procurement_console_item_page.js*", file: "procurement_console_item_page.js" },
+  ];
+  for (const item of overrides) {
+    await context.route(item.pattern, async (route) => {
+      const file = path.join(ASSET_OVERRIDE_ROOT, item.file);
+      if (fs.existsSync(file)) {
+        return route.fulfill({ path: file, contentType: "application/javascript" });
+      }
+      return route.continue();
+    });
+  }
 }
 
 async function captureSmokeScreenshot(page, name) {
@@ -1911,6 +1929,14 @@ async function checkSupplierAutocomplete(page) {
 async function assertDatePairSameRow(page, route, label) {
   await openDeskRoute(page, route);
   await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.waitForFunction((expectedRoute) => {
+    const shell = document.querySelector(".erpw-list-shell");
+    const routeOk = location.pathname === expectedRoute;
+    const notBusy = shell && shell.getAttribute("aria-busy") !== "true";
+    const hasStart = Boolean(document.querySelector('[data-erpw-list-field-shell-key="date_start"]'));
+    const hasEnd = Boolean(document.querySelector('[data-erpw-list-field-shell-key="date_end"]'));
+    return routeOk && notBusy && hasStart && hasEnd;
+  }, route, { timeout: TIMEOUT }).catch(() => null);
   const pair = await page.evaluate(() => {
     const start = document.querySelector('[data-erpw-list-field-shell-key="date_start"]');
     const end = document.querySelector('[data-erpw-list-field-shell-key="date_end"]');
@@ -2140,6 +2166,29 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
 async function assertEnterpriseReportFilterLayout(page, route, label) {
   await openDeskRoute(page, route);
   await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const ready = await page.waitForFunction((expectedPath) => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const shell = document.querySelector(".erpw-report-shell");
+    const controls = shell && shell.querySelector(".erpw-report-controls");
+    const fields = controls ? Array.from(controls.querySelectorAll(".erpw-report-control-field [data-erpw-control-key]")).filter(visible) : [];
+    const buttons = controls ? Array.from(controls.querySelectorAll(".erpw-report-command-actions button")).filter(visible) : [];
+    const text = shell ? shell.innerText || "" : "";
+    return location.pathname === expectedPath
+      && shell
+      && shell.classList.contains("is-procurement-report")
+      && controls
+      && fields.length > 0
+      && buttons.length > 0
+      && !/Loading live ERP report context/i.test(text);
+  }, route, { timeout: TIMEOUT }).then(() => true).catch(() => false);
+  if (!ready) {
+    await captureSmokeScreenshot(page, `${label}-report-filter-not-ready`);
+  }
   const layout = await page.evaluate(() => {
     const visible = (node) => {
       if (!node) return false;
@@ -2631,8 +2680,18 @@ async function checkSupplierDetail(page, user) {
   await assertSingleProcurementShell(page, "supplierDetail", "Supplier Detail direct route");
   const text = normalizeText(await page.locator(".erpw-procurement-supplier-detail-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Supplier buying profile|Supplier Detail/i.test(text), "Supplier Detail shell did not render supplier summary", { text });
-  assert(/Open or overdue purchase orders/i.test(text), "Supplier Detail did not render PO posture", { text });
-  assert(/RFQs/i.test(text) && /Supplier quotations/i.test(text), "Supplier Detail did not render sourcing context", { text });
+  assert(/Profile/i.test(text) && /Orders/i.test(text) && /RFQs/i.test(text) && /Quotations/i.test(text), "Supplier Detail did not render simplified object-profile tabs", { text });
+  const supplierTabs = await page.locator(".erpw-procurement-supplier-detail-shell [data-erpw-object-tab]").evaluateAll((nodes) => nodes.map((node) => (node.innerText || "").replace(/\s+/g, " ").trim()).filter(Boolean));
+  assert(JSON.stringify(supplierTabs) === JSON.stringify(["Profile", "Orders", "RFQs", "Quotations"]), "Supplier Detail tab set should match the simplified contract", { supplierTabs });
+  await activateDetailTab(page, ".erpw-procurement-supplier-detail-shell", "Orders");
+  const orderTabText = normalizeText(await page.locator(".erpw-procurement-supplier-detail-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Open or overdue purchase orders/i.test(orderTabText), "Supplier Detail Orders tab did not render PO posture", { orderTabText });
+  await activateDetailTab(page, ".erpw-procurement-supplier-detail-shell", "RFQs");
+  const rfqTabText = normalizeText(await page.locator(".erpw-procurement-supplier-detail-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/RFQs/i.test(rfqTabText), "Supplier Detail RFQs tab did not render RFQ context", { rfqTabText });
+  await activateDetailTab(page, ".erpw-procurement-supplier-detail-shell", "Quotations");
+  const quotationTabText = normalizeText(await page.locator(".erpw-procurement-supplier-detail-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Supplier quotations/i.test(quotationTabText), "Supplier Detail Quotations tab did not render quotation context", { quotationTabText });
   assert(!/Detail runtime unavailable/i.test(text), "Supplier Detail fell back to missing runtime state", { text });
   const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-supplier-detail-shell", "Supplier Detail");
   const compactHeader = await checkCompactDetailHeader(page, ".erpw-procurement-supplier-detail-shell", "Supplier Detail");
@@ -2651,6 +2710,7 @@ async function checkSupplierDetail(page, user) {
   ];
   let purchaseOrderNavigation = { skipped: "no visible supplier purchase orders" };
   if (supplierPurchaseRows.length) {
+    await activateDetailTab(page, ".erpw-procurement-supplier-detail-shell", "Orders");
     const firstPurchaseOrder = supplierPurchaseRows[0];
     const purchaseOrderCell = ((firstPurchaseOrder.cells || {}).purchase_order || {});
     const purchaseOrderName = purchaseOrderCell.value || firstPurchaseOrder.key || "";
@@ -2707,18 +2767,20 @@ async function checkItemDetail(page, user) {
   await assertSingleProcurementShell(page, "itemDetail", "Buying Item Detail direct route");
   const text = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Buying item profile|Buying Item Detail/i.test(text), "Item Detail shell did not render item summary", { text });
-  assert(/Suppliers & Prices|Readiness Guidance|Demand & Orders|Quotation History|References/i.test(text), "Item Detail did not render object-profile tabs", { text });
-  assert(/Approved suppliers|Supplier price review/i.test(text), "Item Detail default tab did not render supplier or price context", { text });
-  await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Demand & Orders");
-  const demandText = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
-  assert(/Open purchase orders/i.test(demandText), "Item Detail Demand & Orders tab did not render buying movement context", { demandText });
+  assert(/Profile|Suppliers & Prices|Orders|Quotation History/i.test(text), "Item Detail did not render simplified object-profile tabs", { text });
+  const itemTabs = await page.locator(".erpw-procurement-item-detail-shell [data-erpw-object-tab]").evaluateAll((nodes) => nodes.map((node) => (node.innerText || "").replace(/\s+/g, " ").trim()).filter(Boolean));
+  assert(JSON.stringify(itemTabs) === JSON.stringify(["Profile", "Suppliers & Prices", "Orders", "Quotation History"]), "Item Detail tab set should match the simplified contract", { itemTabs });
+  assert(/Item Buying Context/i.test(text), "Item Detail default Profile tab did not render Item Buying Context", { text });
+  assert(!/Buying Procurement Context/i.test(text), "Item Detail retained stale Buying Procurement Context label", { text });
+  await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Suppliers & Prices");
+  const suppliersPricesText = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Approved suppliers|Supplier price review/i.test(suppliersPricesText), "Item Detail Suppliers & Prices tab did not render supplier or price context", { suppliersPricesText });
+  await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Orders");
+  const ordersText = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Open purchase orders/i.test(ordersText), "Item Detail Orders tab did not render buying movement context", { ordersText });
   await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Quotation History");
   const quotationText = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Recent supplier quotations/i.test(quotationText), "Item Detail Quotation History tab did not render quotation context", { quotationText });
-  await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "References");
-  const referenceText = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
-  assert(/Item Buying Context/i.test(referenceText), "Item Detail References tab did not render Item Buying Context", { referenceText });
-  assert(!/Buying Procurement Context/i.test(referenceText), "Item Detail References tab retained stale Buying Procurement Context label", { referenceText });
   assert(!/Detail runtime unavailable/i.test(text), "Item Detail fell back to missing runtime state", { text });
   const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-item-detail-shell", "Item Detail");
   const compactHeader = await checkCompactDetailHeader(page, ".erpw-procurement-item-detail-shell", "Item Detail");
@@ -2737,7 +2799,7 @@ async function checkItemDetail(page, user) {
   const purchaseRows = (((payload.detail || {}).purchase_orders || {}).rows || []);
   let purchaseOrderNavigation = { skipped: "no visible open purchase orders" };
   if (purchaseRows.length) {
-    await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Demand & Orders");
+    await activateDetailTab(page, ".erpw-procurement-item-detail-shell", "Orders");
     const firstPurchaseOrder = purchaseRows[0];
     const purchaseOrderCell = ((firstPurchaseOrder.cells || {}).purchase_order || {});
     const purchaseOrderName = purchaseOrderCell.value || firstPurchaseOrder.key || "";
@@ -2753,7 +2815,7 @@ async function checkItemDetail(page, user) {
     await assertSingleProcurementShell(page, "poDetail", "Item Detail purchase order navigation");
     const poText = normalizeText(await page.locator(".erpw-procurement-po-follow-up-shell").first().innerText({ timeout: TIMEOUT }));
     assert(poText.includes(purchaseOrderName), "Item Detail PO navigation did not load the selected Procurement PO detail", { purchaseOrderName, poText });
-    assert(!/Buying Item Detail|Buying item profile/i.test(poText), "PO Detail retained stale Buying Item Detail context after Item row navigation", { purchaseOrderName, poText });
+    assert(!/Buying Item Detail|Item Buying Context/i.test(poText), "PO Detail retained stale Buying Item Detail context after Item row navigation", { purchaseOrderName, poText });
     await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await assertSingleProcurementShell(page, "itemDetail", "Item Detail after browser back from PO detail");
     purchaseOrderNavigation = { purchaseOrderName };
@@ -3062,6 +3124,7 @@ async function runUser(browser, user) {
     ignoreHTTPSErrors: true,
     viewport: { width: 1440, height: 1000 },
   });
+  await installAssetOverrides(context);
   const page = await context.newPage();
   const pageErrors = [];
   const consoleMessages = [];

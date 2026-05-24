@@ -22,6 +22,12 @@ if [ -n "${ERPW_PLAYWRIGHT_ARTIFACT_ROOT:-}" ]; then
 	EXTRA_DOCKER_ARGS+=(-v "$ERPW_PLAYWRIGHT_ARTIFACT_ROOT:/freeze-artifacts")
 fi
 
+DOCKER_PROCUREMENT_PHASE7J2C_ASSET_ROOT="${ERPW_PROCUREMENT_PHASE7J2C_ASSET_ROOT:-}"
+if [ -n "${ERPW_PROCUREMENT_PHASE7J2C_ASSET_ROOT:-}" ]; then
+	EXTRA_DOCKER_ARGS+=(-v "$ERPW_PROCUREMENT_PHASE7J2C_ASSET_ROOT:/phase7j2c-assets:ro")
+	DOCKER_PROCUREMENT_PHASE7J2C_ASSET_ROOT="/phase7j2c-assets"
+fi
+
 mkdir -p "$SCRIPT_DIR/artifacts" "$SCRIPT_DIR/test-results"
 
 docker run --rm \
@@ -79,6 +85,8 @@ docker run --rm \
 	-e ERPW_PROCUREMENT_PHASE7J1B_READINESS_SAMPLES \
 	-e ERPW_PROCUREMENT_PHASE7J1B_READINESS_TARGET_MS \
 	-e ERPW_PROCUREMENT_PHASE7J1B_READINESS_MAX_MS \
+	-e ERPW_PROCUREMENT_PHASE7J2C_ARTIFACT_DIR \
+	-e ERPW_PROCUREMENT_PHASE7J2C_ASSET_ROOT="$DOCKER_PROCUREMENT_PHASE7J2C_ASSET_ROOT" \
 	-e ERPW_PROCUREMENT_DETAIL_PERFORMANCE_OUT \
 	-e ERPW_PROCUREMENT_DETAIL_ASSET_ROOT \
 	-e ERPW_PROCUREMENT_DETAIL_API_THRESHOLD \
@@ -89,4 +97,4 @@ docker run --rm \
 	-e ERPW_PROCUREMENT_PURCHASE_ORDER \
 	-e ERPW_SALES_CONSOLE_ROUTE \
 	"$IMAGE" \
-	bash -lc "npm ci && ${SMOKE_COMMAND}"
+	bash -lc "set -euo pipefail; rm -rf /tmp/erpw-ui-smoke; mkdir -p /tmp/erpw-ui-smoke; tar --exclude='./node_modules' --exclude='./test-results' -cf - -C /work . | tar -xf - -C /tmp/erpw-ui-smoke; cd /tmp/erpw-ui-smoke; npm ci && ${SMOKE_COMMAND}"

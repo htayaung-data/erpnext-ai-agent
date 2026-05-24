@@ -616,6 +616,14 @@
     }
     const tabs = [
       {
+        key: "profile",
+        label: "Profile",
+        content: `
+          ${renderBuyingProfile(detail.buying_profile || {})}
+          ${readinessCardMarkup(detail.readiness_context) || `<div class="erpw-object-panel-empty">No readiness guidance is available for this item.</div>`}
+        `,
+      },
+      {
         key: "suppliers-prices",
         label: "Suppliers & Prices",
         content: `
@@ -624,13 +632,8 @@
         `,
       },
       {
-        key: "readiness",
-        label: "Readiness Guidance",
-        content: readinessCardMarkup(detail.readiness_context) || `<div class="erpw-object-panel-empty">No readiness guidance is available for this item.</div>`,
-      },
-      {
-        key: "demand-orders",
-        label: "Demand & Orders",
+        key: "orders",
+        label: "Orders",
         content: renderSection("Open purchase orders", "Purchase order posture for buyer follow-up. Warehouse and Finance retain downstream ownership.", detail.purchase_orders, "Buyer follow-up", { key: "orders" }),
       },
       {
@@ -638,16 +641,10 @@
         label: "Quotation History",
         content: renderSection("Recent supplier quotations", "Recent quotation context linked to this item.", detail.supplier_quotations, "Supplier reference", { key: "quotations" }),
       },
-      {
-        key: "references",
-        label: "References",
-        content: renderBuyingProfile(detail.buying_profile || {}),
-      },
     ];
     return `
       <div class="erpw-object-profile" data-erpw-object-profile="buying-item">
-        ${renderObjectBrief(detail)}
-        ${renderObjectTabs(tabs, "suppliers-prices")}
+        ${renderObjectTabs(tabs, "profile")}
       </div>
     `;
   }
