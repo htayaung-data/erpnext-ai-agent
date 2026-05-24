@@ -1,0 +1,123 @@
+{
+  "manifest_name": "V1_BROWSER_UAT_SYNTHETIC_SET_001",
+  "site": {
+    "site_label": "EC7H Synthetic Non Production Site",
+    "environment_type": "non_production"
+  },
+  "context": {
+    "company": "EC7H Synthetic Company",
+    "date_context": "synthetic_current_month"
+  },
+  "customers": [
+    {
+      "customer_id": "EC7H-CUST-A",
+      "display_name": "EC7H Synthetic Customer A"
+    }
+  ],
+  "suppliers": [
+    {
+      "supplier_id": "EC7H-SUP-A",
+      "display_name": "EC7H Synthetic Supplier A"
+    }
+  ],
+  "items": [
+    {
+      "item_id": "EC7H-ITEM-A",
+      "display_name": "EC7H Synthetic Item A"
+    }
+  ],
+  "sales_invoices": [
+    {
+      "invoice_id": "EC7H-SINV-0001",
+      "display_name": "EC7H Synthetic Sales Invoice 0001",
+      "customer_id": "EC7H-CUST-A"
+    }
+  ],
+  "summaries": {
+    "ar": {
+      "record_ids": [
+        "EC7H-CUST-A"
+      ]
+    },
+    "ap": {
+      "record_ids": [
+        "EC7H-SUP-A"
+      ]
+    },
+    "pnl": {
+      "company": "EC7H Synthetic Company"
+    },
+    "sales": {
+      "record_ids": [
+        "EC7H-CUST-A",
+        "EC7H-ITEM-A"
+      ]
+    },
+    "boundary": {
+      "policy": "synthetic_boundary_only"
+    }
+  },
+  "scenario_mappings": {
+    "V1RA-001": {
+      "required_records": [
+        "EC7H-CUST-A"
+      ],
+      "expected_dataset_status": "mapped"
+    },
+    "V1RA-009": {
+      "required_records": [
+        "EC7H-SUP-A"
+      ],
+      "expected_dataset_status": "mapped"
+    },
+    "V1RA-017": {
+      "required_records": [
+        "EC7H Synthetic Company"
+      ],
+      "expected_dataset_status": "mapped"
+    },
+    "V1RA-025": {
+      "required_records": [
+        "EC7H-CUST-A",
+        "EC7H-ITEM-A"
+      ],
+      "expected_dataset_status": "mapped"
+    },
+    "V1RA-033": {
+      "required_records": [
+        "EC7H-SINV-0001",
+        "EC7H-CUST-A"
+      ],
+      "expected_dataset_status": "mapped"
+    },
+    "V1RA-041": {
+      "required_records": [
+        "EC7H-CUST-A"
+      ],
+      "expected_dataset_status": "mapped"
+    },
+    "V1RA-049": {
+      "required_records": [
+        "EC7H-CUST-A",
+        "EC7H-SUP-A",
+        "EC7H-ITEM-A",
+        "EC7H Synthetic Company"
+      ],
+      "expected_dataset_status": "mapped"
+    },
+    "V1RA-055": {
+      "required_records": [
+        "EC7H-CUST-A"
+      ],
+      "expected_dataset_status": "mapped"
+    },
+    "V1RA-061": {
+      "required_records": [],
+      "expected_dataset_status": "boundary_only"
+    },
+    "V1RA-064": {
+      "required_records": [],
+      "expected_dataset_status": "boundary_only"
+    }
+  }
+}
