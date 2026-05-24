@@ -731,22 +731,40 @@
 
     if (!settings.refresh && cached && cached.request) {
       traceDetailLoad({ type: "cache-request-reuse", routeSignature, cacheKey, name: itemCode, mount: cached.payload ? "cached-payload" : "loading" });
-      mountPayload(viewState, cached.payload || loadingPayload(itemCode));
+      if (cached.payload) {
+        if (viewState.mountedPayloadKey !== cacheKey) {
+          viewState.mountedPayloadKey = cacheKey;
+          mountPayload(viewState, cached.payload);
+        }
+      } else if (viewState.loadingCacheKey !== cacheKey) {
+        viewState.loadingCacheKey = cacheKey;
+        mountPayload(viewState, loadingPayload(itemCode));
+      }
       cached.request.then((payload) => {
         traceDetailLoad({ type: "cache-request-resolved", routeSignature, cacheKey, name: itemCode, routeStillActive: viewState.routeSignature === routeSignature });
-        if (viewState.routeSignature === routeSignature) mountPayload(viewState, payload || {});
+        if (viewState.routeSignature === routeSignature) {
+          viewState.loadingCacheKey = "";
+          viewState.mountedPayloadKey = cacheKey;
+          mountPayload(viewState, payload || {});
+        }
       });
       return cached.request;
     }
 
     if (!settings.refresh && cached && cached.payload && Date.now() - cached.loadedAt < SAME_ROUTE_CACHE_TTL_MS) {
       traceDetailLoad({ type: "cache-payload-reuse", routeSignature, cacheKey, name: itemCode, cachedAgeMs: Date.now() - cached.loadedAt });
-      mountPayload(viewState, cached.payload);
+      if (viewState.mountedPayloadKey !== cacheKey) {
+        viewState.mountedPayloadKey = cacheKey;
+        mountPayload(viewState, cached.payload);
+      }
       return Promise.resolve(cached.payload);
     }
 
     traceDetailLoad({ type: "request-start", routeSignature, cacheKey, name: itemCode });
-    mountPayload(viewState, loadingPayload(itemCode));
+    if (viewState.loadingCacheKey !== cacheKey) {
+      viewState.loadingCacheKey = cacheKey;
+      mountPayload(viewState, loadingPayload(itemCode));
+    }
     const entry = { request: null, payload: null, loadedAt: 0 };
     contextRequestCache[cacheKey] = entry;
     entry.request = frappe.call({
@@ -757,14 +775,22 @@
       entry.payload = payload;
       entry.loadedAt = Date.now();
       traceDetailLoad({ type: "request-success", routeSignature, cacheKey, name: itemCode, routeStillActive: viewState.routeSignature === routeSignature });
-      if (viewState.routeSignature === routeSignature) mountPayload(viewState, payload);
+      if (viewState.routeSignature === routeSignature) {
+        viewState.loadingCacheKey = "";
+        viewState.mountedPayloadKey = cacheKey;
+        mountPayload(viewState, payload);
+      }
       return payload;
     }).catch((error) => {
       const payload = unavailablePayload(error);
       entry.payload = payload;
       entry.loadedAt = Date.now();
       traceDetailLoad({ type: "request-error", routeSignature, cacheKey, name: itemCode, routeStillActive: viewState.routeSignature === routeSignature, message: error && error.message ? error.message : String(error || "") });
-      if (viewState.routeSignature === routeSignature) mountPayload(viewState, payload);
+      if (viewState.routeSignature === routeSignature) {
+        viewState.loadingCacheKey = "";
+        viewState.mountedPayloadKey = cacheKey;
+        mountPayload(viewState, payload);
+      }
       return payload;
     });
     entry.request.then(() => {

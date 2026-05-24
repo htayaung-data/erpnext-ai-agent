@@ -18,6 +18,7 @@
   let consoleRuntimePromise = null;
   let activeOverviewGuardBound = false;
   let overviewRenderSerial = 0;
+  let activeOverviewRenderState = null;
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
   }
@@ -110,6 +111,13 @@
     });
   }
 
+  function overviewRouteSignature() {
+    const pathRoute = pathRouteParts();
+    if (Array.isArray(pathRoute) && String(pathRoute[0] || "") === PAGE_KEY) return pathRoute.join("|");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) ? route.join("|") : "";
+  }
+
   function isActiveProcurementRoute() {
     const pathRoute = pathRouteParts();
     if (String(pathRoute[0] || "") === PAGE_KEY) return true;
@@ -181,7 +189,7 @@
   function renderLoadingState(page) {
     if (!isActiveProcurementRoute()) return;
     const $root = $(`
-      <div class="sales-console-shell" data-erpw-workspace="procurement" data-erpw-console-runtime="loading" data-erpw-console-bootstrap="loading">
+      <div class="sales-console-shell" data-erpw-workspace="procurement" data-erpw-console-runtime="loading" data-erpw-console-bootstrap="loading" data-erpw-overview-route-signature="${escapeHtml(overviewRouteSignature())}">
         <section class="sales-console-card sales-console-header">
           <div class="sales-console-header-row">
             <div class="sales-console-header-copy">
@@ -558,11 +566,13 @@
     });
   }
 
-  function renderWorkbench(page) {
+  function renderWorkbench(page, routeSignature) {
     const pageState = { payload: {} };
     const renderToken = ++overviewRenderSerial;
+    const signature = routeSignature || overviewRouteSignature();
     const $root = $('<div class="sales-console-shell" data-erpw-workspace="procurement" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="loading"></div>');
     $root.attr("data-erpw-overview-render-token", String(renderToken));
+    $root.attr("data-erpw-overview-route-signature", signature);
 
     const $header = $(`
       <section class="sales-console-card sales-console-header">
@@ -847,10 +857,13 @@
     setTimeout(cleanupOverviewPageHeads, 0);
     setTimeout(cleanupOverviewPageHeads, 120);
 
-    fetchBootstrapWithRetry($root, 0).then((response) => {
+    const bootstrapRequest = fetchBootstrapWithRetry($root, 0);
+    activeOverviewRenderState = { routeSignature: signature, phase: "bootstrap", token: renderToken, root: $root.get(0), request: bootstrapRequest };
+    bootstrapRequest.then((response) => {
       if (!isCurrentOverviewRoot($root, renderToken)) return;
       const payload = response && response.message ? response.message : {};
       pageState.payload = payload;
+      if (activeOverviewRenderState && activeOverviewRenderState.token === renderToken) activeOverviewRenderState.phase = "ready";
       if (payload.state && payload.state.kind === "restricted") {
         renderState(page, payload.state);
         return;
@@ -909,20 +922,22 @@
   function render(wrapper) {
     if (!isActiveProcurementRoute()) return;
     if (hasReadyOverviewShell()) return;
+    const routeSignature = overviewRouteSignature();
+    const active = activeOverviewRenderState;
+    if (active && active.routeSignature === routeSignature && active.phase !== "error" && active.root && document.body.contains(active.root)) return;
     cleanupRouteShells();
     cleanupOverviewPageHeads();
     const page = makeConsolePage(wrapper);
     renderLoadingState(page);
+    activeOverviewRenderState = { routeSignature, phase: "runtime", root: pageBodyElement(page) };
     if (wrapper) {
-      const route = frappe.get_route ? frappe.get_route() : [];
-      wrapper.__erpwProcurementConsole = {
-        routeSignature: Array.isArray(route) ? route.join("|") : "",
-      };
+      wrapper.__erpwProcurementConsole = { routeSignature };
     }
     ensureConsoleRuntime().then(() => {
-      if (!isActiveProcurementRoute()) return;
-      renderWorkbench(page);
+      if (!isActiveProcurementRoute() || overviewRouteSignature() !== routeSignature) return;
+      renderWorkbench(page, routeSignature);
     }).catch((error) => {
+      if (activeOverviewRenderState && activeOverviewRenderState.routeSignature === routeSignature) activeOverviewRenderState.phase = "error";
       renderState(page, {
         kind: "error",
         title: "Procurement Console could not be loaded",
@@ -940,7 +955,9 @@
     const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="procurement"]');
     if (!shell) return true;
     if (shell.getAttribute("data-erpw-direct-first-paint") === "procurement-console") return true;
-    if (shell.getAttribute("data-erpw-console-runtime") === "loading") return true;
+    const runtimeState = shell.getAttribute("data-erpw-console-runtime") || "";
+    const bootstrapState = shell.getAttribute("data-erpw-console-bootstrap") || "";
+    if (runtimeState === "loading" || bootstrapState === "loading" || bootstrapState === "retrying") return false;
     return !document.querySelector(".sales-console-kpi-card");
   }
 

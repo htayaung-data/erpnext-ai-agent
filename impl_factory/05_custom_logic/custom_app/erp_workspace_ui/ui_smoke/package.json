@@ -54,7 +54,8 @@
     "test:procurement-phase7j1b-performance": "node procurement_phase7j1b_performance_smoke.js",
     "test:procurement-phase7j2a": "node procurement_phase7j2a_smoke.js",
     "test:procurement-phase7j2c": "node procurement_phase7j2c_smoke.js",
-    "test:procurement-phase7k": "node procurement_phase7k_quick_find_smoke.js"
+    "test:procurement-phase7k": "node procurement_phase7k_quick_find_smoke.js",
+    "test:procurement-phase7l-performance": "node procurement_phase7l_performance_smoke.js"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

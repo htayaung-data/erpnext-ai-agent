@@ -9,6 +9,8 @@
   const HOME_ROUTE = procurementRoutes.home || "procurement-console";
   const CONTEXT_METHOD = procurementMethods.worklistContext || "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context";
   let activeViewState = null;
+  const SAME_ROUTE_CACHE_TTL_MS = 5000;
+  const contextLoadCache = Object.create(null);
 
   function ensureProcurementChromeStyle() {
     if (document.getElementById("erpw-procurement-managed-chrome-style")) return;
@@ -75,6 +77,18 @@
     frappe.route_options = {};
     return options;
   }
+
+  function stableStringify(value) {
+    if (!value || typeof value !== "object") return "{}";
+    const keys = Object.keys(value).sort();
+    const normalized = {};
+    keys.forEach((key) => {
+      const current = value[key];
+      if (current !== undefined && current !== null && String(current) !== "") normalized[key] = current;
+    });
+    return JSON.stringify(normalized);
+  }
+
 
   function ensureHost(page, wrapper) {
     const $parent = page && page.body ? $(page.body) : $(wrapper);
@@ -268,38 +282,92 @@
     const queueKey = resolveQueueKey(route);
     const routeSignature = Array.isArray(route) ? route.join("|") : "";
     viewState.routeSignature = routeSignature;
-    const requestToken = (viewState.requestToken || 0) + 1;
-    viewState.requestToken = requestToken;
     const routedFilters = nextFilters === undefined ? consumeRouteFilters() : null;
     viewState.activeFilters = nextFilters !== undefined ? Object.assign({}, nextFilters || {}) : Object.assign({}, routedFilters || viewState.activeFilters || {});
+    const loadKey = routeSignature + "|" + stableStringify(viewState.activeFilters || {});
 
     if (!queueKey) {
       mountPayload(viewState, routeMissingConfig());
-      return;
+      return Promise.resolve();
     }
 
+    if (!settings.partialDataRefresh && !settings.refresh && viewState.currentLoadKey === loadKey) {
+      if (viewState.inFlightRequest) return viewState.inFlightRequest;
+      if (viewState.lastPayload && viewState.lastLoadedAt && Date.now() - viewState.lastLoadedAt < SAME_ROUTE_CACHE_TTL_MS) {
+        return Promise.resolve(viewState.lastPayload);
+      }
+    }
+
+    if (!settings.partialDataRefresh && !settings.refresh) {
+      const cachedLoad = contextLoadCache[loadKey];
+      if (cachedLoad && cachedLoad.request) {
+        if (viewState.loadingLoadKey !== loadKey && viewState.mountedPayloadLoadKey !== loadKey) {
+          viewState.loadingLoadKey = loadKey;
+          mountPayload(viewState, loadingConfig(queueKey));
+        }
+        const joinedRequest = cachedLoad.request.then((payload) => {
+          if (viewState.routeSignature !== routeSignature || !isCurrentWorklistRoute(routeSignature)) return payload;
+          viewState.lastPayload = payload;
+          viewState.lastLoadedAt = Date.now();
+          viewState.loadingLoadKey = "";
+          viewState.mountedPayloadLoadKey = loadKey;
+          syncWorklistChromeTitle(viewState, payload || {});
+          mountPayload(viewState, payload || {}, { refreshControls: Boolean(settings.refreshControls) });
+          return payload;
+        });
+        viewState.currentLoadKey = loadKey;
+        viewState.inFlightRequest = joinedRequest;
+        joinedRequest.finally(() => {
+          if (viewState.inFlightRequest === joinedRequest) viewState.inFlightRequest = null;
+        });
+        return joinedRequest;
+      }
+      if (cachedLoad && cachedLoad.payload && cachedLoad.loadedAt && Date.now() - cachedLoad.loadedAt < SAME_ROUTE_CACHE_TTL_MS) {
+        viewState.currentLoadKey = loadKey;
+        viewState.lastPayload = cachedLoad.payload;
+        viewState.lastLoadedAt = cachedLoad.loadedAt;
+        viewState.loadingLoadKey = "";
+        if (viewState.mountedPayloadLoadKey !== loadKey) {
+          viewState.mountedPayloadLoadKey = loadKey;
+          syncWorklistChromeTitle(viewState, cachedLoad.payload || {});
+          mountPayload(viewState, cachedLoad.payload || {}, { refreshControls: Boolean(settings.refreshControls) });
+        }
+        return Promise.resolve(cachedLoad.payload);
+      }
+    }
+
+    viewState.currentLoadKey = loadKey;
+    const requestToken = (viewState.requestToken || 0) + 1;
+    viewState.requestToken = requestToken;
     const partialDataRefresh = Boolean(settings.partialDataRefresh && viewState.$host && viewState.$host.find(".erpw-list-shell").length);
     if (partialDataRefresh) {
       setDataRefreshing(viewState, true);
-    } else {
+    } else if (viewState.loadingLoadKey !== loadKey) {
+      viewState.loadingLoadKey = loadKey;
       mountPayload(viewState, loadingConfig(queueKey));
     }
 
-    frappe.call({
+    const request = frappe.call({
       method: CONTEXT_METHOD,
       args: {
         queue_key: queueKey,
         filters: viewState.activeFilters || {},
       },
     }).then((response) => {
-      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken || !isCurrentWorklistRoute(routeSignature)) return;
+      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken || !isCurrentWorklistRoute(routeSignature)) return null;
       const payload = response && response.message ? response.message : {};
+      viewState.lastPayload = payload;
+      viewState.lastLoadedAt = Date.now();
+      viewState.loadingLoadKey = "";
+      viewState.mountedPayloadLoadKey = loadKey;
+      contextLoadCache[loadKey] = { payload, loadedAt: viewState.lastLoadedAt, request: null };
       syncWorklistChromeTitle(viewState, payload);
       mountPayload(viewState, payload, { partialDataRefresh, refreshControls: Boolean(settings.refreshControls) });
+      return payload;
     }).catch((error) => {
-      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken || !isCurrentWorklistRoute(routeSignature)) return;
+      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken || !isCurrentWorklistRoute(routeSignature)) return null;
       setDataRefreshing(viewState, false);
-      mountPayload(viewState, {
+      const payload = {
         summary: {
           title: "Procurement queue unavailable",
           subtitle: "The queue could not be loaded right now.",
@@ -313,8 +381,25 @@
             detail: error && error.message ? error.message : "The operational queue could not be loaded.",
           },
         },
-      });
+      };
+      viewState.lastPayload = payload;
+      viewState.lastLoadedAt = Date.now();
+      viewState.loadingLoadKey = "";
+      viewState.mountedPayloadLoadKey = loadKey;
+      contextLoadCache[loadKey] = { payload, loadedAt: viewState.lastLoadedAt, request: null };
+      mountPayload(viewState, payload);
+      return payload;
     });
+    viewState.inFlightRequest = request;
+    if (!settings.partialDataRefresh && !settings.refresh) {
+      contextLoadCache[loadKey] = { request, payload: null, loadedAt: 0 };
+    }
+    request.finally(() => {
+      if (viewState.inFlightRequest === request) viewState.inFlightRequest = null;
+      const cachedLoad = contextLoadCache[loadKey];
+      if (cachedLoad && cachedLoad.request === request) cachedLoad.request = null;
+    });
+    return request;
   }
 
   function cleanupRouteShells() {
