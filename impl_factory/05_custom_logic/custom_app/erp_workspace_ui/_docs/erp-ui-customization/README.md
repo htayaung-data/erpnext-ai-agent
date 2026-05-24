@@ -54,6 +54,7 @@ Freeze and governance status:
 - Procurement Console Phase 7J UX Information Architecture redesign is documented on 2026-05-20 as a docs-only plan for compressing Manager Readiness, tabbing supplier/item detail activity, polishing managed form/review hierarchy, and improving report/directory comprehension without changing the protected Phase 7I runtime baseline.
 - Procurement Console Phase 7J1D Readiness Review Queue evidence correction and premium polish is protected on 2026-05-23 at `88b144263f594f98e6828d52628b5d1983dd7e62`; the previous 21 item buying warnings were corrected to 11 valid warnings after sales/purchase history was counted as operational evidence, clear categories became compact pills, readiness performance remained healthy, Purchase User readiness calls remained zero, and the post-live protected workspace gate passed at `/tmp/procurement-readiness-sales-history-protected-live-20260523T122410Z`.
 - Procurement Console Phase 7J2 Supplier and Buying Item Detail tabbed information architecture is documented on 2026-05-23 as a docs-only design plan for turning stacked Supplier/Item detail sections into object-style tabs, recent-row lists, productized drilldowns, and business-friendly ownership labels while preserving Phase 7J1D protected behavior.
+- Procurement Console Phase 7J2B Supplier and Buying Item Detail tab simplification review is documented on 2026-05-24 as a docs-only recommendation to default both pages to Profile, remove redundant Activity/References/standalone Readiness tabs, reduce duplicate badges, and keep Phase 7J2A protected behavior without runtime changes.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -151,6 +152,7 @@ Documents in this folder:
 - `procurement-console-phase7j-ux-information-architecture-redesign-plan-2026-05-20.md`
 - `procurement-console-phase7j1d-readiness-review-polish-baseline-2026-05-23.md`
 - `procurement-console-phase7j2-supplier-item-detail-tabs-design-plan-2026-05-23.md`
+- `procurement-console-phase7j2b-supplier-item-tab-simplification-review-2026-05-24.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
