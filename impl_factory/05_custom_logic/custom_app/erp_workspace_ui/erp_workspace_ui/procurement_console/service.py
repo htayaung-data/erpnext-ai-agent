@@ -836,7 +836,7 @@ def _build_phase1_overview() -> dict[str, object]:
 			"purchase_orders_not_billed_visibility": {
 				"state": "live",
 				"value": orders_not_billed_visibility,
-				"note": "Received orders not fully billed; visibility only.",
+				"note": "Received orders not fully billed; read-only follow-up.",
 				"badgeClass": "review",
 			},
 			"purchase_orders_supplier_follow_up": {

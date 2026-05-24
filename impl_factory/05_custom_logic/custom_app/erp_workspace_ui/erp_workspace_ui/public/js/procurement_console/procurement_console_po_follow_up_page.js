@@ -266,7 +266,7 @@
             <div class="erpw-child-section-header-title">Item lines</div>
             <div class="erpw-child-section-header-note">Line-level quantity, receipt posture, warehouse, required date, and source references.</div>
           </div>
-          <div class="erpw-child-section-header-status">Visibility only</div>
+          <div class="erpw-child-section-header-status">Read-only follow-up</div>
         </div>
         ${renderTable(detail.items || {})}
       </section>

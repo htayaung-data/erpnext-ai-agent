@@ -244,7 +244,7 @@ def _purchase_order_payload(
 				+ common.standard_actions()
 			),
 
-			"scopeChips": ["Purchase Order", "Visibility only"],
+			"scopeChips": ["Purchase Order", "Buyer follow-up"],
 		},
 		"metrics": [
 			common.metric("Orders in view", len(rows), "Matching purchase orders."),
