@@ -142,10 +142,18 @@ async function quickFindState(page) {
       const style = window.getComputedStyle(node);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
     };
+    const rectFor = (node) => {
+      if (!node || !visible(node)) return null;
+      const rect = node.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, height: rect.height };
+    };
     const section = document.querySelector('[data-procurement-quick-find]');
     const input = document.querySelector('[data-procurement-quick-find-input]');
     const suggestions = document.querySelector('[data-procurement-quick-find-suggestions]');
     const preview = document.querySelector('[data-procurement-quick-find-preview]');
+    const createActions = document.querySelector('[data-section-key="create-actions"]');
+    const readiness = document.querySelector('[data-procurement-manager-readiness]');
+    const note = section ? section.querySelector('.sales-console-section-note') : null;
     const bodyText = (document.body.innerText || '').replace(/\s+/g, ' ').trim();
     const actionText = Array.from(document.querySelectorAll('button, a, [role=button]')).filter(visible).map((node) => (node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ');
     return {
@@ -155,6 +163,10 @@ async function quickFindState(page) {
       inputVisible: Boolean(input && visible(input)),
       inputValue: input ? input.value : '',
       placeholder: input ? input.getAttribute('placeholder') : '',
+      noteText: note ? (note.innerText || '').replace(/\s+/g, ' ').trim() : '',
+      quickFindRect: rectFor(section),
+      createActionsRect: rectFor(createActions),
+      readinessRect: rectFor(readiness),
       suggestionsVisible: Boolean(suggestions && visible(suggestions) && !suggestions.hidden),
       groupKeys: suggestions ? Array.from(suggestions.querySelectorAll('[data-procurement-quick-find-group]')).filter(visible).map((node) => node.getAttribute('data-procurement-quick-find-group')) : [],
       optionCount: suggestions ? Array.from(suggestions.querySelectorAll('[data-procurement-quick-find-option]')).filter(visible).length : 0,
@@ -178,6 +190,15 @@ function assertClean(state, label) {
   assert(!FORBIDDEN_TEXT_RE.test(state.modalText), `${label}: forbidden modal text visible`, state);
 }
 
+function assertWorkbenchRhythm(state, label) {
+  assert(state.noteText === 'Preview before opening', `${label}: Quick Find note copy mismatch`, state);
+  assert(state.createActionsRect && state.quickFindRect, `${label}: Start Buying Work or Quick Find rect missing`, state);
+  assert(state.createActionsRect.top < state.quickFindRect.top, `${label}: Start Buying Work must appear above Quick Find`, state);
+  if (state.readinessRect) {
+    assert(state.quickFindRect.top < state.readinessRect.top, `${label}: Quick Find must appear above Readiness Review`, state);
+  }
+}
+
 async function searchAndPreview(page, fixture, label) {
   await openOverview(page);
   const input = page.locator('[data-procurement-quick-find-input]').first();
@@ -192,6 +213,7 @@ async function searchAndPreview(page, fixture, label) {
   assert(state.url.includes('/desk/procurement-console'), `${label}: typing auto-navigated`, state);
   assert(state.groupKeys.includes(fixture.group), `${label}: expected group not rendered`, state);
   assert(state.optionCount > 0, `${label}: no suggestions rendered`, state);
+  assertWorkbenchRhythm(state, `${label} suggestions`);
   assertClean(state, `${label} suggestions`);
   await page.locator(`[data-procurement-quick-find-group="${fixture.group}"] [data-procurement-quick-find-option]`).first().click();
   await page.waitForSelector('[data-procurement-quick-find-preview]:not([hidden]) [data-procurement-quick-find-open]', { state: 'visible', timeout: TIMEOUT });
@@ -199,6 +221,7 @@ async function searchAndPreview(page, fixture, label) {
   assert(state.url.includes('/desk/procurement-console'), `${label}: selection auto-navigated`, state);
   assert(state.previewVisible && state.openButtonVisible, `${label}: preview/open not visible`, state);
   assert(!/\/desk\/Form\/|\/app\//i.test(state.previewText), `${label}: preview includes native route text`, state);
+  assertWorkbenchRhythm(state, `${label} preview`);
   assertClean(state, `${label} preview`);
   return state;
 }
@@ -241,6 +264,7 @@ async function runForUser(browser, user) {
     let state = await quickFindState(page);
     assert(state.sectionVisible && state.inputVisible, `${user.key} ${viewport.key}: Quick Find not visible`, state);
     assert(state.placeholder === 'Find supplier, item, request, RFQ, quotation, order, or report', `${user.key} ${viewport.key}: placeholder mismatch`, state);
+    assertWorkbenchRhythm(state, `${user.key} ${viewport.key} empty`);
     assertClean(state, `${user.key} ${viewport.key} empty`);
     results.screenshots[`${viewport.key}-empty`] = await capture(page, `${user.key}-${viewport.key}-quick-find-empty`);
     const previewState = await searchAndPreview(page, fixtures.supplier, `${user.key} ${viewport.key} supplier`);

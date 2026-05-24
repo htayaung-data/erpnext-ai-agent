@@ -258,7 +258,10 @@
   function insertManagerReadinessSection($root, $section) {
     $root.find("[data-procurement-manager-readiness]").remove();
     if (!$section || !$section.length) return;
-    const $anchor = $root.find('[data-section-key="create-actions"]').first();
+    let $anchor = $root.find('[data-procurement-quick-find]').first();
+    if (!$anchor.length) {
+      $anchor = $root.find('[data-section-key="create-actions"]').first();
+    }
     if ($anchor.length) {
       $anchor.after($section);
     } else {
@@ -322,7 +325,7 @@
             <h2 class="sales-console-section-title">Quick Find</h2>
             <div class="erpw-procurement-quick-find-subtitle">Locate a visible procurement record, preview it, then open the productized page.</div>
           </div>
-          <div class="sales-console-section-note">Explicit Open required</div>
+          <div class="sales-console-section-note">Preview before opening</div>
         </div>
         <div class="erpw-procurement-quick-find-body">
           <div class="erpw-procurement-quick-find-search">
@@ -837,7 +840,7 @@
       })
     );
 
-    $root.append($header, $quickFind, $createActions, $priorityWork, $pipeline, $orderFollowUp, $sourcing, $directories);
+    $root.append($header, $createActions, $quickFind, $priorityWork, $pipeline, $orderFollowUp, $sourcing, $directories);
     replacePageBody(page, $root);
     pruneRouteShells($root.get(0));
     cleanupOverviewPageHeads();
