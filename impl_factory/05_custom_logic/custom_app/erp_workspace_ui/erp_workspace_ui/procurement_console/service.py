@@ -8,6 +8,59 @@ from erp_workspace_ui.workspace_registry import get_procurement_workspace_defini
 
 
 PROCUREMENT_ROLES = frozenset({"Purchase User", "Purchase Manager", "Purchase Master Manager"})
+QUICK_FIND_MIN_QUERY_LENGTH = 2
+QUICK_FIND_DEFAULT_LIMIT = 12
+QUICK_FIND_MAX_LIMIT = 18
+QUICK_FIND_GROUP_ORDER = (
+	"suppliers",
+	"buying_items",
+	"purchase_requests",
+	"rfqs",
+	"supplier_quotations",
+	"purchase_orders",
+	"reports",
+)
+QUICK_FIND_GROUP_LABELS = {
+	"suppliers": "Suppliers",
+	"buying_items": "Buying Items",
+	"purchase_requests": "Purchase Requests",
+	"rfqs": "RFQs",
+	"supplier_quotations": "Supplier Quotations",
+	"purchase_orders": "Purchase Orders",
+	"reports": "Reports",
+}
+QUICK_FIND_REPORTS = (
+	{
+		"key": "procurement_reports_index",
+		"title": "Procurement Reports",
+		"description": "Open the governed Procurement report catalog.",
+		"boundary": "Productized report index only.",
+	},
+	{
+		"key": "supplier_quotation_comparison",
+		"title": "Quote Comparison",
+		"description": "Compare supplier offers by price, validity, supplier, item, and RFQ.",
+		"boundary": "Read-only sourcing review.",
+	},
+	{
+		"key": "purchase_order_analysis",
+		"title": "Purchase Order Analysis",
+		"description": "Review ordered value, receiving posture, billing posture, suppliers, and items.",
+		"boundary": "Read-only buyer visibility.",
+	},
+	{
+		"key": "demand_to_order_coverage",
+		"title": "Demand-to-Order Coverage",
+		"description": "Track purchase demand that is ordered, partial, or still open.",
+		"boundary": "Read-only demand coverage.",
+	},
+	{
+		"key": "item_purchase_history",
+		"title": "Item Purchase History",
+		"description": "Review buying history by item, supplier, and order reference.",
+		"boundary": "Read-only price review.",
+	},
+)
 
 
 def ensure_authenticated() -> None:
@@ -216,6 +269,401 @@ def search_procurement_console_workspace(query: str, limit: int = 12) -> dict[st
 		"message": f"{len(results)} Procurement Console result{'s' if len(results) != 1 else ''} found.",
 		"results": results,
 	}
+
+
+@frappe.whitelist()
+def get_procurement_quick_find_suggestions(query: str, limit: int = QUICK_FIND_DEFAULT_LIMIT) -> dict[str, object]:
+	ensure_authenticated()
+	context = build_context()
+	needle = _normalize_quick_find_query(query)
+	if not has_procurement_access(context):
+		return {
+			"state": "restricted",
+			"query": needle,
+			"message": "Procurement Quick Find is restricted to procurement roles.",
+			"groups": [],
+			"results": [],
+		}
+	if len(needle) < QUICK_FIND_MIN_QUERY_LENGTH:
+		return {
+			"state": "idle",
+			"query": needle,
+			"message": "Type at least 2 characters to find suppliers, items, requests, RFQs, quotations, purchase orders, or reports.",
+			"groups": [],
+			"results": [],
+		}
+
+	bounded_limit = _quick_find_limit(limit)
+	results = _build_procurement_quick_find_results(needle, bounded_limit)
+	if not results:
+		return {
+			"state": "empty",
+			"query": needle,
+			"message": "No visible Procurement records match this search. Use directory filters for broader queue review.",
+			"groups": [],
+			"results": [],
+		}
+	return {
+		"state": "ready",
+		"query": needle,
+		"message": f"{len(results)} visible Procurement result{'s' if len(results) != 1 else ''} found.",
+		"groups": _quick_find_groups(results),
+		"results": results,
+	}
+
+
+def _normalize_quick_find_query(query: object) -> str:
+	return " ".join(cstr(query).replace("\x00", " ").split())[:80]
+
+
+def _quick_find_limit(limit: object) -> int:
+	try:
+		value = int(limit or QUICK_FIND_DEFAULT_LIMIT)
+	except Exception:
+		value = QUICK_FIND_DEFAULT_LIMIT
+	return max(1, min(QUICK_FIND_MAX_LIMIT, value))
+
+
+def _build_procurement_quick_find_results(query: str, limit: int) -> list[dict[str, object]]:
+	from . import common
+
+	per_group_limit = max(2, min(5, limit))
+	results: list[dict[str, object]] = []
+	seen: set[tuple[str, str]] = set()
+	for plan in _quick_find_plans():
+		doctype = cstr(plan.get("doctype")).strip()
+		if not doctype or not common.can_read(doctype):
+			continue
+		for row in _quick_find_rows(plan, query, per_group_limit):
+			name = cstr(row.get("name")).strip()
+			key = (cstr(plan.get("result_type")), name)
+			if not name or key in seen:
+				continue
+			seen.add(key)
+			results.append(_quick_find_result(plan, row))
+			if len(results) >= limit:
+				return results[:limit]
+	for report_result in _quick_find_report_results(query, max(2, min(5, limit))):
+		key = ("report", cstr(report_result.get("name")))
+		if key in seen:
+			continue
+		seen.add(key)
+		results.append(report_result)
+		if len(results) >= limit:
+			return results[:limit]
+	return results[:limit]
+
+
+def _quick_find_plans() -> list[dict[str, object]]:
+	return [
+		{
+			"result_type": "supplier",
+			"group_key": "suppliers",
+			"doctype": "Supplier",
+			"fields": ["name", "supplier_name", "supplier_group", "disabled", "modified"],
+			"parent_fields": ["name", "supplier_name", "supplier_group"],
+			"title_field": "supplier_name",
+			"subtitle_fields": ["supplier_group"],
+			"action_label": "Open supplier",
+			"target": {"kind": "page", "route": "procurement-console-supplier"},
+		},
+		{
+			"result_type": "buying_item",
+			"group_key": "buying_items",
+			"doctype": "Item",
+			"fields": ["name", "item_name", "item_group", "brand", "stock_uom", "disabled", "modified"],
+			"parent_fields": ["name", "item_name", "item_group", "brand"],
+			"filters": [["Item", "is_purchase_item", "=", 1]],
+			"title_field": "item_name",
+			"subtitle_fields": ["item_group", "brand"],
+			"action_label": "Open item",
+			"target": {"kind": "page", "route": "procurement-console-item"},
+		},
+		{
+			"result_type": "purchase_request",
+			"group_key": "purchase_requests",
+			"doctype": "Material Request",
+			"fields": ["name", "title", "material_request_type", "status", "schedule_date", "company", "modified"],
+			"parent_fields": ["name", "title", "status", "company"],
+			"child_specs": [{"doctype": "Material Request Item", "parent_field": "parent", "fields": ["item_code", "item_name", "warehouse"]}],
+			"filters": [["Material Request", "material_request_type", "=", "Purchase"]],
+			"title_field": "name",
+			"subtitle_fields": ["title", "status"],
+			"action_label": "Review request",
+			"target": {"kind": "page", "route": "procurement-console-purchase-request-review"},
+		},
+		{
+			"result_type": "rfq",
+			"group_key": "rfqs",
+			"doctype": "Request for Quotation",
+			"fields": ["name", "subject", "company", "status", "schedule_date", "modified"],
+			"parent_fields": ["name", "subject", "company", "status"],
+			"child_specs": [
+				{"doctype": "Request for Quotation Supplier", "parent_field": "parent", "fields": ["supplier", "supplier_name"]},
+				{"doctype": "Request for Quotation Item", "parent_field": "parent", "fields": ["item_code", "item_name", "warehouse", "material_request"]},
+			],
+			"title_field": "name",
+			"subtitle_fields": ["subject", "status"],
+			"action_label": "Review RFQ",
+			"target": {"kind": "page", "route": "procurement-console-rfq-review"},
+		},
+		{
+			"result_type": "supplier_quotation",
+			"group_key": "supplier_quotations",
+			"doctype": "Supplier Quotation",
+			"fields": ["name", "supplier", "supplier_name", "status", "transaction_date", "valid_till", "grand_total", "currency", "modified"],
+			"parent_fields": ["name", "supplier", "supplier_name", "status"],
+			"child_specs": [{"doctype": "Supplier Quotation Item", "parent_field": "parent", "fields": ["item_code", "item_name", "request_for_quotation", "material_request"]}],
+			"title_field": "name",
+			"subtitle_fields": ["supplier_name", "supplier", "status"],
+			"action_label": "Review quotation",
+			"target": {"kind": "page", "route": "procurement-console-supplier-quotation-review"},
+		},
+		{
+			"result_type": "purchase_order",
+			"group_key": "purchase_orders",
+			"doctype": "Purchase Order",
+			"fields": ["name", "supplier", "supplier_name", "status", "workflow_state", "schedule_date", "transaction_date", "grand_total", "currency", "per_received", "per_billed", "modified"],
+			"parent_fields": ["name", "supplier", "supplier_name", "status", "workflow_state"],
+			"child_specs": [{"doctype": "Purchase Order Item", "parent_field": "parent", "fields": ["item_code", "item_name", "warehouse", "material_request", "supplier_quotation"]}],
+			"title_field": "name",
+			"subtitle_fields": ["supplier_name", "supplier", "status"],
+			"action_label": "Open follow-up",
+			"target": {"kind": "page", "route": "procurement-console-po-follow-up"},
+		},
+	]
+
+
+def _quick_find_rows(plan: dict[str, object], query: str, limit: int) -> list[dict[str, object]]:
+	from . import common
+
+	doctype = cstr(plan.get("doctype")).strip()
+	if not doctype:
+		return []
+	names = common.matching_parent_names_for_keyword(
+		doctype,
+		query,
+		[cstr(field).strip() for field in plan.get("parent_fields") or []],
+		list(plan.get("child_specs") or []),
+		limit=max(limit * 4, 12),
+	)
+	if not names:
+		return []
+	filters = list(plan.get("filters") or [])
+	filters.append([doctype, "name", "in", names[: max(limit * 4, 12)]])
+	return common.get_list(
+		doctype,
+		fields=_available_fields(doctype, list(plan.get("fields") or ["name"])),
+		filters=filters,
+		order_by="modified desc",
+		limit=limit,
+	)
+
+
+def _available_fields(doctype: str, fields: list[str]) -> list[str]:
+	from . import common
+
+	available = ["name"]
+	seen = {"name"}
+	for field in fields:
+		fieldname = cstr(field).strip()
+		if not fieldname or fieldname in seen:
+			continue
+		if fieldname == "name" or common.has_field(doctype, fieldname):
+			available.append(fieldname)
+			seen.add(fieldname)
+	return available
+
+
+def _quick_find_result(plan: dict[str, object], row: dict[str, object]) -> dict[str, object]:
+	result_type = cstr(plan.get("result_type")).strip()
+	group_key = cstr(plan.get("group_key")).strip()
+	doctype = cstr(plan.get("doctype")).strip()
+	name = cstr(row.get("name")).strip()
+	title = cstr(row.get(cstr(plan.get("title_field")))).strip() or name
+	subtitle = _join_values(row.get(field) for field in plan.get("subtitle_fields") or [])
+	target = _target_with_name(dict(plan.get("target") or {}), name)
+	preview = _quick_find_preview(result_type, row, target, cstr(plan.get("action_label")))
+	return {
+		"id": f"{result_type}:{name}",
+		"result_type": result_type,
+		"group_key": group_key,
+		"group": QUICK_FIND_GROUP_LABELS.get(group_key, group_key.replace("_", " ").title()),
+		"doctype": doctype,
+		"name": name,
+		"label": title,
+		"title": title,
+		"subtitle": subtitle,
+		"meta": subtitle,
+		"target": target,
+		"preview": preview,
+		"primary_action_label": cstr(plan.get("action_label")) or "Open",
+	}
+
+
+def _target_with_name(target: dict[str, object], name: str) -> dict[str, object]:
+	if target.get("kind") == "page":
+		payload = dict(target)
+		payload["route_parts"] = [name]
+		payload.setdefault("options", {})
+		return payload
+	return dict(target)
+
+
+def _quick_find_preview(result_type: str, row: dict[str, object], target: dict[str, object], action_label: str) -> dict[str, object]:
+	preview_builders = {
+		"supplier": _supplier_quick_find_preview,
+		"buying_item": _item_quick_find_preview,
+		"purchase_request": _purchase_request_quick_find_preview,
+		"rfq": _rfq_quick_find_preview,
+		"supplier_quotation": _supplier_quotation_quick_find_preview,
+		"purchase_order": _purchase_order_quick_find_preview,
+	}
+	builder = preview_builders.get(result_type)
+	preview = builder(row) if builder else {"title": cstr(row.get("name")), "subtitle": "Procurement record", "facts": []}
+	preview["target"] = target
+	preview["primary_action_label"] = action_label or "Open"
+	preview["boundary_note"] = preview.get("boundary_note") or "Productized Procurement route only. No native ERP form is opened."
+	return preview
+
+
+def _supplier_quick_find_preview(row: dict[str, object]) -> dict[str, object]:
+	status = "Disabled" if cstr(row.get("disabled")) in {"1", "True", "true"} else "Active"
+	return {
+		"title": cstr(row.get("supplier_name")).strip() or cstr(row.get("name")),
+		"subtitle": "Supplier buying context",
+		"chips": [status],
+		"facts": _facts(("Supplier ID", row.get("name")), ("Group", row.get("supplier_group")), ("Status", status)),
+	}
+
+
+def _item_quick_find_preview(row: dict[str, object]) -> dict[str, object]:
+	status = "Disabled" if cstr(row.get("disabled")) in {"1", "True", "true"} else "Purchase-enabled"
+	return {
+		"title": cstr(row.get("item_name")).strip() or cstr(row.get("name")),
+		"subtitle": "Item Buying Context",
+		"chips": [status],
+		"facts": _facts(("Item code", row.get("name")), ("Group", row.get("item_group")), ("Brand", row.get("brand")), ("UOM", row.get("stock_uom"))),
+	}
+
+
+def _purchase_request_quick_find_preview(row: dict[str, object]) -> dict[str, object]:
+	return {
+		"title": cstr(row.get("name")),
+		"subtitle": cstr(row.get("title")).strip() or "Purchase request review",
+		"chips": [cstr(row.get("status")).strip() or "Visible"],
+		"facts": _facts(("Status", row.get("status")), ("Required by", row.get("schedule_date")), ("Company", row.get("company"))),
+	}
+
+
+def _rfq_quick_find_preview(row: dict[str, object]) -> dict[str, object]:
+	return {
+		"title": cstr(row.get("name")),
+		"subtitle": cstr(row.get("subject")).strip() or "RFQ review",
+		"chips": [cstr(row.get("status")).strip() or "Visible"],
+		"facts": _facts(("Status", row.get("status")), ("Required by", row.get("schedule_date")), ("Company", row.get("company"))),
+		"boundary_note": "Review RFQ in Procurement. Send remains governed by the deferred send policy.",
+	}
+
+
+def _supplier_quotation_quick_find_preview(row: dict[str, object]) -> dict[str, object]:
+	return {
+		"title": cstr(row.get("name")),
+		"subtitle": cstr(row.get("supplier_name")).strip() or cstr(row.get("supplier")).strip() or "Supplier quotation review",
+		"chips": [cstr(row.get("status")).strip() or "Visible"],
+		"facts": _facts(("Supplier", row.get("supplier_name") or row.get("supplier")), ("Status", row.get("status")), ("Valid till", row.get("valid_till")), ("Total", _money_value(row))),
+	}
+
+
+def _purchase_order_quick_find_preview(row: dict[str, object]) -> dict[str, object]:
+	status = cstr(row.get("workflow_state")).strip() or cstr(row.get("status")).strip() or "Visible"
+	return {
+		"title": cstr(row.get("name")),
+		"subtitle": cstr(row.get("supplier_name")).strip() or cstr(row.get("supplier")).strip() or "Purchase order follow-up",
+		"chips": [status],
+		"facts": _facts(("Supplier", row.get("supplier_name") or row.get("supplier")), ("Status", status), ("Required by", row.get("schedule_date")), ("Total", _money_value(row)), ("Received", _percent_value(row.get("per_received"))), ("Billed", _percent_value(row.get("per_billed")))),
+		"boundary_note": "Open buyer follow-up only. Receiving, billing, and payment remain outside this action.",
+	}
+
+
+def _quick_find_report_results(query: str, limit: int) -> list[dict[str, object]]:
+	term = query.lower()
+	results: list[dict[str, object]] = []
+	for report in QUICK_FIND_REPORTS:
+		search_text = " ".join([cstr(report.get("key")), cstr(report.get("title")), cstr(report.get("description")), cstr(report.get("boundary"))]).lower()
+		if term not in search_text:
+			continue
+		key = cstr(report.get("key"))
+		target = {"kind": "report_page", "report_key": key, "filters": {}}
+		preview = {
+			"title": cstr(report.get("title")),
+			"subtitle": "Procurement report",
+			"chips": ["Read-only"],
+			"facts": _facts(("Purpose", report.get("description")), ("Boundary", report.get("boundary"))),
+			"boundary_note": "Productized Procurement report route only. No native ERP report route is opened.",
+			"target": target,
+			"primary_action_label": "Open report",
+		}
+		results.append({
+			"id": f"report:{key}",
+			"result_type": "report",
+			"group_key": "reports",
+			"group": QUICK_FIND_GROUP_LABELS["reports"],
+			"doctype": "Report",
+			"name": key,
+			"label": cstr(report.get("title")),
+			"title": cstr(report.get("title")),
+			"subtitle": cstr(report.get("description")),
+			"meta": cstr(report.get("boundary")),
+			"target": target,
+			"preview": preview,
+			"primary_action_label": "Open report",
+		})
+		if len(results) >= limit:
+			break
+	return results
+
+
+def _quick_find_groups(results: list[dict[str, object]]) -> list[dict[str, object]]:
+	groups: list[dict[str, object]] = []
+	for group_key in QUICK_FIND_GROUP_ORDER:
+		items = [item for item in results if item.get("group_key") == group_key]
+		if items:
+			groups.append({"key": group_key, "label": QUICK_FIND_GROUP_LABELS.get(group_key, group_key.replace("_", " ").title()), "results": items})
+	return groups
+
+
+def _facts(*pairs: tuple[str, object]) -> list[dict[str, str]]:
+	facts: list[dict[str, str]] = []
+	for label, value in pairs:
+		text = cstr(value).strip()
+		if text:
+			facts.append({"label": label, "value": text})
+	return facts[:6]
+
+
+def _join_values(values: object) -> str:
+	parts = [cstr(value).strip() for value in values if cstr(value).strip()]
+	return " | ".join(parts[:3])
+
+
+def _money_value(row: dict[str, object]) -> str:
+	amount = cstr(row.get("grand_total")).strip()
+	if not amount:
+		return ""
+	currency = cstr(row.get("currency")).strip()
+	return f"{amount} {currency}".strip()
+
+
+def _percent_value(value: object) -> str:
+	text = cstr(value).strip()
+	if not text:
+		return ""
+	try:
+		number = float(text)
+	except Exception:
+		return text
+	return f"{number:g}%"
 
 
 def _build_procurement_workspace_search_results(query: str, limit: int) -> list[dict[str, object]]:

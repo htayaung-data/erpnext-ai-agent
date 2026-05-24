@@ -10,6 +10,8 @@
   const REPORT_ROUTE = procurementRoutes.report || "procurement-console-report";
   const BOOTSTRAP_METHOD = procurementMethods.bootstrap || "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap";
   const READINESS_METHOD = procurementMethods.manager_readiness || "erp_workspace_ui.procurement_console.readiness.get_procurement_manager_readiness";
+  const QUICK_FIND_METHOD = procurementMethods.quickFind || procurementMethods.quick_find || "erp_workspace_ui.procurement_console.service.get_procurement_quick_find_suggestions";
+  const QUICK_FIND_DEBOUNCE_MS = 240;
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const READINESS_UI_URL = "/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
@@ -311,6 +313,184 @@
     });
   }
 
+
+  function renderQuickFindSection() {
+    const $section = $(`
+      <section class="sales-console-card sales-console-section erpw-procurement-quick-find" data-procurement-quick-find>
+        <div class="sales-console-section-head erpw-procurement-quick-find-head">
+          <div>
+            <h2 class="sales-console-section-title">Quick Find</h2>
+            <div class="erpw-procurement-quick-find-subtitle">Locate a visible procurement record, preview it, then open the productized page.</div>
+          </div>
+          <div class="sales-console-section-note">Explicit Open required</div>
+        </div>
+        <div class="erpw-procurement-quick-find-body">
+          <div class="erpw-procurement-quick-find-search">
+            <label class="sr-only" for="erpw-procurement-quick-find-input">Find supplier, item, request, RFQ, quotation, order, or report</label>
+            <input id="erpw-procurement-quick-find-input" class="erpw-procurement-quick-find-input" data-procurement-quick-find-input type="search" autocomplete="off" spellcheck="false" placeholder="Find supplier, item, request, RFQ, quotation, order, or report" aria-controls="erpw-procurement-quick-find-suggestions" aria-expanded="false" />
+            <button type="button" class="erpw-procurement-quick-find-clear" data-procurement-quick-find-clear hidden>Clear</button>
+          </div>
+          <div id="erpw-procurement-quick-find-suggestions" class="erpw-procurement-quick-find-suggestions" data-procurement-quick-find-suggestions role="listbox" hidden></div>
+          <div class="erpw-procurement-quick-find-status" data-procurement-quick-find-status>Type at least 2 characters to search visible Procurement records.</div>
+          <div class="erpw-procurement-quick-find-preview" data-procurement-quick-find-preview hidden></div>
+        </div>
+      </section>
+    `);
+    bindQuickFind($section);
+    return $section;
+  }
+
+  function bindQuickFind($section) {
+    const $input = $section.find("[data-procurement-quick-find-input]").first();
+    const $clear = $section.find("[data-procurement-quick-find-clear]").first();
+    let timer = null;
+    let requestSerial = 0;
+    const state = { results: [], selected: null };
+
+    function resetPreview() {
+      state.selected = null;
+      $section.data("erpwQuickFindSelected", null);
+      $section.find("[data-procurement-quick-find-preview]").attr("hidden", "hidden").empty();
+    }
+
+    function closeSuggestions() {
+      $section.find("[data-procurement-quick-find-suggestions]").attr("hidden", "hidden").empty();
+      $input.attr("aria-expanded", "false");
+    }
+
+    function setStatus(message, mode) {
+      $section.find("[data-procurement-quick-find-status]").attr("data-state", mode || "idle").text(message || "");
+    }
+
+    function renderSuggestions(payload) {
+      const groups = Array.isArray(payload && payload.groups) ? payload.groups : [];
+      const $panel = $section.find("[data-procurement-quick-find-suggestions]").first();
+      $panel.empty();
+      state.results = [];
+      groups.forEach((group) => {
+        const results = Array.isArray(group.results) ? group.results : [];
+        if (!results.length) return;
+        state.results = state.results.concat(results);
+        const $group = $(`<div class="erpw-procurement-quick-find-group" data-procurement-quick-find-group="${escapeHtml(group.key || "")}"></div>`);
+        $group.append(`<div class="erpw-procurement-quick-find-group-label">${escapeHtml(group.label || group.key || "Results")}</div>`);
+        results.forEach((result) => {
+          const $option = $(`
+            <button type="button" class="erpw-procurement-quick-find-option" role="option" data-procurement-quick-find-option data-result-id="${escapeHtml(result.id || "")}" data-result-type="${escapeHtml(result.result_type || "")}">
+              <span class="erpw-procurement-quick-find-option-type">${escapeHtml(result.group || result.result_type || "Result")}</span>
+              <span class="erpw-procurement-quick-find-option-main">${escapeHtml(result.title || result.label || result.name || "Untitled")}</span>
+              <span class="erpw-procurement-quick-find-option-meta">${escapeHtml(result.subtitle || result.meta || "Productized Procurement result")}</span>
+            </button>
+          `);
+          $option.on("click", () => selectQuickFindResult($section, state, result));
+          $group.append($option);
+        });
+        $panel.append($group);
+      });
+      if (state.results.length) {
+        $panel.removeAttr("hidden");
+        $input.attr("aria-expanded", "true");
+      } else {
+        closeSuggestions();
+      }
+    }
+
+    function runSearch() {
+      const query = String($input.val() || "").trim();
+      $clear.prop("hidden", !query);
+      resetPreview();
+      if (query.length < 2) {
+        state.results = [];
+        closeSuggestions();
+        setStatus("Type at least 2 characters to search visible Procurement records.", "idle");
+        return;
+      }
+      const serial = ++requestSerial;
+      setStatus("Searching visible Procurement records...", "loading");
+      frappe.call({ method: QUICK_FIND_METHOD, args: { query, limit: 12 } }).then((response) => {
+        if (serial !== requestSerial || !$section.get(0).isConnected || !isActiveProcurementRoute()) return;
+        const payload = response && response.message ? response.message : {};
+        if (payload.state === "ready") {
+          setStatus(payload.message || "Results ready. Select a result to preview before opening.", "ready");
+          renderSuggestions(payload);
+        } else {
+          state.results = [];
+          closeSuggestions();
+          setStatus(payload.message || "No visible Procurement records match this search.", payload.state || "empty");
+        }
+      }).catch((error) => {
+        if (serial !== requestSerial || !$section.get(0).isConnected) return;
+        state.results = [];
+        closeSuggestions();
+        setStatus(error && error.message ? error.message : "Quick Find could not search right now.", "error");
+      });
+    }
+
+    $input.on("input", () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(runSearch, QUICK_FIND_DEBOUNCE_MS);
+    });
+    $input.on("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeSuggestions();
+        event.preventDefault();
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+      }
+    });
+    $clear.on("click", () => {
+      $input.val("");
+      $clear.prop("hidden", true);
+      state.results = [];
+      closeSuggestions();
+      resetPreview();
+      setStatus("Type at least 2 characters to search visible Procurement records.", "idle");
+      $input.trigger("focus");
+    });
+  }
+
+  function selectQuickFindResult($section, state, result) {
+    state.selected = result;
+    $section.data("erpwQuickFindSelected", result);
+    $section.find("[data-procurement-quick-find-suggestions]").attr("hidden", "hidden");
+    $section.find("[data-procurement-quick-find-input]").attr("aria-expanded", "false");
+    renderQuickFindPreview($section, result);
+  }
+
+  function renderQuickFindPreview($section, result) {
+    const preview = (result && result.preview) || {};
+    const facts = Array.isArray(preview.facts) ? preview.facts : [];
+    const chips = Array.isArray(preview.chips) ? preview.chips : [];
+    const actionLabel = preview.primary_action_label || result.primary_action_label || "Open";
+    const $preview = $section.find("[data-procurement-quick-find-preview]").first();
+    $preview.empty().removeAttr("hidden");
+    const $facts = facts.length ? $("<dl class=\"erpw-procurement-quick-find-facts\"></dl>") : $("<div></div>");
+    facts.forEach((fact) => {
+      $facts.append(`<div><dt>${escapeHtml(fact.label || "Fact")}</dt><dd>${escapeHtml(fact.value || "-")}</dd></div>`);
+    });
+    const chipHtml = chips.map((chip) => `<span class="erpw-procurement-quick-find-chip">${escapeHtml(chip)}</span>`).join("");
+    $preview.append(`
+      <div class="erpw-procurement-quick-find-preview-copy">
+        <div class="erpw-procurement-quick-find-preview-kicker">${escapeHtml(result.group || "Procurement result")}</div>
+        <h3 class="erpw-procurement-quick-find-preview-title">${escapeHtml(preview.title || result.title || result.label || result.name || "Selected result")}</h3>
+        <div class="erpw-procurement-quick-find-preview-subtitle">${escapeHtml(preview.subtitle || result.subtitle || "Productized Procurement destination")}</div>
+        <div class="erpw-procurement-quick-find-chip-row">${chipHtml}</div>
+      </div>
+    `);
+    $preview.append($facts);
+    $preview.append(`
+      <div class="erpw-procurement-quick-find-preview-action">
+        <div class="erpw-procurement-quick-find-boundary">${escapeHtml(preview.boundary_note || "Productized Procurement route only.")}</div>
+        <button type="button" class="erpw-procurement-quick-find-open" data-procurement-quick-find-open>${escapeHtml(actionLabel)}</button>
+      </div>
+    `);
+    $preview.find("[data-procurement-quick-find-open]").on("click", () => {
+      const selected = $section.data("erpwQuickFindSelected") || result;
+      executeTarget((selected.preview && selected.preview.target) || selected.target);
+    });
+    $section.find("[data-procurement-quick-find-status]").attr("data-state", "preview").text("Preview selected. Use Open to navigate.");
+  }
+
   function applyPayload($root, payload) {
     const work = (payload && payload.work) || {};
     const directories = (payload && payload.directories) || {};
@@ -403,6 +583,8 @@
       makeInsightCard({ key: "purchase_orders_due_soon", label: "Due Soon", meta: "Open item lines due in the next seven days." })
         .on("click", () => routeToWorklist("purchase_orders_due_soon"))
     );
+
+    const $quickFind = renderQuickFindSection();
 
     const $priorityWork = $(`
       <section class="sales-console-card sales-console-section" data-section-key="priority-work">
@@ -655,7 +837,7 @@
       })
     );
 
-    $root.append($header, $createActions, $priorityWork, $pipeline, $orderFollowUp, $sourcing, $directories);
+    $root.append($header, $quickFind, $createActions, $priorityWork, $pipeline, $orderFollowUp, $sourcing, $directories);
     replacePageBody(page, $root);
     pruneRouteShells($root.get(0));
     cleanupOverviewPageHeads();

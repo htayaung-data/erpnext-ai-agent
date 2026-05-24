@@ -83,6 +83,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"bootstrap": "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
 		"sidebar_context": "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context",
 		"workspace_search": "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace",
+		"quick_find": "erp_workspace_ui.procurement_console.service.get_procurement_quick_find_suggestions",
 		"worklist_context": "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
 		"report_context": "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
 		"po_follow_up_detail_context": "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",

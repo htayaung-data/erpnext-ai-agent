@@ -2102,6 +2102,54 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertTrue(all((item["target"] or {}).get("kind") == "worklist" for item in payload["results"]))
         self.assertTrue(any(item["doctype"] == "Supplier" for item in payload["results"]))
 
+
+    def test_procurement_quick_find_returns_grouped_productized_previews(self):
+        supplier_payload = service.get_procurement_quick_find_suggestions("Alpha")
+
+        self.assertEqual(supplier_payload["state"], "ready")
+        self.assertTrue(any(group["key"] == "suppliers" for group in supplier_payload["groups"]))
+        supplier_result = next(item for item in supplier_payload["results"] if item["result_type"] == "supplier")
+        self.assertEqual(supplier_result["target"], {"kind": "page", "route": "procurement-console-supplier", "route_parts": ["SUP-001"], "options": {}})
+        self.assertEqual(supplier_result["preview"]["primary_action_label"], "Open supplier")
+        self.assertIn("Supplier ID", [fact["label"] for fact in supplier_result["preview"]["facts"]])
+
+        item_payload = service.get_procurement_quick_find_suggestions("Widget")
+        self.assertEqual(item_payload["state"], "ready")
+        self.assertTrue(any(item["result_type"] == "buying_item" for item in item_payload["results"]))
+        self.assertTrue(any(item["result_type"] == "purchase_request" for item in item_payload["results"]))
+        self.assertTrue(any(item["result_type"] == "purchase_order" for item in item_payload["results"]))
+
+        report_payload = service.get_procurement_quick_find_suggestions("report")
+        self.assertEqual(report_payload["state"], "ready")
+        report_result = next(item for item in report_payload["results"] if item["result_type"] == "report")
+        self.assertEqual(report_result["target"]["kind"], "report_page")
+        self.assertTrue(str(report_result["target"]["report_key"]).startswith("procurement"))
+
+        text = str([supplier_payload, item_payload, report_payload])
+        self.assertNotIn("/desk/Form", text)
+        self.assertNotIn("/app/", text)
+        self.assertNotIn("Contact", text)
+        self.assertNotIn("Email Queue", text)
+        self.assertNotIn("Item Price", text)
+        self.assertNotIn("Default Supplier", text)
+
+    def test_procurement_quick_find_is_restricted_for_non_procurement_user(self):
+        _set_user("sales@example.com", ["Sales User"])
+
+        payload = service.get_procurement_quick_find_suggestions("Alpha")
+
+        self.assertEqual(payload["state"], "restricted")
+        self.assertEqual(payload["results"], [])
+
+    def test_procurement_quick_find_does_not_change_bootstrap_or_directory_search_contract(self):
+        bootstrap = service.get_procurement_console_bootstrap()
+        self.assertNotIn("quick_find", bootstrap)
+        self.assertNotIn("manager_readiness", bootstrap)
+
+        directory_payload = service.search_procurement_console_workspace("Alpha")
+        self.assertTrue(directory_payload["results"])
+        self.assertTrue(all((item["target"] or {}).get("kind") == "worklist" for item in directory_payload["results"]))
+
     def test_procurement_workspace_search_restricted_for_non_procurement_user(self):
         _set_user("sales@example.com", ["Sales User"])
 

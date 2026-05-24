@@ -82,6 +82,7 @@
       bootstrap: "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
       sidebarContext: "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context",
       workspaceSearch: "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace",
+      quickFind: "erp_workspace_ui.procurement_console.service.get_procurement_quick_find_suggestions",
       worklistContext: "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
       reportContext: "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
       poFollowUpDetailContext: "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
