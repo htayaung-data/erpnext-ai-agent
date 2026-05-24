@@ -126,8 +126,16 @@ async function injectSourcePageOverrides(page) {
 
 async function primeWarmRoutes(page) {
   for (const route of ROUTES) {
-    await openRoute(page, route.route);
-    await waitUseful(page, route);
+    try {
+      await openRoute(page, route.route);
+      await waitUseful(page, route);
+    } catch (error) {
+      const screenshot = await capture(page, `prime-failure-${route.key}`).catch(() => null);
+      const snapshot = await pageSnapshot(page, route).catch(() => null);
+      error.message = `Prime warm route failed for ${route.key}: ${error.message}`;
+      error.details = Object.assign({}, error.details || {}, { routeKey: route.key, route: route.route, screenshot, snapshot });
+      throw error;
+    }
   }
   await injectSourcePageOverrides(page);
   await openRoute(page, '/desk/procurement-console');
@@ -180,6 +188,7 @@ async function pageSnapshot(page, routeConfig) {
     const text = (document.body.innerText || '').replace(/\s+/g, ' ').trim();
     return {
       url: location.href,
+      textSample: text.slice(0, 1200),
       route: window.frappe && frappe.get_route ? frappe.get_route() : null,
       targetShellCount: document.querySelectorAll(shellSelector).length,
       procurementShellCount: document.querySelectorAll('.sales-console-shell[data-erpw-workspace="procurement"], .erpw-list-shell.is-procurement-worklist, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell, .erpw-procurement-po-follow-up-shell').length,

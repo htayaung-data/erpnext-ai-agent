@@ -317,7 +317,7 @@
         });
         viewState.currentLoadKey = loadKey;
         viewState.inFlightRequest = joinedRequest;
-        joinedRequest.finally(() => {
+        joinedRequest.then(() => {
           if (viewState.inFlightRequest === joinedRequest) viewState.inFlightRequest = null;
         });
         return joinedRequest;
@@ -394,7 +394,7 @@
     if (!settings.partialDataRefresh && !settings.refresh) {
       contextLoadCache[loadKey] = { request, payload: null, loadedAt: 0 };
     }
-    request.finally(() => {
+    request.then(() => {
       if (viewState.inFlightRequest === request) viewState.inFlightRequest = null;
       const cachedLoad = contextLoadCache[loadKey];
       if (cachedLoad && cachedLoad.request === request) cachedLoad.request = null;
