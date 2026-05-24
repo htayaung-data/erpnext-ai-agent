@@ -56,6 +56,7 @@ Freeze and governance status:
 - Procurement Console Phase 7J2 Supplier and Buying Item Detail tabbed information architecture is documented on 2026-05-23 as a docs-only design plan for turning stacked Supplier/Item detail sections into object-style tabs, recent-row lists, productized drilldowns, and business-friendly ownership labels while preserving Phase 7J1D protected behavior.
 - Procurement Console Phase 7J2B Supplier and Buying Item Detail tab simplification review is documented on 2026-05-24 as a docs-only recommendation to default both pages to Profile, remove redundant Activity/References/standalone Readiness tabs, reduce duplicate badges, and keep Phase 7J2A protected behavior without runtime changes.
 - Procurement Console Phase 7J2C Supplier and Buying Item Detail tab simplification is protected on 2026-05-24 at `268e443451742fd10cf6ea705e17880101685005`; Supplier Detail now defaults to Profile with only Profile/Orders/RFQs/Quotations, Buying Item Detail now defaults to Profile with only Profile/Suppliers & Prices/Orders/Quotation History, duplicate below-header badge clutter is removed, Purchase User remains read-only/productized, and final post-live protected gate passed at `/tmp/procurement-phase7j2c-protected-live-rerun-20260524T045633Z`.
+- Procurement Console Phase 7K Overview Quick Find is protected on 2026-05-24 at `27764669a9242e732135eec1a8ae59521b85813d`; Overview now keeps Header/KPI, `Start Buying Work`, `Quick Find`, then `Readiness Review`, Quick Find copy reads `Preview before opening`, grouped suggestions preview before explicit Open, productized Procurement routes remain the only targets, and final post-live protected gate passed at `/tmp/procurement-phase7k-consistency-protected-live-20260524T104308Z`.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -154,6 +155,8 @@ Documents in this folder:
 - `procurement-console-phase7j1d-readiness-review-polish-baseline-2026-05-23.md`
 - `procurement-console-phase7j2-supplier-item-detail-tabs-design-plan-2026-05-23.md`
 - `procurement-console-phase7j2b-supplier-item-tab-simplification-review-2026-05-24.md`
+- `procurement-console-phase7j2c-supplier-item-tab-simplification-baseline-2026-05-24.md`
+- `procurement-console-phase7k-overview-quick-find-baseline-2026-05-24.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
