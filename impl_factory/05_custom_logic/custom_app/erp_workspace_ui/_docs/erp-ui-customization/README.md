@@ -157,6 +157,7 @@ Documents in this folder:
 - `procurement-console-phase7j2b-supplier-item-tab-simplification-review-2026-05-24.md`
 - `procurement-console-phase7j2c-supplier-item-tab-simplification-baseline-2026-05-24.md`
 - `procurement-console-phase7k-overview-quick-find-baseline-2026-05-24.md`
+- `procurement-console-phase7l4-owner-facing-copy-search-polish-baseline-2026-05-25.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
