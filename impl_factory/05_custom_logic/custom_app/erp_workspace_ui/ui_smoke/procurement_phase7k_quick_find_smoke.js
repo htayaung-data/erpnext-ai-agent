@@ -48,6 +48,7 @@ async function installAssetOverrides(context) {
   if (!ASSET_OVERRIDE_ROOT) return;
   const overrides = [
     { pattern: '**/assets/erp_workspace_ui/js/procurement_console/procurement_console_page.js*', file: 'procurement_console_page.js', contentType: 'application/javascript' },
+    { pattern: '**/assets/erp_workspace_ui/js/runtime/console/workspace_console_sidebar.js*', file: 'workspace_console_sidebar.js', contentType: 'application/javascript' },
     { pattern: '**/assets/erp_workspace_ui/css/erp_workspace_ui.css*', file: 'erp_workspace_ui.css', contentType: 'text/css' },
   ];
   for (const item of overrides) {
@@ -124,13 +125,13 @@ async function discoverFixtures(page) {
   const poRow = rows(await worklistPayload(page, 'purchase_order_directory'))[0];
   assert(supplierRow && itemRow && requestRow && rfqRow && sqRow && poRow, 'Missing fixture rows for Quick Find smoke', { supplierRow, itemRow, requestRow, rfqRow, sqRow, poRow });
   return {
-    supplier: { query: firstNonEmpty(cellValue(supplierRow, 'supplier'), supplierRow.name), group: 'suppliers', path: '/desk/procurement-console-supplier/' },
-    item: { query: firstNonEmpty(cellValue(itemRow, 'item'), itemRow.name), group: 'buying_items', path: '/desk/procurement-console-item/' },
-    request: { query: requestRow.name, group: 'purchase_requests', path: '/desk/procurement-console-purchase-request-review/' },
-    rfq: { query: rfqRow.name, group: 'rfqs', path: '/desk/procurement-console-rfq-review/' },
-    sq: { query: sqRow.name, group: 'supplier_quotations', path: '/desk/procurement-console-supplier-quotation-review/' },
-    po: { query: poRow.name, group: 'purchase_orders', path: '/desk/procurement-console-po-follow-up/' },
-    report: { query: 'report', group: 'reports', path: '/desk/procurement-console-report/' },
+    supplier: { query: firstNonEmpty(cellValue(supplierRow, 'supplier'), supplierRow.name), group: 'suppliers', badge: 'Supplier', path: '/desk/procurement-console-supplier/' },
+    item: { query: firstNonEmpty(cellValue(itemRow, 'item'), itemRow.name), group: 'buying_items', badge: 'Item', path: '/desk/procurement-console-item/' },
+    request: { query: requestRow.name, group: 'purchase_requests', badge: 'Request', path: '/desk/procurement-console-purchase-request-review/' },
+    rfq: { query: rfqRow.name, group: 'rfqs', badge: 'RFQ', path: '/desk/procurement-console-rfq-review/' },
+    sq: { query: sqRow.name, group: 'supplier_quotations', badge: 'Quotation', path: '/desk/procurement-console-supplier-quotation-review/' },
+    po: { query: poRow.name, group: 'purchase_orders', badge: 'Order', path: '/desk/procurement-console-po-follow-up/' },
+    report: { query: 'report', group: 'reports', badge: 'Report', path: '/desk/procurement-console-report/' },
   };
 }
 
@@ -168,6 +169,7 @@ async function quickFindState(page) {
       createActionsRect: rectFor(createActions),
       readinessRect: rectFor(readiness),
       suggestionsVisible: Boolean(suggestions && visible(suggestions) && !suggestions.hidden),
+      suggestionsText: suggestions ? (suggestions.innerText || '').replace(/\s+/g, ' ').trim() : '',
       groupKeys: suggestions ? Array.from(suggestions.querySelectorAll('[data-procurement-quick-find-group]')).filter(visible).map((node) => node.getAttribute('data-procurement-quick-find-group')) : [],
       optionCount: suggestions ? Array.from(suggestions.querySelectorAll('[data-procurement-quick-find-option]')).filter(visible).length : 0,
       optionTypeStyles: suggestions ? Array.from(suggestions.querySelectorAll('.erpw-procurement-quick-find-option-type')).filter(visible).slice(0, 8).map((node) => {
@@ -179,6 +181,23 @@ async function quickFindState(page) {
           borderRadius: style.borderRadius,
           display: style.display,
         };
+      }) : [],
+      optionRows: suggestions ? Array.from(suggestions.querySelectorAll('[data-procurement-quick-find-group]')).flatMap((groupNode) => {
+        const groupKey = groupNode.getAttribute('data-procurement-quick-find-group') || '';
+        return Array.from(groupNode.querySelectorAll('[data-procurement-quick-find-option]')).filter(visible).map((option) => {
+          const type = option.querySelector('.erpw-procurement-quick-find-option-type');
+          const main = option.querySelector('.erpw-procurement-quick-find-option-main');
+          const typeRect = type ? type.getBoundingClientRect() : null;
+          const mainRect = main ? main.getBoundingClientRect() : null;
+          return {
+            groupKey,
+            badge: type ? (type.innerText || '').replace(/\s+/g, ' ').trim() : '',
+            title: main ? (main.innerText || '').replace(/\s+/g, ' ').trim() : '',
+            typeRect: typeRect ? { left: typeRect.left, right: typeRect.right, width: typeRect.width } : null,
+            mainRect: mainRect ? { left: mainRect.left, right: mainRect.right, width: mainRect.width } : null,
+            overlapsTitle: Boolean(typeRect && mainRect && typeRect.right > mainRect.left - 2),
+          };
+        });
       }) : [],
       previewVisible: Boolean(preview && visible(preview) && !preview.hidden),
       previewText: preview ? (preview.innerText || '').replace(/\s+/g, ' ').trim() : '',
@@ -221,6 +240,15 @@ function assertNeutralTypeBadges(state, label) {
   });
 }
 
+function assertCompactQuickFindBadge(state, fixture, label) {
+  if (!fixture.badge) return;
+  const rows = Array.isArray(state.optionRows) ? state.optionRows.filter((row) => row.groupKey === fixture.group) : [];
+  assert(rows.length > 0, `${label}: expected Quick Find group has no rows`, { fixture, state });
+  assert(rows.some((row) => String(row.badge || '').toUpperCase() === String(fixture.badge || '').toUpperCase()), `${label}: expected compact badge ${fixture.badge}`, { fixture, rows, state });
+  assert(rows.every((row) => !row.overlapsTitle), `${label}: Quick Find badge overlaps title`, { fixture, rows, state });
+  assert(!rows.some((row) => /Material Request/i.test(row.badge)), `${label}: raw Material Request badge visible`, { fixture, rows, state });
+}
+
 async function searchAndPreview(page, fixture, label) {
   await openOverview(page);
   const input = page.locator('[data-procurement-quick-find-input]').first();
@@ -238,6 +266,8 @@ async function searchAndPreview(page, fixture, label) {
   assertWorkbenchRhythm(state, `${label} suggestions`);
   assertClean(state, `${label} suggestions`);
   assertNeutralTypeBadges(state, `${label} suggestions`);
+  assertCompactQuickFindBadge(state, fixture, `${label} suggestions`);
+  assert(!/Material Request/i.test(state.suggestionsText), `${label}: raw Material Request visible in Quick Find suggestions`, state);
   await page.locator(`[data-procurement-quick-find-group="${fixture.group}"] [data-procurement-quick-find-option]`).first().click();
   await page.waitForSelector('[data-procurement-quick-find-preview]:not([hidden]) [data-procurement-quick-find-open]', { state: 'visible', timeout: TIMEOUT });
   state = await quickFindState(page);
@@ -266,6 +296,51 @@ async function assertEscapeCloses(page, fixture) {
   assert(!state.suggestionsVisible, 'Escape did not close Quick Find suggestions', state);
 }
 
+async function openWorkspaceSearchDialog(page, query) {
+  await openOverview(page);
+  await page.locator('[data-erpw-sales-search-open]').first().click();
+  const input = page.locator('.erpw-sales-console-search-dialog [data-erpw-sales-search-input]').first();
+  await input.waitFor({ state: 'visible', timeout: TIMEOUT });
+  await input.fill(query);
+  await page.waitForFunction(() => {
+    const results = document.querySelector('.erpw-sales-console-search-dialog [data-erpw-sales-search-results]');
+    return results && !results.hidden && results.querySelector('.erpw-sales-console-search-result');
+  }, null, { timeout: TIMEOUT });
+}
+
+async function workspaceSearchState(page) {
+  return page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const dialog = document.querySelector('.erpw-sales-console-search-dialog .modal.show') || document.querySelector('.erpw-sales-console-search-dialog');
+    const results = dialog ? dialog.querySelector('[data-erpw-sales-search-results]') : null;
+    return {
+      url: location.href,
+      dialogText: dialog ? (dialog.innerText || '').replace(/\s+/g, ' ').trim() : '',
+      groupLabels: results ? Array.from(results.querySelectorAll('.erpw-sales-console-search-group-label')).filter(visible).map((node) => (node.innerText || '').replace(/\s+/g, ' ').trim()) : [],
+      badges: results ? Array.from(results.querySelectorAll('.erpw-sales-console-search-result-badge')).filter(visible).map((node) => (node.innerText || '').replace(/\s+/g, ' ').trim()) : [],
+      resultCount: results ? Array.from(results.querySelectorAll('.erpw-sales-console-search-result')).filter(visible).length : 0,
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+}
+
+async function assertProcurementWorkspaceSearchLabels(page, userKey, screenshots) {
+  await openWorkspaceSearchDialog(page, 'pur');
+  let state = await workspaceSearchState(page);
+  assert(state.resultCount > 0, `${userKey}: Search dialog returned no results`, state);
+  assert(state.groupLabels.map((label) => label.toUpperCase()).includes('PURCHASE REQUESTS'), `${userKey}: Search dialog missing Purchase Requests group`, state);
+  assert(state.badges.some((badge) => String(badge || '').toUpperCase() === 'REQUEST'), `${userKey}: Search dialog missing Request row badge`, state);
+  assert(!/Material Request/i.test(state.dialogText), `${userKey}: Search dialog leaked Material Request`, state);
+  assert(state.horizontalOverflow <= 2, `${userKey}: Search dialog horizontal overflow`, state);
+  screenshots['search-pur'] = await capture(page, `${userKey}-search-pur-purchase-requests`);
+  await page.keyboard.press('Escape');
+}
+
 async function runForUser(browser, user) {
   const context = await browser.newContext();
   await installAssetOverrides(context);
@@ -280,6 +355,8 @@ async function runForUser(browser, user) {
   await openOverview(page);
   const fixtures = await discoverFixtures(page);
   const results = { user: user.key, screenshots: {}, checks: [] };
+  await page.setViewportSize({ width: 1136, height: 768 });
+  await assertProcurementWorkspaceSearchLabels(page, user.key, results.screenshots);
 
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });

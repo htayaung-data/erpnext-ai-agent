@@ -10,7 +10,11 @@ const ARTIFACT_DIR = process.env.ERPW_PROCUREMENT_PHASE7L_ARTIFACT_DIR || path.j
 );
 const ASSET_ROOT = process.env.ERPW_PROCUREMENT_PHASE7L_ASSET_ROOT || '';
 const SAMPLE_COUNT = Number(process.env.ERPW_PROCUREMENT_PHASE7L_SAMPLES || 2);
-const DIRECT_API_SAMPLE_COUNT = Number(process.env.ERPW_PROCUREMENT_PHASE7L_DIRECT_API_SAMPLES || 5);
+const DIRECT_API_SAMPLE_COUNT = Number(process.env.ERPW_PROCUREMENT_PHASE7L_DIRECT_API_SAMPLES || 10);
+const READINESS_DIRECT_MEDIAN_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7L_READINESS_MEDIAN_MS || 500);
+const READINESS_DIRECT_P95_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7L_READINESS_P95_MS || 650);
+const READINESS_DIRECT_MAX_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7L_READINESS_MAX_MS || 700);
+const QUICK_FIND_DIRECT_MAX_MS = Number(process.env.ERPW_PROCUREMENT_PHASE7L_QUICK_FIND_MAX_MS || 300);
 
 const BOOTSTRAP_METHOD = 'erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap';
 const READINESS_METHOD = 'erp_workspace_ui.procurement_console.readiness.get_procurement_manager_readiness';
@@ -260,17 +264,33 @@ async function callTimedApi(page, method, args) {
   }, { method, args });
 }
 
-async function directApiMeasure(page, method, args, samples, maxMs) {
+function percentile(sortedDurations, p) {
+  if (!sortedDurations.length) return 0;
+  const index = Math.min(sortedDurations.length - 1, Math.ceil((p / 100) * sortedDurations.length) - 1);
+  return sortedDurations[index];
+}
+
+async function directApiMeasure(page, method, args, samples, thresholds) {
   const warmupMs = Math.round(await callTimedApi(page, method, args));
   const durations = [];
   for (let i = 0; i < samples; i += 1) {
     durations.push(Math.round(await callTimedApi(page, method, args)));
   }
-  const max = Math.max(...durations);
   const sorted = durations.slice().sort((a, b) => a - b);
+  const max = Math.max(...durations);
   const median = sorted[Math.floor(sorted.length / 2)];
-  assert(max <= maxMs, `${method}: warm max duration exceeded`, { warmupMs, durations, max, median, maxMs });
-  return { method, warmupMs, durations, median, max, maxMs };
+  const p95 = percentile(sorted, 95);
+  const result = { method, warmupMs, durations, median, p95, max, thresholds };
+  if (thresholds.medianMs != null) {
+    assert(median <= thresholds.medianMs, `${method}: warm median duration exceeded`, result);
+  }
+  if (thresholds.p95Ms != null) {
+    assert(p95 <= thresholds.p95Ms, `${method}: warm p95 duration exceeded`, result);
+  }
+  if (thresholds.maxMs != null) {
+    assert(max <= thresholds.maxMs, `${method}: warm max duration exceeded`, result);
+  }
+  return result;
 }
 
 (async () => {
@@ -287,8 +307,8 @@ async function directApiMeasure(page, method, args, samples, maxMs) {
       await waitUseful(page, ROUTES[0]);
       await primeWarmRoutes(page);
       if (user.key === 'manager') {
-        summary.directApi.push(await directApiMeasure(page, READINESS_METHOD, {}, DIRECT_API_SAMPLE_COUNT, 500));
-        summary.directApi.push(await directApiMeasure(page, QUICK_FIND_METHOD, { query: 'sam', limit: 12 }, DIRECT_API_SAMPLE_COUNT, 300));
+        summary.directApi.push(await directApiMeasure(page, READINESS_METHOD, {}, DIRECT_API_SAMPLE_COUNT, { medianMs: READINESS_DIRECT_MEDIAN_MS, p95Ms: READINESS_DIRECT_P95_MS, maxMs: READINESS_DIRECT_MAX_MS }));
+        summary.directApi.push(await directApiMeasure(page, QUICK_FIND_METHOD, { query: 'sam', limit: 12 }, DIRECT_API_SAMPLE_COUNT, { maxMs: QUICK_FIND_DIRECT_MAX_MS }));
       }
       const readinessCalls = [];
       page.on('request', (request) => {

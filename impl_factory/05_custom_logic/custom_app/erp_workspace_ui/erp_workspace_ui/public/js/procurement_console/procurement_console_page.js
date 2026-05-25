@@ -12,6 +12,22 @@
   const READINESS_METHOD = procurementMethods.manager_readiness || "erp_workspace_ui.procurement_console.readiness.get_procurement_manager_readiness";
   const QUICK_FIND_METHOD = procurementMethods.quickFind || procurementMethods.quick_find || "erp_workspace_ui.procurement_console.service.get_procurement_quick_find_suggestions";
   const QUICK_FIND_DEBOUNCE_MS = 240;
+  const QUICK_FIND_ROW_BADGE_LABELS = Object.freeze({
+    suppliers: "Supplier",
+    supplier: "Supplier",
+    buying_items: "Item",
+    buying_item: "Item",
+    purchase_requests: "Request",
+    purchase_request: "Request",
+    rfqs: "RFQ",
+    rfq: "RFQ",
+    supplier_quotations: "Quotation",
+    supplier_quotation: "Quotation",
+    purchase_orders: "Order",
+    purchase_order: "Order",
+    reports: "Report",
+    report: "Report",
+  });
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const READINESS_UI_URL = "/assets/erp_workspace_ui/js/procurement_console/procurement_readiness_ui.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
@@ -42,6 +58,25 @@
       "\"": "&quot;",
       "'": "&#39;",
     }[character] || character));
+  }
+
+  function quickFindLabelKey(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
+  function quickFindBadgeLabel(result) {
+    if (!result) return "Result";
+    const explicit = String(result.badge_label || result.result_label || "").trim();
+    if (explicit) return explicit;
+    return QUICK_FIND_ROW_BADGE_LABELS[quickFindLabelKey(result.group_key)]
+      || QUICK_FIND_ROW_BADGE_LABELS[quickFindLabelKey(result.result_type)]
+      || QUICK_FIND_ROW_BADGE_LABELS[quickFindLabelKey(result.group)]
+      || String(result.result_type || result.group || "Result").trim()
+      || "Result";
   }
 
   function hasReadinessUi() {
@@ -387,7 +422,7 @@
         results.forEach((result) => {
           const $option = $(`
             <button type="button" class="erpw-procurement-quick-find-option" role="option" data-procurement-quick-find-option data-result-id="${escapeHtml(result.id || "")}" data-result-type="${escapeHtml(result.result_type || "")}">
-              <span class="erpw-procurement-quick-find-option-type">${escapeHtml(result.group || result.result_type || "Result")}</span>
+              <span class="erpw-procurement-quick-find-option-type">${escapeHtml(quickFindBadgeLabel(result))}</span>
               <span class="erpw-procurement-quick-find-option-main">${escapeHtml(result.title || result.label || result.name || "Untitled")}</span>
               <span class="erpw-procurement-quick-find-option-meta">${escapeHtml(result.subtitle || result.meta || "Productized Procurement result")}</span>
             </button>

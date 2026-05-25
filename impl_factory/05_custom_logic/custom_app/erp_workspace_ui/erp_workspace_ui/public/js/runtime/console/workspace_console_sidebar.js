@@ -76,6 +76,22 @@
     "Purchase Receipt",
     "Purchase Invoice",
   ]);
+  const PROCUREMENT_SEARCH_LABELS = Object.freeze({
+    "Supplier": { group: "Suppliers", badge: "Supplier" },
+    "Item": { group: "Buying Items", badge: "Item" },
+    "Material Request": { group: "Purchase Requests", badge: "Request" },
+    "Request for Quotation": { group: "RFQs", badge: "RFQ" },
+    "Supplier Quotation": { group: "Supplier Quotations", badge: "Quotation" },
+    "Purchase Order": { group: "Purchase Orders", badge: "Order" },
+    "Report": { group: "Reports", badge: "Report" },
+    suppliers: { group: "Suppliers", badge: "Supplier" },
+    buying_items: { group: "Buying Items", badge: "Item" },
+    purchase_requests: { group: "Purchase Requests", badge: "Request" },
+    rfqs: { group: "RFQs", badge: "RFQ" },
+    supplier_quotations: { group: "Supplier Quotations", badge: "Quotation" },
+    purchase_orders: { group: "Purchase Orders", badge: "Order" },
+    reports: { group: "Reports", badge: "Report" },
+  });
   const SLUG_FORM_DOCTYPES = {
     quotation: "Quotation",
     "sales-order": "Sales Order",
@@ -132,6 +148,14 @@
       if (matched) return matched;
     }
     return defaultWorkspaceForSidebar();
+  }
+
+  function procurementSearchLabel(item, config, type) {
+    if (!config || config.workspaceId !== "procurement") return "";
+    const groupKey = String((item && item.group_key) || "").trim();
+    const doctype = String((item && item.doctype) || "").trim();
+    const labels = PROCUREMENT_SEARCH_LABELS[groupKey] || PROCUREMENT_SEARCH_LABELS[doctype];
+    return labels && labels[type] ? labels[type] : "";
   }
 
   function workspaceConfig(route) {
@@ -1127,12 +1151,12 @@
   function renderWorkspaceSearchResults(payload) {
     const elements = currentSearchElements();
     if (!elements) return;
+    const config = workspaceConfig(getRoute());
 
     searchResults = Array.isArray(payload && payload.results) ? payload.results : [];
     searchActiveIndex = searchResults.length ? 0 : -1;
 
     if (!searchResults.length) {
-      const config = workspaceConfig(getRoute());
       elements.$status.text((payload && payload.message) || `No ${config.title} records match this search yet.`).removeAttr("hidden");
       elements.$results.empty().attr("hidden", true);
       elements.$input.attr("aria-expanded", "false").removeAttr("aria-activedescendant");
@@ -1144,10 +1168,11 @@
 
     const groups = [];
     searchResults.forEach((item, index) => {
-      const groupKey = String(item.doctype || "Record");
+      const groupLabel = item.group_label || procurementSearchLabel(item, config, "group");
+      const groupKey = String(item.group_key || groupLabel || item.doctype || "Record");
       let group = groups.find((entry) => entry.key === groupKey);
       if (!group) {
-        group = { key: groupKey, label: groupKey, items: [] };
+        group = { key: groupKey, label: groupLabel || groupKey, items: [] };
         groups.push(group);
       }
       group.items.push(Object.assign({}, item, { _index: index }));
@@ -1165,7 +1190,7 @@
             role="option"
             aria-selected="${item._index === searchActiveIndex ? "true" : "false"}"
           >
-            <span class="erpw-sales-console-search-result-badge">${escapeHtml(item.doctype || "Record")}</span>
+            <span class="erpw-sales-console-search-result-badge">${escapeHtml(item.badge_label || item.result_label || procurementSearchLabel(item, config, "badge") || item.doctype || "Record")}</span>
             <span class="erpw-sales-console-search-result-copy">
               <span class="erpw-sales-console-search-result-title">${escapeHtml(item.label || item.name || "Unnamed record")}</span>
               <span class="erpw-sales-console-search-result-meta">${escapeHtml(item.meta || "")}</span>
