@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1 industry research and roadmap design
+- Warehouse Console W1/W2 docs-only roadmap and route/action protection design
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
@@ -60,6 +60,7 @@ Freeze and governance status:
 - Procurement Console Phase 7K Overview Quick Find is protected on 2026-05-24 at `27764669a9242e732135eec1a8ae59521b85813d`; Overview now keeps Header/KPI, `Start Buying Work`, `Quick Find`, then `Readiness Review`, Quick Find copy reads `Preview before opening`, grouped suggestions preview before explicit Open, productized Procurement routes remain the only targets, and final post-live protected gate passed at `/tmp/procurement-phase7k-consistency-protected-live-20260524T104308Z`.
 - Procurement Console final freeze closure is documented on 2026-05-25 at `c1059b1`; Sales and Procurement are protected workspaces for the next Warehouse Console work.
 - Warehouse Console Phase W1 industry research and roadmap is documented on 2026-05-26 as a docs-only design phase. No Warehouse runtime, route, API, stock action, Sales change, Procurement change, or live alignment is included.
+- Warehouse Console Phase W2 route/action inventory and protection plan is documented on 2026-05-26 as a docs-only implementation gate. It defines proposed Warehouse routes, actions, roles, data sources, native escape restrictions, copy rules, future smoke coverage, and W3 readiness decisions without adding runtime routes or stock actions.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -164,6 +165,7 @@ Documents in this folder:
 - `procurement-console-final-freeze-closure-2026-05-25.md`
 - `warehouse-console-onboarding-context-audit-2026-05-25.md`
 - `warehouse-console-phase-w1-industry-research-and-roadmap-2026-05-26.md`
+- `warehouse-console-phase-w2-route-action-inventory-and-protection-plan-2026-05-26.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
