@@ -7176,10 +7176,21 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 .erpw-procurement-quick-find-option-type {
-  color: #0f766e;
-  font-size: 0.69rem;
-  font-weight: 800;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  max-width: 100%;
+  padding: 0 0.48rem;
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.66rem;
+  font-weight: 760;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .erpw-procurement-quick-find-option-main {

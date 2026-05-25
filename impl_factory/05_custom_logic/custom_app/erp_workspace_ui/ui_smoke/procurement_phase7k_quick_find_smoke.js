@@ -170,6 +170,16 @@ async function quickFindState(page) {
       suggestionsVisible: Boolean(suggestions && visible(suggestions) && !suggestions.hidden),
       groupKeys: suggestions ? Array.from(suggestions.querySelectorAll('[data-procurement-quick-find-group]')).filter(visible).map((node) => node.getAttribute('data-procurement-quick-find-group')) : [],
       optionCount: suggestions ? Array.from(suggestions.querySelectorAll('[data-procurement-quick-find-option]')).filter(visible).length : 0,
+      optionTypeStyles: suggestions ? Array.from(suggestions.querySelectorAll('.erpw-procurement-quick-find-option-type')).filter(visible).slice(0, 8).map((node) => {
+        const style = window.getComputedStyle(node);
+        return {
+          text: (node.innerText || '').replace(/\s+/g, ' ').trim(),
+          color: style.color,
+          backgroundColor: style.backgroundColor,
+          borderRadius: style.borderRadius,
+          display: style.display,
+        };
+      }) : [],
       previewVisible: Boolean(preview && visible(preview) && !preview.hidden),
       previewText: preview ? (preview.innerText || '').replace(/\s+/g, ' ').trim() : '',
       openButtonVisible: Boolean(preview && Array.from(preview.querySelectorAll('[data-procurement-quick-find-open]')).some(visible)),
@@ -199,6 +209,18 @@ function assertWorkbenchRhythm(state, label) {
   }
 }
 
+function assertNeutralTypeBadges(state, label) {
+  assert(Array.isArray(state.optionTypeStyles) && state.optionTypeStyles.length > 0, `${label}: Quick Find type badges missing`, state);
+  state.optionTypeStyles.forEach((style) => {
+    const transparent = !style.backgroundColor || style.backgroundColor === 'transparent' || style.backgroundColor === 'rgba(0, 0, 0, 0)';
+    const radius = Number.parseFloat(style.borderRadius || '0') || 0;
+    assert(!transparent, `${label}: Quick Find type badge background is transparent`, { style, state });
+    assert(radius >= 8, `${label}: Quick Find type badge is not pill-shaped`, { style, state });
+    assert(/inline-flex|inline-grid|flex/.test(style.display || ''), `${label}: Quick Find type badge should use badge layout`, { style, state });
+    assert(style.color !== 'rgb(15, 118, 110)', `${label}: Quick Find type badge still uses teal text`, { style, state });
+  });
+}
+
 async function searchAndPreview(page, fixture, label) {
   await openOverview(page);
   const input = page.locator('[data-procurement-quick-find-input]').first();
@@ -215,6 +237,7 @@ async function searchAndPreview(page, fixture, label) {
   assert(state.optionCount > 0, `${label}: no suggestions rendered`, state);
   assertWorkbenchRhythm(state, `${label} suggestions`);
   assertClean(state, `${label} suggestions`);
+  assertNeutralTypeBadges(state, `${label} suggestions`);
   await page.locator(`[data-procurement-quick-find-group="${fixture.group}"] [data-procurement-quick-find-option]`).first().click();
   await page.waitForSelector('[data-procurement-quick-find-preview]:not([hidden]) [data-procurement-quick-find-open]', { state: 'visible', timeout: TIMEOUT });
   state = await quickFindState(page);
