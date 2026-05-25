@@ -310,8 +310,8 @@
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
       }
       .erpw-sales-console-sidebar-utility-icon {
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
         display: inline-grid;
         place-items: center;
         border-radius: 9px;
@@ -435,8 +435,8 @@
           0 0 0 2px rgba(255, 255, 255, 0.9);
       }
       .erpw-sales-console-sidebar-icon {
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
         display: inline-grid;
         place-items: center;
         border-radius: 9px;
@@ -473,30 +473,30 @@
       }
       .erpw-sales-console-search-shell {
         display: grid;
-        gap: 12px;
-        padding-top: 2px;
+        gap: 10px;
+        padding-top: 0;
       }
       .erpw-sales-console-search-bar {
         display: grid;
-        grid-template-columns: 38px minmax(0, 1fr) auto;
+        grid-template-columns: 34px minmax(0, 1fr) auto;
         align-items: center;
-        gap: 10px;
-        min-height: 52px;
-        padding: 0 14px;
-        border: 1px solid rgba(214, 223, 236, 0.98);
-        border-radius: 16px;
+        gap: 9px;
+        min-height: 48px;
+        padding: 0 12px;
+        border: 1px solid rgba(214, 223, 236, 0.94);
+        border-radius: 14px;
         background: #ffffff;
         box-shadow:
-          0 1px 2px rgba(15, 23, 42, 0.03),
-          0 10px 24px rgba(15, 23, 42, 0.04);
+          0 1px 2px rgba(15, 23, 42, 0.025),
+          0 8px 18px rgba(15, 23, 42, 0.035);
       }
       .erpw-sales-console-search-bar-icon {
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
         display: inline-grid;
         place-items: center;
-        border-radius: 10px;
-        border: 1px solid rgba(228, 234, 242, 0.98);
+        border-radius: 9px;
+        border: 1px solid rgba(228, 234, 242, 0.94);
         background: #ffffff;
         color: #64748b;
       }
@@ -508,14 +508,14 @@
         width: 100%;
         border: none;
         background: transparent;
-        font-size: 13.5px;
+        font-size: 13px;
         font-weight: 500;
         color: #0f172a;
         outline: none;
         box-shadow: none;
       }
       .erpw-sales-console-search-input::placeholder {
-        color: #94a3b8;
+        color: #a3afbf;
         font-weight: 500;
       }
       .erpw-sales-console-search-status {

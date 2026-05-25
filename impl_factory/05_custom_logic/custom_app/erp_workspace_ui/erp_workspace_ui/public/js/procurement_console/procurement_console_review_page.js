@@ -265,7 +265,7 @@
     if (!context || typeof ui.renderReadinessCard !== "function") return "";
     return ui.renderReadinessCard(context, {
       title: "Readiness Review",
-      note: "Read-only guidance for future governed procurement steps.",
+      note: "Guidance only. Review before the next buying step.",
     });
   }
 
@@ -311,14 +311,14 @@
     const outgoingAvailable = Boolean(outgoing.available);
     const outgoingLabel = outgoingAvailable ? "Outgoing email ready" : "Email unavailable";
     const outgoingClass = outgoingAvailable ? "ready" : "unavailable";
-    const blockReason = readiness && readiness.send_block_reason ? readiness.send_block_reason : "RFQ email send is not enabled yet.";
+    const blockReason = readiness && readiness.send_block_reason ? readiness.send_block_reason : "Email sending is not active yet.";
     const outgoingReason = outgoing.reason || "Supplier recipients and email setup are shown for readiness review.";
     return `
       <div class="erpw-review-readiness" data-rfq-readiness-panel>
         <div class="erpw-review-readiness-top">
           <div>
             <div class="erpw-review-readiness-title">Recipient readiness</div>
-            <div class="erpw-review-readiness-note">RFQ email send is not enabled yet. Supplier recipients and email setup are shown for readiness review.</div>
+            <div class="erpw-review-readiness-note">Email sending is not active yet. Supplier recipients and email setup are shown for readiness review.</div>
           </div>
           <span class="erpw-review-readiness-pill ${outgoingClass}" data-rfq-outgoing-email-state="${outgoingAvailable ? "available" : "unavailable"}">${escapeHtml(outgoingLabel)}</span>
         </div>
@@ -346,7 +346,7 @@
         <div class="erpw-review-output-top">
           <div>
             <div class="erpw-review-output-title">Supplier Communication</div>
-            <div class="erpw-review-output-note">Preview and PDF output are supplier-specific. Email send is deferred until a governed RFQ send step exists.</div>
+            <div class="erpw-review-output-note">Preview and PDF output are supplier-specific. Email sending is not active yet.</div>
           </div>
           <span class="erpw-review-output-badge">${escapeHtml(context.warning || "Draft / Not sent")}</span>
         </div>
@@ -363,7 +363,7 @@
             <button type="button" class="erpw-review-output-button" data-rfq-output-download>Download RFQ PDF</button>
           </div>
         </div>
-        <div class="erpw-review-output-message" data-rfq-output-message>${escapeHtml(context.send_block_reason || "Email send is deferred.")}</div>
+        <div class="erpw-review-output-message" data-rfq-output-message>${escapeHtml(context.send_block_reason || "Email sending is not active yet. Preview and PDF remain available.")}</div>
         ${reviewReadinessPanelMarkup(context)}
       </section>
     `;

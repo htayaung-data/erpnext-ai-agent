@@ -382,7 +382,7 @@
         <div class="erpw-managed-rfq-output-top">
           <div>
             <div class="erpw-managed-rfq-output-title">Supplier Communication</div>
-            <div class="erpw-managed-rfq-output-note">Preview and PDF output are supplier-specific. Email send is deferred until a governed RFQ send step exists.</div>
+            <div class="erpw-managed-rfq-output-note">Preview and PDF output are supplier-specific. Email sending is not active yet.</div>
           </div>
           <span class="erpw-managed-rfq-output-badge">${escapeHtml(context ? context.warning || "Draft / Not sent" : "Draft / Not sent")}</span>
         </div>
@@ -399,7 +399,7 @@
             <button type="button" class="erpw-managed-rfq-output-button" data-rfq-output-download ${context ? "" : "disabled"}>Download RFQ PDF</button>
           </div>
         </div>
-        <div class="erpw-managed-rfq-output-message" data-rfq-output-message>${escapeHtml(context ? context.send_block_reason || "Email send is deferred." : "Loading output controls...")}</div>
+        <div class="erpw-managed-rfq-output-message" data-rfq-output-message>${escapeHtml(context ? context.send_block_reason || "Email sending is not active yet. Preview and PDF remain available." : "Loading output controls...")}</div>
         ${context ? readinessPanelMarkup(context) : ""}
       </section>
     `;
@@ -804,7 +804,7 @@
     if (!context || typeof ui.renderReadinessCard !== "function") return "";
     return ui.renderReadinessCard(context, {
       title: "Readiness Review",
-      note: "Read-only guidance for future governed procurement steps.",
+      note: "Guidance only. Review before the next buying step.",
     });
   }
 

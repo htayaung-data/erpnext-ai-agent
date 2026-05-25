@@ -21,6 +21,7 @@ const VIEWPORTS = [
 
 const FORBIDDEN_TEXT_RE = /Open ERP Form|Open ERP Supplier Form|Open ERP Item Form|Advanced ERP Form|Internal Server Error|Traceback|Confirm\s+test\s+send|Email Queue|Communication|Contact|Portal User|Item Price|Default Supplier|Submit Purchase|Approve Purchase|Create Purchase Receipt|Create Purchase Invoice|Payment Entry|Receive Items|Bill Purchase Order/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\//i;
+const OWNER_COPY_RE = /Productized|native ERP|native form|route only|No native|governed|deferred/i;
 
 function assert(condition, message, details = {}) {
   if (!condition) {
@@ -152,6 +153,8 @@ async function quickFindState(page) {
     const input = document.querySelector('[data-procurement-quick-find-input]');
     const suggestions = document.querySelector('[data-procurement-quick-find-suggestions]');
     const preview = document.querySelector('[data-procurement-quick-find-preview]');
+    const inputStyle = input ? window.getComputedStyle(input) : null;
+    const placeholderStyle = input ? window.getComputedStyle(input, '::placeholder') : null;
     const createActions = document.querySelector('[data-section-key="create-actions"]');
     const readiness = document.querySelector('[data-procurement-manager-readiness]');
     const note = section ? section.querySelector('.sales-console-section-note') : null;
@@ -164,6 +167,10 @@ async function quickFindState(page) {
       inputVisible: Boolean(input && visible(input)),
       inputValue: input ? input.value : '',
       placeholder: input ? input.getAttribute('placeholder') : '',
+      inputColor: inputStyle ? inputStyle.color : '',
+      inputFontSize: inputStyle ? inputStyle.fontSize : '',
+      placeholderColor: placeholderStyle ? placeholderStyle.color : '',
+      placeholderFontSize: placeholderStyle ? placeholderStyle.fontSize : '',
       noteText: note ? (note.innerText || '').replace(/\s+/g, ' ').trim() : '',
       quickFindRect: rectFor(section),
       createActionsRect: rectFor(createActions),
@@ -228,6 +235,20 @@ function assertWorkbenchRhythm(state, label) {
   }
 }
 
+function fontSizePx(value) {
+  return Number.parseFloat(String(value || '').replace('px', '')) || 0;
+}
+
+function assertQuickFindInputPolish(state, label) {
+  assert(state.placeholder === 'Find supplier, item, request, RFQ, quotation, order, or report', `${label}: placeholder mismatch`, state);
+  assert(state.placeholderColor && state.placeholderColor !== state.inputColor, `${label}: placeholder should be visually lighter than input text`, state);
+  assert(state.placeholderColor !== 'rgb(15, 23, 42)', `${label}: placeholder is too dark`, state);
+  const inputSize = fontSizePx(state.inputFontSize);
+  const placeholderSize = fontSizePx(state.placeholderFontSize);
+  assert(inputSize >= 12, `${label}: Quick Find input text is too small`, state);
+  if (placeholderSize) assert(placeholderSize <= inputSize + 0.2, `${label}: placeholder is visually dominant`, state);
+}
+
 function assertNeutralTypeBadges(state, label) {
   assert(Array.isArray(state.optionTypeStyles) && state.optionTypeStyles.length > 0, `${label}: Quick Find type badges missing`, state);
   state.optionTypeStyles.forEach((style) => {
@@ -268,12 +289,18 @@ async function searchAndPreview(page, fixture, label) {
   assertNeutralTypeBadges(state, `${label} suggestions`);
   assertCompactQuickFindBadge(state, fixture, `${label} suggestions`);
   assert(!/Material Request/i.test(state.suggestionsText), `${label}: raw Material Request visible in Quick Find suggestions`, state);
+  await page.locator('[data-procurement-quick-find-input]').first().press('Enter');
+  await page.waitForTimeout(200);
+  let enterState = await quickFindState(page);
+  assert(enterState.url.includes('/desk/procurement-console'), `${label}: Enter auto-navigated`, enterState);
+  assert(!enterState.previewVisible, `${label}: Enter should not open a preview`, enterState);
   await page.locator(`[data-procurement-quick-find-group="${fixture.group}"] [data-procurement-quick-find-option]`).first().click();
   await page.waitForSelector('[data-procurement-quick-find-preview]:not([hidden]) [data-procurement-quick-find-open]', { state: 'visible', timeout: TIMEOUT });
   state = await quickFindState(page);
   assert(state.url.includes('/desk/procurement-console'), `${label}: selection auto-navigated`, state);
   assert(state.previewVisible && state.openButtonVisible, `${label}: preview/open not visible`, state);
   assert(!/\/desk\/Form\/|\/app\//i.test(state.previewText), `${label}: preview includes native route text`, state);
+  assert(!OWNER_COPY_RE.test(state.previewText), `${label}: preview contains developer/governance wording`, state);
   assertWorkbenchRhythm(state, `${label} preview`);
   assertClean(state, `${label} preview`);
   return state;
@@ -363,7 +390,7 @@ async function runForUser(browser, user) {
     await openOverview(page);
     let state = await quickFindState(page);
     assert(state.sectionVisible && state.inputVisible, `${user.key} ${viewport.key}: Quick Find not visible`, state);
-    assert(state.placeholder === 'Find supplier, item, request, RFQ, quotation, order, or report', `${user.key} ${viewport.key}: placeholder mismatch`, state);
+    assertQuickFindInputPolish(state, `${user.key} ${viewport.key} empty`);
     assertWorkbenchRhythm(state, `${user.key} ${viewport.key} empty`);
     assertClean(state, `${user.key} ${viewport.key} empty`);
     results.screenshots[`${viewport.key}-empty`] = await capture(page, `${user.key}-${viewport.key}-quick-find-empty`);

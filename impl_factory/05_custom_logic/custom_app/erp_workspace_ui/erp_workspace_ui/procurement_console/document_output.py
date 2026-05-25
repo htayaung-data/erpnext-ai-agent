@@ -16,8 +16,8 @@ ALLOWED_DOCTYPES = {RFQ_DOCTYPE, PO_DOCTYPE}
 
 RFQ_WARNING = "Draft / Not sent"
 PO_WARNING = "Draft / Not for supplier"
-RFQ_SEND_BLOCK = "RFQ email send is not enabled yet. Supplier recipients and email setup are shown for readiness review. Future enablement requires a governed RFQ send policy."
-PO_SEND_BLOCK = "Supplier send requires a governed purchase order release step. This draft is not a supplier commitment."
+RFQ_SEND_BLOCK = "Email sending is not active yet. Supplier recipients and email setup are shown for readiness review. Preview and PDF remain available."
+PO_SEND_BLOCK = "Supplier sending is not active yet. This draft is not a supplier commitment. Preview and PDF remain available."
 
 
 def _state(kind: str, title: str, detail: str = "") -> dict[str, str]:
@@ -311,7 +311,7 @@ def _outgoing_email_status() -> dict[str, object]:
             "status": "available",
             "account": "",
             "email_id": "",
-            "reason": "Outgoing email is configured. RFQ send still remains blocked until governed send policy is approved.",
+            "reason": "Outgoing email is configured. Email sending is not active yet. Preview and PDF remain available.",
         }
     if accounts:
         reason = "Outgoing email setup exists but is not enabled for sending. Preview and PDF remain available."
@@ -370,7 +370,7 @@ def _rfq_supplier_readiness(doc: object, outgoing_email: dict[str, object]) -> l
         else:
             status = "ready"
             label = "Ready"
-            reason = "Supplier recipient is ready for a future governed send step."
+            reason = "Supplier recipient is ready when email sending is activated."
         if controlled_source:
             email_source = controlled_source
         elif supplier_row.get("email_id"):
@@ -502,7 +502,7 @@ def _output_context(doc: object, supplier: str | None = None) -> dict[str, objec
             {"key": "download_pdf", "label": "Download RFQ PDF" if doctype == RFQ_DOCTYPE else "Download PO PDF", "kind": "secondary"},
             {
                 "key": "send",
-                "label": "Send RFQ" if doctype == RFQ_DOCTYPE else "PO send deferred",
+                "label": "Send RFQ" if doctype == RFQ_DOCTYPE else "Send PO",
                 "kind": "blocked",
                 "disabled": True,
                 "reason": _send_block_for(doctype),

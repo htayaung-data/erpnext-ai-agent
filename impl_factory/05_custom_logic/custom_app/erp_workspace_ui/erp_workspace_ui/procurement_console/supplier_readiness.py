@@ -418,7 +418,7 @@ def _validate_payload(supplier: str, payload: dict[str, Any]) -> dict[str, str]:
 	keys = set(payload)
 	forbidden = sorted(keys.intersection(FORBIDDEN_PAYLOAD_KEYS))
 	if forbidden:
-		raise ValueError(f"Forbidden readiness fields are not accepted: {', '.join(forbidden)}.")
+		raise ValueError("This form can only update approved fields. Remove unsupported fields and try again.")
 	unknown = sorted(keys.difference(ALLOWED_PAYLOAD_KEYS))
 	if unknown:
 		raise ValueError(f"Unknown readiness fields are not accepted: {', '.join(unknown)}.")

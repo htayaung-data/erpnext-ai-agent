@@ -227,7 +227,7 @@
     if (!context || typeof ui.renderReadinessCard !== "function") return "";
     return ui.renderReadinessCard(context, {
       title: "Readiness Review",
-      note: "Read-only guidance for future governed procurement steps.",
+      note: "Guidance only. Review before the next buying step.",
     });
   }
 

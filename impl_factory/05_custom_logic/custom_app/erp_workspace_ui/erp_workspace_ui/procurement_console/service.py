@@ -33,8 +33,8 @@ QUICK_FIND_REPORTS = (
 	{
 		"key": "procurement_reports_index",
 		"title": "Procurement Reports",
-		"description": "Open the governed Procurement report catalog.",
-		"boundary": "Productized report index only.",
+		"description": "Open the Procurement report catalog.",
+		"boundary": "Procurement report catalog.",
 	},
 	{
 		"key": "supplier_quotation_comparison",
@@ -523,7 +523,7 @@ def _quick_find_preview(result_type: str, row: dict[str, object], target: dict[s
 	preview = builder(row) if builder else {"title": cstr(row.get("name")), "subtitle": "Procurement record", "facts": []}
 	preview["target"] = target
 	preview["primary_action_label"] = action_label or "Open"
-	preview["boundary_note"] = preview.get("boundary_note") or "Productized Procurement route only. No native ERP form is opened."
+	preview["boundary_note"] = preview.get("boundary_note") or "Open the Procurement page for this record."
 	return preview
 
 
@@ -562,7 +562,7 @@ def _rfq_quick_find_preview(row: dict[str, object]) -> dict[str, object]:
 		"subtitle": cstr(row.get("subject")).strip() or "RFQ review",
 		"chips": [cstr(row.get("status")).strip() or "Visible"],
 		"facts": _facts(("Status", row.get("status")), ("Required by", row.get("schedule_date")), ("Company", row.get("company"))),
-		"boundary_note": "Review RFQ in Procurement. Send remains governed by the deferred send policy.",
+		"boundary_note": "Review this RFQ. Email sending is not active yet.",
 	}
 
 
@@ -582,7 +582,7 @@ def _purchase_order_quick_find_preview(row: dict[str, object]) -> dict[str, obje
 		"subtitle": cstr(row.get("supplier_name")).strip() or cstr(row.get("supplier")).strip() or "Purchase order follow-up",
 		"chips": [status],
 		"facts": _facts(("Supplier", row.get("supplier_name") or row.get("supplier")), ("Status", status), ("Required by", row.get("schedule_date")), ("Total", _money_value(row)), ("Received", _percent_value(row.get("per_received"))), ("Billed", _percent_value(row.get("per_billed")))),
-		"boundary_note": "Open buyer follow-up only. Receiving, billing, and payment remain outside this action.",
+		"boundary_note": "Open buyer follow-up. Receiving, billing, and payment are not part of this action.",
 	}
 
 
@@ -599,8 +599,8 @@ def _quick_find_report_results(query: str, limit: int) -> list[dict[str, object]
 			"title": cstr(report.get("title")),
 			"subtitle": "Procurement report",
 			"chips": ["Read-only"],
-			"facts": _facts(("Purpose", report.get("description")), ("Boundary", report.get("boundary"))),
-			"boundary_note": "Productized Procurement report route only. No native ERP report route is opened.",
+			"facts": _facts(("Purpose", report.get("description")), ("Scope", report.get("boundary"))),
+			"boundary_note": "Open this Procurement report.",
 			"target": target,
 			"primary_action_label": "Open report",
 		}
@@ -963,7 +963,7 @@ def _build_phase1_overview() -> dict[str, object]:
 			{
 				"key": "supplier_quotation_comparison",
 				"label": "Supplier Quotation Comparison",
-				"description": "Governed comparison of quoted supplier prices and validity.",
+				"description": "Compare quoted supplier prices and validity for buyer review.",
 			}
 		],
 	}

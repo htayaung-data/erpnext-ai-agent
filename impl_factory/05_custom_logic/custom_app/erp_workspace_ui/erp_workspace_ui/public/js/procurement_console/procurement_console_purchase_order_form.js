@@ -319,7 +319,7 @@
         <div class="erpw-managed-po-output-top">
           <div>
             <div class="erpw-managed-po-output-title">Document Output</div>
-            <div class="erpw-managed-po-output-note">Preview and PDF are internal draft output only. Supplier send requires a governed purchase order release step.</div>
+            <div class="erpw-managed-po-output-note">Preview and PDF are internal draft output only. Supplier sending is not active yet.</div>
           </div>
           <span class="erpw-managed-po-output-badge">${escapeHtml(context ? context.warning || "Draft / Not for supplier" : "Draft / Not for supplier")}</span>
         </div>
@@ -327,7 +327,7 @@
           <button type="button" class="erpw-managed-po-output-button" data-po-output-preview ${context ? "" : "disabled"}>Preview Purchase Order</button>
           <button type="button" class="erpw-managed-po-output-button" data-po-output-download ${context ? "" : "disabled"}>Download PO PDF</button>
         </div>
-        <div class="erpw-managed-po-output-message" data-po-output-message>${escapeHtml(context ? context.send_block_reason || "Supplier send is deferred." : "Loading output controls...")}</div>
+        <div class="erpw-managed-po-output-message" data-po-output-message>${escapeHtml(context ? context.send_block_reason || "Supplier sending is not active yet. Preview and PDF remain available." : "Loading output controls...")}</div>
       </section>
     `;
   }
@@ -693,7 +693,7 @@
     if (!context || typeof ui.renderReadinessCard !== "function") return "";
     return ui.renderReadinessCard(context, {
       title: "Readiness Review",
-      note: "Read-only guidance for future governed procurement steps.",
+      note: "Guidance only. Review before the next buying step.",
     });
   }
 

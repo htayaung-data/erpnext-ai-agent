@@ -140,7 +140,7 @@
       <div class="erpw-readiness-row" data-procurement-readiness-issue data-readiness-severity="${escapeHtml(issue.severity || "info")}" data-readiness-group="${escapeHtml(issue.group || "")}">
         <div class="erpw-readiness-row-main">
           <div class="erpw-readiness-row-title"><span class="erpw-readiness-chip ${escapeHtml(issue.severity || "info")}">${escapeHtml(severityLabel(issue.severity))}</span>${escapeHtml(issue.title || "Readiness issue")}</div>
-          <div class="erpw-readiness-row-detail">${escapeHtml(issue.detail || "Review this record before future governed action.")}</div>
+          <div class="erpw-readiness-row-detail">${escapeHtml(issue.detail || "Review this record before the next buying step.")}</div>
           <div class="erpw-readiness-row-source">${escapeHtml(issue.group_label || issue.group || "Readiness")} - ${escapeHtml(issue.source_name || issue.source_type || "Record")}</div>
         </div>
         ${fixRoute && fixLabel ? `<button type="button" class="erpw-readiness-action" data-procurement-readiness-route="${routePayload(fixRoute)}">${escapeHtml(fixLabel)}</button>` : ""}
@@ -153,7 +153,7 @@
     const cfg = options || {};
     const issues = Array.isArray(context && context.issues) ? context.issues : [];
     const title = cfg.title || "Readiness Review";
-    const note = cfg.note || "Read-only guidance for future governed procurement steps.";
+    const note = cfg.note || "Guidance only. Review before the next buying step.";
     const empty = context && context.empty_message ? context.empty_message : "No readiness issues found for current checks.";
     return `
       <section class="erpw-readiness-card" data-procurement-readiness-card>
@@ -239,7 +239,7 @@
     if (category.key === 'item_readiness') return 'Review buying context before sourcing or orders.';
     if (category.key === 'supplier_readiness') return 'Review supplier buying profile before sourcing.';
     if (category.key === 'rfq_communication') return 'Review communication readiness before supplier outreach.';
-    if (category.key === 'document_quality') return 'Review draft evidence before governed workflow steps.';
+    if (category.key === 'document_quality') return 'Review draft evidence before workflow steps.';
     if (category.key === 'order_follow_up') return 'Review buyer follow-up context for active orders.';
     return 'Review this readiness item before action.';
   }

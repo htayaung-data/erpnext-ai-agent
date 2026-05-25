@@ -390,7 +390,7 @@ def _item_readiness_issues(
 			group,
 			"warning",
 			"Item buying context not reviewed" if group == "item_readiness" else "Item buying context needs review",
-			"Review the Buying Procurement Context before using this item in sourcing or order decisions." if group == "item_readiness" else f"{item_name} readiness is {item_buying_profile.display_readiness_label(status)}.",
+			"Review the Item Buying Context before using this item in sourcing or order decisions." if group == "item_readiness" else f"{item_name} readiness is {item_buying_profile.display_readiness_label(status)}.",
 			source_type,
 			source_name,
 			fix_label="Review item context",
@@ -409,7 +409,7 @@ def _item_readiness_issues(
 		group,
 		"warning",
 		readiness_evidence.ITEM_NEW_REVIEW_LABEL,
-		"Review the Buying Procurement Context before using this item in sourcing or order decisions." if group == "item_readiness" else f"{item_name} has no buying history, catalog evidence, or Buying Procurement Context yet.",
+		"Review the Item Buying Context before using this item in sourcing or order decisions." if group == "item_readiness" else f"{item_name} has no buying history, catalog evidence, or Buying Procurement Context yet.",
 		source_type,
 		source_name,
 		fix_label="Review item context",
@@ -506,7 +506,7 @@ def get_item_buying_readiness_context(item_code: str) -> dict[str, object]:
 			"item_readiness",
 			"warning",
 			"Item buying context not reviewed",
-			"Review the Buying Procurement Context before using this item in sourcing or order decisions.",
+			"Review the Item Buying Context before using this item in sourcing or order decisions.",
 			"Item",
 			item_name,
 			fix_label="Review item context",
@@ -526,7 +526,7 @@ def get_item_buying_readiness_context(item_code: str) -> dict[str, object]:
 			"item_readiness",
 			"warning",
 			readiness_evidence.ITEM_NEW_REVIEW_LABEL,
-			"Review the Buying Procurement Context before using this item in sourcing or order decisions.",
+			"Review the Item Buying Context before using this item in sourcing or order decisions.",
 			"Item",
 			item_name,
 			fix_label="Review item context",
@@ -543,10 +543,10 @@ def _supplier_issues_for_document(suppliers: list[object], parent_key: str, grou
 			group,
 			"critical",
 			"No suppliers selected",
-			"Add supplier context through the governed productized form before a future supplier communication step.",
+			"Add supplier context before supplier communication can be reviewed.",
 			parent_key.split(":", 1)[0],
 			parent_key.split(":", 1)[-1],
-			deferred_action="Future governed sourcing step",
+			deferred_action="Next sourcing step",
 		))
 		return issues
 	supplier_names = [cstr(_value(row, "supplier") or _value(row, "supplier_name")).strip() for row in suppliers]
@@ -584,10 +584,10 @@ def _item_issues_for_document(items: list[object], parent_key: str, group: str, 
 			group,
 			"critical",
 			"No item lines",
-			"Add item lines through the governed productized form before future downstream action.",
+			"Add item lines before the next buying step.",
 			parent_key.split(":", 1)[0],
 			parent_key.split(":", 1)[-1],
-			deferred_action="Future governed document step",
+			deferred_action="Next document step",
 		))
 		return issues
 	item_names = [cstr(_value(row, "item_code")).strip() for row in items]
@@ -624,11 +624,11 @@ def _line_quality_issues(items: list[object], parent_key: str, group: str, *, re
 		if _qty_missing(_value(row, "qty")):
 			issues.append(_issue(f"{parent_key}:line:{index}:qty", group, "critical", "Line quantity missing", f"{item} needs a positive quantity.", parent_key.split(":", 1)[0], parent_key.split(":", 1)[-1]))
 		if _missing(_value(row, "uom")):
-			issues.append(_issue(f"{parent_key}:line:{index}:uom", group, "warning", "Line UOM missing", f"{item} needs a unit of measure before future document action.", parent_key.split(":", 1)[0], parent_key.split(":", 1)[-1]))
+			issues.append(_issue(f"{parent_key}:line:{index}:uom", group, "warning", "Line UOM missing", f"{item} needs a unit of measure before the next document step.", parent_key.split(":", 1)[0], parent_key.split(":", 1)[-1]))
 		if require_rate and flt(_value(row, "rate")) <= 0:
-			issues.append(_issue(f"{parent_key}:line:{index}:rate", group, "critical", "Line rate missing", f"{item} needs a positive rate before future manager review.", parent_key.split(":", 1)[0], parent_key.split(":", 1)[-1]))
+			issues.append(_issue(f"{parent_key}:line:{index}:rate", group, "critical", "Line rate missing", f"{item} needs a positive rate before manager review.", parent_key.split(":", 1)[0], parent_key.split(":", 1)[-1]))
 		if require_schedule and _missing(_value(row, "schedule_date") or _value(row, "required_date")):
-			issues.append(_issue(f"{parent_key}:line:{index}:date", group, "warning", "Required date missing", f"{item} needs a required date before future downstream action.", parent_key.split(":", 1)[0], parent_key.split(":", 1)[-1]))
+			issues.append(_issue(f"{parent_key}:line:{index}:date", group, "warning", "Required date missing", f"{item} needs a required date before the next buying step.", parent_key.split(":", 1)[0], parent_key.split(":", 1)[-1]))
 	return issues
 
 
@@ -644,11 +644,11 @@ def get_purchase_request_readiness_context(name: str, cache: dict[str, dict[str,
 		f"{parent_key}:future_step",
 		"purchase_request_readiness",
 		"info",
-		"Future governed sourcing step",
-		"Purchase Request downstream action remains guidance-only in this phase.",
+		"Next sourcing step",
+		"Purchase Request next-step action is guidance-only in this phase.",
 		"Material Request",
 		cstr(name).strip(),
-		deferred_action="Future governed sourcing step",
+		deferred_action="Next sourcing step",
 	))
 	return _context_payload("Material Request", cstr(name).strip(), issues)
 
@@ -675,7 +675,7 @@ def get_rfq_readiness_context(name: str, cache: dict[str, dict[str, object]] | N
 					"rfq_readiness",
 					"warning",
 					"RFQ recipient needs review",
-					cstr(row.get("reason")).strip() or "Supplier recipient email is not ready for future governed RFQ send.",
+					cstr(row.get("reason")).strip() or "Supplier recipient email is not ready for RFQ sending.",
 					"Supplier",
 					supplier,
 					fix_label="Review supplier profile",
@@ -687,11 +687,11 @@ def get_rfq_readiness_context(name: str, cache: dict[str, dict[str, object]] | N
 		f"{parent_key}:send_deferred",
 		"rfq_readiness",
 		"info",
-		"Send remains deferred",
-		"RFQ supplier communication remains preview/PDF/readiness only until governed send is approved.",
+		"Sending not active",
+		"RFQ supplier communication remains preview/PDF/readiness only. Email sending is not active yet.",
 		"Request for Quotation",
 		cstr(name).strip(),
-		deferred_action="Governed RFQ send",
+		deferred_action="RFQ send",
 	))
 	return _context_payload("Request for Quotation", cstr(name).strip(), issues)
 
@@ -713,7 +713,7 @@ def get_supplier_quotation_readiness_context(name: str, cache: dict[str, dict[st
 	issues.extend(_line_quality_issues(items, parent_key, "supplier_quotation_readiness", require_rate=True))
 	if _missing(_value(doc, "valid_till")):
 		issues.append(_issue(f"{parent_key}:valid_till", "supplier_quotation_readiness", "warning", "Validity date missing", "Quotation validity is missing for future comparison readiness.", "Supplier Quotation", quotation))
-	issues.append(_issue(f"{parent_key}:future_award", "supplier_quotation_readiness", "info", "Future governed award step", "Supplier selection and downstream document action remain deferred.", "Supplier Quotation", quotation, deferred_action="Future governed award step"))
+	issues.append(_issue(f"{parent_key}:future_award", "supplier_quotation_readiness", "info", "Next award step", "Supplier selection and downstream document action are guidance-only in this phase.", "Supplier Quotation", quotation, deferred_action="Next award step"))
 	return _context_payload("Supplier Quotation", quotation, issues)
 
 
@@ -734,7 +734,7 @@ def get_purchase_order_readiness_context(name: str, cache: dict[str, dict[str, o
 	issues.extend(_line_quality_issues(items, parent_key, "purchase_order_readiness", require_rate=True, require_schedule=True))
 	if _missing(_value(doc, "currency")):
 		issues.append(_issue(f"{parent_key}:currency", "purchase_order_readiness", "warning", "Currency missing", "Purchase Order currency is required before future release readiness.", "Purchase Order", po_name))
-	issues.append(_issue(f"{parent_key}:future_lifecycle", "purchase_order_readiness", "info", "Future governed order step", "Purchase Order release and supplier communication remain deferred.", "Purchase Order", po_name, deferred_action="Future governed order step"))
+	issues.append(_issue(f"{parent_key}:future_lifecycle", "purchase_order_readiness", "info", "Next order step", "Purchase Order release and supplier communication are guidance-only in this phase.", "Purchase Order", po_name, deferred_action="Next order step"))
 	return _context_payload("Purchase Order", po_name, issues)
 
 

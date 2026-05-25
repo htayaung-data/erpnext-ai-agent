@@ -1821,7 +1821,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(rfq_context["state"]["kind"], "ready")
         self.assertEqual(rfq_context["warning"], "Draft / Not sent")
         self.assertFalse(rfq_context["can_send"])
-        self.assertIn("governed RFQ send", rfq_context["send_block_reason"])
+        self.assertIn("Email sending is not active yet", rfq_context["send_block_reason"])
         self.assertTrue(rfq_context["requires_supplier_selection"])
         self.assertEqual([row["supplier"] for row in rfq_context["suppliers"]], ["SUP-001", "SUP-002"])
         self.assertIn("send_readiness", rfq_context)
@@ -1829,7 +1829,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(po_context["state"]["kind"], "ready")
         self.assertEqual(po_context["warning"], "Draft / Not for supplier")
         self.assertFalse(po_context["can_send"])
-        self.assertIn("governed purchase order release", po_context["send_block_reason"])
+        self.assertIn("Supplier sending is not active yet", po_context["send_block_reason"])
         _assert_no_forbidden_mutation_actions(self, rfq_context)
         _assert_no_forbidden_mutation_actions(self, po_context)
 
@@ -1840,7 +1840,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         self.assertEqual(context["state"]["kind"], "ready")
         self.assertFalse(context["can_send"])
-        self.assertIn("governed RFQ send", context["send_block_reason"])
+        self.assertIn("Email sending is not active yet", context["send_block_reason"])
         self.assertFalse(context["outgoing_email"]["available"])
         self.assertIn("Outgoing email", context["outgoing_email"]["reason"])
         statuses = {row["supplier"]: row for row in context["suppliers"]}
@@ -3359,7 +3359,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
                 self.assertNotIn("/app/", str(context))
                 self.assertNotIn("Open ERP", str(context))
         self.assertTrue(any(issue["severity"] == "critical" for issue in rfq_payload["detail"]["readiness_context"]["issues"]))
-        self.assertIn("Send remains deferred", str(rfq_payload["detail"]["readiness_context"]))
+        self.assertIn("Sending not active", str(rfq_payload["detail"]["readiness_context"]))
         self.assertEqual(before_logs, (len(SUPPLIER_READINESS_LOGS), len(ITEM_BUYING_LOGS)))
         self.assertEqual({}, SAVED_PURCHASE_ORDERS)
         self.assertEqual({}, SAVED_SUPPLIER_QUOTATIONS)

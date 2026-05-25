@@ -321,7 +321,7 @@ def save_managed_purchase_request_draft(payload: str | dict[str, Any] | None = N
 
     forbidden = _payload_forbidden_keys(data)
     if forbidden:
-        return _error("Purchase Request draft not saved", f"This form cannot set {', '.join(sorted(forbidden))}.")
+        return _error("Purchase Request draft not saved", "This form can only update approved fields. Remove unsupported fields and try again.")
 
     if name:
         if not _can_edit_purchase_request():

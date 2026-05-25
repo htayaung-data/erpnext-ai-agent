@@ -297,7 +297,7 @@ def _form_payload(
         "readiness_context": readiness.get_rfq_readiness_context(name) if saved else {},
         "conversion": {
             "purchase_request_to_rfq": "deferred",
-            "detail": "PR-to-RFQ conversion is deferred because ERPNext native mapping requires submitted Material Requests. Phase 5A currently records internal Purchase Requests as drafts. A governed PR submit/review step is required before productized PR-to-RFQ conversion.",
+            "detail": "PR-to-RFQ conversion is not active because Purchase Requests are stored as drafts in this phase. Review and sourcing steps remain managed separately.",
         },
     }
 
@@ -369,7 +369,7 @@ def save_managed_rfq_draft(payload: str | dict[str, Any] | None = None) -> dict[
 
     forbidden = _payload_forbidden_keys(data)
     if forbidden:
-        return _error("RFQ not saved", f"This form cannot set {', '.join(sorted(forbidden))}.")
+        return _error("RFQ not saved", "This form can only update approved fields. Remove unsupported fields and try again.")
 
     if name:
         if not _can_edit_rfq():

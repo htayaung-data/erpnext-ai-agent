@@ -141,7 +141,7 @@
         state: {
           kind: "loading",
           title: "Loading report",
-          detail: "Reading live report output and shaping the productized review surface.",
+          detail: "Reading live report output and preparing the Procurement review surface.",
         },
       },
       action_targets: {},

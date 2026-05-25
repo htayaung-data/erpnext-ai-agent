@@ -273,7 +273,7 @@ def _po_analysis_payload(
 		"metrics": {"appearance": "analytics_compact", "layout": "five_up", "items": metrics},
 		"results": {
 			"title": "Purchase order lines",
-			"subtitle": "Read-only purchase order analysis with productized drilldowns for buyer review.",
+			"subtitle": "Read-only purchase order analysis with Procurement drilldowns for buyer review.",
 			"meta": f"{len(rows)} shown",
 			"columns": _po_analysis_display_columns(),
 			"rows": rows[:ROW_LIMIT],

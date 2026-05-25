@@ -363,7 +363,7 @@ def save_managed_supplier_quotation_draft(payload: str | dict[str, Any] | None =
 
     forbidden = _payload_forbidden_keys(data)
     if forbidden:
-        return _error("Supplier Quotation not saved", f"This form cannot set {', '.join(sorted(forbidden))}.")
+        return _error("Supplier Quotation not saved", "This form can only update approved fields. Remove unsupported fields and try again.")
 
     if name:
         if not _can_edit_supplier_quotation():

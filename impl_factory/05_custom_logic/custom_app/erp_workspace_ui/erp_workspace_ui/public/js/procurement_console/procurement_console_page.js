@@ -360,13 +360,35 @@
   }
 
 
+  function businessQuickFindCopy(value, result) {
+    let copy = String(value || "").trim();
+    if (!copy) return "";
+    if (/Open the governed Procurement report catalog/i.test(copy)) return "Open the Procurement report catalog.";
+    if (/Productized report index only/i.test(copy)) return "Procurement report catalog.";
+    if (/Productized Procurement route only/i.test(copy) || /No native ERP form/i.test(copy)) return "Open the Procurement page for this record.";
+    if (/Productized Procurement report route only/i.test(copy) || /No native ERP report/i.test(copy)) return "Open this Procurement report.";
+    if (/Send remains governed by the deferred send policy/i.test(copy)) return "Review this RFQ. Email sending is not active yet.";
+    copy = copy
+      .replace(/Productized Procurement/gi, "Procurement")
+      .replace(/\bproductized\b/gi, "Procurement")
+      .replace(/native ERP/gi, "Procurement")
+      .replace(/native form/gi, "Procurement page")
+      .replace(/route only/gi, "page")
+      .replace(/No native/gi, "")
+      .replace(/\bgoverned\b/gi, "managed")
+      .replace(/\bdeferred\b/gi, "not active")
+      .replace(/\s+/g, " ")
+      .trim();
+    return copy || (String((result && result.result_type) || "") === "report" ? "Open this Procurement report." : "Open the Procurement page for this record.");
+  }
+
   function renderQuickFindSection() {
     const $section = $(`
       <section class="sales-console-card sales-console-section erpw-procurement-quick-find" data-procurement-quick-find>
         <div class="sales-console-section-head erpw-procurement-quick-find-head">
           <div>
             <h2 class="sales-console-section-title">Quick Find</h2>
-            <div class="erpw-procurement-quick-find-subtitle">Locate a visible procurement record, preview it, then open the productized page.</div>
+            <div class="erpw-procurement-quick-find-subtitle">Find a procurement record, preview it, then open its Procurement page.</div>
           </div>
           <div class="sales-console-section-note">Preview before opening</div>
         </div>
@@ -424,7 +446,7 @@
             <button type="button" class="erpw-procurement-quick-find-option" role="option" data-procurement-quick-find-option data-result-id="${escapeHtml(result.id || "")}" data-result-type="${escapeHtml(result.result_type || "")}">
               <span class="erpw-procurement-quick-find-option-type">${escapeHtml(quickFindBadgeLabel(result))}</span>
               <span class="erpw-procurement-quick-find-option-main">${escapeHtml(result.title || result.label || result.name || "Untitled")}</span>
-              <span class="erpw-procurement-quick-find-option-meta">${escapeHtml(result.subtitle || result.meta || "Productized Procurement result")}</span>
+              <span class="erpw-procurement-quick-find-option-meta">${escapeHtml(businessQuickFindCopy(result.subtitle || result.meta || "Procurement result", result))}</span>
             </button>
           `);
           $option.on("click", () => selectQuickFindResult($section, state, result));
@@ -503,30 +525,46 @@
     renderQuickFindPreview($section, result);
   }
 
+  function businessQuickFindBoundaryNote(note, result) {
+    const value = String(note || "").trim();
+    const type = String((result && result.result_type) || "").trim();
+    if (!value || /Productized|native ERP|native form|route only|No native/i.test(value)) {
+      return type === "report" ? "Open this Procurement report." : "Open the Procurement page for this record.";
+    }
+    if (/governed|deferred/i.test(value)) {
+      if (type === "rfq") return "Review this RFQ. Email sending is not active yet.";
+      if (type === "purchase_order") return "Open buyer follow-up. Receiving, billing, and payment are not part of this action.";
+      return value.replace(/governed/gi, "managed").replace(/deferred/gi, "not active");
+    }
+    return value;
+  }
+
   function renderQuickFindPreview($section, result) {
     const preview = (result && result.preview) || {};
     const facts = Array.isArray(preview.facts) ? preview.facts : [];
     const chips = Array.isArray(preview.chips) ? preview.chips : [];
     const actionLabel = preview.primary_action_label || result.primary_action_label || "Open";
+    const boundaryNote = businessQuickFindBoundaryNote(preview.boundary_note, result);
     const $preview = $section.find("[data-procurement-quick-find-preview]").first();
     $preview.empty().removeAttr("hidden");
     const $facts = facts.length ? $("<dl class=\"erpw-procurement-quick-find-facts\"></dl>") : $("<div></div>");
     facts.forEach((fact) => {
-      $facts.append(`<div><dt>${escapeHtml(fact.label || "Fact")}</dt><dd>${escapeHtml(fact.value || "-")}</dd></div>`);
+      const label = String(fact.label || "Fact") === "Boundary" ? "Scope" : (fact.label || "Fact");
+      $facts.append(`<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(businessQuickFindCopy(fact.value || "-", result))}</dd></div>`);
     });
     const chipHtml = chips.map((chip) => `<span class="erpw-procurement-quick-find-chip">${escapeHtml(chip)}</span>`).join("");
     $preview.append(`
       <div class="erpw-procurement-quick-find-preview-copy">
         <div class="erpw-procurement-quick-find-preview-kicker">${escapeHtml(result.group || "Procurement result")}</div>
         <h3 class="erpw-procurement-quick-find-preview-title">${escapeHtml(preview.title || result.title || result.label || result.name || "Selected result")}</h3>
-        <div class="erpw-procurement-quick-find-preview-subtitle">${escapeHtml(preview.subtitle || result.subtitle || "Productized Procurement destination")}</div>
+        <div class="erpw-procurement-quick-find-preview-subtitle">${escapeHtml(preview.subtitle || result.subtitle || "Procurement page")}</div>
         <div class="erpw-procurement-quick-find-chip-row">${chipHtml}</div>
       </div>
     `);
     $preview.append($facts);
     $preview.append(`
       <div class="erpw-procurement-quick-find-preview-action">
-        <div class="erpw-procurement-quick-find-boundary">${escapeHtml(preview.boundary_note || "Productized Procurement route only.")}</div>
+        <div class="erpw-procurement-quick-find-boundary">${escapeHtml(boundaryNote)}</div>
         <button type="button" class="erpw-procurement-quick-find-open" data-procurement-quick-find-open>${escapeHtml(actionLabel)}</button>
       </div>
     `);
@@ -569,7 +607,7 @@
       const $button = makeAction({
         key: action.key || "",
         title: action.title || action.label || action.key,
-        meta: action.note || "Open the governed ERPNext form.",
+        meta: action.note || "Open this Procurement action.",
         icon: "square",
         primary: isPrimary,
         tier: variant,
