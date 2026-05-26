@@ -15,7 +15,11 @@ from erp_workspace_ui.workspace_governance_manifest import (
     route_keys_by_workspace,
     validate_manifest,
 )
-from erp_workspace_ui.workspace_registry import get_procurement_workspace_definition, get_sales_workspace_definition
+from erp_workspace_ui.workspace_registry import (
+    get_procurement_workspace_definition,
+    get_sales_workspace_definition,
+    get_warehouse_workspace_definition,
+)
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -78,7 +82,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         required = {"Submit", "Cancel", "Amend", "Approve", "Reject", "Receive", "Bill", "Pay", "Set Default Supplier", "Update Item Price", "Delete"}
         self.assertTrue(required.issubset(set(FORBIDDEN_MUTATION_LABELS)))
         guarded_workspaces = {guard["workspace_id"] for guard in FORBIDDEN_MUTATION_GUARDS}
-        self.assertEqual({"sales", "procurement"}, guarded_workspaces)
+        self.assertEqual({"sales", "procurement", "warehouse"}, guarded_workspaces)
         for guard in FORBIDDEN_MUTATION_GUARDS:
             self.assertEqual(set(FORBIDDEN_MUTATION_LABELS), set(guard["labels"]), guard)
             self.assertIn("native-exception-policy-v1.md", guard["policy_doc"], guard)
@@ -158,19 +162,39 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertNotIn("Form", str(fix))
 
     def test_registry_route_keys_exist_in_manifest(self):
-        sales_routes = get_sales_workspace_definition()["routes"]
-        procurement_routes = get_procurement_workspace_definition()["routes"]
-        sales_manifest_keys = route_keys_by_workspace("sales")
-        procurement_manifest_keys = route_keys_by_workspace("procurement")
+        workspace_pairs = [
+            (get_sales_workspace_definition()["routes"], route_keys_by_workspace("sales")),
+            (get_procurement_workspace_definition()["routes"], route_keys_by_workspace("procurement")),
+            (get_warehouse_workspace_definition()["routes"], route_keys_by_workspace("warehouse")),
+        ]
 
-        for key, value in sales_routes.items():
-            if key.endswith("_path"):
-                continue
-            self.assertIn(value, sales_manifest_keys, key)
-        for key, value in procurement_routes.items():
-            if key.endswith("_path"):
-                continue
-            self.assertIn(value, procurement_manifest_keys, key)
+        for routes, manifest_keys in workspace_pairs:
+            for key, value in routes.items():
+                if key.endswith("_path"):
+                    continue
+                self.assertIn(value, manifest_keys, key)
+
+    def test_warehouse_w3_routes_and_actions_are_read_only(self):
+        warehouse_routes = [route for route in ROUTE_MANIFEST if route["workspace_id"] == "warehouse"]
+        self.assertEqual(["warehouse-console"], [route["route_key"] for route in warehouse_routes])
+        self.assertEqual("productized_overview", warehouse_routes[0]["classification"])
+        self.assertEqual("/desk/warehouse-console", warehouse_routes[0]["route_pattern"])
+        self.assertNotEqual("governed_native_exception", warehouse_routes[0]["classification"])
+
+        warehouse_actions = {
+            action["manifest_key"]: action
+            for action in ACTION_MANIFEST
+            if action["workspace_id"] == "warehouse"
+        }
+        self.assertEqual(
+            {"warehouse-overview-refresh", "warehouse-sidebar-overview-navigation"},
+            set(warehouse_actions),
+        )
+        self.assertEqual("current_shell", warehouse_actions["warehouse-overview-refresh"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-sidebar-overview-navigation"]["target_kind"])
+        for action in warehouse_actions.values():
+            self.assertNotIn(action["target_kind"], {"form", "report", "list", "new_doc"}, action)
+            self.assertIsNone(action.get("native_exception_ref"), action)
 
     def test_procurement_home_routing_for_purchase_roles_is_owner_approved(self):
         boot_source = (APP_ROOT / "boot.py").read_text()

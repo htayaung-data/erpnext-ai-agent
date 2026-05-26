@@ -38,10 +38,22 @@ FORBIDDEN_MUTATION_LABELS = (
 	"Approve",
 	"Reject",
 	"Receive",
+	"Ship",
+	"Dispatch",
+	"Post",
+	"Reconcile",
+	"Reserve",
+	"Unreserve",
 	"Bill",
 	"Pay",
 	"Set Default Supplier",
 	"Update Item Price",
+	"Stock Entry",
+	"Purchase Receipt",
+	"Delivery Note",
+	"Stock Reconciliation",
+	"Assign Serial",
+	"Assign Batch",
 	"Delete",
 )
 
@@ -254,6 +266,7 @@ ROUTE_MANIFEST: tuple[dict[str, Any], ...] = (
 	_route("procurement", "procurement-console-supplier-quotation-form", "managed_supplier_quotation_form", "managed_create_edit", "/desk/procurement-console-supplier-quotation-form/<name-or-new>", "managed_draft_form_shell", required_smoke_category="procurement_phase5c_smoke", notes="Managed Supplier Quotation draft form. Save Quotation only; no submit or Purchase Order creation."),
 	_route("procurement", "procurement-console-purchase-order-form", "managed_purchase_order_form", "managed_create_edit", "/desk/procurement-console-purchase-order-form/<name-or-new>", "managed_draft_form_shell", required_smoke_category="procurement_phase5d_smoke", notes="Managed Purchase Order draft form. Save Purchase Order only; no submit, receipt, invoice, or payment actions."),
 	_route("procurement", "procurement-console-supplier-quotation-review", "review", "productized_detail", "/desk/procurement-console-supplier-quotation-review/<supplier-quotation>", "compact_review_shell", required_smoke_category="procurement_phase3_smoke", notes="Read-only Supplier Quotation review."),
+	_route("warehouse", "warehouse-console", "overview", "productized_overview", "/desk/warehouse-console", "console_runtime", required_smoke_category="warehouse_phase_w3_smoke", notes="W3 read-only Warehouse Overview. No worklists, reports, details, native exceptions, or stock actions."),
 )
 
 ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
@@ -347,6 +360,8 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("procurement-managed-po-preview-output", "procurement", "procurement-console-purchase-order-form/<purchase-order>", "preview_purchase_order_output", "productized_secondary_action", "current_shell", label="Preview Purchase Order", notes="Phase 6C1 productized draft PO preview. No native print UI."),
 	_action("procurement-managed-po-download-pdf", "procurement", "procurement-console-purchase-order-form/<purchase-order>", "download_purchase_order_pdf", "productized_secondary_action", "controlled_pdf_endpoint", label="Download PO PDF", notes="Phase 6C1 internal draft PO PDF wrapper. Filename must include DRAFT-NOT-FOR-SUPPLIER."),
 	_action("procurement-managed-po-email-blocked", "procurement", "procurement-console-purchase-order-form/<purchase-order>", "email_supplier", "productized_secondary_action", "disabled", label="Email supplier", notes="Phase 6C1 blocked action; PO supplier send requires approval/submit governance."),
+	_action("warehouse-overview-refresh", "warehouse", "warehouse-console", "refresh", "productized_secondary_action", "current_shell", label="Refresh", notes="W3 read-only Overview reload."),
+	_action("warehouse-sidebar-overview-navigation", "warehouse", "warehouse-sidebar", "sidebar_overview_navigation", "productized_navigation", "page", label="Overview", target_route_pattern="/desk/warehouse-console", notes="W3 sidebar entry opens the Warehouse Overview only."),
 )
 
 FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
@@ -362,6 +377,13 @@ FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
 		"scope": "productized_overview_worklist_report_detail_review_pages",
 		"labels": FORBIDDEN_MUTATION_LABELS,
 		"allowed_only_when": "declared governed native exception or future managed mutation page",
+		"policy_doc": "_docs/erp-ui-customization/native-exception-policy-v1.md",
+	},
+	{
+		"workspace_id": "warehouse",
+		"scope": "w3_productized_overview_read_only_page",
+		"labels": FORBIDDEN_MUTATION_LABELS,
+		"allowed_only_when": "future controlled Warehouse execution design and manifest update",
 		"policy_doc": "_docs/erp-ui-customization/native-exception-policy-v1.md",
 	},
 )

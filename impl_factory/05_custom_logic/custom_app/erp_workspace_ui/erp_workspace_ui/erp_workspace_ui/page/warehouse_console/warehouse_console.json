@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "warehouse-console",
+  "page_name": "warehouse-console",
+  "title": "Warehouse Console",
+  "icon": "octicon octicon-package",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

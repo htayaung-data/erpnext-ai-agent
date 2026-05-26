@@ -147,15 +147,50 @@
     ],
   };
 
+  const warehouseWorkspace = {
+    workspaceId: "warehouse",
+    status: "w3_read_only_overview",
+    title: "Warehouse Console",
+    modeLabel: "Warehouse Workspace",
+    roleFamily: "Warehouse",
+    routes: {
+      home: "warehouse-console",
+      homePath: "/desk/warehouse-console",
+    },
+    methods: {
+      overview: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
+      sidebarContext: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
+    },
+    managedDoctypes: {
+      Warehouse: "warehouse_console_home",
+      Item: "warehouse_console_home",
+      Bin: "warehouse_console_home",
+    },
+    sidebar: {
+      homeKey: "warehouse_console_home",
+      homeLabel: "Overview",
+      sectionKey: "workspace",
+      sectionLabel: "Workspace",
+    },
+    search: {
+      enabled: false,
+    },
+    fallbackItems: [
+      { key: "warehouse_console_home", label: "Overview", icon: "item", target: { kind: "page", route: "warehouse-console" } },
+    ],
+  };
+
+
   const activeWorkspaces = {
     sales: salesWorkspace,
     procurement: procurementWorkspace,
+    warehouse: warehouseWorkspace,
   };
 
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
     { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
-    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "planned" },
+    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w3_read_only_overview" },
     { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
     { workspaceId: "customer_service", matrixName: "Customer Service Console", recommendedName: "Customer Service Console", wave: "second", priority: 6, status: "planned" },
@@ -199,12 +234,17 @@
     return get("procurement");
   }
 
+  function warehouse() {
+    return get("warehouse");
+  }
+
   root.erpWorkspaceUiWorkspaceRegistry = {
     get,
     getByRoute,
     route,
     sales,
     procurement,
+    warehouse,
     roadmap: () => clone(roadmap),
   };
 })();

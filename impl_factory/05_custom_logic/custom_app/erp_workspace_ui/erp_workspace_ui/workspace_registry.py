@@ -186,6 +186,45 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 }
 
 
+_WAREHOUSE_WORKSPACE: dict[str, Any] = {
+	"workspace_id": "warehouse",
+	"status": "w3_read_only_overview",
+	"title": "Warehouse Console",
+	"mode_label": "Warehouse Workspace",
+	"role_family": "Warehouse",
+	"routes": {
+		"home": "warehouse-console",
+		"home_path": "/desk/warehouse-console",
+	},
+	"methods": {
+		"overview": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
+		"sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
+	},
+	"managed_doctypes": {
+		"Warehouse": "warehouse_console_home",
+		"Item": "warehouse_console_home",
+		"Bin": "warehouse_console_home",
+	},
+	"sidebar": {
+		"home_key": "warehouse_console_home",
+		"home_label": "Overview",
+		"section_key": "workspace",
+		"section_label": "Workspace",
+	},
+	"search": {
+		"enabled": False,
+	},
+	"fallback_items": [
+		{
+			"key": "warehouse_console_home",
+			"label": "Overview",
+			"icon": "item",
+			"target": {"kind": "page", "route": "warehouse-console"},
+		},
+	],
+}
+
+
 _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 	{
 		"workspace_id": "sales",
@@ -209,7 +248,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Warehouse Console",
 		"wave": "first",
 		"priority": 3,
-		"status": "planned",
+		"status": "w3_read_only_overview",
 	},
 	{
 		"workspace_id": "finance",
@@ -257,6 +296,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 _ACTIVE_WORKSPACES: dict[str, dict[str, Any]] = {
 	"sales": _SALES_WORKSPACE,
 	"procurement": _PROCUREMENT_WORKSPACE,
+	"warehouse": _WAREHOUSE_WORKSPACE,
 }
 
 
@@ -294,3 +334,8 @@ def get_sales_workspace_definition() -> dict[str, Any]:
 
 def get_procurement_workspace_definition() -> dict[str, Any]:
 	return get_workspace_definition("procurement")
+
+
+
+def get_warehouse_workspace_definition() -> dict[str, Any]:
+	return get_workspace_definition("warehouse")

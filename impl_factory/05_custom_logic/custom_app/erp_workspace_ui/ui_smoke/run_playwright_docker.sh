@@ -40,6 +40,12 @@ if [ -n "${ERPW_PROCUREMENT_PHASE7L_ASSET_ROOT:-}" ]; then
 	DOCKER_PROCUREMENT_PHASE7L_ASSET_ROOT="/phase7l-assets"
 fi
 
+DOCKER_WAREHOUSE_W3_ASSET_ROOT="${ERPW_WAREHOUSE_W3_ASSET_ROOT:-}"
+if [ -n "${ERPW_WAREHOUSE_W3_ASSET_ROOT:-}" ]; then
+	EXTRA_DOCKER_ARGS+=(-v "${ERPW_WAREHOUSE_W3_ASSET_ROOT}:/warehouse-w3-assets:ro")
+	DOCKER_WAREHOUSE_W3_ASSET_ROOT="/warehouse-w3-assets"
+fi
+
 mkdir -p "$SCRIPT_DIR/artifacts" "$SCRIPT_DIR/test-results"
 
 docker run --rm \
@@ -111,6 +117,18 @@ docker run --rm \
 	-e ERPW_PROCUREMENT_SUPPLIER_NAME \
 	-e ERPW_PROCUREMENT_ITEM_CODE \
 	-e ERPW_PROCUREMENT_PURCHASE_ORDER \
+	-e ERPW_WAREHOUSE_MANAGER_USERNAME \
+	-e ERPW_WAREHOUSE_MANAGER_PASSWORD \
+	-e ERPW_STOCK_MANAGER_USERNAME \
+	-e ERPW_STOCK_MANAGER_PASSWORD \
+	-e ERPW_WAREHOUSE_USER_USERNAME \
+	-e ERPW_WAREHOUSE_USER_PASSWORD \
+	-e ERPW_STOCK_USER_USERNAME \
+	-e ERPW_STOCK_USER_PASSWORD \
+	-e ERPW_WAREHOUSE_W3_ARTIFACT_DIR \
+	-e ERPW_WAREHOUSE_W3_ASSET_ROOT="$DOCKER_WAREHOUSE_W3_ASSET_ROOT" \
+	-e ERPW_WAREHOUSE_W3_TIMEOUT \
+	-e ERPW_WAREHOUSE_W3_WARM_TARGET_MS \
 	-e ERPW_SALES_CONSOLE_ROUTE \
 	"$IMAGE" \
 	bash -lc "set -euo pipefail; rm -rf /tmp/erpw-ui-smoke; mkdir -p /tmp/erpw-ui-smoke; tar --exclude='./node_modules' --exclude='./test-results' -cf - -C /work . | tar -xf - -C /tmp/erpw-ui-smoke; cd /tmp/erpw-ui-smoke; npm ci && ${SMOKE_COMMAND}"

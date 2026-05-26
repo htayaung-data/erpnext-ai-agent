@@ -35,7 +35,7 @@
   }
 
   function configuredWorkspaces() {
-    return [workspaceFromRegistry("sales"), workspaceFromRegistry("procurement")].filter(Boolean);
+    return [workspaceFromRegistry("sales"), workspaceFromRegistry("procurement"), workspaceFromRegistry("warehouse")].filter(Boolean);
   }
 
   function defaultWorkspaceForSidebar() {
@@ -127,6 +127,7 @@
   function inferredWorkspaceId(route) {
     const pageKey = Array.isArray(route) ? String(route[0] || "") : "";
     if (pageKey.indexOf("procurement-console") === 0) return "procurement";
+    if (pageKey.indexOf("warehouse-console") === 0) return "warehouse";
     if (pageKey.indexOf("sales-console") === 0) return "sales";
     const doctype = routeDoctype(route);
     if (PROCUREMENT_FORM_DOCTYPES.has(doctype)) return "procurement";
@@ -164,20 +165,24 @@
     const methods = workspace.methods || {};
     const sidebar = workspace.sidebar || {};
     const id = workspaceId(workspace);
+    const fallbackTitle = id === "procurement" ? "Procurement Console" : id === "warehouse" ? "Warehouse Console" : WORKSPACE_TITLE;
+    const fallbackMode = id === "procurement" ? "Procurement Workspace" : id === "warehouse" ? "Warehouse Workspace" : WORKSPACE_MODE_LABEL;
+    const fallbackHome = id === "procurement" ? "procurement-console" : id === "warehouse" ? "warehouse-console" : HOME_ROUTE;
     return {
       workspace,
       workspaceId: id,
-      title: workspace.title || (id === "procurement" ? "Procurement Console" : WORKSPACE_TITLE),
-      modeLabel: workspace.modeLabel || (id === "procurement" ? "Procurement Workspace" : WORKSPACE_MODE_LABEL),
+      title: workspace.title || fallbackTitle,
+      modeLabel: workspace.modeLabel || fallbackMode,
       routes,
       sidebar,
+      search: workspace.search || {},
       fallbackItems: Array.isArray(workspace.fallbackItems) ? workspace.fallbackItems : [],
-      homeRoute: routes.home || (id === "procurement" ? "procurement-console" : HOME_ROUTE),
-      launcherRoute: routes.launcher || (id === "procurement" ? "procurement-console-home" : salesRoutes.launcher || "sales-console-home"),
-      worklistRoute: routes.worklist || (id === "procurement" ? "procurement-console-worklist" : WORKLIST_ROUTE),
-      reportRoute: routes.report || (id === "procurement" ? "procurement-console-report" : REPORT_ROUTE),
-      homePath: routes.homePath || routes.home_path || `/desk/${routes.home || (id === "procurement" ? "procurement-console" : HOME_ROUTE)}`,
-      sidebarContextMethod: methods.sidebarContext || methods.sidebar_context || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context" : SIDEBAR_METHOD),
+      homeRoute: routes.home || fallbackHome,
+      launcherRoute: routes.launcher || routes.home || (id === "procurement" ? "procurement-console-home" : salesRoutes.launcher || "sales-console-home"),
+      worklistRoute: routes.worklist || (id === "procurement" ? "procurement-console-worklist" : id === "sales" ? WORKLIST_ROUTE : ""),
+      reportRoute: routes.report || (id === "procurement" ? "procurement-console-report" : id === "sales" ? REPORT_ROUTE : ""),
+      homePath: routes.homePath || routes.home_path || `/desk/${routes.home || fallbackHome}`,
+      sidebarContextMethod: methods.sidebarContext || methods.sidebar_context || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context" : id === "warehouse" ? "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context" : SIDEBAR_METHOD),
       searchMethod: methods.workspaceSearch || methods.workspace_search || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace" : SEARCH_METHOD),
       managedFormActiveKeys: Object.assign({}, workspace.managedDoctypes || {}),
     };
@@ -958,6 +963,10 @@
     };
   }
 
+  function isWorkspaceSearchEnabled(config) {
+    return !(config && config.search && config.search.enabled === false);
+  }
+
   function shortcutLabel() {
     const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(String(navigator.platform || ""));
     return isMac ? "⌘K" : "Ctrl+K";
@@ -1004,6 +1013,7 @@
 
   function routeToWorklist(queueKey, filters) {
     const config = workspaceConfig(getRoute());
+    if (!config.worklistRoute) return;
     const nextFilters = filters && Object.keys(filters).length ? filters : null;
     const normalizedQueueKey = String(queueKey || "").replace(/_/g, "-");
     const normalizedTargetKey = String(queueKey || "").replace(/-/g, "_");
@@ -1024,6 +1034,7 @@
 
   function routeToReportPage(reportKey) {
     const config = workspaceConfig(getRoute());
+    if (!config.reportRoute) return;
     const slug = String(reportKey || "").replace(/_/g, "-");
     frappe.set_route(config.reportRoute, slug);
     fallbackToProcurementManagedRoute(config, config.reportRoute, slug, ".erpw-report-shell");
@@ -1347,7 +1358,8 @@
 
   function openWorkspaceSearch(prefill) {
     const route = getRoute();
-    if (!isManagedRoute(route)) return;
+    const config = workspaceConfig(route);
+    if (!isManagedRoute(route) || !isWorkspaceSearchEnabled(config)) return;
     const dialog = ensureWorkspaceSearchDialog();
     dialog.show();
     const elements = currentSearchElements();
@@ -1443,6 +1455,21 @@
       return true;
     }
 
+    const searchUtilityMarkup = isWorkspaceSearchEnabled(config) ? `
+        <button
+          type="button"
+          class="erpw-sales-console-sidebar-utility"
+          data-erpw-sales-search-open="1"
+          aria-label="Open ${escapeHtml(workspaceTitle)} search"
+          title="Search"
+        >
+          <span class="erpw-sales-console-sidebar-utility-icon" aria-hidden="true">${iconMarkup("search")}</span>
+          <span class="erpw-sales-console-sidebar-utility-copy">
+            <span class="erpw-sales-console-sidebar-utility-title">Search</span>
+          </span>
+          <span class="erpw-sales-console-sidebar-utility-shortcut">${escapeHtml(shortcutLabel())}</span>
+        </button>
+    ` : "";
     const utilitiesMarkup = `
       <div class="erpw-sales-console-sidebar-utilities">
         <button
@@ -1457,19 +1484,7 @@
             <span class="erpw-sales-console-sidebar-utility-title">Notification</span>
           </span>
         </button>
-        <button
-          type="button"
-          class="erpw-sales-console-sidebar-utility"
-          data-erpw-sales-search-open="1"
-          aria-label="Open ${escapeHtml(workspaceTitle)} search"
-          title="Search"
-        >
-          <span class="erpw-sales-console-sidebar-utility-icon" aria-hidden="true">${iconMarkup("search")}</span>
-          <span class="erpw-sales-console-sidebar-utility-copy">
-            <span class="erpw-sales-console-sidebar-utility-title">Search</span>
-          </span>
-          <span class="erpw-sales-console-sidebar-utility-shortcut">${escapeHtml(shortcutLabel())}</span>
-        </button>
+        ${searchUtilityMarkup}
       </div>
     `;
 
