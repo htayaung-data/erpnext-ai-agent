@@ -9,9 +9,28 @@ SALES_CONSOLE_ROUTE = "/desk/sales-console"
 SALES_CONSOLE_APP_HOME = "/desk/sales-console-home"
 SALES_CONSOLE_HOME_PAGE = "sales-console-home"
 PROCUREMENT_CONSOLE_HOME_PAGE = "procurement-console-home"
+WAREHOUSE_CONSOLE_HOME_PAGE = "warehouse-console"
 DEFAULT_APP_EXCLUDED_USERS = {"Administrator"}
 SALES_CONSOLE_ROLES = frozenset({"Sales Manager", "Sales User", "Sales Master Manager", "Sales Executive", "Key Account Sales"})
 PROCUREMENT_CONSOLE_ROLES = frozenset({"Purchase User", "Purchase Manager", "Purchase Master Manager"})
+WAREHOUSE_CONSOLE_ROLES = frozenset({"Warehouse Manager", "Warehouse User", "Stock Manager", "Stock User"})
+WAREHOUSE_CONSOLE_BLOCKING_ROLES = SALES_CONSOLE_ROLES | PROCUREMENT_CONSOLE_ROLES | frozenset(
+	{
+		"System Manager",
+		"Accounts Manager",
+		"Accounts User",
+		"Finance Manager",
+		"Finance User",
+		"HR Manager",
+		"HR User",
+		"Manufacturing Manager",
+		"Manufacturing User",
+		"Projects Manager",
+		"Projects User",
+		"Report Manager",
+		"Workspace Manager",
+	}
+)
 DEFAULT_APP_RULES = (
 	(SALES_CONSOLE_APP, SALES_CONSOLE_ROLES),
 )
@@ -25,6 +44,7 @@ MANAGED_DESK_HOME_PAGES = {
 	"sales-console-home",
 	"procurement-console",
 	"procurement-console-home",
+	"warehouse-console",
 }
 
 
@@ -51,6 +71,17 @@ def resolve_default_app(user: str | None = None) -> str | None:
 	return None
 
 
+def should_use_warehouse_console_home(user: str | None = None) -> bool:
+	user = user or frappe.session.user
+	if not user or user == "Guest" or user in DEFAULT_APP_EXCLUDED_USERS:
+		return False
+
+	user_roles = _current_user_roles(user)
+	return bool(user_roles.intersection(WAREHOUSE_CONSOLE_ROLES)) and not bool(
+		user_roles.intersection(WAREHOUSE_CONSOLE_BLOCKING_ROLES)
+	)
+
+
 def resolve_default_home_page(user: str | None = None) -> str | None:
 	user = user or frappe.session.user
 	if not user or user == "Guest":
@@ -63,6 +94,9 @@ def resolve_default_home_page(user: str | None = None) -> str | None:
 	for home_page, roles in DEFAULT_HOME_PAGE_RULES:
 		if user_roles.intersection(roles):
 			return home_page
+
+	if should_use_warehouse_console_home(user):
+		return WAREHOUSE_CONSOLE_HOME_PAGE
 
 	return None
 

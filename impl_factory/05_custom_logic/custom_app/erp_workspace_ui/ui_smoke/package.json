@@ -58,7 +58,9 @@
     "test:procurement-phase7l-performance": "node procurement_phase7l_performance_smoke.js",
     "test:workspace-search-modal": "node workspace_search_modal_smoke.js",
     "test:warehouse-w3": "node warehouse_phase_w3_smoke.js",
-    "test:warehouse-w3:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w3"
+    "test:warehouse-w3:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w3",
+    "test:warehouse-w3a-landing": "node warehouse_phase_w3a_landing_smoke.js",
+    "test:warehouse-w3a-landing:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w3a-landing"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

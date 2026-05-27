@@ -46,6 +46,12 @@ if [ -n "${ERPW_WAREHOUSE_W3_ASSET_ROOT:-}" ]; then
 	DOCKER_WAREHOUSE_W3_ASSET_ROOT="/warehouse-w3-assets"
 fi
 
+DOCKER_WAREHOUSE_W3A_ASSET_ROOT="${ERPW_WAREHOUSE_W3A_ASSET_ROOT:-}"
+if [ -n "${ERPW_WAREHOUSE_W3A_ASSET_ROOT:-}" ]; then
+	EXTRA_DOCKER_ARGS+=(-v "${ERPW_WAREHOUSE_W3A_ASSET_ROOT}:/warehouse-w3a-assets:ro")
+	DOCKER_WAREHOUSE_W3A_ASSET_ROOT="/warehouse-w3a-assets"
+fi
+
 mkdir -p "$SCRIPT_DIR/artifacts" "$SCRIPT_DIR/test-results"
 
 docker run --rm \
@@ -129,6 +135,13 @@ docker run --rm \
 	-e ERPW_WAREHOUSE_W3_ASSET_ROOT="$DOCKER_WAREHOUSE_W3_ASSET_ROOT" \
 	-e ERPW_WAREHOUSE_W3_TIMEOUT \
 	-e ERPW_WAREHOUSE_W3_WARM_TARGET_MS \
+	-e ERPW_WAREHOUSE_W3A_ARTIFACT_DIR \
+	-e ERPW_WAREHOUSE_W3A_ASSET_ROOT="$DOCKER_WAREHOUSE_W3A_ASSET_ROOT" \
+	-e ERPW_WAREHOUSE_W3A_TIMEOUT \
+	-e ERPW_SYSTEM_MANAGER_USERNAME \
+	-e ERPW_SYSTEM_MANAGER_PASSWORD \
+	-e ERPW_ADMIN_USERNAME \
+	-e ERPW_ADMIN_PASSWORD \
 	-e ERPW_SALES_CONSOLE_ROUTE \
 	"$IMAGE" \
 	bash -lc "set -euo pipefail; rm -rf /tmp/erpw-ui-smoke; mkdir -p /tmp/erpw-ui-smoke; tar --exclude='./node_modules' --exclude='./test-results' -cf - -C /work . | tar -xf - -C /tmp/erpw-ui-smoke; cd /tmp/erpw-ui-smoke; npm ci && ${SMOKE_COMMAND}"

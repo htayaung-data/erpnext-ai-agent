@@ -2066,6 +2066,30 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         boot.apply_role_based_boot_home(bootinfo)
         self.assertEqual(bootinfo["home_page"], "sales-console-home")
 
+    def test_warehouse_operational_roles_receive_warehouse_home_without_default_app(self):
+        _set_user("warehouse@example.com", ["Warehouse Manager"])
+        bootinfo = {}
+
+        self.assertIsNone(boot.resolve_default_app("warehouse@example.com"))
+        self.assertTrue(boot.should_use_warehouse_console_home("warehouse@example.com"))
+        self.assertEqual(boot.resolve_default_home_page("warehouse@example.com"), "warehouse-console")
+        boot.apply_role_based_boot_home(bootinfo)
+        self.assertEqual(bootinfo["home_page"], "warehouse-console")
+
+    def test_warehouse_home_is_blocked_for_admin_and_cross_workspace_roles(self):
+        cases = (
+            ("warehouse-admin@example.com", ["Warehouse Manager", "System Manager"], None),
+            ("warehouse-accounts@example.com", ["Warehouse User", "Accounts User"], None),
+            ("warehouse-sales@example.com", ["Warehouse Manager", "Sales User"], "sales-console-home"),
+            ("warehouse-purchase@example.com", ["Stock User", "Purchase User"], "procurement-console-home"),
+        )
+        for user, roles, expected_home in cases:
+            with self.subTest(user=user):
+                _set_user(user, roles)
+                self.assertFalse(boot.should_use_warehouse_console_home(user))
+                if expected_home:
+                    self.assertEqual(boot.resolve_default_home_page(user), expected_home)
+
     def test_non_procurement_bootstrap_returns_restricted(self):
         _set_user("sales@example.com", ["Sales User"])
 
@@ -2294,6 +2318,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("Purchase Manager", source)
         self.assertIn('frappe.set_route("procurement-console")', source)
         self.assertIn('salesWorkspaceRoute("launcher", "sales-console-home")', source)
+        self.assertIn("hasWarehouseOperationalHomeRole", source)
+        self.assertIn("hasWarehouseDeskBypassRole", source)
+        self.assertIn('frappe.set_route("warehouse-console")', source)
         self.assertIn("scheduleRoleHomeRedirect", source)
 
     def test_phase3_smoke_covers_direct_po_follow_up_route(self):

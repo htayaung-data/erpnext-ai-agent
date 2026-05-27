@@ -275,25 +275,58 @@
     return document.querySelector(".erpw-direct-warehouse-body");
   }
 
+  function currentWarehouseHost() {
+    return document.querySelector('.erpw-direct-warehouse-page[data-erpw-page-key="warehouse-console"]');
+  }
+
+  function ensureWarehouseBody(host) {
+    if (!host) return null;
+    let body = host.querySelector(".erpw-direct-warehouse-body");
+    if (!body) {
+      body = document.createElement("main");
+      body.className = "layout-main-section erpw-direct-warehouse-body";
+      host.appendChild(body);
+    }
+    return body;
+  }
+
+  function removeDuplicateWarehouseHosts(keepBody) {
+    const keepHost = keepBody ? keepBody.closest('.erpw-direct-warehouse-page[data-erpw-page-key="warehouse-console"]') : null;
+    document.querySelectorAll('.sales-console-shell[data-erpw-workspace="warehouse"]').forEach((shell) => {
+      if (!keepBody || !keepBody.contains(shell)) shell.remove();
+    });
+    document.querySelectorAll('.erpw-direct-warehouse-page[data-erpw-page-key="warehouse-console"]').forEach((host) => {
+      if (host !== keepHost) host.remove();
+    });
+  }
+
   function replacePageBody(page, $content) {
     const body = pageBodyElement(page);
     if (!body) return;
+    removeDuplicateWarehouseHosts(body);
     body.innerHTML = "";
     $content.each((index, node) => body.appendChild(node));
   }
 
   function makeConsolePage(wrapper) {
+    const existingHost = currentWarehouseHost();
+    if (existingHost && document.body.contains(existingHost)) {
+      return {
+        body: ensureWarehouseBody(existingHost),
+        set_title(title) {
+          document.title = title || "Warehouse Console";
+        },
+      };
+    }
+
     const $parent = $(wrapper);
     if (wrapper && wrapper.id === "body") {
       let $host = $parent.find('.erpw-direct-warehouse-page[data-erpw-page-key="warehouse-console"]').first();
       if (!$host.length) {
         $host = $('<div class="erpw-direct-warehouse-page" data-erpw-page-key="warehouse-console"></div>').appendTo($parent);
       }
-      if (!$host.find(".erpw-direct-warehouse-body").length) {
-        $host.append('<main class="layout-main-section erpw-direct-warehouse-body"></main>');
-      }
       return {
-        body: $host.find(".erpw-direct-warehouse-body").first().get(0),
+        body: ensureWarehouseBody($host.get(0)),
         set_title(title) {
           document.title = title || "Warehouse Console";
         },
@@ -459,9 +492,17 @@
     return Boolean(root && root.querySelector && root.querySelector('.sales-console-shell[data-erpw-workspace="warehouse"]'));
   }
 
+  function cleanupDuplicateReadyShells() {
+    const shells = Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace="warehouse"]'));
+    if (shells.length <= 1) return shells[0] || null;
+    shells.slice(1).forEach((shell) => shell.remove());
+    removeDuplicateWarehouseHosts(shells[0] && shells[0].parentElement ? shells[0].parentElement : null);
+    return shells[0] || null;
+  }
+
   function hasReadyOverviewShell() {
-    const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="warehouse"]');
-    return Boolean(shell && shell.getAttribute("data-erpw-console-runtime") === "ready" && document.querySelector(".warehouse-console-kpi-card"));
+    const shell = cleanupDuplicateReadyShells();
+    return Boolean(shell && shell.getAttribute("data-erpw-console-runtime") === "ready" && shell.querySelector(".warehouse-console-kpi-card"));
   }
 
   function render(wrapper) {
@@ -479,6 +520,7 @@
     activeOverviewRenderState = { routeSignature, token: renderToken, root: pageBodyElement(page) };
     ensureConsoleRuntime().then(() => fetchOverviewWithRetry(0)).then((response) => {
       if (!isActiveWarehouseRoute() || overviewRouteSignature() !== routeSignature) return;
+      if (!activeOverviewRenderState || activeOverviewRenderState.token !== renderToken) return;
       const payload = response && response.message ? response.message : {};
       if (payload.state && payload.state.kind === "restricted") {
         renderState(page, payload.state);
@@ -486,6 +528,7 @@
       }
       renderOverview(page, payload);
     }).catch((error) => {
+      if (!activeOverviewRenderState || activeOverviewRenderState.token !== renderToken) return;
       renderState(page, {
         kind: "error",
         title: "Warehouse Console could not be loaded",

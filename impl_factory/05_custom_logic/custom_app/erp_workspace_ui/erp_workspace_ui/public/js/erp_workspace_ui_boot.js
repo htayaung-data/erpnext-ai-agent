@@ -2319,8 +2319,43 @@
     return path === "/desk" || path === "/app";
   }
 
+  function hasWarehouseOperationalHomeRole() {
+    return hasAnyBootRole(["Warehouse Manager", "Warehouse User", "Stock Manager", "Stock User"]);
+  }
+
+  function hasWarehouseDeskBypassRole() {
+    return hasAnyBootRole([
+      "System Manager",
+      "Sales Manager",
+      "Sales User",
+      "Sales Master Manager",
+      "Sales Executive",
+      "Key Account Sales",
+      "Purchase User",
+      "Purchase Manager",
+      "Purchase Master Manager",
+      "Accounts Manager",
+      "Accounts User",
+      "Finance Manager",
+      "Finance User",
+      "HR Manager",
+      "HR User",
+      "Manufacturing Manager",
+      "Manufacturing User",
+      "Projects Manager",
+      "Projects User",
+      "Report Manager",
+      "Workspace Manager",
+    ]);
+  }
+
   function routeToRoleHome() {
-    if (roleHomeRedirectDone || !isPlainDeskPath() || !window.frappe || typeof frappe.set_route !== "function") return;
+    if (!isPlainDeskPath()) {
+      roleHomeRedirectDone = false;
+      return;
+    }
+    if (roleHomeRedirectDone || !window.frappe || typeof frappe.set_route !== "function") return;
+
     const user = String((frappe.session && frappe.session.user) || (frappe.boot && frappe.boot.user && frappe.boot.user.name) || "");
     if (!user || user === "Guest" || user === "Administrator") return;
     if (hasAnyBootRole(["Purchase User", "Purchase Manager", "Purchase Master Manager"])) {
@@ -2331,6 +2366,11 @@
     if (hasAnyBootRole(["Sales Manager", "Sales User", "Sales Master Manager", "Sales Executive", "Key Account Sales"])) {
       roleHomeRedirectDone = true;
       frappe.set_route(salesWorkspaceRoute("launcher", "sales-console-home"));
+      return;
+    }
+    if (hasWarehouseOperationalHomeRole() && !hasWarehouseDeskBypassRole()) {
+      roleHomeRedirectDone = true;
+      frappe.set_route("warehouse-console");
     }
   }
 
