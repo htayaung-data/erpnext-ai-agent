@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1/W2 docs-only roadmap and route/action protection design
+- Warehouse Console W1/W2 docs-only roadmap, W3 read-only foundation, and W3A protected landing closure
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
