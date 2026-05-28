@@ -176,10 +176,22 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
 
     def test_warehouse_w3_routes_and_actions_are_read_only(self):
         warehouse_routes = [route for route in ROUTE_MANIFEST if route["workspace_id"] == "warehouse"]
-        self.assertEqual(["warehouse-console"], [route["route_key"] for route in warehouse_routes])
+        self.assertEqual(
+            [
+                "warehouse-console",
+                "warehouse-console-worklist",
+                "warehouse-console-worklist/inbound_receiving",
+            ],
+            [route["route_key"] for route in warehouse_routes],
+        )
         self.assertEqual("productized_overview", warehouse_routes[0]["classification"])
+        self.assertEqual("productized_worklist", warehouse_routes[1]["classification"])
+        self.assertEqual("productized_worklist", warehouse_routes[2]["classification"])
         self.assertEqual("/desk/warehouse-console", warehouse_routes[0]["route_pattern"])
-        self.assertNotEqual("governed_native_exception", warehouse_routes[0]["classification"])
+        self.assertEqual("/desk/warehouse-console-worklist/inbound-receiving", warehouse_routes[2]["route_pattern"])
+        for route in warehouse_routes:
+            self.assertNotEqual("governed_native_exception", route["classification"])
+            self.assertIsNone(route.get("native_exception_ref"), route)
 
         warehouse_actions = {
             action["manifest_key"]: action
@@ -187,11 +199,22 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             if action["workspace_id"] == "warehouse"
         }
         self.assertEqual(
-            {"warehouse-overview-refresh", "warehouse-sidebar-overview-navigation"},
+            {
+                "warehouse-overview-refresh",
+                "warehouse-overview-open-inbound",
+                "warehouse-inbound-refresh",
+                "warehouse-inbound-reset",
+                "warehouse-inbound-apply",
+                "warehouse-inbound-view-lines",
+                "warehouse-sidebar-overview-navigation",
+                "warehouse-sidebar-inbound-navigation",
+            },
             set(warehouse_actions),
         )
         self.assertEqual("current_shell", warehouse_actions["warehouse-overview-refresh"]["target_kind"])
-        self.assertEqual("page", warehouse_actions["warehouse-sidebar-overview-navigation"]["target_kind"])
+        self.assertEqual("worklist", warehouse_actions["warehouse-overview-open-inbound"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-inbound-view-lines"]["target_kind"])
+        self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-inbound-navigation"]["target_kind"])
         for action in warehouse_actions.values():
             self.assertNotIn(action["target_kind"], {"form", "report", "list", "new_doc"}, action)
             self.assertIsNone(action.get("native_exception_ref"), action)

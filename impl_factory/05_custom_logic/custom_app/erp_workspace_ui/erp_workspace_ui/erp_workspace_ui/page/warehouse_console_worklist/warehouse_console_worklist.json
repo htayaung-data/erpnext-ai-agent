@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "warehouse-console-worklist",
+  "page_name": "warehouse-console-worklist",
+  "title": "Warehouse Console Worklist",
+  "icon": "octicon octicon-list-unordered",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

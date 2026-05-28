@@ -188,22 +188,26 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 
 _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 	"workspace_id": "warehouse",
-	"status": "w3_read_only_overview",
+	"status": "w4a_inbound_visibility",
 	"title": "Warehouse Console",
 	"mode_label": "Warehouse Workspace",
 	"role_family": "Warehouse",
 	"routes": {
 		"home": "warehouse-console",
 		"home_path": "/desk/warehouse-console",
+		"worklist": "warehouse-console-worklist",
+		"worklist_path": "/desk/warehouse-console-worklist",
 	},
 	"methods": {
 		"overview": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
+		"inbound_queue": "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue",
 		"sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
 	},
 	"managed_doctypes": {
 		"Warehouse": "warehouse_console_home",
 		"Item": "warehouse_console_home",
 		"Bin": "warehouse_console_home",
+		"Purchase Order": "inbound_receiving",
 	},
 	"sidebar": {
 		"home_key": "warehouse_console_home",
@@ -220,6 +224,12 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 			"label": "Overview",
 			"icon": "item",
 			"target": {"kind": "page", "route": "warehouse-console"},
+		},
+		{
+			"key": "inbound_receiving",
+			"label": "Inbound Receiving",
+			"icon": "quotation",
+			"target": {"kind": "worklist", "queue_key": "inbound_receiving"},
 		},
 	],
 }
@@ -248,7 +258,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Warehouse Console",
 		"wave": "first",
 		"priority": 3,
-		"status": "w3_read_only_overview",
+		"status": "w4a_inbound_visibility",
 	},
 	{
 		"workspace_id": "finance",
