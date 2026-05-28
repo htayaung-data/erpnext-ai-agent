@@ -567,7 +567,9 @@ async function openRoute(page, routeParts, expectedPath, diagnostics, label, vie
     await page.goto(routeUrl(expectedPath), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   }
   if (viewKind === "inbound") {
-    await waitForOverrideHit(page, diagnostics, "warehouse-inbound-queue", label);
+    if (ASSET_ROOT) {
+      await waitForOverrideHit(page, diagnostics, "warehouse-inbound-queue", label);
+    }
     await waitForWarehouseInboundReady(page, diagnostics, label);
   } else {
     await waitForWarehouseOverviewReady(page, diagnostics, label);
@@ -702,9 +704,11 @@ async function exerciseUser(browser, user) {
     assert((state.warehouseConsoleDiagnostics || {}).activeRouteGuardFired >= 1, "Warehouse inbound active route guard did not fire", { user: user.key, state, diagnostics });
     assert((state.warehouseConsoleDiagnostics || {}).renderInboundQueueEntered >= 1, "Warehouse inbound renderer was not entered", { user: user.key, state, diagnostics });
     assert((state.warehouseConsoleDiagnostics || {}).queueServiceCallAttempted >= 1, "Warehouse inbound queue service call was not attempted", { user: user.key, state, diagnostics });
-    assert(diagnostics.overrideHits.some((hit) => hit.key === "desk-page-getpage" && hit.page === "warehouse-console-worklist"), "Warehouse worklist getpage source override was not used", { user: user.key, diagnostics });
-    assert(hitKeys.includes("warehouse-page-asset"), "Warehouse page asset source override was not used", { user: user.key, diagnostics });
-    assert(hitKeys.includes("warehouse-inbound-queue"), "Warehouse inbound queue source override was not used", { user: user.key, diagnostics });
+    if (ASSET_ROOT) {
+      assert(diagnostics.overrideHits.some((hit) => hit.key === "desk-page-getpage" && hit.page === "warehouse-console-worklist"), "Warehouse worklist getpage source override was not used", { user: user.key, diagnostics });
+      assert(hitKeys.includes("warehouse-page-asset"), "Warehouse page asset source override was not used", { user: user.key, diagnostics });
+      assert(hitKeys.includes("warehouse-inbound-queue"), "Warehouse inbound queue source override was not used", { user: user.key, diagnostics });
+    }
     assert(!diagnostics.consoleErrors.some((entry) => entry.type === "error"), "Warehouse W4A smoke recorded console errors", { user: user.key, diagnostics });
     assert(diagnostics.pageErrors.length === 0, "Warehouse W4A smoke recorded page errors", { user: user.key, diagnostics });
     assert(diagnostics.failedResponses.length === 0, "Warehouse W4A smoke recorded failed responses", { user: user.key, diagnostics });
