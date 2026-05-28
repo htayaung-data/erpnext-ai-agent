@@ -149,7 +149,7 @@
 
   const warehouseWorkspace = {
     workspaceId: "warehouse",
-    status: "w4a_inbound_visibility",
+    status: "w4b_receiving_review",
     title: "Warehouse Console",
     modeLabel: "Warehouse Workspace",
     roleFamily: "Warehouse",
@@ -158,10 +158,13 @@
       homePath: "/desk/warehouse-console",
       worklist: "warehouse-console-worklist",
       worklistPath: "/desk/warehouse-console-worklist",
+      receiving: "warehouse-console-receiving",
+      receivingPath: "/desk/warehouse-console-receiving",
     },
     methods: {
       overview: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
       inboundQueue: "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue",
+      receivingDetail: "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review",
       sidebarContext: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
     },
     managedDoctypes: {
@@ -195,7 +198,7 @@
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
     { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
-    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w4a_inbound_visibility" },
+    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w4b_receiving_review" },
     { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
     { workspaceId: "customer_service", matrixName: "Customer Service Console", recommendedName: "Customer Service Console", wave: "second", priority: 6, status: "planned" },

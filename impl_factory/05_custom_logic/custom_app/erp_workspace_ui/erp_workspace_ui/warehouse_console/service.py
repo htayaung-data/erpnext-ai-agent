@@ -49,6 +49,46 @@ PURCHASE_ORDER_ITEM_INBOUND_FIELDS = [
 	"uom",
 ]
 
+PURCHASE_ORDER_ITEM_DETAIL_FIELDS = [
+	"name",
+	"parent",
+	"idx",
+	"item_code",
+	"item_name",
+	"schedule_date",
+	"expected_delivery_date",
+	"qty",
+	"received_qty",
+	"warehouse",
+	"stock_uom",
+	"uom",
+]
+
+PURCHASE_RECEIPT_HISTORY_FIELDS = [
+	"name",
+	"posting_date",
+	"status",
+	"docstatus",
+	"modified",
+]
+
+PURCHASE_RECEIPT_ITEM_HISTORY_FIELDS = [
+	"parent",
+	"item_code",
+	"item_name",
+	"qty",
+	"warehouse",
+	"purchase_order",
+	"purchase_order_item",
+	"stock_uom",
+	"uom",
+]
+
+STANDARD_SAFE_FIELDS = frozenset({"name", "parent", "idx", "docstatus", "modified", "owner", "creation"})
+RECEIVING_DETAIL_LINE_LIMIT = 80
+RECEIVING_DETAIL_HISTORY_ITEM_LIMIT = 120
+RECEIVING_DETAIL_HISTORY_LIMIT = 8
+
 
 def ensure_authenticated() -> None:
 	if getattr(frappe.session, "user", None) == "Guest":
@@ -452,6 +492,263 @@ def get_warehouse_inbound_receiving_queue(
 		)
 	inbound = _build_inbound_visibility(applied_filters, preview_limit=INBOUND_QUEUE_LIMIT, row_limit=INBOUND_QUEUE_LIMIT)
 	return _inbound_queue_payload(context, inbound, applied_filters)
+
+
+@frappe.whitelist()
+def get_warehouse_receiving_review(purchase_order: str | None = None) -> dict[str, object]:
+	ensure_authenticated()
+	context = build_context()
+	po_name = cstr(purchase_order).strip()
+	if not has_warehouse_access(context):
+		return _receiving_review_state_payload(context, restricted_state(), po_name)
+	if not po_name:
+		return _receiving_review_state_payload(
+			context,
+			state("unavailable", "Receiving review unavailable", "Choose an inbound order from the receiving queue."),
+			po_name,
+		)
+	if not _can_read("Purchase Order"):
+		return _receiving_review_state_payload(
+			context,
+			state("restricted", "You do not have access to inbound receiving", "You do not have access to inbound receiving."),
+			po_name,
+		)
+
+	records = _safe_get_list(
+		"Purchase Order",
+		fields=_available_fields("Purchase Order", PURCHASE_ORDER_INBOUND_FIELDS),
+		filters=_purchase_order_receiving_review_filters(po_name),
+		order_by="modified desc",
+		limit=1,
+	)
+	if not records:
+		return _receiving_review_state_payload(
+			context,
+			state("unavailable", "Receiving review unavailable", "This inbound order is not open for warehouse review."),
+			po_name,
+		)
+
+	record = records[0]
+	lines = _receiving_review_lines(po_name)
+	header = _receiving_review_header(record, lines)
+	payload = _receiving_review_state_payload(context, ready_state(), po_name)
+	payload.update(
+		{
+			"state": ready_state(),
+			"page": {"title": "Receiving Review", "key": "receiving_review", "purchase_order": po_name},
+			"header": header,
+			"summary_cards": _receiving_summary_cards(header),
+			"tabs": [
+				{"key": "item_lines", "label": "Item Lines", "count": len(lines)},
+				{"key": "receipt_history", "label": "Receipt History", "count": len(_receiving_receipt_history(po_name))},
+			],
+			"lines": lines,
+			"receipt_history": _receiving_receipt_history(po_name),
+		}
+	)
+	return payload
+
+
+def _purchase_order_receiving_review_filters(po_name: str) -> list[list[object]]:
+	conditions: list[list[object]] = [["Purchase Order", "name", "=", po_name], ["Purchase Order", "docstatus", "=", 1]]
+	if _has_field("Purchase Order", "per_received"):
+		conditions.append(["Purchase Order", "per_received", "<", 100])
+	if _has_field("Purchase Order", "status"):
+		conditions.append(["Purchase Order", "status", "in", list(INBOUND_OPEN_STATUSES)])
+	return conditions
+
+
+def _receiving_review_state_payload(
+	context: dict[str, object],
+	payload_state: dict[str, str],
+	po_name: str,
+) -> dict[str, object]:
+	can_access = has_warehouse_access(context)
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": payload_state,
+		"page": {"title": "Receiving Review", "key": "receiving_review", "purchase_order": po_name},
+		"header": {
+			"purchase_order": po_name,
+			"supplier": "",
+			"target_warehouse": "",
+			"required_date": "",
+			"state_key": payload_state.get("kind") or "unavailable",
+			"state_label": payload_state.get("title") or "Unavailable",
+			"age_label": "",
+			"received_percent": "0%",
+			"remaining_summary": "",
+			"line_count": 0,
+			"item_count": 0,
+			"status": "",
+		},
+		"summary_cards": [],
+		"tabs": [
+			{"key": "item_lines", "label": "Item Lines", "count": 0},
+			{"key": "receipt_history", "label": "Receipt History", "count": 0},
+		],
+		"lines": [],
+		"receipt_history": [],
+		"allowed_actions": [
+			{"key": "refresh", "label": "Refresh", "kind": "read_only"},
+			{"key": "back_to_inbound", "label": "Back to inbound receiving", "kind": "navigation"},
+		] if can_access else [],
+		"action_targets": {
+			"inbound_queue": {"route": "warehouse-console-worklist", "queue_key": INBOUND_QUEUE_KEY}
+		} if can_access else {},
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _receiving_review_lines(po_name: str) -> list[dict[str, object]]:
+	if not po_name or not _can_read("Purchase Order Item"):
+		return []
+	rows = _safe_get_all(
+		"Purchase Order Item",
+		fields=_available_fields("Purchase Order Item", PURCHASE_ORDER_ITEM_DETAIL_FIELDS),
+		filters={"parent": po_name},
+		order_by="schedule_date asc, expected_delivery_date asc, idx asc",
+		limit=RECEIVING_DETAIL_LINE_LIMIT,
+	)
+	return [_receiving_line(row) for row in rows]
+
+
+def _receiving_line(row: dict[str, object]) -> dict[str, object]:
+	ordered_qty = flt(row.get("qty"))
+	received_qty = flt(row.get("received_qty"))
+	remaining_qty = max(ordered_qty - received_qty, 0)
+	required_date = cstr(row.get("expected_delivery_date") or row.get("schedule_date")).strip()
+	return {
+		"item_code": cstr(row.get("item_code")).strip(),
+		"item_name": cstr(row.get("item_name")).strip(),
+		"ordered_qty": _number_text(ordered_qty),
+		"received_qty": _number_text(received_qty),
+		"remaining_qty": _number_text(remaining_qty),
+		"uom": cstr(row.get("stock_uom") or row.get("uom") or "").strip(),
+		"target_warehouse": cstr(row.get("warehouse") or "Warehouse not set").strip(),
+		"required_date": required_date,
+		"status": _receiving_line_status(remaining_qty, received_qty, required_date),
+	}
+
+
+def _receiving_line_status(remaining_qty: float, received_qty: float, required_date: str) -> str:
+	if remaining_qty <= 0:
+		return "Arrived"
+	if received_qty > 0:
+		return "Partially arrived"
+	due = _date_key(required_date)
+	today = getdate(nowdate())
+	if due < today:
+		return "Overdue"
+	if due == today:
+		return "Due Today"
+	return "Expected"
+
+
+def _receiving_review_header(record: dict[str, object], lines: list[dict[str, object]]) -> dict[str, object]:
+	warehouses = sorted({cstr(line.get("target_warehouse")).strip() for line in lines if cstr(line.get("target_warehouse")).strip()})
+	item_codes = {cstr(line.get("item_code")).strip() for line in lines if cstr(line.get("item_code")).strip()}
+	dates = [cstr(line.get("required_date")).strip() for line in lines if cstr(line.get("required_date")).strip()]
+	required_date = min(dates, key=_date_key) if dates else cstr(record.get("schedule_date")).strip()
+	remaining_by_uom: dict[str, float] = defaultdict(float)
+	open_lines = 0
+	for line in lines:
+		remaining = flt(line.get("remaining_qty"))
+		if remaining <= 0:
+			continue
+		open_lines += 1
+		uom = cstr(line.get("uom")).strip()
+		if uom:
+			remaining_by_uom[uom] += remaining
+	summary = {
+		"open_lines": open_lines,
+		"remaining_by_uom": dict(remaining_by_uom),
+	}
+	state_key = _inbound_state_key(record, required_date)
+	return {
+		"purchase_order": cstr(record.get("name")).strip(),
+		"supplier": cstr(record.get("supplier_name") or record.get("supplier") or "-").strip(),
+		"required_date": required_date,
+		"target_warehouse": _warehouse_summary(warehouses or [cstr(record.get("set_warehouse")).strip()]),
+		"state_key": state_key or "expected_soon",
+		"state_label": _inbound_state_label(state_key or "expected_soon"),
+		"age_label": _age_label(required_date, state_key or "expected_soon"),
+		"received_percent": _percent_text(record.get("per_received")),
+		"remaining_summary": _remaining_summary(summary),
+		"line_count": len(lines),
+		"item_count": len(item_codes),
+		"status": cstr(record.get("status") or "-").strip(),
+	}
+
+
+def _receiving_summary_cards(header: dict[str, object]) -> list[dict[str, object]]:
+	return [
+		{"key": "state", "label": "Receiving State", "value": header.get("state_label") or "-", "note": header.get("age_label") or ""},
+		{"key": "received", "label": "Received", "value": header.get("received_percent") or "0%", "note": "Quantity already arrived."},
+		{"key": "open_lines", "label": "Open Lines", "value": header.get("line_count") or 0, "note": header.get("remaining_summary") or ""},
+		{"key": "items", "label": "Items", "value": header.get("item_count") or 0, "note": header.get("target_warehouse") or ""},
+	]
+
+
+def _receiving_receipt_history(po_name: str) -> list[dict[str, object]]:
+	if not po_name or not (_can_read("Purchase Receipt") and _can_read("Purchase Receipt Item")):
+		return []
+	items = _safe_get_all(
+		"Purchase Receipt Item",
+		fields=_available_fields("Purchase Receipt Item", PURCHASE_RECEIPT_ITEM_HISTORY_FIELDS),
+		filters={"purchase_order": po_name},
+		order_by="parent desc",
+		limit=RECEIVING_DETAIL_HISTORY_ITEM_LIMIT,
+	)
+	parents = [cstr(row.get("parent")).strip() for row in items if cstr(row.get("parent")).strip()]
+	if not parents:
+		return []
+	unique_parents = list(dict.fromkeys(parents))
+	receipts = _safe_get_all(
+		"Purchase Receipt",
+		fields=_available_fields("Purchase Receipt", PURCHASE_RECEIPT_HISTORY_FIELDS),
+		filters={"name": ["in", unique_parents]},
+		order_by="posting_date desc, modified desc",
+		limit=RECEIVING_DETAIL_HISTORY_LIMIT,
+	)
+	receipt_map = {cstr(row.get("name")).strip(): row for row in receipts}
+	item_summary: dict[str, dict[str, object]] = defaultdict(lambda: {"items": set(), "qty_by_uom": defaultdict(float)})
+	for item in items:
+		parent = cstr(item.get("parent")).strip()
+		if not parent:
+			continue
+		item_code = cstr(item.get("item_code")).strip()
+		if item_code:
+			item_summary[parent]["items"].add(item_code)
+		uom = cstr(item.get("stock_uom") or item.get("uom") or "").strip()
+		if uom:
+			item_summary[parent]["qty_by_uom"][uom] += flt(item.get("qty"))
+
+	history: list[dict[str, object]] = []
+	for parent in unique_parents[:RECEIVING_DETAIL_HISTORY_LIMIT]:
+		receipt = receipt_map.get(parent) or {"name": parent}
+		summary = item_summary.get(parent) or {"items": set(), "qty_by_uom": {}}
+		history.append(
+			{
+				"receipt_id": parent,
+				"posting_date": cstr(receipt.get("posting_date") or "").strip(),
+				"status": cstr(receipt.get("status") or "").strip() or "Recorded",
+				"item_count": len(summary.get("items") or []),
+				"quantity_summary": _quantity_summary(summary.get("qty_by_uom") or {}),
+			}
+		)
+	return history
+
+
+def _quantity_summary(qty_by_uom: dict[str, float]) -> str:
+	if not qty_by_uom:
+		return "Recorded quantity"
+	if len(qty_by_uom) == 1:
+		uom, qty = next(iter(qty_by_uom.items()))
+		return f"{_number_text(qty)} {uom}"
+	return f"{len(qty_by_uom)} quantities"
 
 
 def _normalize_queue_key(value: str | None) -> str:
@@ -932,7 +1229,7 @@ def _safe_get_all(
 def _available_fields(doctype: str, fields: list[str]) -> list[str]:
 	available: list[str] = []
 	for field in fields:
-		if field == "name" or _has_field(doctype, field):
+		if field in STANDARD_SAFE_FIELDS or _has_field(doctype, field):
 			available.append(field)
 	return available or ["name"]
 

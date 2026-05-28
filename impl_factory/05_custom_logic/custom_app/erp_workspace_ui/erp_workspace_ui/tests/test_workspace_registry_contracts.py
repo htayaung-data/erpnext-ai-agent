@@ -248,11 +248,11 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "procurement")
 
-    def test_warehouse_console_w3_registry_definition(self):
+    def test_warehouse_console_w4b_registry_definition(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w4a_inbound_visibility")
+        self.assertEqual(workspace["status"], "w4b_receiving_review")
         self.assertEqual(workspace["title"], "Warehouse Console")
         self.assertEqual(
             workspace["routes"],
@@ -261,6 +261,8 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "home_path": "/desk/warehouse-console",
                 "worklist": "warehouse-console-worklist",
                 "worklist_path": "/desk/warehouse-console-worklist",
+                "receiving": "warehouse-console-receiving",
+                "receiving_path": "/desk/warehouse-console-receiving",
             },
         )
         self.assertEqual(
@@ -268,6 +270,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             {
                 "overview": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
                 "inbound_queue": "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue",
+                "receiving_detail": "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review",
                 "sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
             },
         )
@@ -290,8 +293,8 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             ],
         )
 
-    def test_warehouse_console_w3_route_resolves_to_registry_definition(self):
-        for route_key in ["warehouse-console", "warehouse-console-worklist"]:
+    def test_warehouse_console_w4b_route_resolves_to_registry_definition(self):
+        for route_key in ["warehouse-console", "warehouse-console-worklist", "warehouse-console-receiving"]:
             with self.subTest(route_key=route_key):
                 workspace = get_workspace_by_route(route_key)
                 self.assertIsNotNone(workspace)
@@ -342,7 +345,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(procurement["recommended_name"], "Procurement Console")
         self.assertEqual(procurement["status"], "phase_3")
         self.assertEqual(warehouse["recommended_name"], "Warehouse Console")
-        self.assertEqual(warehouse["status"], "w4a_inbound_visibility")
+        self.assertEqual(warehouse["status"], "w4b_receiving_review")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
         self.assertEqual(finance["status"], "name_review")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")

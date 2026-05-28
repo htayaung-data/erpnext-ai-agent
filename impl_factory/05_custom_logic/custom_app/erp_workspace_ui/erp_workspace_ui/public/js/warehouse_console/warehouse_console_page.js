@@ -7,9 +7,11 @@
   const warehouseMethods = warehouseWorkspace && warehouseWorkspace.methods ? warehouseWorkspace.methods : {};
   const PAGE_KEY = warehouseRoutes.home || "warehouse-console";
   const WORKLIST_PAGE_KEY = warehouseRoutes.worklist || "warehouse-console-worklist";
+  const RECEIVING_PAGE_KEY = warehouseRoutes.receiving || "warehouse-console-receiving";
   const INBOUND_QUEUE_KEY = "inbound_receiving";
   const OVERVIEW_METHOD = warehouseMethods.overview || "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview";
   const INBOUND_METHOD = warehouseMethods.inboundQueue || warehouseMethods.inbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue";
+  const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
@@ -18,6 +20,8 @@
   let activeOverviewGuardBound = false;
   let inboundRouteGuardBound = false;
   let inboundRouteRenderSerial = 0;
+  let receivingRouteGuardBound = false;
+  let receivingRouteRenderSerial = 0;
 
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
@@ -105,6 +109,28 @@
     if (!Array.isArray(route) || String(route[0] || "") !== WORKLIST_PAGE_KEY) return false;
     const queue = String(route[1] || "").replace(/-/g, "_");
     return !queue || queue === INBOUND_QUEUE_KEY;
+  }
+
+  function receivingRouteSignature() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === RECEIVING_PAGE_KEY) return pathRoute.join("|");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) ? route.join("|") : "";
+  }
+
+  function receivingPurchaseOrderFromRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === RECEIVING_PAGE_KEY) return String(pathRoute[1] || "");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (Array.isArray(route) && String(route[0] || "") === RECEIVING_PAGE_KEY) return String(route[1] || "");
+    return "";
+  }
+
+  function isActiveReceivingRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === RECEIVING_PAGE_KEY) return true;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) && String(route[0] || "") === RECEIVING_PAGE_KEY;
   }
 
   function warehouseConsoleDiagnostics() {
@@ -498,6 +524,145 @@
         font-size: 12px;
         line-height: 1.35;
       }
+      .warehouse-receiving-shell {
+        width: min(1180px, calc(100% - 24px));
+        min-width: 0;
+      }
+      .warehouse-receiving-header {
+        display: grid;
+        gap: 16px;
+        padding: 22px;
+        border: 1px solid rgba(210, 225, 218, 0.92);
+        border-radius: 8px;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fbfa 58%, #eef7f2 100%);
+      }
+      .warehouse-receiving-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: start;
+      }
+      .warehouse-receiving-title {
+        margin: 0;
+        color: #17231f;
+        font-size: 26px;
+        font-weight: 760;
+        line-height: 1.08;
+      }
+      .warehouse-receiving-subtitle,
+      .warehouse-receiving-note,
+      .warehouse-receiving-meta {
+        min-width: 0;
+        color: #64766e;
+        font-size: 12.5px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      .warehouse-receiving-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .warehouse-receiving-button {
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid rgba(177, 199, 189, 0.95);
+        border-radius: 8px;
+        background: #ffffff;
+        color: #1f3b31;
+        font-size: 12px;
+        font-weight: 720;
+      }
+      .warehouse-receiving-cards {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .warehouse-receiving-card {
+        min-width: 0;
+        padding: 12px;
+        border: 1px solid rgba(219, 231, 225, 0.96);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+      .warehouse-receiving-card-label {
+        color: #667a71;
+        font-size: 10.5px;
+        font-weight: 760;
+        letter-spacing: 0.05em;
+        line-height: 1.25;
+        text-transform: uppercase;
+      }
+      .warehouse-receiving-card-value {
+        margin-top: 7px;
+        color: #17231f;
+        font-size: 20px;
+        font-weight: 760;
+        line-height: 1.08;
+      }
+      .warehouse-receiving-card-note {
+        margin-top: 6px;
+        color: #708178;
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+      .warehouse-receiving-detail {
+        display: grid;
+        gap: 12px;
+        margin-top: 14px;
+        padding: 16px;
+        border: 1px solid rgba(219, 231, 225, 0.96);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+      .warehouse-receiving-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .warehouse-receiving-tab {
+        min-height: 32px;
+        padding: 0 11px;
+        border: 1px solid rgba(205, 220, 213, 0.98);
+        border-radius: 8px;
+        background: #f8fbfa;
+        color: #29463c;
+        font-size: 12px;
+        font-weight: 720;
+      }
+      .warehouse-receiving-tab.is-active {
+        border-color: rgba(42, 105, 76, 0.35);
+        background: #eaf6f0;
+      }
+      .warehouse-receiving-panel {
+        display: none;
+        gap: 8px;
+      }
+      .warehouse-receiving-panel.is-active {
+        display: grid;
+      }
+      .warehouse-receiving-line,
+      .warehouse-receiving-history-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.75fr) minmax(0, 0.75fr) minmax(0, 0.8fr) minmax(0, 0.7fr);
+        gap: 10px;
+        align-items: center;
+        min-width: 0;
+        padding: 11px 12px;
+        border: 1px solid rgba(228, 236, 232, 0.98);
+        border-radius: 8px;
+        background: #fbfdfc;
+      }
+      .warehouse-receiving-history-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 0.75fr) minmax(0, 0.75fr) minmax(0, 0.9fr);
+      }
+      .warehouse-receiving-strong {
+        color: #263530;
+        font-size: 13px;
+        font-weight: 740;
+        line-height: 1.3;
+      }
       .warehouse-console-state {
         padding: 20px;
       }
@@ -517,7 +682,8 @@
           grid-template-columns: repeat(3, minmax(0, 1fr));
         }
         .warehouse-console-inbound-cards,
-        .warehouse-inbound-queue-cards {
+        .warehouse-inbound-queue-cards,
+        .warehouse-receiving-cards {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .warehouse-inbound-controls {
@@ -529,8 +695,11 @@
         .warehouse-console-grid,
         .warehouse-console-inbound-head,
         .warehouse-inbound-queue-head,
+        .warehouse-receiving-head,
         .warehouse-console-inbound-row,
-        .warehouse-inbound-row-main {
+        .warehouse-inbound-row-main,
+        .warehouse-receiving-line,
+        .warehouse-receiving-history-row {
           grid-template-columns: minmax(0, 1fr);
         }
         .warehouse-console-section-note {
@@ -878,6 +1047,12 @@
     return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
   }
 
+  function directReceivingRenderWrapper() {
+    const pageDef = frappe.pages && frappe.pages[RECEIVING_PAGE_KEY] ? frappe.pages[RECEIVING_PAGE_KEY] : null;
+    if (pageDef && pageDef.wrapper) return pageDef.wrapper;
+    return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
+  }
+
   function hasReadyInboundShell() {
     return Boolean(document.querySelector('.warehouse-inbound-shell[data-warehouse-view="inbound-receiving"]'));
   }
@@ -911,6 +1086,45 @@
     inboundRouteGuardBound = true;
     window.setInterval(() => {
       if (shouldSelfRenderInbound()) renderActiveInboundRoute();
+    }, 220);
+  }
+
+  function hasReadyReceivingShell() {
+    const po = receivingPurchaseOrderFromRoute();
+    const shell = document.querySelector('.warehouse-receiving-shell[data-warehouse-view="receiving-review"]');
+    if (!shell) return false;
+    return !po || String(shell.getAttribute("data-warehouse-receiving-order") || "") === po;
+  }
+
+  function shouldSelfRenderReceiving() {
+    return isActiveReceivingRoute() && !hasReadyReceivingShell();
+  }
+
+  function renderActiveReceivingRoute() {
+    if (!shouldSelfRenderReceiving()) return;
+    const signature = receivingRouteSignature();
+    const token = ++receivingRouteRenderSerial;
+    markWarehouseDiagnostic("receivingActiveRouteGuardFired");
+    const wrapper = directReceivingRenderWrapper();
+    if (!wrapper) return;
+    window.setTimeout(() => {
+      if (token !== receivingRouteRenderSerial || !shouldSelfRenderReceiving() || receivingRouteSignature() !== signature) return;
+      renderReceivingReview(wrapper, receivingPurchaseOrderFromRoute());
+    }, 0);
+  }
+
+  function scheduleActiveReceivingRender() {
+    renderActiveReceivingRoute();
+    setTimeout(renderActiveReceivingRoute, 80);
+    setTimeout(renderActiveReceivingRoute, 220);
+    setTimeout(renderActiveReceivingRoute, 700);
+  }
+
+  function bindActiveReceivingGuard() {
+    if (receivingRouteGuardBound || !window || typeof window.setInterval !== "function") return;
+    receivingRouteGuardBound = true;
+    window.setInterval(() => {
+      if (shouldSelfRenderReceiving()) renderActiveReceivingRoute();
     }, 220);
   }
 
@@ -999,7 +1213,10 @@
           <div class="warehouse-inbound-meta">${escapeHtml(row.target_warehouse || "")}</div>
           <div class="warehouse-inbound-meta">${escapeHtml(row.age_label || row.required_date || "")}</div>
           <div class="warehouse-inbound-meta">${escapeHtml(row.remaining_summary || "")} · ${escapeHtml(row.received_percent || "0%")}</div>
-          <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
+          <div class="warehouse-receiving-actions">
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>View details</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
+          </div>
         </div>
         <div class="warehouse-inbound-lines">
           ${lines.length ? lines.map((line) => `
@@ -1027,6 +1244,182 @@
         </div>
       </section>
     `;
+  }
+
+  function makeReceivingPage(wrapper) {
+    const existing = wrapper && wrapper.__erpwWarehouseReceivingReview;
+    if (existing && existing.page && existing.$host && document.documentElement.contains(existing.$host.get(0))) {
+      return existing;
+    }
+    const page = frappe.ui.make_app_page({
+      parent: wrapper,
+      title: "Receiving Review",
+      single_column: true,
+    });
+    const $parent = page && page.body ? $(page.body) : $(wrapper);
+    const $host = $('<section class="warehouse-receiving-route"></section>');
+    $parent.empty().append($host);
+    const state = { page, $host, purchaseOrder: "" };
+    wrapper.__erpwWarehouseReceivingReview = state;
+    return state;
+  }
+
+  function receivingSummaryText(header) {
+    const parts = [header.purchase_order, header.supplier, header.target_warehouse].filter(Boolean);
+    return parts.join(" · ");
+  }
+
+  function renderReceivingCard(card) {
+    return `
+      <div class="warehouse-receiving-card" data-warehouse-receiving-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
+        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderReceivingLine(line) {
+    return `
+      <div class="warehouse-receiving-line" data-warehouse-receiving-line="${escapeHtml(line.item_code || "")}">
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">Ordered ${escapeHtml(line.ordered_qty || "0")} ${escapeHtml(line.uom || "")}</div>
+        <div class="warehouse-receiving-meta">Received ${escapeHtml(line.received_qty || "0")} ${escapeHtml(line.uom || "")}</div>
+        <div class="warehouse-receiving-meta">Remaining ${escapeHtml(line.remaining_qty || "0")} ${escapeHtml(line.uom || "")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.status || "")} · ${escapeHtml(line.required_date || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderReceivingHistoryRow(row) {
+    return `
+      <div class="warehouse-receiving-history-row" data-warehouse-receiving-history-row="${escapeHtml(row.receipt_id || "")}">
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(row.receipt_id || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(row.posting_date || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">${escapeHtml(row.status || "")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(row.item_count == null ? "0" : row.item_count)} items</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(row.quantity_summary || "")}</div>
+      </div>
+    `;
+  }
+
+  function activateReceivingTab($root, tabKey) {
+    const key = tabKey || "item_lines";
+    $root.find("[data-warehouse-receiving-tab]").each(function () {
+      $(this).toggleClass("is-active", String(this.getAttribute("data-warehouse-receiving-tab")) === key);
+    });
+    $root.find("[data-warehouse-receiving-panel]").each(function () {
+      $(this).toggleClass("is-active", String(this.getAttribute("data-warehouse-receiving-panel")) === key);
+    });
+  }
+
+  function renderReceivingReviewPayload(viewState, payload) {
+    ensureStyle();
+    const header = payload.header || {};
+    const cards = Array.isArray(payload.summary_cards) ? payload.summary_cards : [];
+    const tabs = Array.isArray(payload.tabs) ? payload.tabs : [];
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
+    const history = Array.isArray(payload.receipt_history) ? payload.receipt_history : [];
+    const statePayload = payload.state || {};
+    const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const $root = $(`
+      <div class="sales-console-shell warehouse-receiving-shell" data-erpw-workspace="warehouse" data-warehouse-view="receiving-review" data-erpw-console-runtime="ready" data-warehouse-receiving-order="${escapeHtml(header.purchase_order || viewState.purchaseOrder || "")}">
+        <section class="warehouse-receiving-header">
+          <div class="warehouse-receiving-head">
+            <div>
+              <h1 class="warehouse-receiving-title">Receiving Review</h1>
+              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Receiving work could not be loaded. Refresh or contact an administrator." : receivingSummaryText(header))}</div>
+            </div>
+            <div class="warehouse-receiving-actions">
+              <button type="button" class="warehouse-receiving-button" data-warehouse-receiving-back>Back to inbound receiving</button>
+              <button type="button" class="warehouse-receiving-button" data-warehouse-receiving-refresh>Refresh</button>
+            </div>
+          </div>
+          ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-receiving-empty>${escapeHtml(statePayload.title || "Receiving review unavailable")}</div>` : `
+            <div class="warehouse-receiving-note">${escapeHtml(header.age_label || "")} · ${escapeHtml(header.remaining_summary || "")}</div>
+            <div class="warehouse-receiving-cards">${cards.map(renderReceivingCard).join("")}</div>
+          `}
+        </section>
+        <section class="warehouse-receiving-detail">
+          <div class="warehouse-receiving-tabs">
+            ${tabs.map((tab) => `<button type="button" class="warehouse-receiving-tab" data-warehouse-receiving-tab="${escapeHtml(tab.key || "")}">${escapeHtml(tab.label || "")} ${escapeHtml(tab.count == null ? "" : `(${tab.count})`)}</button>`).join("")}
+          </div>
+          <div class="warehouse-receiving-panel is-active" data-warehouse-receiving-panel="item_lines">
+            ${lines.length ? lines.map(renderReceivingLine).join("") : `<div class="warehouse-receiving-line" data-warehouse-receiving-empty><span class="warehouse-receiving-meta">No item lines visible for this order.</span></div>`}
+          </div>
+          <div class="warehouse-receiving-panel" data-warehouse-receiving-panel="receipt_history">
+            ${history.length ? history.map(renderReceivingHistoryRow).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-receiving-empty><span class="warehouse-receiving-meta">No receipt history visible for this order.</span></div>`}
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-receiving-back]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(WORKLIST_PAGE_KEY, "inbound-receiving");
+    });
+    $root.find("[data-warehouse-receiving-refresh]").on("click", (event) => {
+      event.preventDefault();
+      loadReceivingReview(viewState, viewState.purchaseOrder);
+    });
+    $root.find("[data-warehouse-receiving-tab]").on("click", function (event) {
+      event.preventDefault();
+      activateReceivingTab($root, String(this.getAttribute("data-warehouse-receiving-tab") || "item_lines"));
+    });
+    activateReceivingTab($root, "item_lines");
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+  }
+
+  function renderReceivingLoading(viewState) {
+    renderReceivingReviewPayload(viewState, {
+      state: { kind: "loading", title: "Checking receiving work", detail: "Checking receiving work..." },
+      header: { purchase_order: viewState.purchaseOrder || "" },
+      summary_cards: [],
+      tabs: [
+        { key: "item_lines", label: "Item Lines", count: 0 },
+        { key: "receipt_history", label: "Receipt History", count: 0 },
+      ],
+      lines: [],
+      receipt_history: [],
+    });
+  }
+
+  function loadReceivingReview(viewState, purchaseOrder) {
+    markWarehouseDiagnostic("receivingServiceCallAttempted");
+    viewState.purchaseOrder = purchaseOrder || receivingPurchaseOrderFromRoute();
+    renderReceivingLoading(viewState);
+    return frappe.call({
+      method: RECEIVING_METHOD,
+      args: { purchase_order: viewState.purchaseOrder },
+    }).then((response) => {
+      renderReceivingReviewPayload(viewState, response && response.message ? response.message : {});
+    }).catch(() => {
+      renderReceivingReviewPayload(viewState, {
+        state: { kind: "error", title: "Receiving review unavailable", detail: "Receiving work could not be loaded. Refresh or contact an administrator." },
+        header: { purchase_order: viewState.purchaseOrder || "" },
+        summary_cards: [],
+        tabs: [
+          { key: "item_lines", label: "Item Lines", count: 0 },
+          { key: "receipt_history", label: "Receipt History", count: 0 },
+        ],
+        lines: [],
+        receipt_history: [],
+      });
+    });
+  }
+
+  function renderReceivingReview(wrapper, purchaseOrder) {
+    markWarehouseDiagnostic("renderReceivingReviewEntered");
+    const viewState = makeReceivingPage(wrapper);
+    if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+      window.erpWorkspaceConsoleSidebar.refresh();
+    }
+    loadReceivingReview(viewState, purchaseOrder || receivingPurchaseOrderFromRoute());
   }
 
   function makeInboundPage(wrapper) {
@@ -1097,6 +1490,12 @@
       event.preventDefault();
       loadInboundQueue(viewState);
     });
+    $root.find("[data-warehouse-row-open-detail]").on("click", function (event) {
+      event.preventDefault();
+      const row = $(this).closest("[data-warehouse-inbound-row]");
+      const purchaseOrder = String(row.attr("data-warehouse-inbound-row") || "").trim();
+      if (purchaseOrder) frappe.set_route(RECEIVING_PAGE_KEY, purchaseOrder);
+    });
     $root.find("[data-warehouse-row-toggle]").on("click", function (event) {
       event.preventDefault();
       $(this).closest("[data-warehouse-inbound-row]").toggleClass("is-expanded");
@@ -1154,17 +1553,27 @@
   };
   const warehouseConsoleApi = window.erpWorkspaceWarehouseConsole = window.erpWorkspaceWarehouseConsole || {};
   warehouseConsoleApi.renderInboundQueue = renderInboundQueue;
+  warehouseConsoleApi.renderReceivingReview = renderReceivingReview;
   warehouseConsoleApi.renderOverview = render;
   warehouseConsoleApi.diagnostics = warehouseConsoleApi.diagnostics || {};
   warehouseConsoleApi.diagnostics.exportedRendererReady = true;
+  warehouseConsoleApi.diagnostics.exportedReceivingRendererReady = true;
 
   frappe.pages[WORKLIST_PAGE_KEY] = frappe.pages[WORKLIST_PAGE_KEY] || {};
   frappe.pages[WORKLIST_PAGE_KEY].__erpwWarehouseInboundRenderer = true;
   frappe.pages[WORKLIST_PAGE_KEY].__erpwRenderWarehouseInboundQueue = renderInboundQueue;
   frappe.pages[WORKLIST_PAGE_KEY].on_page_load = function (wrapper) { renderInboundQueue(wrapper); };
   frappe.pages[WORKLIST_PAGE_KEY].on_page_show = function (wrapper) { renderInboundQueue(wrapper); };
+
+  frappe.pages[RECEIVING_PAGE_KEY] = frappe.pages[RECEIVING_PAGE_KEY] || {};
+  frappe.pages[RECEIVING_PAGE_KEY].__erpwWarehouseReceivingRenderer = true;
+  frappe.pages[RECEIVING_PAGE_KEY].__erpwRenderWarehouseReceivingReview = renderReceivingReview;
+  frappe.pages[RECEIVING_PAGE_KEY].on_page_load = function (wrapper) { renderReceivingReview(wrapper, receivingPurchaseOrderFromRoute()); };
+  frappe.pages[RECEIVING_PAGE_KEY].on_page_show = function (wrapper) { renderReceivingReview(wrapper, receivingPurchaseOrderFromRoute()); };
   scheduleActiveOverviewRender();
   bindActiveOverviewGuard();
   scheduleActiveInboundRender();
   bindActiveInboundGuard();
+  scheduleActiveReceivingRender();
+  bindActiveReceivingGuard();
 })();

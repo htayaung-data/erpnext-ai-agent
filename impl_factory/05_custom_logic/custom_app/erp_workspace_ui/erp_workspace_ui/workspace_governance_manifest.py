@@ -269,6 +269,7 @@ ROUTE_MANIFEST: tuple[dict[str, Any], ...] = (
 	_route("warehouse", "warehouse-console", "overview", "productized_overview", "/desk/warehouse-console", "console_runtime", required_smoke_category="warehouse_phase_w4a_smoke", notes="W4A read-only Warehouse Overview with inbound visibility."),
 	_route("warehouse", "warehouse-console-worklist", "worklist_guard", "productized_worklist", "/desk/warehouse-console-worklist", "warehouse_inbound_shell", required_smoke_category="warehouse_phase_w4a_smoke", notes="W4A Warehouse worklist route for read-only inbound visibility."),
 	_route("warehouse", "warehouse-console-worklist/inbound_receiving", "worklist", "productized_worklist", "/desk/warehouse-console-worklist/inbound-receiving", "warehouse_inbound_shell", required_smoke_category="warehouse_phase_w4a_smoke", notes="Read-only inbound supplier receiving queue."),
+	_route("warehouse", "warehouse-console-receiving", "detail", "productized_detail", "/desk/warehouse-console-receiving/<purchase-order>", "warehouse_receiving_shell", required_smoke_category="warehouse_phase_w4b_smoke", notes="Read-only receiving review for inbound purchase orders."),
 )
 
 ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
@@ -368,6 +369,10 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("warehouse-inbound-reset", "warehouse", "warehouse-console-worklist/inbound_receiving", "reset_filters", "productized_secondary_action", "current_shell", label="Reset"),
 	_action("warehouse-inbound-apply", "warehouse", "warehouse-console-worklist/inbound_receiving", "apply_filters", "productized_primary_action", "current_shell", label="Apply"),
 	_action("warehouse-inbound-view-lines", "warehouse", "warehouse-console-worklist/inbound_receiving", "view_lines", "productized_secondary_action", "current_shell", label="View lines"),
+	_action("warehouse-inbound-open-receiving-review", "warehouse", "warehouse-console-worklist/inbound_receiving", "open_receiving_review", "productized_navigation", "page", label="View details", target_route_pattern="/desk/warehouse-console-receiving/<purchase-order>", notes="Read-only Warehouse receiving review drilldown."),
+	_action("warehouse-receiving-refresh", "warehouse", "warehouse-console-receiving/<purchase-order>", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
+	_action("warehouse-receiving-back-to-queue", "warehouse", "warehouse-console-receiving/<purchase-order>", "back_to_inbound_receiving", "productized_navigation", "worklist", label="Back to inbound receiving", target_route_pattern="/desk/warehouse-console-worklist/inbound-receiving"),
+	_action("warehouse-receiving-tab-switch", "warehouse", "warehouse-console-receiving/<purchase-order>", "switch_tab", "productized_secondary_action", "current_shell", label_pattern="Item Lines|Receipt History"),
 	_action("warehouse-sidebar-overview-navigation", "warehouse", "warehouse-sidebar", "sidebar_overview_navigation", "productized_navigation", "page", label="Overview", target_route_pattern="/desk/warehouse-console", notes="Sidebar entry opens the Warehouse Overview."),
 	_action("warehouse-sidebar-inbound-navigation", "warehouse", "warehouse-sidebar", "sidebar_inbound_navigation", "productized_navigation", "worklist", label="Inbound Receiving", target_route_pattern="/desk/warehouse-console-worklist/inbound-receiving", notes="Sidebar entry opens the read-only inbound queue."),
 )
@@ -389,7 +394,7 @@ FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
 	},
 	{
 		"workspace_id": "warehouse",
-		"scope": "w4a_productized_overview_and_inbound_read_only_pages",
+		"scope": "w4b_productized_overview_inbound_and_receiving_read_only_pages",
 		"labels": FORBIDDEN_MUTATION_LABELS,
 		"allowed_only_when": "future controlled Warehouse execution design and manifest update",
 		"policy_doc": "_docs/erp-ui-customization/native-exception-policy-v1.md",

@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "warehouse-console-receiving",
+  "page_name": "warehouse-console-receiving",
+  "title": "Warehouse Receiving Review",
+  "icon": "octicon octicon-package",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

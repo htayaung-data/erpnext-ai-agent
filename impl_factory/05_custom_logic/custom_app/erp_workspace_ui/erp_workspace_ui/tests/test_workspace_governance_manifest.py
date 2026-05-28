@@ -174,21 +174,24 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                     continue
                 self.assertIn(value, manifest_keys, key)
 
-    def test_warehouse_w3_routes_and_actions_are_read_only(self):
+    def test_warehouse_w4b_routes_and_actions_are_read_only(self):
         warehouse_routes = [route for route in ROUTE_MANIFEST if route["workspace_id"] == "warehouse"]
         self.assertEqual(
             [
                 "warehouse-console",
                 "warehouse-console-worklist",
                 "warehouse-console-worklist/inbound_receiving",
+                "warehouse-console-receiving",
             ],
             [route["route_key"] for route in warehouse_routes],
         )
         self.assertEqual("productized_overview", warehouse_routes[0]["classification"])
         self.assertEqual("productized_worklist", warehouse_routes[1]["classification"])
         self.assertEqual("productized_worklist", warehouse_routes[2]["classification"])
+        self.assertEqual("productized_detail", warehouse_routes[3]["classification"])
         self.assertEqual("/desk/warehouse-console", warehouse_routes[0]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/inbound-receiving", warehouse_routes[2]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-receiving/<purchase-order>", warehouse_routes[3]["route_pattern"])
         for route in warehouse_routes:
             self.assertNotEqual("governed_native_exception", route["classification"])
             self.assertIsNone(route.get("native_exception_ref"), route)
@@ -206,6 +209,10 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-inbound-reset",
                 "warehouse-inbound-apply",
                 "warehouse-inbound-view-lines",
+                "warehouse-inbound-open-receiving-review",
+                "warehouse-receiving-refresh",
+                "warehouse-receiving-back-to-queue",
+                "warehouse-receiving-tab-switch",
                 "warehouse-sidebar-overview-navigation",
                 "warehouse-sidebar-inbound-navigation",
             },
@@ -214,6 +221,10 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("current_shell", warehouse_actions["warehouse-overview-refresh"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-overview-open-inbound"]["target_kind"])
         self.assertEqual("current_shell", warehouse_actions["warehouse-inbound-view-lines"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-inbound-open-receiving-review"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-receiving-refresh"]["target_kind"])
+        self.assertEqual("worklist", warehouse_actions["warehouse-receiving-back-to-queue"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-receiving-tab-switch"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-inbound-navigation"]["target_kind"])
         for action in warehouse_actions.values():
             self.assertNotIn(action["target_kind"], {"form", "report", "list", "new_doc"}, action)

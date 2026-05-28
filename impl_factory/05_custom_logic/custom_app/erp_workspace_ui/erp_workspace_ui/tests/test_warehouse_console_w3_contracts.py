@@ -14,6 +14,8 @@ READABLE_DOCTYPES = {
     "Purchase Order Item",
     "Pick List",
     "Material Request",
+    "Purchase Receipt",
+    "Purchase Receipt Item",
 }
 COUNT_CALLS = []
 LIST_CALLS = []
@@ -74,6 +76,24 @@ PO_ROWS = [
         "per_received": 0,
         "set_warehouse": "Future - M",
         "modified": "2026-05-26 11:00:00",
+    },
+]
+
+PR_ROWS = [
+    {"name": "PR-0001", "posting_date": "2026-05-25", "status": "Completed", "docstatus": 1, "modified": "2026-05-25 12:00:00"},
+]
+
+PR_ITEM_ROWS = [
+    {
+        "parent": "PR-0001",
+        "item_code": "ITEM-003",
+        "item_name": "Valve Set",
+        "qty": 7,
+        "warehouse": "Main - M",
+        "purchase_order": "PO-PARTIAL",
+        "purchase_order_item": "POI-0003",
+        "stock_uom": "Nos",
+        "uom": "Nos",
     },
 ]
 
@@ -197,6 +217,7 @@ def _get_meta(doctype):
             "modified",
         },
         "Purchase Order Item": {
+            "name",
             "parent",
             "item_code",
             "item_name",
@@ -208,6 +229,18 @@ def _get_meta(doctype):
             "stock_uom",
             "uom",
             "idx",
+        },
+        "Purchase Receipt": {"posting_date", "status", "docstatus", "modified"},
+        "Purchase Receipt Item": {
+            "parent",
+            "item_code",
+            "item_name",
+            "qty",
+            "warehouse",
+            "purchase_order",
+            "purchase_order_item",
+            "stock_uom",
+            "uom",
         },
         "Pick List": {"docstatus", "status"},
         "Material Request": {"docstatus", "material_request_type", "status"},
@@ -230,6 +263,8 @@ def _filter_purchase_orders(filters):
         if field == "name" and operator == "like":
             needle = str(value).replace("%", "").lower()
             rows = [row for row in rows if needle in row["name"].lower()]
+        if field == "name" and operator == "=":
+            rows = [row for row in rows if row["name"] == value]
         if field == "supplier_name" and operator == "like":
             needle = str(value).replace("%", "").lower()
             rows = [row for row in rows if needle in row["supplier_name"].lower()]
@@ -257,9 +292,23 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
     GET_ALL_CALLS.append({"doctype": doctype, "fields": fields, "filters": filters, "limit": limit_page_length})
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
-        parents = set(parent_filter[1]) if isinstance(parent_filter, list) and parent_filter[0] == "in" else set()
+        if isinstance(parent_filter, list) and parent_filter[0] == "in":
+            parents = set(parent_filter[1])
+        elif parent_filter:
+            parents = {parent_filter}
+        else:
+            parents = set()
         rows = [row for row in PO_ITEM_ROWS if not parents or row["parent"] in parents]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Purchase Receipt Item":
+        purchase_order = (filters or {}).get("purchase_order") if isinstance(filters, dict) else None
+        rows = [row for row in PR_ITEM_ROWS if not purchase_order or row["purchase_order"] == purchase_order]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Purchase Receipt":
+        name_filter = (filters or {}).get("name") if isinstance(filters, dict) else None
+        names = set(name_filter[1]) if isinstance(name_filter, list) and name_filter[0] == "in" else set()
+        rows = [row for row in PR_ROWS if not names or row["name"] in names]
+        return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
     return []
 
 
@@ -302,7 +351,7 @@ from erp_workspace_ui.warehouse_console import service
 from erp_workspace_ui.workspace_registry import get_warehouse_workspace_definition
 
 
-class TestWarehouseConsoleW4AContracts(unittest.TestCase):
+class TestWarehouseConsoleW4BContracts(unittest.TestCase):
     def setUp(self):
         CURRENT_ROLES[:] = ["Stock User"]
         READABLE_DOCTYPES.update({
@@ -318,11 +367,11 @@ class TestWarehouseConsoleW4AContracts(unittest.TestCase):
         LIST_CALLS.clear()
         GET_ALL_CALLS.clear()
 
-    def test_warehouse_workspace_registry_definition_has_w4a_inbound_route(self):
+    def test_warehouse_workspace_registry_definition_has_w4b_receiving_route(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w4a_inbound_visibility")
+        self.assertEqual(workspace["status"], "w4b_receiving_review")
         self.assertEqual(
             workspace["routes"],
             {
@@ -330,6 +379,8 @@ class TestWarehouseConsoleW4AContracts(unittest.TestCase):
                 "home_path": "/desk/warehouse-console",
                 "worklist": "warehouse-console-worklist",
                 "worklist_path": "/desk/warehouse-console-worklist",
+                "receiving": "warehouse-console-receiving",
+                "receiving_path": "/desk/warehouse-console-receiving",
             },
         )
         self.assertEqual(
@@ -339,6 +390,10 @@ class TestWarehouseConsoleW4AContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["inbound_queue"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue",
+        )
+        self.assertEqual(
+            workspace["methods"]["receiving_detail"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review",
         )
         self.assertFalse(workspace["search"]["enabled"])
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
@@ -420,11 +475,48 @@ class TestWarehouseConsoleW4AContracts(unittest.TestCase):
         self.assertEqual(payload["workspace"]["routes"]["worklist"], "warehouse-console-worklist")
         self.assertNotIn("native", str(payload).lower())
 
+
+    def test_receiving_review_payload_is_read_only_allowlisted_and_history_bounded(self):
+        payload = service.get_warehouse_receiving_review("PO-PARTIAL")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["purchase_order"], "PO-PARTIAL")
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(payload["action_targets"]["inbound_queue"]["route"], "warehouse-console-worklist")
+        self.assertEqual(payload["header"]["supplier"], "Partial Goods")
+        self.assertEqual(payload["header"]["received_percent"], "35%")
+        self.assertGreaterEqual(len(payload["lines"]), 1)
+        self.assertLessEqual(len(payload["lines"]), service.RECEIVING_DETAIL_LINE_LIMIT)
+        self.assertLessEqual(len(payload["receipt_history"]), service.RECEIVING_DETAIL_HISTORY_LIMIT)
+
+        allowed_line_keys = {
+            "item_code",
+            "item_name",
+            "ordered_qty",
+            "received_qty",
+            "remaining_qty",
+            "uom",
+            "target_warehouse",
+            "required_date",
+            "status",
+        }
+        for line in payload["lines"]:
+            self.assertLessEqual(set(line), allowed_line_keys)
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("base_net_rate", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertTrue(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Purchase Order Item" for call in GET_ALL_CALLS))
+
     def test_restricted_role_gets_controlled_state_and_no_sidebar_items(self):
         CURRENT_ROLES[:] = ["Purchase Manager"]
 
         overview = service.get_warehouse_console_overview()
         queue = service.get_warehouse_inbound_receiving_queue("inbound_receiving")
+        detail = service.get_warehouse_receiving_review("PO-OVERDUE")
 
         self.assertEqual(overview["state"]["kind"], "restricted")
         self.assertFalse(overview["context"]["has_warehouse_access"])
@@ -432,6 +524,8 @@ class TestWarehouseConsoleW4AContracts(unittest.TestCase):
         self.assertEqual(overview["allowed_actions"], [])
         self.assertEqual(queue["state"]["kind"], "restricted")
         self.assertEqual(queue["rows"], [])
+        self.assertEqual(detail["state"]["kind"], "restricted")
+        self.assertEqual(detail["lines"], [])
 
     def test_permission_limited_sources_return_controlled_empty_inbound_state(self):
         READABLE_DOCTYPES.discard("Purchase Order")
