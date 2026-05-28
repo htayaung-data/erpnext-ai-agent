@@ -63,6 +63,7 @@ Freeze and governance status:
 - Warehouse Console Phase W2 route/action inventory and protection plan is documented on 2026-05-26 as a docs-only implementation gate. It defines proposed Warehouse routes, actions, roles, data sources, native escape restrictions, copy rules, future smoke coverage, and W3 readiness decisions without adding runtime routes or stock actions.
 - Warehouse Console Phase W3 read-only foundation and W3A protected landing closure are protected on 2026-05-27. Warehouse operational users land on `/desk/warehouse-console`; W3 remains read-only with no Quick Find, valuation, native escape, or stock mutation.
 - Warehouse Console Phase W4 inbound visibility design is documented on 2026-05-27 as a docs-only plan for premium supplier receiving visibility, grouped inbound queues, and read-only receiving review without receiving execution or stock posting.
+- Warehouse Console Phase W4A inbound receiving visibility is protected on 2026-05-28 at `2a22c1fc9dafe09ca8c62beb04dad69cdb0202ca`; Warehouse Overview now exposes inbound posture and `/desk/warehouse-console-worklist/inbound-receiving` renders a read-only grouped receiving queue for Warehouse Manager/User without stock posting, valuation, native escape, Quick Find, or Sales/Procurement runtime change.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -107,7 +108,7 @@ Current routing truth:
 - `/desk/procurement-console-report/<report-key>` uses the shared report shell for Quote Comparison, Purchase Order Analysis, Demand-to-Order Coverage, and Item Purchase History.
 - Phase 7D1 supersedes normal-role Procurement native create/open form exceptions. Managed PR/RFQ/SQ/PO draft forms are the productized create/edit surfaces; normal Procurement users and managers must not receive raw ERPNext form escape links.
 - Warehouse Console W3/W3A protected route is `/desk/warehouse-console`; Warehouse operational users landing on `/desk` or `/app` are routed to the Warehouse Console unless an admin or broad cross-workspace bypass applies.
-- Proposed W4 design routes are `/desk/warehouse-console-worklist/inbound-receiving` and optional `/desk/warehouse-console-receiving/<purchase-order>`; these remain design-only until owner approval and runtime implementation.
+- Warehouse Console W4A protected route is `/desk/warehouse-console-worklist/inbound-receiving`; optional read-only receiving review route `/desk/warehouse-console-receiving/<purchase-order>` remains deferred until W4B owner approval.
 
 Current visible report keys:
 
@@ -172,6 +173,7 @@ Documents in this folder:
 - `warehouse-console-phase-w2-route-action-inventory-and-protection-plan-2026-05-26.md`
 - `warehouse-console-phase-w3-read-only-foundation-and-landing-baseline-2026-05-27.md`
 - `warehouse-console-phase-w4-inbound-visibility-design-plan-2026-05-27.md`
+- `warehouse-console-phase-w4a-inbound-receiving-visibility-baseline-2026-05-28.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
