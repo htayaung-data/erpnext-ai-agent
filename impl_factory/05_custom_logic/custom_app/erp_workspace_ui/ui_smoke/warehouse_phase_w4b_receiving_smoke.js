@@ -554,6 +554,7 @@ async function exerciseUser(browser, user) {
     await waitForReceivingReady(page, diagnostics, `${user.key}:refresh-page`);
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:refresh-page`);
+    const directPurchaseOrder = Array.isArray(state.route) && state.route[1] ? String(state.route[1]) : "PO-OVERDUE";
 
     await page.locator("[data-warehouse-receiving-back]").click();
     await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-worklist\/inbound-receiving$/.test(url.pathname), { timeout: TIMEOUT });
@@ -564,7 +565,7 @@ async function exerciseUser(browser, user) {
     for (const viewport of VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       const started = Date.now();
-      await openRoute(page, ["warehouse-console-receiving", "PO-OVERDUE"], "/desk/warehouse-console-receiving/PO-OVERDUE", diagnostics, `${user.key}:${viewport.key}:direct`, "receiving");
+      await openRoute(page, ["warehouse-console-receiving", directPurchaseOrder], `/desk/warehouse-console-receiving/${encodeURIComponent(directPurchaseOrder)}`, diagnostics, `${user.key}:${viewport.key}:direct`, "receiving");
       const elapsedMs = Date.now() - started;
       state = await snapshot(page);
       assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:direct`);
