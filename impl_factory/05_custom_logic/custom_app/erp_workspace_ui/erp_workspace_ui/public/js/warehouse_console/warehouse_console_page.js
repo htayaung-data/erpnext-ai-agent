@@ -9,8 +9,10 @@
   const WORKLIST_PAGE_KEY = warehouseRoutes.worklist || "warehouse-console-worklist";
   const RECEIVING_PAGE_KEY = warehouseRoutes.receiving || "warehouse-console-receiving";
   const INBOUND_QUEUE_KEY = "inbound_receiving";
+  const OUTBOUND_QUEUE_KEY = "outbound_picking";
   const OVERVIEW_METHOD = warehouseMethods.overview || "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview";
   const INBOUND_METHOD = warehouseMethods.inboundQueue || warehouseMethods.inbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue";
+  const OUTBOUND_METHOD = warehouseMethods.outboundQueue || warehouseMethods.outbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue";
   const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
@@ -78,6 +80,27 @@
     });
   }
 
+  function normalizeQueueKey(value) {
+    return String(value || "").trim().replace(/-/g, "_");
+  }
+
+  function activeWorklistQueueKey() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === WORKLIST_PAGE_KEY) return normalizeQueueKey(pathRoute[1] || INBOUND_QUEUE_KEY);
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (Array.isArray(route) && String(route[0] || "") === WORKLIST_PAGE_KEY) return normalizeQueueKey(route[1] || INBOUND_QUEUE_KEY);
+    return "";
+  }
+
+  function isSupportedWorklistQueue(queueKey) {
+    const key = normalizeQueueKey(queueKey);
+    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY;
+  }
+
+  function worklistViewName(queueKey) {
+    return normalizeQueueKey(queueKey) === OUTBOUND_QUEUE_KEY ? "outbound-picking" : "inbound-receiving";
+  }
+
   function overviewRouteSignature() {
     const pathRoute = pathRouteParts();
     if (Array.isArray(pathRoute) && String(pathRoute[0] || "") === PAGE_KEY) return pathRoute.join("|");
@@ -100,15 +123,11 @@
   }
 
   function isActiveInboundRoute() {
-    const pathRoute = pathRouteParts();
-    if (String(pathRoute[0] || "") === WORKLIST_PAGE_KEY) {
-      const queue = String(pathRoute[1] || "").replace(/-/g, "_");
-      return !queue || queue === INBOUND_QUEUE_KEY;
-    }
-    const route = frappe.get_route ? frappe.get_route() : [];
-    if (!Array.isArray(route) || String(route[0] || "") !== WORKLIST_PAGE_KEY) return false;
-    const queue = String(route[1] || "").replace(/-/g, "_");
-    return !queue || queue === INBOUND_QUEUE_KEY;
+    return activeWorklistQueueKey() === INBOUND_QUEUE_KEY;
+  }
+
+  function isActiveWarehouseWorklistRoute() {
+    return isSupportedWorklistQueue(activeWorklistQueueKey());
   }
 
   function receivingRouteSignature() {
@@ -878,6 +897,30 @@
     `;
   }
 
+  function renderOutboundCard(card) {
+    return `
+      <div class="warehouse-console-inbound-card" data-warehouse-outbound-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-console-inbound-card-label">${escapeHtml(card.label || card.title || "")}</div>
+        <div class="warehouse-console-inbound-card-value">${escapeHtml(cardValue(card))}</div>
+        <div class="warehouse-console-inbound-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderOutboundPreviewRow(row) {
+    return `
+      <div class="warehouse-console-inbound-row" data-warehouse-outbound-preview-row="${escapeHtml(row.key || "")}">
+        <div>
+          <strong>${escapeHtml(row.sales_order || row.name || "")}</strong>
+          <span>${escapeHtml(row.customer || row.partner || "")}</span>
+        </div>
+        <span>${escapeHtml(row.target_warehouse || "")}</span>
+        <span>${escapeHtml(row.age_label || row.required_date || "")}</span>
+        <span>${escapeHtml(row.delivered_percent || "0%")}</span>
+      </div>
+    `;
+  }
+
   function renderInboundOverviewPanel(inbound) {
     const payload = inbound || {};
     const cards = Array.isArray(payload.cards) ? payload.cards.slice(0, 4) : [];
@@ -895,6 +938,28 @@
         <div class="warehouse-console-inbound-cards">${cards.map(renderInboundCard).join("")}</div>
         <div class="warehouse-console-inbound-preview">
           ${rows.length ? rows.map(renderInboundPreviewRow).join("") : `<div class="warehouse-console-inbound-row"><span>${escapeHtml(emptyMessage)}</span></div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderOutboundOverviewPanel(outbound) {
+    const payload = outbound || {};
+    const cards = Array.isArray(payload.cards) ? payload.cards.slice(0, 4) : [];
+    const rows = Array.isArray(payload.preview_rows) ? payload.preview_rows.slice(0, 6) : [];
+    const emptyMessage = payload.state && payload.state.kind === "empty" ? payload.state.detail : "No outbound picking needs attention.";
+    return `
+      <section class="warehouse-console-inbound-panel warehouse-console-outbound-panel" data-warehouse-section="outbound_priority">
+        <div class="warehouse-console-inbound-head">
+          <div>
+            <h2 class="warehouse-console-inbound-title">Outbound Work</h2>
+            <div class="warehouse-console-inbound-note">Pending customer demand waiting for warehouse review.</div>
+          </div>
+          <button class="warehouse-console-inbound-open" type="button" data-warehouse-open-outbound>Open outbound picking</button>
+        </div>
+        <div class="warehouse-console-inbound-cards">${cards.map(renderOutboundCard).join("")}</div>
+        <div class="warehouse-console-inbound-preview">
+          ${rows.length ? rows.map(renderOutboundPreviewRow).join("") : `<div class="warehouse-console-inbound-row"><span>${escapeHtml(emptyMessage)}</span></div>`}
         </div>
       </section>
     `;
@@ -945,6 +1010,7 @@
           </div>
           <div class="warehouse-console-kpi-grid">${kpis.map(renderKpi).join("")}</div>
           ${renderInboundOverviewPanel(payload.inbound || {})}
+          ${renderOutboundOverviewPanel(payload.outbound || {})}
         </section>
         <div class="warehouse-console-grid">${sections.map(renderSection).join("")}</div>
       </div>
@@ -959,6 +1025,11 @@
       event.preventDefault();
       frappe.route_options = {};
       frappe.set_route(WORKLIST_PAGE_KEY, "inbound-receiving");
+    });
+    $root.find("[data-warehouse-open-outbound]").on("click", (event) => {
+      event.preventDefault();
+      frappe.route_options = {};
+      frappe.set_route(WORKLIST_PAGE_KEY, "outbound-picking");
     });
     replacePageBody(page, $root);
     cleanupOverviewPageHeads();
@@ -1053,12 +1124,17 @@
     return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
   }
 
+  function hasReadyWorklistShell(queueKey) {
+    return Boolean(document.querySelector(`.warehouse-inbound-shell[data-warehouse-view="${worklistViewName(queueKey)}"]`));
+  }
+
   function hasReadyInboundShell() {
-    return Boolean(document.querySelector('.warehouse-inbound-shell[data-warehouse-view="inbound-receiving"]'));
+    return hasReadyWorklistShell(INBOUND_QUEUE_KEY);
   }
 
   function shouldSelfRenderInbound() {
-    return isActiveInboundRoute() && !hasReadyInboundShell();
+    const queueKey = activeWorklistQueueKey();
+    return isSupportedWorklistQueue(queueKey) && !hasReadyWorklistShell(queueKey);
   }
 
   function renderActiveInboundRoute() {
@@ -1070,7 +1146,7 @@
     if (!wrapper) return;
     window.setTimeout(() => {
       if (token !== inboundRouteRenderSerial || !shouldSelfRenderInbound() || inboundRouteSignature() !== signature) return;
-      renderInboundQueue(wrapper);
+      renderWarehouseWorklist(wrapper, activeWorklistQueueKey());
     }, 0);
   }
 
@@ -1193,7 +1269,7 @@
 
   function renderQueueCard(card) {
     return `
-      <div class="warehouse-inbound-queue-card" data-warehouse-inbound-queue-card="${escapeHtml(card.key || "")}">
+      <div class="warehouse-inbound-queue-card" data-warehouse-inbound-queue-card="${escapeHtml(card.key || "")}" data-warehouse-outbound-queue-card="${escapeHtml(card.key || "")}">
         <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
         <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
         <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
@@ -1203,18 +1279,22 @@
 
   function renderQueueRow(row) {
     const lines = Array.isArray(row.lines) ? row.lines : [];
+    const rowKey = row.primary_id || row.purchase_order || row.sales_order || row.name || row.key || "";
+    const partner = row.partner || row.supplier || row.customer || "";
+    const progress = row.received_percent || row.delivered_percent || "0%";
+    const detailButton = row.purchase_order ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>View details</button>' : "";
     return `
-      <article class="warehouse-inbound-row" data-warehouse-inbound-row="${escapeHtml(row.key || "")}">
+      <article class="warehouse-inbound-row" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}">
         <div class="warehouse-inbound-row-main">
           <div>
-            <div class="warehouse-inbound-order">${escapeHtml(row.purchase_order || row.name || "")}</div>
-            <div class="warehouse-inbound-meta">${escapeHtml(row.supplier || "")}</div>
+            <div class="warehouse-inbound-order">${escapeHtml(rowKey)}</div>
+            <div class="warehouse-inbound-meta">${escapeHtml(partner)}</div>
           </div>
           <div class="warehouse-inbound-meta">${escapeHtml(row.target_warehouse || "")}</div>
           <div class="warehouse-inbound-meta">${escapeHtml(row.age_label || row.required_date || "")}</div>
-          <div class="warehouse-inbound-meta">${escapeHtml(row.remaining_summary || "")} · ${escapeHtml(row.received_percent || "0%")}</div>
+          <div class="warehouse-inbound-meta">${escapeHtml(row.remaining_summary || "")} · ${escapeHtml(progress)}</div>
           <div class="warehouse-receiving-actions">
-            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>View details</button>
+            ${detailButton}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
         </div>
@@ -1234,13 +1314,13 @@
   function renderQueueGroup(group) {
     const rows = Array.isArray(group.rows) ? group.rows : [];
     return `
-      <section class="warehouse-inbound-group" data-warehouse-inbound-group="${escapeHtml(group.key || "")}">
+      <section class="warehouse-inbound-group" data-warehouse-inbound-group="${escapeHtml(group.key || "")}" data-warehouse-outbound-group="${escapeHtml(group.key || "")}">
         <div class="warehouse-inbound-group-head">
           <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
         </div>
         <div class="warehouse-console-card-grid">
-          ${rows.length ? rows.map(renderQueueRow).join("") : `<div class="warehouse-inbound-row" data-warehouse-inbound-empty><span class="warehouse-inbound-meta">No receiving matches these filters.</span></div>`}
+          ${rows.length ? rows.map(renderQueueRow).join("") : `<div class="warehouse-inbound-row" data-warehouse-inbound-empty data-warehouse-outbound-empty><span class="warehouse-inbound-meta">No work matches these filters.</span></div>`}
         </div>
       </section>
     `;
@@ -1447,8 +1527,10 @@
     const cards = Array.isArray(payload.cards) ? payload.cards : [];
     const groups = Array.isArray(payload.groups) ? payload.groups : [];
     const statePayload = payload.state || {};
+    const queueKey = normalizeQueueKey((payload.page && payload.page.key) || viewState.queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
+    const viewName = worklistViewName(queueKey);
     const $root = $(`
-      <div class="sales-console-shell warehouse-inbound-shell" data-erpw-workspace="warehouse" data-warehouse-view="inbound-receiving" data-erpw-console-runtime="ready">
+      <div class="sales-console-shell warehouse-inbound-shell ${queueKey === OUTBOUND_QUEUE_KEY ? "warehouse-outbound-shell" : ""}" data-erpw-workspace="warehouse" data-warehouse-view="${escapeHtml(viewName)}" data-warehouse-queue-key="${escapeHtml(queueKey)}" data-erpw-console-runtime="ready">
         <section class="warehouse-inbound-queue-header">
           <div class="warehouse-inbound-queue-head">
             <div>
@@ -1467,7 +1549,7 @@
         </section>
         <div class="warehouse-inbound-groups">
           ${statePayload.kind === "restricted" || statePayload.kind === "error"
-            ? `<section class="warehouse-inbound-group" data-warehouse-inbound-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Inbound receiving unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-inbound-empty>${escapeHtml(statePayload.detail || "Receiving work could not be loaded. Refresh or contact an administrator.")}</div></section>`
+            ? `<section class="warehouse-inbound-group" data-warehouse-inbound-group="state" data-warehouse-outbound-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Warehouse worklist unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-inbound-empty data-warehouse-outbound-empty>${escapeHtml(statePayload.detail || "Warehouse work could not be loaded. Refresh or contact an administrator.")}</div></section>`
             : groups.map(renderQueueGroup).join("")}
         </div>
       </div>
@@ -1505,41 +1587,57 @@
   }
 
   function renderInboundLoading(viewState) {
+    const isOutbound = normalizeQueueKey(viewState.queueKey) === OUTBOUND_QUEUE_KEY;
     renderInboundQueuePayload(viewState, {
-      summary: { title: "Inbound Receiving", subtitle: "Checking inbound work..." },
+      page: { key: viewState.queueKey || INBOUND_QUEUE_KEY },
+      summary: { title: isOutbound ? "Outbound Picking" : "Inbound Receiving", subtitle: isOutbound ? "Checking outbound work..." : "Checking inbound work..." },
       controls: { fields: [], actions: [] },
       cards: [],
       groups: [],
-      state: { kind: "loading", title: "Checking inbound work", detail: "Checking inbound work..." },
+      state: { kind: "loading", title: isOutbound ? "Checking outbound work" : "Checking inbound work", detail: isOutbound ? "Checking outbound work..." : "Checking inbound work..." },
     });
   }
 
   function loadInboundQueue(viewState) {
-    markWarehouseDiagnostic("queueServiceCallAttempted");
+    const queueKey = normalizeQueueKey(viewState.queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
+    const isOutbound = queueKey === OUTBOUND_QUEUE_KEY;
+    markWarehouseDiagnostic(isOutbound ? "outboundQueueServiceCallAttempted" : "queueServiceCallAttempted");
+    viewState.queueKey = queueKey;
     renderInboundLoading(viewState);
     return frappe.call({
-      method: INBOUND_METHOD,
-      args: { queue_key: INBOUND_QUEUE_KEY, filters: viewState.activeFilters || {} },
+      method: isOutbound ? OUTBOUND_METHOD : INBOUND_METHOD,
+      args: { queue_key: queueKey, filters: viewState.activeFilters || {} },
     }).then((response) => {
       renderInboundQueuePayload(viewState, response && response.message ? response.message : {});
     }).catch(() => {
       renderInboundQueuePayload(viewState, {
-        summary: { title: "Inbound Receiving", subtitle: "Receiving work could not be loaded. Refresh or contact an administrator." },
+        page: { key: queueKey },
+        summary: { title: isOutbound ? "Outbound Picking" : "Inbound Receiving", subtitle: "Warehouse work could not be loaded. Refresh or contact an administrator." },
         controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
         cards: [],
         groups: [],
-        state: { kind: "error", title: "Inbound receiving unavailable", detail: "Receiving work could not be loaded. Refresh or contact an administrator." },
+        state: { kind: "error", title: isOutbound ? "Outbound picking unavailable" : "Inbound receiving unavailable", detail: "Warehouse work could not be loaded. Refresh or contact an administrator." },
       });
     });
   }
 
-  function renderInboundQueue(wrapper) {
-    markWarehouseDiagnostic("renderInboundQueueEntered");
+  function renderWarehouseWorklist(wrapper, queueKey) {
+    const resolvedQueueKey = normalizeQueueKey(queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
+    markWarehouseDiagnostic(resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
     const viewState = makeInboundPage(wrapper);
+    viewState.queueKey = resolvedQueueKey;
     if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
       window.erpWorkspaceConsoleSidebar.refresh();
     }
     loadInboundQueue(viewState);
+  }
+
+  function renderInboundQueue(wrapper) {
+    renderWarehouseWorklist(wrapper, INBOUND_QUEUE_KEY);
+  }
+
+  function renderOutboundQueue(wrapper) {
+    renderWarehouseWorklist(wrapper, OUTBOUND_QUEUE_KEY);
   }
 
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
@@ -1553,6 +1651,8 @@
   };
   const warehouseConsoleApi = window.erpWorkspaceWarehouseConsole = window.erpWorkspaceWarehouseConsole || {};
   warehouseConsoleApi.renderInboundQueue = renderInboundQueue;
+  warehouseConsoleApi.renderOutboundQueue = renderOutboundQueue;
+  warehouseConsoleApi.renderWarehouseWorklist = renderWarehouseWorklist;
   warehouseConsoleApi.renderReceivingReview = renderReceivingReview;
   warehouseConsoleApi.renderOverview = render;
   warehouseConsoleApi.diagnostics = warehouseConsoleApi.diagnostics || {};
@@ -1561,9 +1661,11 @@
 
   frappe.pages[WORKLIST_PAGE_KEY] = frappe.pages[WORKLIST_PAGE_KEY] || {};
   frappe.pages[WORKLIST_PAGE_KEY].__erpwWarehouseInboundRenderer = true;
+  frappe.pages[WORKLIST_PAGE_KEY].__erpwWarehouseWorklistRenderer = true;
   frappe.pages[WORKLIST_PAGE_KEY].__erpwRenderWarehouseInboundQueue = renderInboundQueue;
-  frappe.pages[WORKLIST_PAGE_KEY].on_page_load = function (wrapper) { renderInboundQueue(wrapper); };
-  frappe.pages[WORKLIST_PAGE_KEY].on_page_show = function (wrapper) { renderInboundQueue(wrapper); };
+  frappe.pages[WORKLIST_PAGE_KEY].__erpwRenderWarehouseWorklist = renderWarehouseWorklist;
+  frappe.pages[WORKLIST_PAGE_KEY].on_page_load = function (wrapper) { renderWarehouseWorklist(wrapper, activeWorklistQueueKey()); };
+  frappe.pages[WORKLIST_PAGE_KEY].on_page_show = function (wrapper) { renderWarehouseWorklist(wrapper, activeWorklistQueueKey()); };
 
   frappe.pages[RECEIVING_PAGE_KEY] = frappe.pages[RECEIVING_PAGE_KEY] || {};
   frappe.pages[RECEIVING_PAGE_KEY].__erpwWarehouseReceivingRenderer = true;

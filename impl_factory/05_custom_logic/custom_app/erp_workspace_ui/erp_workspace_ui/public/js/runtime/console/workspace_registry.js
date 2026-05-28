@@ -149,7 +149,7 @@
 
   const warehouseWorkspace = {
     workspaceId: "warehouse",
-    status: "w4b_receiving_review",
+    status: "w5a_outbound_picking",
     title: "Warehouse Console",
     modeLabel: "Warehouse Workspace",
     roleFamily: "Warehouse",
@@ -164,6 +164,7 @@
     methods: {
       overview: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
       inboundQueue: "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue",
+      outboundQueue: "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue",
       receivingDetail: "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review",
       sidebarContext: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
     },
@@ -172,6 +173,7 @@
       Item: "warehouse_console_home",
       Bin: "warehouse_console_home",
       "Purchase Order": "inbound_receiving",
+      "Sales Order": "outbound_picking",
     },
     sidebar: {
       homeKey: "warehouse_console_home",
@@ -185,6 +187,7 @@
     fallbackItems: [
       { key: "warehouse_console_home", label: "Overview", icon: "item", target: { kind: "page", route: "warehouse-console" } },
       { key: "inbound_receiving", label: "Inbound Receiving", icon: "quotation", target: { kind: "worklist", queue_key: "inbound_receiving" } },
+      { key: "outbound_picking", label: "Outbound Picking", icon: "order", target: { kind: "worklist", queue_key: "outbound_picking" } },
     ],
   };
 
@@ -198,7 +201,7 @@
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
     { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
-    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w4b_receiving_review" },
+    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w5a_outbound_picking" },
     { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
     { workspaceId: "customer_service", matrixName: "Customer Service Console", recommendedName: "Customer Service Console", wave: "second", priority: 6, status: "planned" },

@@ -16,6 +16,8 @@ READABLE_DOCTYPES = {
     "Material Request",
     "Purchase Receipt",
     "Purchase Receipt Item",
+    "Sales Order",
+    "Sales Order Item",
 }
 COUNT_CALLS = []
 LIST_CALLS = []
@@ -96,6 +98,93 @@ PR_ITEM_ROWS = [
         "stock_uom": "Nos",
         "uom": "Nos",
     },
+]
+
+SO_ROWS = [
+    {
+        "name": "SO-OVERDUE",
+        "customer": "CUST-001",
+        "customer_name": "Apex Retail",
+        "transaction_date": "2026-05-20",
+        "delivery_date": "2026-05-24",
+        "status": "To Deliver",
+        "per_delivered": 0,
+        "set_warehouse": "Stores - M",
+        "modified": "2026-05-25 08:00:00",
+    },
+    {
+        "name": "SO-TODAY",
+        "customer": "CUST-002",
+        "customer_name": "Today Retail",
+        "transaction_date": "2026-05-21",
+        "delivery_date": "2026-05-27",
+        "status": "To Deliver and Bill",
+        "per_delivered": 0,
+        "set_warehouse": "Main - M",
+        "modified": "2026-05-26 08:00:00",
+    },
+    {
+        "name": "SO-READY",
+        "customer": "CUST-003",
+        "customer_name": "Ready Customer",
+        "transaction_date": "2026-05-22",
+        "delivery_date": "2026-06-01",
+        "status": "To Deliver",
+        "per_delivered": 0,
+        "set_warehouse": "Main - M",
+        "modified": "2026-05-26 09:00:00",
+    },
+    {
+        "name": "SO-PARTIAL",
+        "customer": "CUST-004",
+        "customer_name": "Partial Customer",
+        "transaction_date": "2026-05-23",
+        "delivery_date": "2026-06-02",
+        "status": "To Deliver",
+        "per_delivered": 45,
+        "set_warehouse": "Main - M",
+        "modified": "2026-05-26 10:00:00",
+    },
+    {
+        "name": "SO-REVIEW",
+        "customer": "CUST-005",
+        "customer_name": "Review Customer",
+        "transaction_date": "2026-05-24",
+        "delivery_date": "2026-06-03",
+        "status": "To Deliver",
+        "per_delivered": 0,
+        "set_warehouse": "Short - M",
+        "modified": "2026-05-26 11:00:00",
+    },
+    {
+        "name": "SO-FAR",
+        "customer": "CUST-006",
+        "customer_name": "Future Customer",
+        "transaction_date": "2026-05-25",
+        "delivery_date": "2026-07-20",
+        "status": "To Deliver",
+        "per_delivered": 0,
+        "set_warehouse": "Future - M",
+        "modified": "2026-05-26 12:00:00",
+    },
+]
+
+SO_ITEM_ROWS = [
+    {"parent": "SO-OVERDUE", "item_code": "ITEM-101", "item_name": "Phone Case", "delivery_date": "2026-05-24", "qty": 4, "delivered_qty": 0, "warehouse": "Stores - M", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "SO-TODAY", "item_code": "ITEM-102", "item_name": "Screen Guard", "delivery_date": "2026-05-27", "qty": 6, "delivered_qty": 0, "warehouse": "Main - M", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "SO-READY", "item_code": "ITEM-103", "item_name": "Bluetooth Speaker", "delivery_date": "2026-06-01", "qty": 5, "delivered_qty": 0, "warehouse": "Main - M", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "SO-PARTIAL", "item_code": "ITEM-104", "item_name": "Cable Pack", "delivery_date": "2026-06-02", "qty": 10, "delivered_qty": 4, "warehouse": "Main - M", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "SO-REVIEW", "item_code": "ITEM-105", "item_name": "Power Bank", "delivery_date": "2026-06-03", "qty": 8, "delivered_qty": 0, "warehouse": "Short - M", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "SO-FAR", "item_code": "ITEM-106", "item_name": "Future Kit", "delivery_date": "2026-07-20", "qty": 3, "delivered_qty": 0, "warehouse": "Future - M", "stock_uom": "Nos", "uom": "Nos"},
+]
+
+BIN_ROWS = [
+    {"item_code": "ITEM-101", "warehouse": "Stores - M", "actual_qty": 8, "reserved_qty": 0, "projected_qty": 8},
+    {"item_code": "ITEM-102", "warehouse": "Main - M", "actual_qty": 6, "reserved_qty": 0, "projected_qty": 6},
+    {"item_code": "ITEM-103", "warehouse": "Main - M", "actual_qty": 12, "reserved_qty": 0, "projected_qty": 12},
+    {"item_code": "ITEM-104", "warehouse": "Main - M", "actual_qty": 12, "reserved_qty": 0, "projected_qty": 12},
+    {"item_code": "ITEM-105", "warehouse": "Short - M", "actual_qty": 2, "reserved_qty": 0, "projected_qty": 2},
+    {"item_code": "ITEM-106", "warehouse": "Future - M", "actual_qty": 8, "reserved_qty": 0, "projected_qty": 8},
 ]
 
 PO_ITEM_ROWS = [
@@ -190,6 +279,7 @@ def _count(doctype, filters=None):
         "Warehouse": 4,
         "Bin": 8,
         "Purchase Order": 2,
+        "Sales Order": 5,
         "Pick List": 1,
         "Material Request": 3,
     }.get(doctype, 0)
@@ -232,6 +322,30 @@ def _get_meta(doctype):
             "idx",
         },
         "Purchase Receipt": {"posting_date", "status", "docstatus", "modified"},
+        "Sales Order": {
+            "docstatus",
+            "status",
+            "per_delivered",
+            "delivery_date",
+            "customer",
+            "customer_name",
+            "transaction_date",
+            "set_warehouse",
+            "modified",
+        },
+        "Sales Order Item": {
+            "parent",
+            "item_code",
+            "item_name",
+            "delivery_date",
+            "qty",
+            "delivered_qty",
+            "warehouse",
+            "stock_uom",
+            "uom",
+            "idx",
+        },
+        "Bin": {"item_code", "warehouse", "actual_qty", "reserved_qty", "projected_qty"},
         "Purchase Receipt Item": {
             "parent",
             "item_code",
@@ -281,10 +395,39 @@ def _filter_purchase_orders(filters):
     return rows
 
 
+def _filter_sales_orders(filters):
+    rows = list(SO_ROWS)
+    for condition in filters or []:
+        if not isinstance(condition, list) or len(condition) < 4:
+            continue
+        _, field, operator, value = condition[:4]
+        if field == "name" and operator == "like":
+            needle = str(value).replace("%", "").lower()
+            rows = [row for row in rows if needle in row["name"].lower()]
+        if field == "name" and operator == "=":
+            rows = [row for row in rows if row["name"] == value]
+        if field == "customer_name" and operator == "like":
+            needle = str(value).replace("%", "").lower()
+            rows = [row for row in rows if needle in row["customer_name"].lower()]
+        if field == "customer" and operator == "like":
+            needle = str(value).replace("%", "").lower()
+            rows = [row for row in rows if needle in row["customer"].lower()]
+        if field == "status" and operator == "in":
+            rows = [row for row in rows if row["status"] in set(value)]
+        if field == "per_delivered" and operator == "<":
+            rows = [row for row in rows if float(row["per_delivered"]) < float(value)]
+        if field == "docstatus" and operator == "=":
+            rows = [row for row in rows if int(value) == 1]
+    return rows
+
+
 def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_length=None, **kwargs):
     LIST_CALLS.append({"doctype": doctype, "fields": fields, "filters": filters, "limit": limit_page_length})
     if doctype == "Purchase Order":
         rows = _filter_purchase_orders(filters)
+        return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Sales Order":
+        rows = _filter_sales_orders(filters)
         return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
     return []
 
@@ -310,6 +453,26 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
         names = set(name_filter[1]) if isinstance(name_filter, list) and name_filter[0] == "in" else set()
         rows = [row for row in PR_ROWS if not names or row["name"] in names]
         return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Sales Order Item":
+        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
+        if isinstance(parent_filter, list) and parent_filter[0] == "in":
+            parents = set(parent_filter[1])
+        elif parent_filter:
+            parents = {parent_filter}
+        else:
+            parents = set()
+        rows = [row for row in SO_ITEM_ROWS if not parents or row["parent"] in parents]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Bin":
+        item_filter = (filters or {}).get("item_code") if isinstance(filters, dict) else None
+        warehouse_filter = (filters or {}).get("warehouse") if isinstance(filters, dict) else None
+        items = set(item_filter[1]) if isinstance(item_filter, list) and item_filter[0] == "in" else set()
+        warehouses = set(warehouse_filter[1]) if isinstance(warehouse_filter, list) and warehouse_filter[0] == "in" else set()
+        rows = [
+            row for row in BIN_ROWS
+            if (not items or row["item_code"] in items) and (not warehouses or row["warehouse"] in warehouses)
+        ]
+        return [_selected(row, fields or ["item_code"]) for row in rows[: limit_page_length or len(rows)]]
     return []
 
 
@@ -377,7 +540,7 @@ from erp_workspace_ui.warehouse_console import service
 from erp_workspace_ui.workspace_registry import get_warehouse_workspace_definition
 
 
-class TestWarehouseConsoleW4BContracts(unittest.TestCase):
+class TestWarehouseConsoleW5AContracts(unittest.TestCase):
     def setUp(self):
         CURRENT_ROLES[:] = ["Stock User"]
         READABLE_DOCTYPES.update({
@@ -388,17 +551,19 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
             "Purchase Order Item",
             "Pick List",
             "Material Request",
+            "Sales Order",
+            "Sales Order Item",
         })
         COUNT_CALLS.clear()
         LIST_CALLS.clear()
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
 
-    def test_warehouse_workspace_registry_definition_has_w4b_receiving_route(self):
+    def test_warehouse_workspace_registry_definition_has_w5a_outbound_route(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w4b_receiving_review")
+        self.assertEqual(workspace["status"], "w5a_outbound_picking")
         self.assertEqual(
             workspace["routes"],
             {
@@ -419,6 +584,10 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
             "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue",
         )
         self.assertEqual(
+            workspace["methods"]["outbound_queue"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue",
+        )
+        self.assertEqual(
             workspace["methods"]["receiving_detail"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review",
         )
@@ -426,6 +595,7 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
             "warehouse_console_home",
             "inbound_receiving",
+            "outbound_picking",
         ])
 
     def test_overview_payload_adds_inbound_preview_and_hides_valuation(self):
@@ -444,6 +614,15 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
         self.assertEqual(payload["inbound"]["counts"]["expected_soon"], 1)
         self.assertLessEqual(len(payload["inbound"]["preview_rows"]), 6)
         self.assertIn("Inbound Work", {section["title"] for section in payload["sections"]})
+        self.assertIn("outbound", payload)
+        self.assertEqual(payload["outbound"]["queue_key"], "outbound_picking")
+        self.assertEqual(payload["outbound"]["counts"]["overdue"], 1)
+        self.assertEqual(payload["outbound"]["counts"]["due_today"], 1)
+        self.assertEqual(payload["outbound"]["counts"]["ready_to_pick"], 1)
+        self.assertEqual(payload["outbound"]["counts"]["partially_picked"], 1)
+        self.assertEqual(payload["outbound"]["counts"]["needs_stock_review"], 1)
+        self.assertLessEqual(len(payload["outbound"]["preview_rows"]), 6)
+        self.assertIn("Outbound Work", {section["title"] for section in payload["sections"]})
         payload_text = str(payload).lower()
         self.assertNotIn("stock_value", payload_text)
         self.assertNotIn("valuation_rate", payload_text)
@@ -515,6 +694,66 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
         self.assertNotIn("native", str(payload).lower())
 
 
+    def test_outbound_queue_payload_is_grouped_read_only_and_allowlisted(self):
+        payload = service.get_warehouse_outbound_picking_queue("outbound-picking")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"], {"title": "Outbound Picking", "key": "outbound_picking"})
+        self.assertEqual(payload["action_targets"], {})
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(len(payload["rows"]), 5)
+        groups = {group["key"]: group for group in payload["groups"]}
+        self.assertEqual(len(groups["overdue"]["rows"]), 1)
+        self.assertEqual(len(groups["due_today"]["rows"]), 1)
+        self.assertEqual(len(groups["ready_to_pick"]["rows"]), 1)
+        self.assertEqual(len(groups["partially_picked"]["rows"]), 1)
+        self.assertEqual(len(groups["needs_stock_review"]["rows"]), 1)
+
+        allowed_row_keys = {
+            "key",
+            "name",
+            "sales_order",
+            "primary_id",
+            "customer",
+            "partner",
+            "required_date",
+            "target_warehouse",
+            "line_count",
+            "item_count",
+            "delivered_percent",
+            "remaining_summary",
+            "status",
+            "state_key",
+            "state_label",
+            "age_label",
+            "lines",
+        }
+        for row in payload["rows"]:
+            self.assertLessEqual(set(row), allowed_row_keys)
+            self.assertNotIn("rate", row)
+            self.assertNotIn("amount", row)
+            self.assertNotIn("stock_value", row)
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("base_net_rate", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertTrue(any(call["doctype"] == "Sales Order" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Sales Order Item" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Bin" for call in GET_ALL_CALLS))
+
+    def test_outbound_queue_filters_stay_within_product_route_scope(self):
+        payload = service.get_warehouse_outbound_picking_queue(
+            "outbound-picking",
+            {"state": "needs_stock_review", "customer": "Review"},
+        )
+
+        self.assertEqual([row["sales_order"] for row in payload["rows"]], ["SO-REVIEW"])
+        self.assertEqual(payload["controls"]["fields"][1]["value"], "Review")
+        self.assertEqual(payload["controls"]["fields"][3]["value"], "needs_stock_review")
+        self.assertEqual(payload["workspace"]["routes"]["worklist"], "warehouse-console-worklist")
+        self.assertNotIn("native", str(payload).lower())
+
+
     def test_receiving_review_payload_is_read_only_allowlisted_and_history_bounded(self):
         payload = service.get_warehouse_receiving_review("PO-PARTIAL")
 
@@ -555,6 +794,7 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
 
         overview = service.get_warehouse_console_overview()
         queue = service.get_warehouse_inbound_receiving_queue("inbound_receiving")
+        outbound = service.get_warehouse_outbound_picking_queue("outbound_picking")
         detail = service.get_warehouse_receiving_review("PO-OVERDUE")
 
         self.assertEqual(overview["state"]["kind"], "restricted")
@@ -563,6 +803,8 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
         self.assertEqual(overview["allowed_actions"], [])
         self.assertEqual(queue["state"]["kind"], "restricted")
         self.assertEqual(queue["rows"], [])
+        self.assertEqual(outbound["state"]["kind"], "restricted")
+        self.assertEqual(outbound["rows"], [])
         self.assertEqual(detail["state"]["kind"], "restricted")
         self.assertEqual(detail["lines"], [])
 
@@ -578,6 +820,19 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
         self.assertEqual(queue["state"]["kind"], "restricted")
         self.assertEqual(queue["rows"], [])
         self.assertFalse(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
+
+    def test_permission_limited_sources_return_controlled_empty_outbound_state(self):
+        READABLE_DOCTYPES.discard("Sales Order")
+
+        overview = service.get_warehouse_console_overview()
+        queue = service.get_warehouse_outbound_picking_queue("outbound_picking")
+        metrics = {metric["key"]: metric for metric in overview["kpis"]}
+
+        self.assertEqual(metrics["outbound_due"]["state"], "unavailable")
+        self.assertIsNone(metrics["outbound_due"]["value"])
+        self.assertEqual(queue["state"]["kind"], "restricted")
+        self.assertEqual(queue["rows"], [])
+        self.assertFalse(any(call["doctype"] == "Sales Order" for call in LIST_CALLS))
 
 
 if __name__ == "__main__":

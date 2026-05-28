@@ -266,9 +266,10 @@ ROUTE_MANIFEST: tuple[dict[str, Any], ...] = (
 	_route("procurement", "procurement-console-supplier-quotation-form", "managed_supplier_quotation_form", "managed_create_edit", "/desk/procurement-console-supplier-quotation-form/<name-or-new>", "managed_draft_form_shell", required_smoke_category="procurement_phase5c_smoke", notes="Managed Supplier Quotation draft form. Save Quotation only; no submit or Purchase Order creation."),
 	_route("procurement", "procurement-console-purchase-order-form", "managed_purchase_order_form", "managed_create_edit", "/desk/procurement-console-purchase-order-form/<name-or-new>", "managed_draft_form_shell", required_smoke_category="procurement_phase5d_smoke", notes="Managed Purchase Order draft form. Save Purchase Order only; no submit, receipt, invoice, or payment actions."),
 	_route("procurement", "procurement-console-supplier-quotation-review", "review", "productized_detail", "/desk/procurement-console-supplier-quotation-review/<supplier-quotation>", "compact_review_shell", required_smoke_category="procurement_phase3_smoke", notes="Read-only Supplier Quotation review."),
-	_route("warehouse", "warehouse-console", "overview", "productized_overview", "/desk/warehouse-console", "console_runtime", required_smoke_category="warehouse_phase_w4a_smoke", notes="W4A read-only Warehouse Overview with inbound visibility."),
-	_route("warehouse", "warehouse-console-worklist", "worklist_guard", "productized_worklist", "/desk/warehouse-console-worklist", "warehouse_inbound_shell", required_smoke_category="warehouse_phase_w4a_smoke", notes="W4A Warehouse worklist route for read-only inbound visibility."),
+	_route("warehouse", "warehouse-console", "overview", "productized_overview", "/desk/warehouse-console", "console_runtime", required_smoke_category="warehouse_phase_w5a_smoke", notes="W5A read-only Warehouse Overview with inbound and outbound visibility."),
+	_route("warehouse", "warehouse-console-worklist", "worklist_guard", "productized_worklist", "/desk/warehouse-console-worklist", "warehouse_worklist_shell", required_smoke_category="warehouse_phase_w5a_smoke", notes="Warehouse worklist route for read-only inbound and outbound visibility."),
 	_route("warehouse", "warehouse-console-worklist/inbound_receiving", "worklist", "productized_worklist", "/desk/warehouse-console-worklist/inbound-receiving", "warehouse_inbound_shell", required_smoke_category="warehouse_phase_w4a_smoke", notes="Read-only inbound supplier receiving queue."),
+	_route("warehouse", "warehouse-console-worklist/outbound_picking", "worklist", "productized_worklist", "/desk/warehouse-console-worklist/outbound-picking", "warehouse_outbound_shell", required_smoke_category="warehouse_phase_w5a_smoke", notes="Read-only outbound picking visibility queue."),
 	_route("warehouse", "warehouse-console-receiving", "detail", "productized_detail", "/desk/warehouse-console-receiving/<purchase-order>", "warehouse_receiving_shell", required_smoke_category="warehouse_phase_w4b_smoke", notes="Read-only receiving review for inbound purchase orders."),
 )
 
@@ -365,16 +366,22 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("procurement-managed-po-email-blocked", "procurement", "procurement-console-purchase-order-form/<purchase-order>", "email_supplier", "productized_secondary_action", "disabled", label="Email supplier", notes="Phase 6C1 blocked action; PO supplier send requires approval/submit governance."),
 	_action("warehouse-overview-refresh", "warehouse", "warehouse-console", "refresh", "productized_secondary_action", "current_shell", label="Refresh", notes="Read-only Overview reload."),
 	_action("warehouse-overview-open-inbound", "warehouse", "warehouse-console", "open_inbound_receiving", "productized_navigation", "worklist", label="Open inbound receiving", target_route_pattern="/desk/warehouse-console-worklist/inbound-receiving", notes="Overview navigation into the read-only inbound queue."),
+	_action("warehouse-overview-open-outbound", "warehouse", "warehouse-console", "open_outbound_picking", "productized_navigation", "worklist", label="Open outbound picking", target_route_pattern="/desk/warehouse-console-worklist/outbound-picking", notes="Overview navigation into the read-only outbound queue."),
 	_action("warehouse-inbound-refresh", "warehouse", "warehouse-console-worklist/inbound_receiving", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
 	_action("warehouse-inbound-reset", "warehouse", "warehouse-console-worklist/inbound_receiving", "reset_filters", "productized_secondary_action", "current_shell", label="Reset"),
 	_action("warehouse-inbound-apply", "warehouse", "warehouse-console-worklist/inbound_receiving", "apply_filters", "productized_primary_action", "current_shell", label="Apply"),
 	_action("warehouse-inbound-view-lines", "warehouse", "warehouse-console-worklist/inbound_receiving", "view_lines", "productized_secondary_action", "current_shell", label="View lines"),
 	_action("warehouse-inbound-open-receiving-review", "warehouse", "warehouse-console-worklist/inbound_receiving", "open_receiving_review", "productized_navigation", "page", label="View details", target_route_pattern="/desk/warehouse-console-receiving/<purchase-order>", notes="Read-only Warehouse receiving review drilldown."),
+	_action("warehouse-outbound-refresh", "warehouse", "warehouse-console-worklist/outbound_picking", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
+	_action("warehouse-outbound-reset", "warehouse", "warehouse-console-worklist/outbound_picking", "reset_filters", "productized_secondary_action", "current_shell", label="Reset"),
+	_action("warehouse-outbound-apply", "warehouse", "warehouse-console-worklist/outbound_picking", "apply_filters", "productized_primary_action", "current_shell", label="Apply"),
+	_action("warehouse-outbound-view-lines", "warehouse", "warehouse-console-worklist/outbound_picking", "view_lines", "productized_secondary_action", "current_shell", label="View lines"),
 	_action("warehouse-receiving-refresh", "warehouse", "warehouse-console-receiving/<purchase-order>", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
 	_action("warehouse-receiving-back-to-queue", "warehouse", "warehouse-console-receiving/<purchase-order>", "back_to_inbound_receiving", "productized_navigation", "worklist", label="Back to inbound receiving", target_route_pattern="/desk/warehouse-console-worklist/inbound-receiving"),
 	_action("warehouse-receiving-tab-switch", "warehouse", "warehouse-console-receiving/<purchase-order>", "switch_tab", "productized_secondary_action", "current_shell", label_pattern="Item Lines|Receipt History"),
 	_action("warehouse-sidebar-overview-navigation", "warehouse", "warehouse-sidebar", "sidebar_overview_navigation", "productized_navigation", "page", label="Overview", target_route_pattern="/desk/warehouse-console", notes="Sidebar entry opens the Warehouse Overview."),
 	_action("warehouse-sidebar-inbound-navigation", "warehouse", "warehouse-sidebar", "sidebar_inbound_navigation", "productized_navigation", "worklist", label="Inbound Receiving", target_route_pattern="/desk/warehouse-console-worklist/inbound-receiving", notes="Sidebar entry opens the read-only inbound queue."),
+	_action("warehouse-sidebar-outbound-navigation", "warehouse", "warehouse-sidebar", "sidebar_outbound_navigation", "productized_navigation", "worklist", label="Outbound Picking", target_route_pattern="/desk/warehouse-console-worklist/outbound-picking", notes="Sidebar entry opens the read-only outbound queue."),
 )
 
 FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
@@ -394,7 +401,7 @@ FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
 	},
 	{
 		"workspace_id": "warehouse",
-		"scope": "w4b_productized_overview_inbound_and_receiving_read_only_pages",
+		"scope": "w5a_productized_overview_inbound_outbound_and_receiving_read_only_pages",
 		"labels": FORBIDDEN_MUTATION_LABELS,
 		"allowed_only_when": "future controlled Warehouse execution design and manifest update",
 		"policy_doc": "_docs/erp-ui-customization/native-exception-policy-v1.md",

@@ -27,10 +27,14 @@
 
   function resolveRenderer() {
     const pageDef = frappe.pages && frappe.pages[PAGE_KEY] ? frappe.pages[PAGE_KEY] : null;
+    if (pageDef && typeof pageDef.__erpwRenderWarehouseWorklist === "function") {
+      return pageDef.__erpwRenderWarehouseWorklist;
+    }
     if (pageDef && typeof pageDef.__erpwRenderWarehouseInboundQueue === "function") {
       return pageDef.__erpwRenderWarehouseInboundQueue;
     }
     const api = window.erpWorkspaceWarehouseConsole || {};
+    if (typeof api.renderWarehouseWorklist === "function") return api.renderWarehouseWorklist;
     if (typeof api.renderInboundQueue === "function") return api.renderInboundQueue;
     return null;
   }

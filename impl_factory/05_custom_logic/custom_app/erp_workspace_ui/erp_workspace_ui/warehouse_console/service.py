@@ -24,6 +24,14 @@ INBOUND_HORIZON_DAYS = 14
 INBOUND_OPEN_STATUSES = ("To Receive", "To Receive and Bill")
 INBOUND_GROUP_ORDER = ("overdue", "due_today", "partially_received", "expected_soon")
 
+OUTBOUND_QUEUE_KEY = "outbound_picking"
+OUTBOUND_QUEUE_LIMIT = 50
+OUTBOUND_OVERVIEW_LIMIT = 6
+OUTBOUND_SCAN_LIMIT = 180
+OUTBOUND_HORIZON_DAYS = 14
+OUTBOUND_OPEN_STATUSES = ("To Deliver", "To Deliver and Bill")
+OUTBOUND_GROUP_ORDER = ("overdue", "due_today", "ready_to_pick", "partially_picked", "needs_stock_review", "expected_soon")
+
 PURCHASE_ORDER_INBOUND_FIELDS = [
 	"name",
 	"supplier",
@@ -82,6 +90,38 @@ PURCHASE_RECEIPT_ITEM_HISTORY_FIELDS = [
 	"purchase_order_item",
 	"stock_uom",
 	"uom",
+]
+
+SALES_ORDER_OUTBOUND_FIELDS = [
+	"name",
+	"customer",
+	"customer_name",
+	"transaction_date",
+	"delivery_date",
+	"status",
+	"per_delivered",
+	"set_warehouse",
+	"modified",
+]
+
+SALES_ORDER_ITEM_OUTBOUND_FIELDS = [
+	"parent",
+	"item_code",
+	"item_name",
+	"delivery_date",
+	"qty",
+	"delivered_qty",
+	"warehouse",
+	"stock_uom",
+	"uom",
+]
+
+BIN_OUTBOUND_FIELDS = [
+	"item_code",
+	"warehouse",
+	"actual_qty",
+	"reserved_qty",
+	"projected_qty",
 ]
 
 STANDARD_SAFE_FIELDS = frozenset({"name", "parent", "idx", "docstatus", "modified", "owner", "creation"})
@@ -218,10 +258,12 @@ def get_warehouse_console_overview() -> dict[str, object]:
 
 	payload = _base_payload(context, ready_state())
 	inbound = _build_inbound_visibility({}, preview_limit=INBOUND_OVERVIEW_LIMIT, row_limit=INBOUND_QUEUE_LIMIT)
-	kpis = _build_overview_kpis(inbound)
+	outbound = _build_outbound_visibility({}, preview_limit=OUTBOUND_OVERVIEW_LIMIT, row_limit=OUTBOUND_QUEUE_LIMIT)
+	kpis = _build_overview_kpis(inbound, outbound)
 	payload["kpis"] = kpis
 	payload["inbound"] = inbound
-	payload["sections"] = _build_overview_sections(kpis, inbound)
+	payload["outbound"] = outbound
+	payload["sections"] = _build_overview_sections(kpis, inbound, outbound)
 	if not any(_metric_value(metric) for metric in kpis):
 		payload["state"] = state(
 			"empty",
@@ -249,7 +291,7 @@ def get_warehouse_console_sidebar_context() -> dict[str, object]:
 	}
 
 
-def _build_overview_kpis(inbound: dict[str, object] | None = None) -> list[dict[str, object]]:
+def _build_overview_kpis(inbound: dict[str, object] | None = None, outbound: dict[str, object] | None = None) -> list[dict[str, object]]:
 	return [
 		_metric_from_count(
 			"active_warehouses",
@@ -279,12 +321,12 @@ def _build_overview_kpis(inbound: dict[str, object] | None = None) -> list[dict[
 			"due_today",
 			"Submitted purchase orders due for review.",
 		),
-		_metric_from_count(
+		_outbound_metric(
 			"outbound_due",
-			"Outbound Due",
-			"Pick List",
-			_pick_list_open_filters(),
-			"Open picking work visible to your role.",
+			"Picking Due",
+			outbound,
+			"due_today",
+			"Submitted sales orders due for warehouse picking review.",
 		),
 		_metric_from_count(
 			"transfer_requests",
@@ -296,19 +338,21 @@ def _build_overview_kpis(inbound: dict[str, object] | None = None) -> list[dict[
 	]
 
 
-def _build_overview_sections(kpis: list[dict[str, object]], inbound: dict[str, object] | None = None) -> list[dict[str, object]]:
+def _build_overview_sections(kpis: list[dict[str, object]], inbound: dict[str, object] | None = None, outbound: dict[str, object] | None = None) -> list[dict[str, object]]:
 	metrics = {cstr(metric.get("key")): metric for metric in kpis}
 	low_stock = metrics.get("low_stock") or {}
 	receiving = metrics.get("receiving_due") or {}
-	outbound = metrics.get("outbound_due") or {}
+	outbound_metric = metrics.get("outbound_due") or {}
 	transfers = metrics.get("transfer_requests") or {}
 	inbound_cards = _inbound_section_cards(inbound)
+	outbound_cards = _outbound_section_cards(outbound)
 	overdue_card = next((card for card in inbound_cards if card.get("key") == "overdue"), None)
+	outbound_attention_card = next((card for card in outbound_cards if card.get("key") in {"overdue", "due_today"}), None)
 
 	attention_cards = [
 		_section_card("low_stock", "Low Stock", low_stock, "No stock issues needing attention."),
 		overdue_card or _section_card("receiving_due", "Receiving Due", receiving, "No receiving due today."),
-		_section_card("outbound_due", "Outbound Due", outbound, "No outbound work due today."),
+		outbound_attention_card or _section_card("outbound_due", "Picking Due", outbound_metric, "No outbound picking due today."),
 	]
 	return [
 		{
@@ -329,8 +373,8 @@ def _build_overview_sections(kpis: list[dict[str, object]], inbound: dict[str, o
 			"key": "outbound_work",
 			"title": "Outbound Work",
 			"summary": "Picking posture visible to Warehouse roles.",
-			"empty_message": "No outbound work due today.",
-			"cards": [_section_card("outbound_due", "Outbound Due", outbound, "No outbound work due today.")],
+			"empty_message": "No outbound picking needs attention.",
+			"cards": outbound_cards or [_section_card("outbound_due", "Picking Due", outbound_metric, "No outbound picking due today.")],
 		},
 		{
 			"key": "stock_health",
@@ -384,6 +428,18 @@ def _inbound_metric(key: str, label: str, inbound: dict[str, object] | None, cou
 	if isinstance(payload_state, dict) and payload_state.get("kind") == "restricted":
 		return _metric(key, label, None, "Not available for your role.", "unavailable")
 	counts = inbound.get("counts") if isinstance(inbound, dict) else {}
+	try:
+		value = int((counts or {}).get(count_key) or 0)
+	except Exception:
+		value = 0
+	return _metric(key, label, value, note, "live")
+
+
+def _outbound_metric(key: str, label: str, outbound: dict[str, object] | None, count_key: str, note: str) -> dict[str, object]:
+	payload_state = outbound.get("state") if isinstance(outbound, dict) else {}
+	if isinstance(payload_state, dict) and payload_state.get("kind") == "restricted":
+		return _metric(key, label, None, "Not available for your role.", "unavailable")
+	counts = outbound.get("counts") if isinstance(outbound, dict) else {}
 	try:
 		value = int((counts or {}).get(count_key) or 0)
 	except Exception:
@@ -492,6 +548,26 @@ def get_warehouse_inbound_receiving_queue(
 		)
 	inbound = _build_inbound_visibility(applied_filters, preview_limit=INBOUND_QUEUE_LIMIT, row_limit=INBOUND_QUEUE_LIMIT)
 	return _inbound_queue_payload(context, inbound, applied_filters)
+
+
+@frappe.whitelist()
+def get_warehouse_outbound_picking_queue(
+	queue_key: str | None = None,
+	filters: str | dict[str, object] | None = None,
+) -> dict[str, object]:
+	ensure_authenticated()
+	context = build_context()
+	applied_filters = _normalize_filters(filters)
+	if not has_warehouse_access(context):
+		return _outbound_queue_state_payload(context, restricted_state(), applied_filters)
+	if _normalize_queue_key(queue_key) not in {"", OUTBOUND_QUEUE_KEY}:
+		return _outbound_queue_state_payload(
+			context,
+			state("unavailable", "Outbound picking unavailable", "This outbound picking queue is not available."),
+			applied_filters,
+		)
+	outbound = _build_outbound_visibility(applied_filters, preview_limit=OUTBOUND_QUEUE_LIMIT, row_limit=OUTBOUND_QUEUE_LIMIT)
+	return _outbound_queue_payload(context, outbound, applied_filters)
 
 
 @frappe.whitelist()
@@ -1191,6 +1267,428 @@ def _remaining_summary(summary: dict[str, object]) -> str:
 		return f"{_number_text(qty)} {uom} remaining"
 	open_lines = int(summary.get("open_lines") or 0)
 	return f"{open_lines} open lines" if open_lines else "Open quantity pending"
+
+
+
+def _build_outbound_visibility(
+	filters: dict[str, str] | None = None,
+	*,
+	preview_limit: int = OUTBOUND_OVERVIEW_LIMIT,
+	row_limit: int = OUTBOUND_QUEUE_LIMIT,
+) -> dict[str, object]:
+	applied_filters = filters or {}
+	if not _can_read("Sales Order"):
+		return {
+			"state": restricted_state(),
+			"counts": _empty_outbound_counts(),
+			"cards": _outbound_cards(_empty_outbound_counts()),
+			"preview_rows": [],
+			"groups": [group for group in _empty_outbound_groups().values()],
+			"total_count": 0,
+			"queue_key": OUTBOUND_QUEUE_KEY,
+			"queue_route": "warehouse-console-worklist",
+		}
+
+	rows = _outbound_rows(applied_filters, row_limit=row_limit)
+	counts = _empty_outbound_counts()
+	groups = _empty_outbound_groups()
+	for row in rows:
+		group_key = cstr(row.get("state_key")).strip() or "expected_soon"
+		if group_key not in counts:
+			group_key = "expected_soon"
+		counts[group_key] += 1
+		groups[group_key]["rows"].append(row)
+
+	total_count = len(rows)
+	payload_state = ready_state() if total_count else state(
+		"empty",
+		"No outbound picking needs attention",
+		"No outbound picking needs attention.",
+	)
+	return {
+		"state": payload_state,
+		"counts": counts,
+		"cards": _outbound_cards(counts),
+		"preview_rows": rows[:preview_limit],
+		"groups": [groups[key] for key in OUTBOUND_GROUP_ORDER],
+		"total_count": total_count,
+		"queue_key": OUTBOUND_QUEUE_KEY,
+		"queue_route": "warehouse-console-worklist",
+		"row_limit": row_limit,
+		"horizon_days": OUTBOUND_HORIZON_DAYS,
+	}
+
+
+def _empty_outbound_counts() -> dict[str, int]:
+	return {key: 0 for key in OUTBOUND_GROUP_ORDER}
+
+
+def _empty_outbound_groups() -> dict[str, dict[str, object]]:
+	labels = {
+		"overdue": ("Overdue", "Past delivery date."),
+		"due_today": ("Due Today", "Required today."),
+		"ready_to_pick": ("Ready to Pick", "Visible stock posture looks ready."),
+		"partially_picked": ("Partially Picked", "Some quantity has already moved."),
+		"needs_stock_review": ("Needs Stock Review", "Stock posture needs warehouse review."),
+		"expected_soon": ("Expected Soon", f"Due in the next {OUTBOUND_HORIZON_DAYS} days."),
+	}
+	return {
+		key: {"key": key, "title": labels[key][0], "summary": labels[key][1], "rows": []}
+		for key in OUTBOUND_GROUP_ORDER
+	}
+
+
+def _outbound_cards(counts: dict[str, int]) -> list[dict[str, object]]:
+	card_specs = [
+		("due_today", "Picking Due Today", "Required today."),
+		("overdue", "Overdue Picking", "Past delivery date."),
+		("ready_to_pick", "Ready to Pick", "Visible stock posture looks ready."),
+		("needs_stock_review", "Needs Stock Review", "Stock posture needs warehouse review."),
+	]
+	return [
+		{
+			"key": key,
+			"label": label,
+			"title": label,
+			"value": int(counts.get(key) or 0),
+			"state": "live",
+			"note": note,
+			"empty_message": "No outbound picking needs attention.",
+		}
+		for key, label, note in card_specs
+	]
+
+
+def _outbound_section_cards(outbound: dict[str, object] | None) -> list[dict[str, object]]:
+	cards = outbound.get("cards") if isinstance(outbound, dict) else []
+	result: list[dict[str, object]] = []
+	for card in cards if isinstance(cards, list) else []:
+		if not isinstance(card, dict):
+			continue
+		result.append(
+			{
+				"key": card.get("key"),
+				"title": card.get("title") or card.get("label"),
+				"value": card.get("value"),
+				"state": card.get("state") or "live",
+				"note": card.get("note") or "",
+				"empty_message": card.get("empty_message") or "No outbound picking needs attention.",
+			}
+		)
+	return result
+
+
+def _outbound_queue_state_payload(
+	context: dict[str, object],
+	payload_state: dict[str, str],
+	filters: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": payload_state,
+		"page": {"title": "Outbound Picking", "key": OUTBOUND_QUEUE_KEY},
+		"summary": {
+			"title": "Outbound Picking",
+			"subtitle": payload_state.get("detail") or "Outbound picking work could not be loaded.",
+			"chips": [{"label": payload_state.get("kind") or "state"}],
+		},
+		"controls": _outbound_controls(filters),
+		"cards": _outbound_cards(_empty_outbound_counts()),
+		"groups": [group for group in _empty_outbound_groups().values()],
+		"rows": [],
+		"action_targets": {},
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _outbound_queue_payload(
+	context: dict[str, object],
+	outbound: dict[str, object],
+	filters: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": outbound.get("state") or ready_state(),
+		"page": {"title": "Outbound Picking", "key": OUTBOUND_QUEUE_KEY},
+		"summary": {
+			"title": "Outbound Picking",
+			"subtitle": "Pending customer demand waiting for warehouse review.",
+			"chips": [{"label": "Read-only"}, {"label": f"{outbound.get('total_count') or 0} shown"}],
+		},
+		"controls": _outbound_controls(filters),
+		"cards": outbound.get("cards") or [],
+		"groups": outbound.get("groups") or [],
+		"rows": outbound.get("preview_rows") or [],
+		"action_targets": {},
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _outbound_controls(filters: dict[str, str]) -> dict[str, object]:
+	return {
+		"fields": [
+			{"key": "sales_order", "label": "Sales Order", "type": "text", "value": filters.get("sales_order", ""), "placeholder": "Search order"},
+			{"key": "customer", "label": "Customer", "type": "text", "value": filters.get("customer", ""), "placeholder": "Search customer"},
+			{"key": "warehouse", "label": "Warehouse", "type": "text", "value": filters.get("warehouse", ""), "placeholder": "Search warehouse"},
+			{
+				"key": "state",
+				"label": "Picking State",
+				"type": "select",
+				"value": filters.get("state", ""),
+				"options": [
+					{"label": "All", "value": ""},
+					{"label": "Overdue", "value": "overdue"},
+					{"label": "Due Today", "value": "due_today"},
+					{"label": "Ready to Pick", "value": "ready_to_pick"},
+					{"label": "Partially Picked", "value": "partially_picked"},
+					{"label": "Needs Stock Review", "value": "needs_stock_review"},
+					{"label": "Expected Soon", "value": "expected_soon"},
+				],
+			},
+		],
+		"actions": [
+			{"key": "refresh", "label": "Refresh"},
+			{"key": "reset_filters", "label": "Reset"},
+			{"key": "apply_filters", "label": "Apply", "kind": "primary"},
+		],
+		"scopeChips": ["Sales Orders", "Read-only outbound"],
+	}
+
+
+def _outbound_rows(filters: dict[str, str], *, row_limit: int) -> list[dict[str, object]]:
+	records = _safe_get_list(
+		"Sales Order",
+		fields=_available_fields("Sales Order", SALES_ORDER_OUTBOUND_FIELDS),
+		filters=_sales_order_outbound_filters(filters),
+		order_by="delivery_date asc, modified desc",
+		limit=OUTBOUND_SCAN_LIMIT,
+	)
+	if not records:
+		return []
+
+	names = [cstr(record.get("name")).strip() for record in records if cstr(record.get("name")).strip()]
+	line_map = _outbound_line_summary(names)
+	rows: list[dict[str, object]] = []
+	for record in records:
+		name = cstr(record.get("name")).strip()
+		if not name:
+			continue
+		summary = line_map.get(name) or _outbound_fallback_summary(record)
+		warehouse_filter = cstr(filters.get("warehouse")).strip().lower()
+		if warehouse_filter and warehouse_filter not in {cstr(warehouse).strip().lower() for warehouse in summary.get("warehouses") or []}:
+			continue
+		row = _outbound_row(record, summary)
+		if not row:
+			continue
+		filter_state = cstr(filters.get("state")).strip()
+		if filter_state and row.get("state_key") != filter_state:
+			continue
+		rows.append(row)
+		if len(rows) >= row_limit:
+			break
+	return rows
+
+
+def _sales_order_outbound_filters(filters: dict[str, str]) -> list[list[object]]:
+	conditions: list[list[object]] = [["Sales Order", "docstatus", "=", 1]]
+	if _has_field("Sales Order", "per_delivered"):
+		conditions.append(["Sales Order", "per_delivered", "<", 100])
+	if _has_field("Sales Order", "status"):
+		status = cstr(filters.get("status")).strip()
+		if status and status in OUTBOUND_OPEN_STATUSES:
+			conditions.append(["Sales Order", "status", "=", status])
+		else:
+			conditions.append(["Sales Order", "status", "in", list(OUTBOUND_OPEN_STATUSES)])
+	sales_order = cstr(filters.get("sales_order")).strip()
+	if sales_order:
+		conditions.append(["Sales Order", "name", "like", f"%{sales_order}%"])
+	customer = cstr(filters.get("customer")).strip()
+	if customer:
+		if _has_field("Sales Order", "customer_name"):
+			conditions.append(["Sales Order", "customer_name", "like", f"%{customer}%"])
+		else:
+			conditions.append(["Sales Order", "customer", "like", f"%{customer}%"])
+	return conditions
+
+
+def _outbound_line_summary(order_names: list[str]) -> dict[str, dict[str, object]]:
+	if not order_names:
+		return {}
+	rows = _safe_get_all(
+		"Sales Order Item",
+		fields=_available_fields("Sales Order Item", SALES_ORDER_ITEM_OUTBOUND_FIELDS),
+		filters={"parent": ["in", order_names]},
+		order_by="delivery_date asc, idx asc",
+		limit=min(max(len(order_names) * 8, 80), 900),
+	)
+	summary: dict[str, dict[str, object]] = defaultdict(lambda: {
+		"open_lines": 0,
+		"item_codes": set(),
+		"warehouses": set(),
+		"earliest_date": "",
+		"remaining_by_uom": defaultdict(float),
+		"requirements": defaultdict(float),
+		"lines": [],
+	})
+	for row in rows:
+		parent = cstr(row.get("parent")).strip()
+		if not parent:
+			continue
+		remaining = max(flt(row.get("qty")) - flt(row.get("delivered_qty")), 0)
+		if remaining <= 0:
+			continue
+		due_date = cstr(row.get("delivery_date")).strip()
+		warehouse = cstr(row.get("warehouse")).strip()
+		item_code = cstr(row.get("item_code")).strip()
+		uom = cstr(row.get("stock_uom") or row.get("uom") or "").strip()
+		summary[parent]["open_lines"] = int(summary[parent].get("open_lines") or 0) + 1
+		if item_code:
+			summary[parent]["item_codes"].add(item_code)
+		if warehouse:
+			summary[parent]["warehouses"].add(warehouse)
+		if item_code and warehouse:
+			summary[parent]["requirements"][(item_code, warehouse)] += remaining
+		if uom:
+			summary[parent]["remaining_by_uom"][uom] += remaining
+		if due_date and (not summary[parent].get("earliest_date") or _date_key(due_date) < _date_key(summary[parent].get("earliest_date"))):
+			summary[parent]["earliest_date"] = due_date
+		if len(summary[parent]["lines"]) < 4:
+			summary[parent]["lines"].append(
+				{
+					"item_code": item_code,
+					"item_name": cstr(row.get("item_name")).strip(),
+					"remaining_qty": _number_text(remaining),
+					"uom": uom,
+					"target_warehouse": warehouse or "Warehouse not set",
+					"required_date": due_date,
+				}
+			)
+	stock_map = _outbound_stock_map([value["requirements"] for value in summary.values()])
+	return {
+		key: {
+			"open_lines": value["open_lines"],
+			"item_count": len(value["item_codes"]),
+			"warehouses": sorted(value["warehouses"]),
+			"earliest_date": value["earliest_date"],
+			"remaining_by_uom": dict(value["remaining_by_uom"]),
+			"requirements": dict(value["requirements"]),
+			"stock_state": _outbound_stock_state(value["requirements"], stock_map),
+			"lines": value["lines"],
+		}
+		for key, value in summary.items()
+	}
+
+
+def _outbound_stock_map(requirement_groups: list[dict[tuple[str, str], float]]) -> dict[tuple[str, str], float]:
+	if not _can_read("Bin"):
+		return {}
+	pairs: set[tuple[str, str]] = set()
+	for requirements in requirement_groups:
+		pairs.update((item, warehouse) for item, warehouse in requirements if item and warehouse)
+	if not pairs:
+		return {}
+	items = sorted({item for item, _warehouse in pairs})
+	warehouses = sorted({warehouse for _item, warehouse in pairs})
+	rows = _safe_get_all(
+		"Bin",
+		fields=_available_fields("Bin", BIN_OUTBOUND_FIELDS),
+		filters={"item_code": ["in", items], "warehouse": ["in", warehouses]},
+		limit=min(max(len(pairs) * 2, 80), 900),
+	)
+	stock: dict[tuple[str, str], float] = {}
+	for row in rows:
+		item_code = cstr(row.get("item_code")).strip()
+		warehouse = cstr(row.get("warehouse")).strip()
+		if not item_code or not warehouse:
+			continue
+		stock[(item_code, warehouse)] = max(flt(row.get("actual_qty")) - max(flt(row.get("reserved_qty")), 0), flt(row.get("projected_qty")))
+	return stock
+
+
+def _outbound_stock_state(requirements: dict[tuple[str, str], float], stock: dict[tuple[str, str], float]) -> str:
+	if not requirements:
+		return "needs_stock_review"
+	for pair, required_qty in requirements.items():
+		if pair not in stock or flt(stock.get(pair)) < flt(required_qty):
+			return "needs_stock_review"
+	return "ready_to_pick"
+
+
+def _outbound_fallback_summary(record: dict[str, object]) -> dict[str, object]:
+	warehouse = cstr(record.get("set_warehouse")).strip()
+	return {
+		"open_lines": 0,
+		"item_count": 0,
+		"warehouses": [warehouse] if warehouse else [],
+		"earliest_date": cstr(record.get("delivery_date")).strip(),
+		"remaining_by_uom": {},
+		"stock_state": "needs_stock_review",
+		"lines": [],
+	}
+
+
+def _outbound_row(record: dict[str, object], summary: dict[str, object]) -> dict[str, object] | None:
+	due_date = cstr(summary.get("earliest_date") or record.get("delivery_date")).strip()
+	state_key = _outbound_state_key(record, due_date, summary)
+	if not state_key:
+		return None
+	warehouses = [cstr(value).strip() for value in summary.get("warehouses") or [] if cstr(value).strip()]
+	name = cstr(record.get("name")).strip()
+	return {
+		"key": name,
+		"name": name,
+		"sales_order": name,
+		"primary_id": name,
+		"customer": cstr(record.get("customer_name") or record.get("customer") or "-").strip(),
+		"partner": cstr(record.get("customer_name") or record.get("customer") or "-").strip(),
+		"required_date": due_date,
+		"target_warehouse": _warehouse_summary(warehouses),
+		"line_count": int(summary.get("open_lines") or 0),
+		"item_count": int(summary.get("item_count") or 0),
+		"delivered_percent": _percent_text(record.get("per_delivered")),
+		"remaining_summary": _remaining_summary(summary),
+		"status": cstr(record.get("status") or "-").strip(),
+		"state_key": state_key,
+		"state_label": _outbound_state_label(state_key),
+		"age_label": _age_label(due_date, state_key),
+		"lines": summary.get("lines") or [],
+	}
+
+
+def _outbound_state_key(record: dict[str, object], due_date: str, summary: dict[str, object]) -> str:
+	today = getdate(nowdate())
+	horizon = today + timedelta(days=OUTBOUND_HORIZON_DAYS)
+	due = _date_key(due_date)
+	if due < today:
+		return "overdue"
+	if due == today:
+		return "due_today"
+	delivered = flt(record.get("per_delivered"))
+	if 0 < delivered < 100:
+		return "partially_picked"
+	if due > horizon:
+		return ""
+	stock_state = cstr(summary.get("stock_state")).strip()
+	if stock_state == "ready_to_pick":
+		return "ready_to_pick"
+	if stock_state == "needs_stock_review":
+		return "needs_stock_review"
+	return "expected_soon"
+
+
+def _outbound_state_label(state_key: str) -> str:
+	return {
+		"overdue": "Overdue",
+		"due_today": "Due Today",
+		"ready_to_pick": "Ready to Pick",
+		"partially_picked": "Partially Picked",
+		"needs_stock_review": "Needs Stock Review",
+		"expected_soon": "Expected Soon",
+	}.get(state_key, "Expected Soon")
 
 
 def _safe_get_list(

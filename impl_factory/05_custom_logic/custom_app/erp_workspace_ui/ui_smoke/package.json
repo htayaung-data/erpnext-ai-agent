@@ -64,7 +64,9 @@
     "test:warehouse-w4a-inbound": "node warehouse_phase_w4a_inbound_smoke.js",
     "test:warehouse-w4a-inbound:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w4a-inbound",
     "test:warehouse-w4b-receiving": "node warehouse_phase_w4b_receiving_smoke.js",
-    "test:warehouse-w4b-receiving:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w4b-receiving"
+    "test:warehouse-w4b-receiving:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w4b-receiving",
+    "test:warehouse-w5a-outbound": "node warehouse_phase_w5a_outbound_smoke.js",
+    "test:warehouse-w5a-outbound:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w5a-outbound"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"
