@@ -603,16 +603,38 @@ def _receiving_review_state_payload(
 
 
 def _receiving_review_lines(po_name: str) -> list[dict[str, object]]:
-	if not po_name or not _can_read("Purchase Order Item"):
+	if not po_name:
 		return []
-	rows = _safe_get_all(
-		"Purchase Order Item",
-		fields=_available_fields("Purchase Order Item", PURCHASE_ORDER_ITEM_DETAIL_FIELDS),
-		filters={"parent": po_name},
-		order_by="schedule_date asc, expected_delivery_date asc, idx asc",
-		limit=RECEIVING_DETAIL_LINE_LIMIT,
-	)
+	rows = []
+	if _can_read("Purchase Order Item"):
+		rows = _safe_get_all(
+			"Purchase Order Item",
+			fields=_available_fields("Purchase Order Item", PURCHASE_ORDER_ITEM_DETAIL_FIELDS),
+			filters={"parent": po_name},
+			order_by="schedule_date asc, expected_delivery_date asc, idx asc",
+			limit=RECEIVING_DETAIL_LINE_LIMIT,
+		)
+	if not rows:
+		rows = _receiving_review_lines_from_parent(po_name)
 	return [_receiving_line(row) for row in rows]
+
+
+def _receiving_review_lines_from_parent(po_name: str) -> list[dict[str, object]]:
+	try:
+		doc = frappe.get_doc("Purchase Order", po_name)
+		doc.check_permission("read")
+	except Exception:
+		return []
+	rows = []
+	for child in list(doc.get("items") or [])[:RECEIVING_DETAIL_LINE_LIMIT]:
+		row = {}
+		for field in PURCHASE_ORDER_ITEM_DETAIL_FIELDS:
+			if hasattr(child, "get"):
+				row[field] = child.get(field)
+			else:
+				row[field] = getattr(child, field, None)
+		rows.append(row)
+	return sorted(rows, key=lambda row: (_date_key(row.get("schedule_date") or row.get("expected_delivery_date")), int(flt(row.get("idx")) or 0)))
 
 
 def _receiving_line(row: dict[str, object]) -> dict[str, object]:

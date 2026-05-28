@@ -20,6 +20,7 @@ READABLE_DOCTYPES = {
 COUNT_CALLS = []
 LIST_CALLS = []
 GET_ALL_CALLS = []
+GET_DOC_CALLS = []
 
 PO_ROWS = [
     {
@@ -312,6 +313,30 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
     return []
 
 
+def _get_doc(doctype, name, *args, **kwargs):
+    GET_DOC_CALLS.append({"doctype": doctype, "name": name})
+    if doctype != "Purchase Order":
+        raise Exception("Unsupported DocType")
+    if not _has_permission(doctype, "read"):
+        raise _FakePermissionError("No read permission")
+    record = next((row for row in PO_ROWS if row["name"] == name), None)
+    if not record:
+        raise Exception("Missing Purchase Order")
+
+    class _FakePurchaseOrderDoc:
+        def get(self, fieldname, default=None):
+            if fieldname == "items":
+                return [dict(row) for row in PO_ITEM_ROWS if row["parent"] == name]
+            return record.get(fieldname, default)
+
+        def check_permission(self, ptype=None):
+            if not _has_permission(doctype, ptype):
+                raise _FakePermissionError("No read permission")
+            return True
+
+    return _FakePurchaseOrderDoc()
+
+
 def _flt(value=0):
     try:
         return float(value or 0)
@@ -334,6 +359,7 @@ fake_frappe.has_permission = _has_permission
 fake_frappe.get_meta = _get_meta
 fake_frappe.get_list = _get_list
 fake_frappe.get_all = _get_all
+fake_frappe.get_doc = _get_doc
 fake_frappe.db = types.SimpleNamespace(count=_count)
 fake_frappe._ = lambda message: message
 
@@ -366,6 +392,7 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
         COUNT_CALLS.clear()
         LIST_CALLS.clear()
         GET_ALL_CALLS.clear()
+        GET_DOC_CALLS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w4b_receiving_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -462,6 +489,18 @@ class TestWarehouseConsoleW4BContracts(unittest.TestCase):
             self.assertNotIn("stock_value", row)
         self.assertTrue(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
         self.assertTrue(any(call["doctype"] == "Purchase Order Item" for call in GET_ALL_CALLS))
+
+    def test_receiving_review_uses_parent_purchase_order_when_child_table_read_is_unavailable(self):
+        READABLE_DOCTYPES.discard("Purchase Order Item")
+
+        payload = service.get_warehouse_receiving_review("PO-PARTIAL")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertGreaterEqual(len(payload["lines"]), 1)
+        self.assertEqual(payload["lines"][0]["item_code"], "ITEM-003")
+        self.assertFalse(any(call["doctype"] == "Purchase Order Item" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Purchase Order" for call in GET_DOC_CALLS))
+        self.assertNotIn("valuation_rate", str(payload).lower())
 
     def test_inbound_queue_filters_stay_within_product_route_scope(self):
         payload = service.get_warehouse_inbound_receiving_queue(
