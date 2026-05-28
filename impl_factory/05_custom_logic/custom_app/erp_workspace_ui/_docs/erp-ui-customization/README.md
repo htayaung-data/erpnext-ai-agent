@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A inbound visibility, and W4B receiving review baseline
+- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, and W5 outbound picking visibility design
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
@@ -65,6 +65,7 @@ Freeze and governance status:
 - Warehouse Console Phase W4 inbound visibility design is documented on 2026-05-27 as a docs-only plan for premium supplier receiving visibility, grouped inbound queues, and read-only receiving review without receiving execution or stock posting.
 - Warehouse Console Phase W4A inbound receiving visibility is protected on 2026-05-28 at `2a22c1fc9dafe09ca8c62beb04dad69cdb0202ca`; Warehouse Overview now exposes inbound posture and `/desk/warehouse-console-worklist/inbound-receiving` renders a read-only grouped receiving queue for Warehouse Manager/User without stock posting, valuation, native escape, Quick Find, or Sales/Procurement runtime change.
 - Warehouse Console Phase W4B Receiving Review is protected on 2026-05-28 at `0abed2f826b14909ec59182f126bdca5ebabf5bd`; `/desk/warehouse-console-receiving/<purchase-order>` renders read-only receiving posture, item lines, and bounded receipt history for Warehouse Manager/User without Purchase Receipt creation, stock posting, valuation, native escape, Quick Find, or Sales/Procurement runtime change.
+- Warehouse Console Phase W5 outbound picking visibility is documented on 2026-05-28 as a docs-only plan for premium read-only outbound work posture at proposed route `/desk/warehouse-console-worklist/outbound-picking`; Pick List creation/submission, Delivery Note creation/submission, packing, shipping, dispatch, stock reservation, valuation, native escape, Quick Find, and Sales/Procurement runtime changes remain excluded.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -110,6 +111,7 @@ Current routing truth:
 - Phase 7D1 supersedes normal-role Procurement native create/open form exceptions. Managed PR/RFQ/SQ/PO draft forms are the productized create/edit surfaces; normal Procurement users and managers must not receive raw ERPNext form escape links.
 - Warehouse Console W3/W3A protected route is `/desk/warehouse-console`; Warehouse operational users landing on `/desk` or `/app` are routed to the Warehouse Console unless an admin or broad cross-workspace bypass applies.
 - Warehouse Console W4A protected route is `/desk/warehouse-console-worklist/inbound-receiving`; W4B protected read-only receiving review route is `/desk/warehouse-console-receiving/<purchase-order>`.
+- Warehouse Console W5 proposed route is `/desk/warehouse-console-worklist/outbound-picking`; it is docs-only and not implemented/protected until W5A is owner-approved.
 
 Current visible report keys:
 
@@ -137,6 +139,7 @@ Current freeze facts:
 
 Documents in this folder:
 
+- `warehouse-console-phase-w5-outbound-picking-visibility-design-plan-2026-05-28.md`
 - `frozen-workspace-protection-package-standard-v1.md`
 - `sales-console-frozen-protection-package-2026-05-09.md`
 - `procurement-console-phase3-stable-baseline-2026-05-10.md`
