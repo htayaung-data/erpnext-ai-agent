@@ -11,9 +11,11 @@
   const PICKING_PAGE_KEY = warehouseRoutes.picking || "warehouse-console-picking";
   const INBOUND_QUEUE_KEY = "inbound_receiving";
   const OUTBOUND_QUEUE_KEY = "outbound_picking";
+  const STOCK_EXCEPTIONS_KEY = "stock_exceptions";
   const OVERVIEW_METHOD = warehouseMethods.overview || "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview";
   const INBOUND_METHOD = warehouseMethods.inboundQueue || warehouseMethods.inbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue";
   const OUTBOUND_METHOD = warehouseMethods.outboundQueue || warehouseMethods.outbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue";
+  const STOCK_EXCEPTIONS_METHOD = warehouseMethods.stockExceptions || warehouseMethods.stock_exceptions || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions";
   const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
   const PICKING_METHOD = warehouseMethods.pickingDetail || warehouseMethods.picking_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
@@ -98,11 +100,14 @@
 
   function isSupportedWorklistQueue(queueKey) {
     const key = normalizeQueueKey(queueKey);
-    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY;
+    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY || key === STOCK_EXCEPTIONS_KEY;
   }
 
   function worklistViewName(queueKey) {
-    return normalizeQueueKey(queueKey) === OUTBOUND_QUEUE_KEY ? "outbound-picking" : "inbound-receiving";
+    const key = normalizeQueueKey(queueKey);
+    if (key === OUTBOUND_QUEUE_KEY) return "outbound-picking";
+    if (key === STOCK_EXCEPTIONS_KEY) return "stock-exceptions";
+    return "inbound-receiving";
   }
 
   function overviewRouteSignature() {
@@ -702,6 +707,38 @@
       .warehouse-receiving-history-row {
         grid-template-columns: minmax(0, 1fr) minmax(0, 0.75fr) minmax(0, 0.75fr) minmax(0, 0.9fr);
       }
+      .warehouse-stock-exception-shell {
+        width: min(1180px, calc(100% - 24px));
+        min-width: 0;
+      }
+      .warehouse-stock-exception-row {
+        display: grid;
+        gap: 10px;
+        min-width: 0;
+        padding: 13px;
+        border: 1px solid rgba(228, 236, 232, 0.98);
+        border-radius: 8px;
+        background: #fbfdfc;
+      }
+      .warehouse-stock-exception-row-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.9fr) minmax(0, 0.75fr) minmax(0, 0.95fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+      .warehouse-stock-exception-facts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(224, 233, 229, 0.96);
+      }
+      .warehouse-stock-exception-fact {
+        min-width: 0;
+        color: #51645c;
+        font-size: 12px;
+        line-height: 1.35;
+      }
       .warehouse-receiving-strong {
         color: #263530;
         font-size: 13px;
@@ -744,7 +781,9 @@
         .warehouse-console-inbound-row,
         .warehouse-inbound-row-main,
         .warehouse-receiving-line,
-        .warehouse-receiving-history-row {
+        .warehouse-receiving-history-row,
+        .warehouse-stock-exception-row-main,
+        .warehouse-stock-exception-facts {
           grid-template-columns: minmax(0, 1fr);
         }
         .warehouse-console-section-note {
@@ -991,6 +1030,33 @@
     `;
   }
 
+  function renderStockExceptionsOverviewPanel(stockExceptions) {
+    const payload = stockExceptions || {};
+    const cards = Array.isArray(payload.cards) ? payload.cards.slice(0, 4) : [
+      { key: "total_exceptions", label: "Total Exceptions", value: 0, note: "Rows needing warehouse review.", state: "live" },
+      { key: "shortage_risk", label: "Shortage Risk", value: 0, note: "Demand short of visible stock posture.", state: "live" },
+      { key: "inbound_cover_soon", label: "Inbound Cover Soon", value: 0, note: "Supplier stock expected soon.", state: "live" },
+      { key: "missing_posture", label: "Missing Warehouse Posture", value: 0, note: "Warehouse or stock posture is incomplete.", state: "live" },
+    ];
+    const statePayload = payload.state || {};
+    const emptyMessage = statePayload.kind === "empty" ? statePayload.detail : "Review stock exceptions across outbound blockers and inbound cover.";
+    return `
+      <section class="warehouse-console-inbound-panel warehouse-console-stock-exception-panel" data-warehouse-section="stock_exception_priority">
+        <div class="warehouse-console-inbound-head">
+          <div>
+            <h2 class="warehouse-console-inbound-title">Stock Exceptions</h2>
+            <div class="warehouse-console-inbound-note">Outbound blockers, inbound cover, and warehouse posture gaps.</div>
+          </div>
+          <button class="warehouse-console-inbound-open" type="button" data-warehouse-open-stock-exceptions>Open stock exceptions</button>
+        </div>
+        <div class="warehouse-console-inbound-cards">${cards.map(renderStockExceptionCard).join("")}</div>
+        <div class="warehouse-console-inbound-preview">
+          <div class="warehouse-console-inbound-row"><span>${escapeHtml(emptyMessage)}</span></div>
+        </div>
+      </section>
+    `;
+  }
+
   function renderSection(section) {
     const cards = Array.isArray(section.cards) ? section.cards.slice(0, 4) : [];
     const cardMarkup = cards.length ? cards.map((card) => `
@@ -1037,6 +1103,7 @@
           <div class="warehouse-console-kpi-grid">${kpis.map(renderKpi).join("")}</div>
           ${renderInboundOverviewPanel(payload.inbound || {})}
           ${renderOutboundOverviewPanel(payload.outbound || {})}
+          ${renderStockExceptionsOverviewPanel(payload.stock_exceptions || {})}
         </section>
         <div class="warehouse-console-grid">${sections.map(renderSection).join("")}</div>
       </div>
@@ -1056,6 +1123,11 @@
       event.preventDefault();
       frappe.route_options = {};
       frappe.set_route(WORKLIST_PAGE_KEY, "outbound-picking");
+    });
+    $root.find("[data-warehouse-open-stock-exceptions]").on("click", (event) => {
+      event.preventDefault();
+      frappe.route_options = {};
+      frappe.set_route(WORKLIST_PAGE_KEY, "stock-exceptions");
     });
     replacePageBody(page, $root);
     cleanupOverviewPageHeads();
@@ -1157,7 +1229,7 @@
   }
 
   function hasReadyWorklistShell(queueKey) {
-    return Boolean(document.querySelector(`.warehouse-inbound-shell[data-warehouse-view="${worklistViewName(queueKey)}"]`));
+    return Boolean(document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${worklistViewName(queueKey)}"]`));
   }
 
   function hasReadyInboundShell() {
@@ -1399,6 +1471,148 @@
         </div>
       </section>
     `;
+  }
+
+  function renderStockExceptionCard(card) {
+    return `
+      <div class="warehouse-inbound-queue-card" data-warehouse-stock-exception-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
+        <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
+        <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderStockExceptionRow(row) {
+    const targets = row.route_targets || {};
+    const pickingTarget = targets.picking || {};
+    const receivingTarget = targets.receiving || {};
+    const pickingButton = pickingTarget.sales_order
+      ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-picking>View picking review</button>'
+      : "";
+    const receivingButton = receivingTarget.purchase_order
+      ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-receiving>View inbound review</button>'
+      : "";
+    return `
+      <article class="warehouse-stock-exception-row" data-warehouse-stock-exception-row="${escapeHtml(row.key || "")}" data-warehouse-stock-exception-sales-order="${escapeHtml(row.sales_order || "")}" data-warehouse-stock-exception-receiving-order="${escapeHtml(row.expected_inbound_order || "")}">
+        <div class="warehouse-stock-exception-row-main">
+          <div>
+            <div class="warehouse-inbound-order">${escapeHtml(row.sales_order || "")}</div>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.customer || "")}</div>
+          </div>
+          <div>
+            <div class="warehouse-inbound-order">${escapeHtml(row.item_code || "")}</div>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.item_name || "")}</div>
+          </div>
+          <div class="warehouse-inbound-meta">${escapeHtml(row.source_warehouse || "")}</div>
+          <div>
+            <span class="warehouse-inbound-badge">${escapeHtml(row.exception_label || "")}</span>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.urgency_label || "")}</div>
+          </div>
+          <div class="warehouse-receiving-actions">
+            ${pickingButton}
+            ${receivingButton}
+          </div>
+        </div>
+        <div class="warehouse-stock-exception-facts">
+          <div class="warehouse-stock-exception-fact">Pending ${escapeHtml(row.pending_qty || "0")} ${escapeHtml(row.uom || "")}</div>
+          <div class="warehouse-stock-exception-fact">Available ${escapeHtml(row.available_qty || "N/A")} ? Projected ${escapeHtml(row.projected_qty || "N/A")}</div>
+          <div class="warehouse-stock-exception-fact">Short ${escapeHtml(row.short_qty || "0")} ${escapeHtml(row.uom || "")}</div>
+          <div class="warehouse-stock-exception-fact">Inbound ${escapeHtml(row.expected_inbound_qty || "0")} ${escapeHtml(row.expected_inbound_date || "")}</div>
+        </div>
+        <div class="warehouse-inbound-meta">${escapeHtml(row.explanation || "")}</div>
+      </article>
+    `;
+  }
+
+  function renderStockExceptionGroup(group) {
+    const rows = Array.isArray(group.rows) ? group.rows : [];
+    return `
+      <section class="warehouse-inbound-group" data-warehouse-stock-exception-group="${escapeHtml(group.key || "")}">
+        <div class="warehouse-inbound-group-head">
+          <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
+          <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
+        </div>
+        <div class="warehouse-console-card-grid">
+          ${rows.length ? rows.map(renderStockExceptionRow).join("") : `<div class="warehouse-stock-exception-row" data-warehouse-stock-exception-empty><span class="warehouse-inbound-meta">No stock exceptions match these filters.</span></div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderStockExceptionsPayload(viewState, payload) {
+    ensureStyle();
+    const controls = payload.controls || {};
+    const fields = Array.isArray(controls.fields) ? controls.fields : [];
+    const cards = Array.isArray(payload.cards) ? payload.cards : [];
+    const groups = Array.isArray(payload.groups) ? payload.groups : [];
+    const statePayload = payload.state || {};
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-stock-exception-shell" data-erpw-workspace="warehouse" data-warehouse-view="stock-exceptions" data-warehouse-queue-key="${STOCK_EXCEPTIONS_KEY}" data-warehouse-stock-exception-shell="true" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header">
+          <div class="warehouse-inbound-queue-head">
+            <div>
+              <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Stock Exceptions")}</h1>
+              <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Outbound blockers, inbound cover, and warehouse posture gaps.")}</div>
+            </div>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
+          </div>
+          <div class="warehouse-inbound-queue-cards">${cards.map(renderStockExceptionCard).join("")}</div>
+          <div class="warehouse-inbound-controls">
+            ${fields.map(controlField).join("")}
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-refresh>Refresh</button>
+          </div>
+        </section>
+        <div class="warehouse-inbound-groups">
+          ${statePayload.kind === "restricted" || statePayload.kind === "error"
+            ? `<section class="warehouse-inbound-group" data-warehouse-stock-exception-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Stock exceptions unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-stock-exception-empty>${escapeHtml(statePayload.detail || "Stock exceptions could not be loaded. Refresh or contact an administrator.")}</div></section>`
+            : groups.map(renderStockExceptionGroup).join("")}
+        </div>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-filter-apply]").on("click", (event) => {
+      event.preventDefault();
+      viewState.activeFilters = collectInboundFilters($root);
+      loadInboundQueue(viewState);
+    });
+    $root.find("[data-warehouse-filter-reset]").on("click", (event) => {
+      event.preventDefault();
+      viewState.activeFilters = {};
+      loadInboundQueue(viewState);
+    });
+    $root.find("[data-warehouse-filter-refresh]").on("click", (event) => {
+      event.preventDefault();
+      loadInboundQueue(viewState);
+    });
+    $root.find("[data-warehouse-stock-exception-route-picking]").on("click", function (event) {
+      event.preventDefault();
+      const salesOrder = String($(this).closest("[data-warehouse-stock-exception-sales-order]").attr("data-warehouse-stock-exception-sales-order") || "").trim();
+      if (salesOrder) frappe.set_route(PICKING_PAGE_KEY, salesOrder);
+    });
+    $root.find("[data-warehouse-stock-exception-route-receiving]").on("click", function (event) {
+      event.preventDefault();
+      const purchaseOrder = String($(this).closest("[data-warehouse-stock-exception-receiving-order]").attr("data-warehouse-stock-exception-receiving-order") || "").trim();
+      if (purchaseOrder) frappe.set_route(RECEIVING_PAGE_KEY, purchaseOrder);
+    });
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+  }
+
+  function renderStockExceptionsLoading(viewState) {
+    renderStockExceptionsPayload(viewState, {
+      page: { key: STOCK_EXCEPTIONS_KEY },
+      summary: { title: "Stock Exceptions", subtitle: "Checking stock exceptions..." },
+      controls: { fields: [], actions: [] },
+      cards: [],
+      groups: [],
+      state: { kind: "loading", title: "Checking stock exceptions", detail: "Checking stock exceptions..." },
+    });
   }
 
   function makeReceivingPage(wrapper) {
@@ -1855,8 +2069,27 @@
   function loadInboundQueue(viewState) {
     const queueKey = normalizeQueueKey(viewState.queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
     const isOutbound = queueKey === OUTBOUND_QUEUE_KEY;
-    markWarehouseDiagnostic(isOutbound ? "outboundQueueServiceCallAttempted" : "queueServiceCallAttempted");
+    const isStockExceptions = queueKey === STOCK_EXCEPTIONS_KEY;
+    markWarehouseDiagnostic(isStockExceptions ? "stockExceptionsServiceCallAttempted" : isOutbound ? "outboundQueueServiceCallAttempted" : "queueServiceCallAttempted");
     viewState.queueKey = queueKey;
+    if (isStockExceptions) {
+      renderStockExceptionsLoading(viewState);
+      return frappe.call({
+        method: STOCK_EXCEPTIONS_METHOD,
+        args: { queue_key: queueKey, filters: viewState.activeFilters || {} },
+      }).then((response) => {
+        renderStockExceptionsPayload(viewState, response && response.message ? response.message : {});
+      }).catch(() => {
+        renderStockExceptionsPayload(viewState, {
+          page: { key: STOCK_EXCEPTIONS_KEY },
+          summary: { title: "Stock Exceptions", subtitle: "Stock exceptions could not be loaded. Refresh or contact an administrator." },
+          controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
+          cards: [],
+          groups: [],
+          state: { kind: "error", title: "Stock exceptions unavailable", detail: "Stock exceptions could not be loaded. Refresh or contact an administrator." },
+        });
+      });
+    }
     renderInboundLoading(viewState);
     return frappe.call({
       method: isOutbound ? OUTBOUND_METHOD : INBOUND_METHOD,
@@ -1877,7 +2110,7 @@
 
   function renderWarehouseWorklist(wrapper, queueKey) {
     const resolvedQueueKey = normalizeQueueKey(queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
-    markWarehouseDiagnostic(resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
+    markWarehouseDiagnostic(resolvedQueueKey === STOCK_EXCEPTIONS_KEY ? "renderStockExceptionsEntered" : resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
     const viewState = makeInboundPage(wrapper);
     viewState.queueKey = resolvedQueueKey;
     if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
@@ -1894,6 +2127,10 @@
     renderWarehouseWorklist(wrapper, OUTBOUND_QUEUE_KEY);
   }
 
+  function renderStockExceptions(wrapper) {
+    renderWarehouseWorklist(wrapper, STOCK_EXCEPTIONS_KEY);
+  }
+
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
   frappe.pages[PAGE_KEY].__erpwWarehouseConsoleRenderer = true;
   frappe.pages[PAGE_KEY].on_page_load = function (wrapper) { render(wrapper); };
@@ -1907,6 +2144,7 @@
   warehouseConsoleApi.renderInboundQueue = renderInboundQueue;
   warehouseConsoleApi.renderOutboundQueue = renderOutboundQueue;
   warehouseConsoleApi.renderWarehouseWorklist = renderWarehouseWorklist;
+  warehouseConsoleApi.renderStockExceptions = renderStockExceptions;
   warehouseConsoleApi.renderReceivingReview = renderReceivingReview;
   warehouseConsoleApi.renderPickingReview = renderPickingReview;
   warehouseConsoleApi.renderOverview = render;
@@ -1914,6 +2152,7 @@
   warehouseConsoleApi.diagnostics.exportedRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedReceivingRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedPickingRendererReady = true;
+  warehouseConsoleApi.diagnostics.exportedStockExceptionsRendererReady = true;
 
   frappe.pages[WORKLIST_PAGE_KEY] = frappe.pages[WORKLIST_PAGE_KEY] || {};
   frappe.pages[WORKLIST_PAGE_KEY].__erpwWarehouseInboundRenderer = true;

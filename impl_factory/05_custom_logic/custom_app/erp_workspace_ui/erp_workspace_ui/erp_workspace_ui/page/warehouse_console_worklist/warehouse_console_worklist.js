@@ -14,6 +14,25 @@
     return parts[0] === "desk" || parts[0] === "app" ? parts.slice(1) : parts;
   }
 
+  function normalizeQueueKey(value) {
+    return String(value || "").trim().replace(/-/g, "_");
+  }
+
+  function activeQueueKey() {
+    const pathRoute = routePartsFromPath();
+    if (String(pathRoute[0] || "") === PAGE_KEY) return normalizeQueueKey(pathRoute[1] || "inbound_receiving");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (Array.isArray(route) && String(route[0] || "") === PAGE_KEY) return normalizeQueueKey(route[1] || "inbound_receiving");
+    return "inbound_receiving";
+  }
+
+  function activeViewName() {
+    const key = activeQueueKey();
+    if (key === "outbound_picking") return "outbound-picking";
+    if (key === "stock_exceptions") return "stock-exceptions";
+    return "inbound-receiving";
+  }
+
   function isActiveWorklistRoute() {
     const pathRoute = routePartsFromPath();
     if (String(pathRoute[0] || "") === PAGE_KEY) return true;
@@ -50,7 +69,8 @@
     const token = ++renderSerial;
     frappe.require([ASSET], () => {
       const attempt = () => {
-        if (token !== renderSerial && document.querySelector('.warehouse-inbound-shell[data-warehouse-view="inbound-receiving"]')) return true;
+        const shell = document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${activeViewName()}"]`);
+        if (token !== renderSerial && shell) return true;
         return invokeRenderer(wrapper);
       };
       attempt();

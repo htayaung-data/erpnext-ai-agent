@@ -32,6 +32,12 @@ OUTBOUND_HORIZON_DAYS = 14
 OUTBOUND_OPEN_STATUSES = ("To Deliver", "To Deliver and Bill")
 OUTBOUND_GROUP_ORDER = ("overdue", "due_today", "ready_to_pick", "partially_picked", "needs_stock_review", "expected_soon")
 
+STOCK_EXCEPTIONS_KEY = "stock_exceptions"
+STOCK_EXCEPTIONS_LIMIT = 50
+STOCK_EXCEPTIONS_SCAN_LIMIT = 220
+STOCK_EXCEPTIONS_HORIZON_DAYS = 14
+STOCK_EXCEPTIONS_GROUP_ORDER = ("needs_stock_review", "inbound_cover_expected", "urgent_aging", "warehouse_posture_missing")
+
 PURCHASE_ORDER_INBOUND_FIELDS = [
 	"name",
 	"supplier",
@@ -274,10 +280,12 @@ def get_warehouse_console_overview() -> dict[str, object]:
 	payload = _base_payload(context, ready_state())
 	inbound = _build_inbound_visibility({}, preview_limit=INBOUND_OVERVIEW_LIMIT, row_limit=INBOUND_QUEUE_LIMIT)
 	outbound = _build_outbound_visibility({}, preview_limit=OUTBOUND_OVERVIEW_LIMIT, row_limit=OUTBOUND_QUEUE_LIMIT)
+	stock_exceptions = _build_stock_exceptions_visibility({}, row_limit=STOCK_EXCEPTIONS_LIMIT)
 	kpis = _build_overview_kpis(inbound, outbound)
 	payload["kpis"] = kpis
 	payload["inbound"] = inbound
 	payload["outbound"] = outbound
+	payload["stock_exceptions"] = stock_exceptions
 	payload["sections"] = _build_overview_sections(kpis, inbound, outbound)
 	if not any(_metric_value(metric) for metric in kpis):
 		payload["state"] = state(
@@ -583,6 +591,26 @@ def get_warehouse_outbound_picking_queue(
 		)
 	outbound = _build_outbound_visibility(applied_filters, preview_limit=OUTBOUND_QUEUE_LIMIT, row_limit=OUTBOUND_QUEUE_LIMIT)
 	return _outbound_queue_payload(context, outbound, applied_filters)
+
+
+@frappe.whitelist()
+def get_warehouse_stock_exceptions(
+	queue_key: str | None = None,
+	filters: str | dict[str, object] | None = None,
+) -> dict[str, object]:
+	ensure_authenticated()
+	context = build_context()
+	applied_filters = _normalize_filters(filters)
+	if not has_warehouse_access(context):
+		return _stock_exceptions_state_payload(context, restricted_state(), applied_filters)
+	if _normalize_queue_key(queue_key) not in {"", STOCK_EXCEPTIONS_KEY}:
+		return _stock_exceptions_state_payload(
+			context,
+			state("unavailable", "Stock exceptions unavailable", "This stock exception view is not available."),
+			applied_filters,
+		)
+	exceptions = _build_stock_exceptions_visibility(applied_filters, row_limit=STOCK_EXCEPTIONS_LIMIT)
+	return _stock_exceptions_payload(context, exceptions, applied_filters)
 
 
 @frappe.whitelist()
@@ -1529,6 +1557,376 @@ def _remaining_summary(summary: dict[str, object]) -> str:
 	open_lines = int(summary.get("open_lines") or 0)
 	return f"{open_lines} open lines" if open_lines else "Open quantity pending"
 
+
+
+def _build_stock_exceptions_visibility(
+	filters: dict[str, str] | None = None,
+	*,
+	row_limit: int = STOCK_EXCEPTIONS_LIMIT,
+) -> dict[str, object]:
+	applied_filters = filters or {}
+	if not (_can_read("Sales Order") and _can_read("Sales Order Item")):
+		return {
+			"state": restricted_state(),
+			"counts": _empty_stock_exception_counts(),
+			"cards": _stock_exception_cards(_empty_stock_exception_counts(), 0),
+			"groups": _empty_stock_exception_groups(),
+			"rows": [],
+			"total_count": 0,
+			"queue_key": STOCK_EXCEPTIONS_KEY,
+			"queue_route": "warehouse-console-worklist",
+		}
+
+	rows = _stock_exception_rows(applied_filters, row_limit=row_limit)
+	counts = _empty_stock_exception_counts()
+	groups = {group["key"]: group for group in _empty_stock_exception_groups()}
+	for row in rows:
+		group_key = cstr(row.get("exception_key")).strip() or "needs_stock_review"
+		if group_key not in counts:
+			group_key = "needs_stock_review"
+		counts[group_key] += 1
+		groups[group_key]["rows"].append(row)
+
+	total_count = len(rows)
+	payload_state = ready_state() if total_count else state(
+		"empty",
+		"No stock exceptions need attention",
+		"No stock exceptions need attention.",
+	)
+	return {
+		"state": payload_state,
+		"counts": counts,
+		"cards": _stock_exception_cards(counts, total_count),
+		"groups": [groups[key] for key in STOCK_EXCEPTIONS_GROUP_ORDER],
+		"rows": rows,
+		"total_count": total_count,
+		"queue_key": STOCK_EXCEPTIONS_KEY,
+		"queue_route": "warehouse-console-worklist",
+		"row_limit": row_limit,
+		"horizon_days": STOCK_EXCEPTIONS_HORIZON_DAYS,
+	}
+
+
+def _empty_stock_exception_counts() -> dict[str, int]:
+	return {key: 0 for key in STOCK_EXCEPTIONS_GROUP_ORDER}
+
+
+def _empty_stock_exception_groups() -> list[dict[str, object]]:
+	labels = {
+		"needs_stock_review": ("Needs Stock Review", "Short stock without a near inbound cover."),
+		"inbound_cover_expected": ("Inbound Cover Expected", "Short demand with supplier stock expected soon."),
+		"urgent_aging": ("Urgent / Aging Demand", "Short demand that is due now or past due."),
+		"warehouse_posture_missing": ("Warehouse Posture Missing", "Lines missing warehouse or stock posture."),
+	}
+	return [
+		{"key": key, "title": labels[key][0], "summary": labels[key][1], "rows": []}
+		for key in STOCK_EXCEPTIONS_GROUP_ORDER
+	]
+
+
+def _stock_exception_cards(counts: dict[str, int], total_count: int) -> list[dict[str, object]]:
+	return [
+		{"key": "total_exceptions", "label": "Total Exceptions", "title": "Total Exceptions", "value": int(total_count or 0), "state": "live", "note": "Rows needing warehouse review."},
+		{"key": "shortage_risk", "label": "Shortage Risk", "title": "Shortage Risk", "value": int(counts.get("needs_stock_review") or 0) + int(counts.get("urgent_aging") or 0), "state": "live", "note": "Demand short of visible stock posture."},
+		{"key": "inbound_cover_soon", "label": "Inbound Cover Soon", "title": "Inbound Cover Soon", "value": int(counts.get("inbound_cover_expected") or 0), "state": "live", "note": f"Supplier stock expected within {STOCK_EXCEPTIONS_HORIZON_DAYS} days."},
+		{"key": "missing_posture", "label": "Missing Warehouse Posture", "title": "Missing Warehouse Posture", "value": int(counts.get("warehouse_posture_missing") or 0), "state": "live", "note": "Warehouse or stock posture is incomplete."},
+	]
+
+
+def _stock_exceptions_state_payload(
+	context: dict[str, object],
+	payload_state: dict[str, str],
+	filters: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": payload_state,
+		"page": {"title": "Stock Exceptions", "key": STOCK_EXCEPTIONS_KEY},
+		"summary": {
+			"title": "Stock Exceptions",
+			"subtitle": payload_state.get("detail") or "Stock exceptions could not be loaded.",
+			"chips": [{"label": payload_state.get("kind") or "state"}],
+		},
+		"controls": _stock_exception_controls(filters),
+		"cards": _stock_exception_cards(_empty_stock_exception_counts(), 0),
+		"groups": _empty_stock_exception_groups(),
+		"rows": [],
+		"action_targets": {},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _stock_exceptions_payload(
+	context: dict[str, object],
+	exceptions: dict[str, object],
+	filters: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": exceptions.get("state") or ready_state(),
+		"page": {"title": "Stock Exceptions", "key": STOCK_EXCEPTIONS_KEY},
+		"summary": {
+			"title": "Stock Exceptions",
+			"subtitle": "Outbound blockers, inbound cover, and warehouse posture gaps.",
+			"chips": [{"label": "Read-only"}, {"label": f"{exceptions.get('total_count') or 0} shown"}],
+		},
+		"controls": _stock_exception_controls(filters),
+		"cards": exceptions.get("cards") or [],
+		"groups": exceptions.get("groups") or [],
+		"rows": exceptions.get("rows") or [],
+		"action_targets": {
+			"picking": {"route": "warehouse-console-picking"},
+			"receiving": {"route": "warehouse-console-receiving"},
+		},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _stock_exception_controls(filters: dict[str, str]) -> dict[str, object]:
+	return {
+		"fields": [
+			{
+				"key": "state",
+				"label": "Exception State",
+				"type": "select",
+				"value": filters.get("state", ""),
+				"options": [
+					{"label": "All", "value": ""},
+					{"label": "Needs Stock Review", "value": "needs_stock_review"},
+					{"label": "Inbound Cover Expected", "value": "inbound_cover_expected"},
+					{"label": "Urgent / Aging Demand", "value": "urgent_aging"},
+					{"label": "Warehouse Posture Missing", "value": "warehouse_posture_missing"},
+				],
+			},
+			{"key": "warehouse", "label": "Warehouse", "type": "text", "value": filters.get("warehouse", ""), "placeholder": "Filter warehouse"},
+			{"key": "text", "label": "Order, Item, Customer", "type": "text", "value": filters.get("text", ""), "placeholder": "Filter order, item, or customer"},
+		],
+		"actions": [
+			{"key": "refresh", "label": "Refresh"},
+			{"key": "reset_filters", "label": "Reset"},
+			{"key": "apply_filters", "label": "Apply", "kind": "primary"},
+		],
+		"scopeChips": ["Sales Orders", "Inbound cover", "Read-only exceptions"],
+	}
+
+
+def _stock_exception_rows(filters: dict[str, str], *, row_limit: int) -> list[dict[str, object]]:
+	records = _safe_get_list(
+		"Sales Order",
+		fields=_available_fields("Sales Order", SALES_ORDER_OUTBOUND_FIELDS),
+		filters=_sales_order_outbound_filters({}),
+		order_by="delivery_date asc, modified desc",
+		limit=STOCK_EXCEPTIONS_SCAN_LIMIT,
+	)
+	if not records:
+		return []
+
+	orders = {cstr(record.get("name")).strip(): record for record in records if cstr(record.get("name")).strip()}
+	line_rows = _safe_get_all(
+		"Sales Order Item",
+		fields=_available_fields("Sales Order Item", SALES_ORDER_ITEM_DETAIL_FIELDS),
+		filters={"parent": ["in", sorted(orders)]},
+		order_by="delivery_date asc, idx asc",
+		limit=min(max(len(orders) * 12, 120), 1200),
+	)
+	pairs = _stock_exception_pairs(line_rows)
+	stock = _stock_exception_stock_map(pairs)
+	inbound = _stock_exception_inbound_map(pairs)
+	rows: list[dict[str, object]] = []
+	for line in line_rows:
+		row = _stock_exception_row(line, orders.get(cstr(line.get("parent")).strip()) or {}, stock, inbound)
+		if not row:
+			continue
+		if not _stock_exception_row_matches(row, filters):
+			continue
+		rows.append(row)
+		if len(rows) >= row_limit:
+			break
+	return sorted(rows, key=lambda row: (STOCK_EXCEPTIONS_GROUP_ORDER.index(row.get("exception_key")) if row.get("exception_key") in STOCK_EXCEPTIONS_GROUP_ORDER else 99, _date_key(row.get("required_date")), cstr(row.get("sales_order"))))
+
+
+def _stock_exception_pairs(line_rows: list[dict[str, object]]) -> set[tuple[str, str]]:
+	pairs: set[tuple[str, str]] = set()
+	for line in line_rows:
+		item_code = cstr(line.get("item_code")).strip()
+		warehouse = cstr(line.get("warehouse")).strip()
+		if item_code and warehouse and max(flt(line.get("qty")) - flt(line.get("delivered_qty")), 0) > 0:
+			pairs.add((item_code, warehouse))
+	return pairs
+
+
+def _stock_exception_stock_map(pairs: set[tuple[str, str]]) -> dict[tuple[str, str], dict[str, float]]:
+	if not pairs or not _can_read("Bin"):
+		return {}
+	items = sorted({item for item, _warehouse in pairs})
+	warehouses = sorted({warehouse for _item, warehouse in pairs})
+	rows = _safe_get_all(
+		"Bin",
+		fields=_available_fields("Bin", BIN_OUTBOUND_FIELDS),
+		filters={"item_code": ["in", items], "warehouse": ["in", warehouses]},
+		limit=min(max(len(pairs) * 2, 80), 1200),
+	)
+	result: dict[tuple[str, str], dict[str, float]] = {}
+	for row in rows:
+		item_code = cstr(row.get("item_code")).strip()
+		warehouse = cstr(row.get("warehouse")).strip()
+		if not item_code or not warehouse:
+			continue
+		result[(item_code, warehouse)] = {
+			"available_qty": flt(row.get("actual_qty")) - max(flt(row.get("reserved_qty")), 0),
+			"projected_qty": flt(row.get("projected_qty")),
+		}
+	return result
+
+
+def _stock_exception_inbound_map(pairs: set[tuple[str, str]]) -> dict[tuple[str, str], dict[str, object]]:
+	if not pairs or not (_can_read("Purchase Order") and _can_read("Purchase Order Item")):
+		return {}
+	po_records = _safe_get_list(
+		"Purchase Order",
+		fields=_available_fields("Purchase Order", PURCHASE_ORDER_INBOUND_FIELDS),
+		filters=_purchase_order_inbound_filters({}),
+		order_by="schedule_date asc, modified desc",
+		limit=INBOUND_SCAN_LIMIT,
+	)
+	po_map = {cstr(record.get("name")).strip(): record for record in po_records if cstr(record.get("name")).strip()}
+	if not po_map:
+		return {}
+	rows = _safe_get_all(
+		"Purchase Order Item",
+		fields=_available_fields("Purchase Order Item", PURCHASE_ORDER_ITEM_INBOUND_FIELDS),
+		filters={"parent": ["in", sorted(po_map)]},
+		order_by="schedule_date asc, expected_delivery_date asc, idx asc",
+		limit=min(max(len(po_map) * 10, 120), 1200),
+	)
+	horizon = getdate(nowdate()) + timedelta(days=STOCK_EXCEPTIONS_HORIZON_DAYS)
+	result: dict[tuple[str, str], dict[str, object]] = {}
+	for row in rows:
+		parent = cstr(row.get("parent")).strip()
+		po_record = po_map.get(parent) or {}
+		item_code = cstr(row.get("item_code")).strip()
+		warehouse = cstr(row.get("warehouse") or po_record.get("set_warehouse")).strip()
+		pair = (item_code, warehouse)
+		if pair not in pairs:
+			continue
+		remaining = max(flt(row.get("qty")) - flt(row.get("received_qty")), 0)
+		if remaining <= 0:
+			continue
+		expected_date = cstr(row.get("expected_delivery_date") or row.get("schedule_date") or po_record.get("schedule_date")).strip()
+		if expected_date and _date_key(expected_date) > horizon:
+			continue
+		entry = result.setdefault(pair, {"expected_inbound_qty": 0.0, "expected_inbound_date": expected_date, "purchase_order": parent})
+		entry["expected_inbound_qty"] = flt(entry.get("expected_inbound_qty")) + remaining
+		if expected_date and (not entry.get("expected_inbound_date") or _date_key(expected_date) < _date_key(entry.get("expected_inbound_date"))):
+			entry["expected_inbound_date"] = expected_date
+			entry["purchase_order"] = parent
+	return result
+
+
+def _stock_exception_row(
+	line: dict[str, object],
+	order: dict[str, object],
+	stock: dict[tuple[str, str], dict[str, float]],
+	inbound: dict[tuple[str, str], dict[str, object]],
+) -> dict[str, object] | None:
+	sales_order = cstr(line.get("parent")).strip()
+	item_code = cstr(line.get("item_code")).strip()
+	warehouse = cstr(line.get("warehouse") or order.get("set_warehouse")).strip()
+	pending_qty = max(flt(line.get("qty")) - flt(line.get("delivered_qty")), 0)
+	if not sales_order or pending_qty <= 0:
+		return None
+	pair = (item_code, warehouse)
+	stock_info = stock.get(pair)
+	available_qty = flt(stock_info.get("available_qty")) if stock_info else None
+	projected_qty = flt(stock_info.get("projected_qty")) if stock_info else None
+	inbound_info = inbound.get(pair) or {}
+	exception_key = _stock_exception_key(line, order, available_qty, inbound_info)
+	if not exception_key:
+		return None
+	short_qty = pending_qty if available_qty is None else max(pending_qty - flt(available_qty), 0)
+	return {
+		"key": f"{sales_order}:{item_code}:{warehouse or 'warehouse-missing'}",
+		"sales_order": sales_order,
+		"customer": cstr(order.get("customer_name") or order.get("customer") or "-").strip(),
+		"item_code": item_code,
+		"item_name": cstr(line.get("item_name") or "").strip(),
+		"required_date": cstr(line.get("delivery_date") or order.get("delivery_date") or "").strip(),
+		"pending_qty": _number_text(pending_qty),
+		"delivered_qty": _number_text(line.get("delivered_qty")),
+		"uom": cstr(line.get("stock_uom") or line.get("uom") or "").strip(),
+		"source_warehouse": warehouse or "Warehouse not set",
+		"available_qty": _number_text(available_qty) if available_qty is not None else "N/A",
+		"projected_qty": _number_text(projected_qty) if projected_qty is not None else "N/A",
+		"short_qty": _number_text(short_qty),
+		"expected_inbound_qty": _number_text(inbound_info.get("expected_inbound_qty")) if inbound_info else "0",
+		"expected_inbound_date": cstr(inbound_info.get("expected_inbound_date") or "").strip(),
+		"expected_inbound_order": cstr(inbound_info.get("purchase_order") or "").strip(),
+		"exception_key": exception_key,
+		"exception_label": _stock_exception_label(exception_key),
+		"urgency_label": _age_label(cstr(line.get("delivery_date") or order.get("delivery_date") or "").strip(), "overdue" if _date_key(line.get("delivery_date") or order.get("delivery_date")) < getdate(nowdate()) else "due_today" if _date_key(line.get("delivery_date") or order.get("delivery_date")) == getdate(nowdate()) else "expected_soon"),
+		"explanation": _stock_exception_explanation(exception_key, inbound_info),
+		"route_targets": _stock_exception_route_targets(sales_order, inbound_info),
+	}
+
+
+def _stock_exception_key(line: dict[str, object], order: dict[str, object], available_qty: float | None, inbound_info: dict[str, object]) -> str:
+	item_code = cstr(line.get("item_code")).strip()
+	warehouse = cstr(line.get("warehouse") or order.get("set_warehouse")).strip()
+	pending_qty = max(flt(line.get("qty")) - flt(line.get("delivered_qty")), 0)
+	if not item_code or not warehouse or available_qty is None:
+		return "warehouse_posture_missing"
+	if flt(available_qty) >= pending_qty:
+		return ""
+	if inbound_info and flt(inbound_info.get("expected_inbound_qty")) > 0:
+		return "inbound_cover_expected"
+	due = _date_key(line.get("delivery_date") or order.get("delivery_date"))
+	if due <= getdate(nowdate()):
+		return "urgent_aging"
+	return "needs_stock_review"
+
+
+def _stock_exception_label(exception_key: str) -> str:
+	return {
+		"needs_stock_review": "Needs Stock Review",
+		"inbound_cover_expected": "Inbound Cover Expected",
+		"urgent_aging": "Urgent / Aging Demand",
+		"warehouse_posture_missing": "Warehouse Posture Missing",
+	}.get(exception_key, "Needs Stock Review")
+
+
+def _stock_exception_explanation(exception_key: str, inbound_info: dict[str, object]) -> str:
+	if exception_key == "inbound_cover_expected":
+		return "Visible stock is short, with inbound cover expected soon."
+	if exception_key == "urgent_aging":
+		return "Demand is due now or past due and visible stock is short."
+	if exception_key == "warehouse_posture_missing":
+		return "Warehouse or stock posture is missing for this line."
+	return "Visible stock is short for this outbound line."
+
+
+def _stock_exception_route_targets(sales_order: str, inbound_info: dict[str, object]) -> dict[str, dict[str, str]]:
+	targets = {"picking": {"route": "warehouse-console-picking", "sales_order": sales_order}}
+	purchase_order = cstr(inbound_info.get("purchase_order") if inbound_info else "").strip()
+	if purchase_order:
+		targets["receiving"] = {"route": "warehouse-console-receiving", "purchase_order": purchase_order}
+	return targets
+
+
+def _stock_exception_row_matches(row: dict[str, object], filters: dict[str, str]) -> bool:
+	state_filter = cstr(filters.get("state")).strip()
+	if state_filter and row.get("exception_key") != state_filter:
+		return False
+	warehouse_filter = cstr(filters.get("warehouse")).strip().lower()
+	if warehouse_filter and warehouse_filter not in cstr(row.get("source_warehouse")).strip().lower():
+		return False
+	text_filter = cstr(filters.get("text")).strip().lower()
+	if text_filter:
+		haystack = " ".join(cstr(row.get(key)).lower() for key in ("sales_order", "customer", "item_code", "item_name"))
+		if text_filter not in haystack:
+			return False
+	return True
 
 
 def _build_outbound_visibility(

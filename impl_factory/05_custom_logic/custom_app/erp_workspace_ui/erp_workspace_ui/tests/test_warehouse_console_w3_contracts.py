@@ -237,6 +237,18 @@ PO_ITEM_ROWS = [
         "uom": "Nos",
     },
     {
+        "parent": "PO-SOON",
+        "item_code": "ITEM-105",
+        "item_name": "Power Bank",
+        "schedule_date": "2026-06-05",
+        "expected_delivery_date": "2026-06-05",
+        "qty": 10,
+        "received_qty": 0,
+        "warehouse": "Short - M",
+        "stock_uom": "Nos",
+        "uom": "Nos",
+    },
+    {
         "parent": "PO-FAR",
         "item_code": "ITEM-005",
         "item_name": "Future Part",
@@ -561,11 +573,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
 
-    def test_warehouse_workspace_registry_definition_has_w5b_picking_route(self):
+    def test_warehouse_workspace_registry_definition_has_w6a_stock_exceptions_route(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w5b_outbound_picking_review")
+        self.assertEqual(workspace["status"], "w6a_stock_exceptions_visibility")
         self.assertEqual(
             workspace["routes"],
             {
@@ -599,11 +611,16 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             workspace["methods"]["picking_detail"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review",
         )
+        self.assertEqual(
+            workspace["methods"]["stock_exceptions"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
+        )
         self.assertFalse(workspace["search"]["enabled"])
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
             "warehouse_console_home",
             "inbound_receiving",
             "outbound_picking",
+            "stock_exceptions",
         ])
 
     def test_overview_payload_adds_inbound_preview_and_hides_valuation(self):
@@ -631,6 +648,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(payload["outbound"]["counts"]["needs_stock_review"], 1)
         self.assertLessEqual(len(payload["outbound"]["preview_rows"]), 6)
         self.assertIn("Outbound Work", {section["title"] for section in payload["sections"]})
+        self.assertIn("stock_exceptions", payload)
+        self.assertEqual(payload["stock_exceptions"]["queue_key"], "stock_exceptions")
         payload_text = str(payload).lower()
         self.assertNotIn("stock_value", payload_text)
         self.assertNotIn("valuation_rate", payload_text)
@@ -762,6 +781,75 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("native", str(payload).lower())
 
 
+    def test_stock_exceptions_payload_is_grouped_read_only_and_allowlisted(self):
+        payload = service.get_warehouse_stock_exceptions("stock-exceptions")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"], {"title": "Stock Exceptions", "key": "stock_exceptions"})
+        self.assertNotIn("valuation", payload)
+        self.assertEqual(payload["action_targets"]["picking"]["route"], "warehouse-console-picking")
+        self.assertEqual(payload["action_targets"]["receiving"]["route"], "warehouse-console-receiving")
+        self.assertGreaterEqual(len(payload["rows"]), 1)
+        groups = {group["key"]: group for group in payload["groups"]}
+        self.assertIn("inbound_cover_expected", groups)
+        self.assertGreaterEqual(len(groups["inbound_cover_expected"]["rows"]), 1)
+
+        allowed_row_keys = {
+            "key",
+            "sales_order",
+            "customer",
+            "item_code",
+            "item_name",
+            "required_date",
+            "pending_qty",
+            "delivered_qty",
+            "uom",
+            "source_warehouse",
+            "available_qty",
+            "projected_qty",
+            "short_qty",
+            "expected_inbound_qty",
+            "expected_inbound_date",
+            "expected_inbound_order",
+            "exception_key",
+            "exception_label",
+            "urgency_label",
+            "explanation",
+            "route_targets",
+        }
+        for row in payload["rows"]:
+            self.assertLessEqual(set(row), allowed_row_keys)
+            self.assertEqual(row["route_targets"]["picking"]["route"], "warehouse-console-picking")
+            if row.get("expected_inbound_order"):
+                self.assertEqual(row["route_targets"]["receiving"]["route"], "warehouse-console-receiving")
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("base_net_rate", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("gl", payload_text)
+        self.assertNotIn("item price", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertTrue(any(call["doctype"] == "Sales Order" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Sales Order Item" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Bin" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Purchase Order Item" for call in GET_ALL_CALLS))
+
+    def test_stock_exceptions_filters_stay_inside_warehouse_routes(self):
+        payload = service.get_warehouse_stock_exceptions(
+            "stock-exceptions",
+            {"state": "inbound_cover_expected", "text": "Power", "warehouse": "Short"},
+        )
+
+        self.assertEqual([row["sales_order"] for row in payload["rows"]], ["SO-REVIEW"])
+        self.assertEqual(payload["controls"]["fields"][0]["value"], "inbound_cover_expected")
+        self.assertEqual(payload["controls"]["fields"][1]["value"], "Short")
+        self.assertEqual(payload["controls"]["fields"][2]["value"], "Power")
+        self.assertEqual(payload["workspace"]["routes"]["worklist"], "warehouse-console-worklist")
+        self.assertNotIn("native", str(payload).lower())
+
+
     def test_receiving_review_payload_is_read_only_allowlisted_and_history_bounded(self):
         payload = service.get_warehouse_receiving_review("PO-PARTIAL")
 
@@ -854,6 +942,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         outbound = service.get_warehouse_outbound_picking_queue("outbound_picking")
         detail = service.get_warehouse_receiving_review("PO-OVERDUE")
         picking_detail = service.get_warehouse_picking_review("SO-OVERDUE")
+        stock_exceptions = service.get_warehouse_stock_exceptions("stock_exceptions")
 
         self.assertEqual(overview["state"]["kind"], "restricted")
         self.assertFalse(overview["context"]["has_warehouse_access"])
@@ -867,6 +956,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(detail["lines"], [])
         self.assertEqual(picking_detail["state"]["kind"], "restricted")
         self.assertEqual(picking_detail["lines"], [])
+        self.assertEqual(stock_exceptions["state"]["kind"], "restricted")
+        self.assertEqual(stock_exceptions["rows"], [])
 
     def test_permission_limited_sources_return_controlled_empty_inbound_state(self):
         READABLE_DOCTYPES.discard("Purchase Order")

@@ -270,6 +270,7 @@ ROUTE_MANIFEST: tuple[dict[str, Any], ...] = (
 	_route("warehouse", "warehouse-console-worklist", "worklist_guard", "productized_worklist", "/desk/warehouse-console-worklist", "warehouse_worklist_shell", required_smoke_category="warehouse_phase_w5a_smoke", notes="Warehouse worklist route for read-only inbound and outbound visibility."),
 	_route("warehouse", "warehouse-console-worklist/inbound_receiving", "worklist", "productized_worklist", "/desk/warehouse-console-worklist/inbound-receiving", "warehouse_inbound_shell", required_smoke_category="warehouse_phase_w4a_smoke", notes="Read-only inbound supplier receiving queue."),
 	_route("warehouse", "warehouse-console-worklist/outbound_picking", "worklist", "productized_worklist", "/desk/warehouse-console-worklist/outbound-picking", "warehouse_outbound_shell", required_smoke_category="warehouse_phase_w5a_smoke", notes="Read-only outbound picking visibility queue."),
+	_route("warehouse", "warehouse-console-worklist/stock_exceptions", "worklist", "productized_worklist", "/desk/warehouse-console-worklist/stock-exceptions", "warehouse_stock_exception_shell", required_smoke_category="warehouse_phase_w6a_smoke", notes="Read-only stock exception visibility for outbound blockers and inbound cover."),
 	_route("warehouse", "warehouse-console-receiving", "detail", "productized_detail", "/desk/warehouse-console-receiving/<purchase-order>", "warehouse_receiving_shell", required_smoke_category="warehouse_phase_w4b_smoke", notes="Read-only receiving review for inbound purchase orders."),
 	_route("warehouse", "warehouse-console-picking", "detail", "productized_detail", "/desk/warehouse-console-picking/<sales-order>", "warehouse_picking_shell", required_smoke_category="warehouse_phase_w5b_smoke", notes="Read-only picking review for outbound sales orders."),
 )
@@ -378,6 +379,11 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("warehouse-outbound-apply", "warehouse", "warehouse-console-worklist/outbound_picking", "apply_filters", "productized_primary_action", "current_shell", label="Apply"),
 	_action("warehouse-outbound-view-lines", "warehouse", "warehouse-console-worklist/outbound_picking", "view_lines", "productized_secondary_action", "current_shell", label="View lines"),
 	_action("warehouse-outbound-open-picking-review", "warehouse", "warehouse-console-worklist/outbound_picking", "open_picking_review", "productized_navigation", "page", label="View details", target_route_pattern="/desk/warehouse-console-picking/<sales-order>", notes="Read-only Warehouse picking review drilldown."),
+	_action("warehouse-stock-exceptions-refresh", "warehouse", "warehouse-console-worklist/stock_exceptions", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
+	_action("warehouse-stock-exceptions-reset", "warehouse", "warehouse-console-worklist/stock_exceptions", "reset_filters", "productized_secondary_action", "current_shell", label="Reset"),
+	_action("warehouse-stock-exceptions-apply", "warehouse", "warehouse-console-worklist/stock_exceptions", "apply_filters", "productized_primary_action", "current_shell", label="Apply"),
+	_action("warehouse-stock-exceptions-open-picking-review", "warehouse", "warehouse-console-worklist/stock_exceptions", "open_picking_review", "productized_navigation", "page", label="View picking review", target_route_pattern="/desk/warehouse-console-picking/<sales-order>", notes="Read-only custom Warehouse picking review drilldown."),
+	_action("warehouse-stock-exceptions-open-receiving-review", "warehouse", "warehouse-console-worklist/stock_exceptions", "open_receiving_review", "productized_navigation", "page", label="View inbound review", target_route_pattern="/desk/warehouse-console-receiving/<purchase-order>", notes="Read-only custom Warehouse receiving review drilldown."),
 	_action("warehouse-picking-refresh", "warehouse", "warehouse-console-picking/<sales-order>", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
 	_action("warehouse-picking-back-to-queue", "warehouse", "warehouse-console-picking/<sales-order>", "back_to_outbound_picking", "productized_navigation", "worklist", label="Back to outbound picking", target_route_pattern="/desk/warehouse-console-worklist/outbound-picking"),
 	_action("warehouse-picking-tab-switch", "warehouse", "warehouse-console-picking/<sales-order>", "switch_tab", "productized_secondary_action", "current_shell", label_pattern="Item Lines|Stock Readiness"),
@@ -387,6 +393,7 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("warehouse-sidebar-overview-navigation", "warehouse", "warehouse-sidebar", "sidebar_overview_navigation", "productized_navigation", "page", label="Overview", target_route_pattern="/desk/warehouse-console", notes="Sidebar entry opens the Warehouse Overview."),
 	_action("warehouse-sidebar-inbound-navigation", "warehouse", "warehouse-sidebar", "sidebar_inbound_navigation", "productized_navigation", "worklist", label="Inbound Receiving", target_route_pattern="/desk/warehouse-console-worklist/inbound-receiving", notes="Sidebar entry opens the read-only inbound queue."),
 	_action("warehouse-sidebar-outbound-navigation", "warehouse", "warehouse-sidebar", "sidebar_outbound_navigation", "productized_navigation", "worklist", label="Outbound Picking", target_route_pattern="/desk/warehouse-console-worklist/outbound-picking", notes="Sidebar entry opens the read-only outbound queue."),
+	_action("warehouse-sidebar-stock-exceptions-navigation", "warehouse", "warehouse-sidebar", "sidebar_stock_exceptions_navigation", "productized_navigation", "worklist", label="Stock Exceptions", target_route_pattern="/desk/warehouse-console-worklist/stock-exceptions", notes="Sidebar entry opens the read-only stock exceptions view."),
 )
 
 FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
@@ -406,7 +413,7 @@ FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
 	},
 	{
 		"workspace_id": "warehouse",
-		"scope": "w5a_productized_overview_inbound_outbound_and_receiving_read_only_pages",
+		"scope": "w6a_productized_overview_inbound_outbound_detail_and_stock_exception_read_only_pages",
 		"labels": FORBIDDEN_MUTATION_LABELS,
 		"allowed_only_when": "future controlled Warehouse execution design and manifest update",
 		"policy_doc": "_docs/erp-ui-customization/native-exception-policy-v1.md",
