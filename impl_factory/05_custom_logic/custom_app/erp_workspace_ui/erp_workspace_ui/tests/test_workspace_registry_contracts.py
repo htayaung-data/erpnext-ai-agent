@@ -248,11 +248,11 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "procurement")
 
-    def test_warehouse_console_w6b_registry_definition(self):
+    def test_warehouse_console_w7a_registry_definition(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w6b_stock_exception_review")
+        self.assertEqual(workspace["status"], "w7a_stock_posture_review")
         self.assertEqual(workspace["title"], "Warehouse Console")
         self.assertEqual(
             workspace["routes"],
@@ -267,6 +267,8 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "picking_path": "/desk/warehouse-console-picking",
                 "stock_exception": "warehouse-console-stock-exception",
                 "stock_exception_path": "/desk/warehouse-console-stock-exception",
+                "stock_posture": "warehouse-console-stock-posture",
+                "stock_posture_path": "/desk/warehouse-console-stock-posture",
             },
         )
         self.assertEqual(
@@ -279,6 +281,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "picking_detail": "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review",
                 "stock_exceptions": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
                 "stock_exception_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review",
+                "stock_posture_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
                 "sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
             },
         )
@@ -313,8 +316,8 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             ],
         )
 
-    def test_warehouse_console_w6b_route_resolves_to_registry_definition(self):
-        for route_key in ["warehouse-console", "warehouse-console-worklist", "warehouse-console-receiving", "warehouse-console-picking", "warehouse-console-stock-exception"]:
+    def test_warehouse_console_w7a_route_resolves_to_registry_definition(self):
+        for route_key in ["warehouse-console", "warehouse-console-worklist", "warehouse-console-receiving", "warehouse-console-picking", "warehouse-console-stock-exception", "warehouse-console-stock-posture"]:
             with self.subTest(route_key=route_key):
                 workspace = get_workspace_by_route(route_key)
                 self.assertIsNotNone(workspace)
@@ -365,7 +368,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(procurement["recommended_name"], "Procurement Console")
         self.assertEqual(procurement["status"], "phase_3")
         self.assertEqual(warehouse["recommended_name"], "Warehouse Console")
-        self.assertEqual(warehouse["status"], "w6b_stock_exception_review")
+        self.assertEqual(warehouse["status"], "w7a_stock_posture_review")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
         self.assertEqual(finance["status"], "name_review")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")

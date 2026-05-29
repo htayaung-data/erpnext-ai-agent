@@ -10,6 +10,7 @@
   const RECEIVING_PAGE_KEY = warehouseRoutes.receiving || "warehouse-console-receiving";
   const PICKING_PAGE_KEY = warehouseRoutes.picking || "warehouse-console-picking";
   const STOCK_EXCEPTION_PAGE_KEY = warehouseRoutes.stockException || warehouseRoutes.stock_exception || "warehouse-console-stock-exception";
+  const STOCK_POSTURE_PAGE_KEY = warehouseRoutes.stockPosture || warehouseRoutes.stock_posture || "warehouse-console-stock-posture";
   const INBOUND_QUEUE_KEY = "inbound_receiving";
   const OUTBOUND_QUEUE_KEY = "outbound_picking";
   const STOCK_EXCEPTIONS_KEY = "stock_exceptions";
@@ -20,6 +21,7 @@
   const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
   const PICKING_METHOD = warehouseMethods.pickingDetail || warehouseMethods.picking_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review";
   const STOCK_EXCEPTION_REVIEW_METHOD = warehouseMethods.stockExceptionReview || warehouseMethods.stock_exception_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review";
+  const STOCK_POSTURE_REVIEW_METHOD = warehouseMethods.stockPostureReview || warehouseMethods.stock_posture_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
@@ -34,6 +36,8 @@
   let pickingRouteRenderSerial = 0;
   let stockExceptionRouteGuardBound = false;
   let stockExceptionRouteRenderSerial = 0;
+  let stockPostureRouteGuardBound = false;
+  let stockPostureRouteRenderSerial = 0;
 
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
@@ -207,6 +211,28 @@
     if (String(pathRoute[0] || "") === STOCK_EXCEPTION_PAGE_KEY) return true;
     const route = frappe.get_route ? frappe.get_route() : [];
     return Array.isArray(route) && String(route[0] || "") === STOCK_EXCEPTION_PAGE_KEY;
+  }
+
+  function stockPostureRouteSignature() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === STOCK_POSTURE_PAGE_KEY) return pathRoute.join("|");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) ? route.join("|") : "";
+  }
+
+  function stockPostureTokenFromRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === STOCK_POSTURE_PAGE_KEY) return String(pathRoute[1] || "");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (Array.isArray(route) && String(route[0] || "") === STOCK_POSTURE_PAGE_KEY) return String(route[1] || "");
+    return "";
+  }
+
+  function isActiveStockPostureRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === STOCK_POSTURE_PAGE_KEY) return true;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) && String(route[0] || "") === STOCK_POSTURE_PAGE_KEY;
   }
 
   function warehouseConsoleDiagnostics() {
@@ -1331,6 +1357,12 @@
     return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
   }
 
+  function directStockPostureRenderWrapper() {
+    const pageDef = frappe.pages && frappe.pages[STOCK_POSTURE_PAGE_KEY] ? frappe.pages[STOCK_POSTURE_PAGE_KEY] : null;
+    if (pageDef && pageDef.wrapper) return pageDef.wrapper;
+    return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
+  }
+
   function hasReadyWorklistShell(queueKey) {
     return Boolean(document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${worklistViewName(queueKey)}"]`));
   }
@@ -1486,6 +1518,45 @@
     stockExceptionRouteGuardBound = true;
     window.setInterval(() => {
       if (shouldSelfRenderStockExceptionReview()) renderActiveStockExceptionRoute();
+    }, 220);
+  }
+
+  function hasReadyStockPostureReviewShell() {
+    const token = stockPostureTokenFromRoute();
+    const shell = document.querySelector('.warehouse-stock-posture-shell[data-warehouse-view="stock-posture-review"]');
+    if (!shell) return false;
+    return !token || String(shell.getAttribute("data-warehouse-stock-posture-token") || "") === token;
+  }
+
+  function shouldSelfRenderStockPostureReview() {
+    return isActiveStockPostureRoute() && !hasReadyStockPostureReviewShell();
+  }
+
+  function renderActiveStockPostureRoute() {
+    if (!shouldSelfRenderStockPostureReview()) return;
+    const signature = stockPostureRouteSignature();
+    const token = ++stockPostureRouteRenderSerial;
+    markWarehouseDiagnostic("stockPostureActiveRouteGuardFired");
+    const wrapper = directStockPostureRenderWrapper();
+    if (!wrapper) return;
+    window.setTimeout(() => {
+      if (token !== stockPostureRouteRenderSerial || !shouldSelfRenderStockPostureReview() || stockPostureRouteSignature() !== signature) return;
+      renderStockPostureReview(wrapper, stockPostureTokenFromRoute());
+    }, 0);
+  }
+
+  function scheduleActiveStockPostureRender() {
+    renderActiveStockPostureRoute();
+    setTimeout(renderActiveStockPostureRoute, 80);
+    setTimeout(renderActiveStockPostureRoute, 220);
+    setTimeout(renderActiveStockPostureRoute, 700);
+  }
+
+  function bindActiveStockPostureGuard() {
+    if (stockPostureRouteGuardBound || !window || typeof window.setInterval !== "function") return;
+    stockPostureRouteGuardBound = true;
+    window.setInterval(() => {
+      if (shouldSelfRenderStockPostureReview()) renderActiveStockPostureRoute();
     }, 220);
   }
 
@@ -2152,6 +2223,8 @@
 
   function renderStockExceptionPanel(panel, panelKey) {
     const items = Array.isArray(panel.items) ? panel.items : [];
+    const target = panel.route_target || {};
+    const postureToken = target.route === STOCK_POSTURE_PAGE_KEY ? String(target.context_token || "") : "";
     return `
       <section class="warehouse-stock-exception-review-panel" data-warehouse-stock-exception-${escapeHtml(panelKey)}-panel>
         <div class="warehouse-inbound-group-head">
@@ -2166,6 +2239,7 @@
             </div>
           `).join("") : `<div class="warehouse-receiving-meta" data-warehouse-stock-exception-review-empty>No details visible for this section.</div>`}
         </div>
+        ${postureToken ? `<button type="button" class="warehouse-receiving-button" data-warehouse-stock-exception-open-posture data-warehouse-stock-exception-posture-token="${escapeHtml(postureToken)}">Review stock posture</button>` : ""}
       </section>
     `;
   }
@@ -2181,9 +2255,9 @@
         <div class="warehouse-stock-exception-next-grid">
           ${items.length ? items.map((item) => {
             const target = item.target || {};
-            const targetKind = target.purchase_order ? "receiving" : target.sales_order ? "picking" : "stock";
+            const targetKind = target.context_token && target.route === STOCK_POSTURE_PAGE_KEY ? "stock_posture" : target.purchase_order ? "receiving" : target.sales_order ? "picking" : "stock";
             return `
-              <button type="button" class="warehouse-stock-exception-next-card" data-warehouse-stock-exception-next-target="${escapeHtml(targetKind)}" data-warehouse-stock-exception-next-sales-order="${escapeHtml(target.sales_order || "")}" data-warehouse-stock-exception-next-purchase-order="${escapeHtml(target.purchase_order || "")}">
+              <button type="button" class="warehouse-stock-exception-next-card" data-warehouse-stock-exception-next-target="${escapeHtml(targetKind)}" data-warehouse-stock-exception-next-sales-order="${escapeHtml(target.sales_order || "")}" data-warehouse-stock-exception-next-purchase-order="${escapeHtml(target.purchase_order || "")}" data-warehouse-stock-exception-next-token="${escapeHtml(target.context_token || "")}">
                 <span>${escapeHtml(item.label || "")}</span>
                 <strong>${escapeHtml(item.value || "")}</strong>
               </button>
@@ -2208,7 +2282,11 @@
     `;
   }
 
-  function routeStockExceptionTarget(kind, salesOrder, purchaseOrder) {
+  function routeStockExceptionTarget(kind, salesOrder, purchaseOrder, contextToken) {
+    if (kind === "stock_posture" && contextToken) {
+      frappe.set_route(STOCK_POSTURE_PAGE_KEY, contextToken);
+      return;
+    }
     if (kind === "picking" && salesOrder) {
       frappe.set_route(PICKING_PAGE_KEY, salesOrder);
       return;
@@ -2276,7 +2354,8 @@
       routeStockExceptionTarget(
         String(this.getAttribute("data-warehouse-stock-exception-next-target") || ""),
         String(this.getAttribute("data-warehouse-stock-exception-next-sales-order") || ""),
-        String(this.getAttribute("data-warehouse-stock-exception-next-purchase-order") || "")
+        String(this.getAttribute("data-warehouse-stock-exception-next-purchase-order") || ""),
+        String(this.getAttribute("data-warehouse-stock-exception-next-token") || "")
       );
     });
     $root.find("[data-warehouse-stock-exception-related-target]").on("click", function (event) {
@@ -2284,8 +2363,14 @@
       routeStockExceptionTarget(
         String(this.getAttribute("data-warehouse-stock-exception-related-target") || ""),
         String(this.getAttribute("data-warehouse-stock-exception-related-sales-order") || ""),
-        String(this.getAttribute("data-warehouse-stock-exception-related-purchase-order") || "")
+        String(this.getAttribute("data-warehouse-stock-exception-related-purchase-order") || ""),
+        ""
       );
+    });
+    $root.find("[data-warehouse-stock-exception-open-posture]").on("click", function (event) {
+      event.preventDefault();
+      const token = String(this.getAttribute("data-warehouse-stock-exception-posture-token") || "");
+      if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
     });
     removeDuplicateWarehouseHosts(viewState.$host.get(0));
     viewState.$host.empty().append($root);
@@ -2338,6 +2423,266 @@
       window.erpWorkspaceConsoleSidebar.refresh();
     }
     loadStockExceptionReview(viewState, contextToken || stockExceptionTokenFromRoute());
+  }
+
+  function makeStockPosturePage(wrapper) {
+    const existing = wrapper && wrapper.__erpwWarehouseStockPostureReview;
+    if (existing && existing.page && existing.$host && document.documentElement.contains(existing.$host.get(0))) {
+      return existing;
+    }
+    const page = frappe.ui.make_app_page({
+      parent: wrapper,
+      title: "Stock Posture Review",
+      single_column: true,
+    });
+    const $parent = page && page.body ? $(page.body) : $(wrapper);
+    const $host = $('<section class="warehouse-stock-posture-route"></section>');
+    $parent.empty().append($host);
+    const state = { page, $host, contextToken: "" };
+    wrapper.__erpwWarehouseStockPostureReview = state;
+    return state;
+  }
+
+  function stockPostureSummaryText(header) {
+    const parts = [header.item_code, header.item_name, header.warehouse].filter(Boolean);
+    return parts.join(" - ");
+  }
+
+  function renderStockPostureCard(card) {
+    return `
+      <div class="warehouse-receiving-card" data-warehouse-stock-posture-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
+        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderStockPosturePanel(panel, panelKey) {
+    const items = Array.isArray(panel.items) ? panel.items : [];
+    return `
+      <section class="warehouse-stock-exception-review-panel" data-warehouse-stock-posture-panel="${escapeHtml(panelKey)}">
+        <div class="warehouse-inbound-group-head">
+          <h2 class="warehouse-inbound-group-title">${escapeHtml(panel.title || "")}</h2>
+          <div class="warehouse-inbound-group-note">${escapeHtml(panel.summary || "")}</div>
+        </div>
+        <div class="warehouse-stock-exception-review-facts">
+          ${items.length ? items.map((item) => `
+            <div class="warehouse-stock-exception-review-fact" data-warehouse-stock-posture-fact>
+              <span>${escapeHtml(item.label || "")}</span>
+              <strong>${escapeHtml(item.value == null ? "" : item.value)}</strong>
+            </div>
+          `).join("") : `<div class="warehouse-receiving-meta" data-warehouse-stock-posture-empty>No details visible for this section.</div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function stockPostureRouteKind(target) {
+    const route = String((target && target.route) || "");
+    if (route === PICKING_PAGE_KEY) return "picking";
+    if (route === RECEIVING_PAGE_KEY) return "receiving";
+    if (route === STOCK_EXCEPTION_PAGE_KEY) return "stock_exception";
+    return "";
+  }
+
+  function renderStockPostureRelatedRow(row) {
+    const target = row.route_target || {};
+    const targetKind = stockPostureRouteKind(target);
+    return `
+      <button type="button" class="warehouse-receiving-history-row" data-warehouse-stock-posture-related-row="${escapeHtml(row.key || "")}" data-warehouse-stock-posture-related-target="${escapeHtml(targetKind)}" data-warehouse-stock-posture-related-sales-order="${escapeHtml(target.sales_order || "")}" data-warehouse-stock-posture-related-purchase-order="${escapeHtml(target.purchase_order || "")}" data-warehouse-stock-posture-related-token="${escapeHtml(target.context_token || "")}" ${targetKind ? `data-warehouse-stock-posture-route-${escapeHtml(targetKind.replace("_", "-"))}` : ""}>
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(row.title || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(row.label || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">${escapeHtml(row.detail || "")}</div>
+      </button>
+    `;
+  }
+
+  function renderStockPostureDataRow(row, rowKind) {
+    const target = row.route_target || {};
+    const targetKind = stockPostureRouteKind(target);
+    const title = row.sales_order || row.purchase_order || row.item_code || "";
+    const dateText = row.required_date || row.expected_date || "";
+    const qtyText = row.pending_qty ? `${row.pending_qty} ${row.uom || ""}` : row.expected_qty ? `${row.expected_qty} ${row.uom || ""}` : "";
+    return `
+      <button type="button" class="warehouse-receiving-history-row" data-warehouse-stock-posture-row="${escapeHtml(rowKind)}" data-warehouse-stock-posture-related-target="${escapeHtml(targetKind)}" data-warehouse-stock-posture-related-sales-order="${escapeHtml(target.sales_order || "")}" data-warehouse-stock-posture-related-purchase-order="${escapeHtml(target.purchase_order || "")}" data-warehouse-stock-posture-related-token="${escapeHtml(target.context_token || "")}" ${targetKind ? `data-warehouse-stock-posture-route-${escapeHtml(targetKind.replace("_", "-"))}` : ""}>
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(title)}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(row.customer || row.supplier || row.status || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">${escapeHtml([qtyText.trim(), dateText].filter(Boolean).join(" - "))}</div>
+      </button>
+    `;
+  }
+
+  function routeStockPostureTarget(target) {
+    const route = String((target && target.route) || "");
+    if (route === PICKING_PAGE_KEY && target.sales_order) {
+      frappe.set_route(PICKING_PAGE_KEY, target.sales_order);
+      return;
+    }
+    if (route === RECEIVING_PAGE_KEY && target.purchase_order) {
+      frappe.set_route(RECEIVING_PAGE_KEY, target.purchase_order);
+      return;
+    }
+    if (route === STOCK_EXCEPTION_PAGE_KEY && target.context_token) {
+      frappe.set_route(STOCK_EXCEPTION_PAGE_KEY, target.context_token);
+      return;
+    }
+    frappe.set_route(WORKLIST_PAGE_KEY, "stock-exceptions");
+  }
+
+  function routeStockPostureElement(element) {
+    routeStockPostureTarget({
+      route: String(element.getAttribute("data-warehouse-stock-posture-related-target") || "") === "picking" ? PICKING_PAGE_KEY
+        : String(element.getAttribute("data-warehouse-stock-posture-related-target") || "") === "receiving" ? RECEIVING_PAGE_KEY
+          : String(element.getAttribute("data-warehouse-stock-posture-related-target") || "") === "stock_exception" ? STOCK_EXCEPTION_PAGE_KEY
+            : "",
+      sales_order: String(element.getAttribute("data-warehouse-stock-posture-related-sales-order") || ""),
+      purchase_order: String(element.getAttribute("data-warehouse-stock-posture-related-purchase-order") || ""),
+      context_token: String(element.getAttribute("data-warehouse-stock-posture-related-token") || ""),
+    });
+  }
+
+  function renderStockPostureReviewPayload(viewState, payload) {
+    ensureStyle();
+    const header = payload.header || {};
+    const cards = Array.isArray(payload.summary_cards) ? payload.summary_cards : [];
+    const panels = payload.panels || {};
+    const inboundRows = Array.isArray(payload.inbound_rows) ? payload.inbound_rows : [];
+    const outboundRows = Array.isArray(payload.outbound_rows) ? payload.outbound_rows : [];
+    const relatedRows = Array.isArray(payload.related_rows) ? payload.related_rows : [];
+    const statePayload = payload.state || {};
+    const actionTargets = payload.action_targets || {};
+    const backTarget = actionTargets.back || {};
+    const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const $root = $(`
+      <div class="sales-console-shell warehouse-receiving-shell warehouse-stock-posture-shell" data-erpw-workspace="warehouse" data-warehouse-view="stock-posture-review" data-erpw-console-runtime="ready" data-warehouse-stock-posture-shell="true" data-warehouse-stock-posture-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
+        <section class="warehouse-receiving-header">
+          <div class="warehouse-receiving-head">
+            <div>
+              <h1 class="warehouse-receiving-title">Stock Posture Review</h1>
+              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Stock posture review could not be loaded. Refresh or contact an administrator." : stockPostureSummaryText(header))}</div>
+            </div>
+            <div class="warehouse-receiving-actions">
+              <button type="button" class="warehouse-receiving-button" data-warehouse-stock-posture-back data-warehouse-stock-posture-back-route="${escapeHtml(backTarget.route || "")}" data-warehouse-stock-posture-back-sales-order="${escapeHtml(backTarget.sales_order || "")}" data-warehouse-stock-posture-back-purchase-order="${escapeHtml(backTarget.purchase_order || "")}" data-warehouse-stock-posture-back-token="${escapeHtml(backTarget.context_token || "")}">Back</button>
+              <button type="button" class="warehouse-receiving-button" data-warehouse-stock-posture-refresh>Refresh</button>
+            </div>
+          </div>
+          ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-stock-posture-empty>${escapeHtml(statePayload.title || "Stock posture review unavailable")}</div>` : `
+            <div class="warehouse-receiving-note"><span class="warehouse-inbound-badge">${escapeHtml(header.posture_label || "")}</span> ${escapeHtml(header.explanation || "")}</div>
+            <div class="warehouse-receiving-cards">${cards.map(renderStockPostureCard).join("")}</div>
+          `}
+        </section>
+        <section class="warehouse-stock-exception-review-grid">
+          ${renderStockPosturePanel(panels.stock || {}, "stock")}
+          ${renderStockPosturePanel(panels.inbound || {}, "inbound")}
+          ${renderStockPosturePanel(panels.outbound || {}, "outbound")}
+          ${renderStockPosturePanel(panels.related || {}, "related")}
+        </section>
+        <section class="warehouse-receiving-detail" data-warehouse-stock-posture-demand-panel>
+          <div class="warehouse-inbound-group-head">
+            <h2 class="warehouse-inbound-group-title">Open Demand</h2>
+            <div class="warehouse-inbound-group-note">Submitted sales orders connected to this stock posture.</div>
+          </div>
+          <div class="warehouse-receiving-panel is-active">
+            ${outboundRows.length ? outboundRows.map((row) => renderStockPostureDataRow(row, "outbound")).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-stock-posture-empty><span class="warehouse-receiving-meta">No open outbound demand visible.</span></div>`}
+          </div>
+        </section>
+        <section class="warehouse-receiving-detail" data-warehouse-stock-posture-inbound-panel>
+          <div class="warehouse-inbound-group-head">
+            <h2 class="warehouse-inbound-group-title">Inbound Cover</h2>
+            <div class="warehouse-inbound-group-note">Submitted purchase orders expected for this stock posture.</div>
+          </div>
+          <div class="warehouse-receiving-panel is-active">
+            ${inboundRows.length ? inboundRows.map((row) => renderStockPostureDataRow(row, "inbound")).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-stock-posture-empty><span class="warehouse-receiving-meta">No inbound cover visible.</span></div>`}
+          </div>
+        </section>
+        <section class="warehouse-receiving-detail" data-warehouse-stock-posture-related-panel>
+          <div class="warehouse-inbound-group-head">
+            <h2 class="warehouse-inbound-group-title">Related Reviews</h2>
+            <div class="warehouse-inbound-group-note">Custom Warehouse review paths for this item and warehouse.</div>
+          </div>
+          <div class="warehouse-receiving-panel is-active">
+            ${relatedRows.length ? relatedRows.map(renderStockPostureRelatedRow).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-stock-posture-empty><span class="warehouse-receiving-meta">No related review path visible.</span></div>`}
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-stock-posture-back]").on("click", function (event) {
+      event.preventDefault();
+      routeStockPostureTarget({
+        route: String(this.getAttribute("data-warehouse-stock-posture-back-route") || ""),
+        sales_order: String(this.getAttribute("data-warehouse-stock-posture-back-sales-order") || ""),
+        purchase_order: String(this.getAttribute("data-warehouse-stock-posture-back-purchase-order") || ""),
+        context_token: String(this.getAttribute("data-warehouse-stock-posture-back-token") || ""),
+      });
+    });
+    $root.find("[data-warehouse-stock-posture-refresh]").on("click", (event) => {
+      event.preventDefault();
+      loadStockPostureReview(viewState, viewState.contextToken);
+    });
+    $root.find("[data-warehouse-stock-posture-related-target]").on("click", function (event) {
+      event.preventDefault();
+      routeStockPostureElement(this);
+    });
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+  }
+
+  function renderStockPostureReviewLoading(viewState) {
+    renderStockPostureReviewPayload(viewState, {
+      state: { kind: "loading", title: "Checking stock posture", detail: "Checking stock posture..." },
+      header: { context_token: viewState.contextToken || "" },
+      summary_cards: [],
+      panels: {
+        stock: { title: "Stock Posture", items: [] },
+        inbound: { title: "Inbound Cover", items: [] },
+        outbound: { title: "Open Demand", items: [] },
+        related: { title: "Related Reviews", items: [] },
+      },
+      inbound_rows: [],
+      outbound_rows: [],
+      related_rows: [],
+    });
+  }
+
+  function loadStockPostureReview(viewState, contextToken) {
+    markWarehouseDiagnostic("stockPostureReviewServiceCallAttempted");
+    viewState.contextToken = contextToken || stockPostureTokenFromRoute();
+    renderStockPostureReviewLoading(viewState);
+    return frappe.call({
+      method: STOCK_POSTURE_REVIEW_METHOD,
+      args: { context_token: viewState.contextToken },
+    }).then((response) => {
+      renderStockPostureReviewPayload(viewState, response && response.message ? response.message : {});
+    }).catch(() => {
+      renderStockPostureReviewPayload(viewState, {
+        state: { kind: "error", title: "Stock posture review unavailable", detail: "Stock posture review could not be loaded. Refresh or contact an administrator." },
+        header: { context_token: viewState.contextToken || "" },
+        summary_cards: [],
+        panels: {
+          stock: { title: "Stock Posture", items: [] },
+          inbound: { title: "Inbound Cover", items: [] },
+          outbound: { title: "Open Demand", items: [] },
+          related: { title: "Related Reviews", items: [] },
+        },
+        inbound_rows: [],
+        outbound_rows: [],
+        related_rows: [],
+      });
+    });
+  }
+
+  function renderStockPostureReview(wrapper, contextToken) {
+    markWarehouseDiagnostic("renderStockPostureReviewEntered");
+    const viewState = makeStockPosturePage(wrapper);
+    if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+      window.erpWorkspaceConsoleSidebar.refresh();
+    }
+    loadStockPostureReview(viewState, contextToken || stockPostureTokenFromRoute());
   }
 
   function makeInboundPage(wrapper) {
@@ -2524,6 +2869,7 @@
   warehouseConsoleApi.renderReceivingReview = renderReceivingReview;
   warehouseConsoleApi.renderPickingReview = renderPickingReview;
   warehouseConsoleApi.renderStockExceptionReview = renderStockExceptionReview;
+  warehouseConsoleApi.renderStockPostureReview = renderStockPostureReview;
   warehouseConsoleApi.renderOverview = render;
   warehouseConsoleApi.diagnostics = warehouseConsoleApi.diagnostics || {};
   warehouseConsoleApi.diagnostics.exportedRendererReady = true;
@@ -2531,6 +2877,7 @@
   warehouseConsoleApi.diagnostics.exportedPickingRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockExceptionsRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockExceptionReviewRendererReady = true;
+  warehouseConsoleApi.diagnostics.exportedStockPostureReviewRendererReady = true;
 
   frappe.pages[WORKLIST_PAGE_KEY] = frappe.pages[WORKLIST_PAGE_KEY] || {};
   frappe.pages[WORKLIST_PAGE_KEY].__erpwWarehouseInboundRenderer = true;
@@ -2556,6 +2903,11 @@
   frappe.pages[STOCK_EXCEPTION_PAGE_KEY].__erpwRenderWarehouseStockExceptionReview = renderStockExceptionReview;
   frappe.pages[STOCK_EXCEPTION_PAGE_KEY].on_page_load = function (wrapper) { renderStockExceptionReview(wrapper, stockExceptionTokenFromRoute()); };
   frappe.pages[STOCK_EXCEPTION_PAGE_KEY].on_page_show = function (wrapper) { renderStockExceptionReview(wrapper, stockExceptionTokenFromRoute()); };
+  frappe.pages[STOCK_POSTURE_PAGE_KEY] = frappe.pages[STOCK_POSTURE_PAGE_KEY] || {};
+  frappe.pages[STOCK_POSTURE_PAGE_KEY].__erpwWarehouseStockPostureReviewRenderer = true;
+  frappe.pages[STOCK_POSTURE_PAGE_KEY].__erpwRenderWarehouseStockPostureReview = renderStockPostureReview;
+  frappe.pages[STOCK_POSTURE_PAGE_KEY].on_page_load = function (wrapper) { renderStockPostureReview(wrapper, stockPostureTokenFromRoute()); };
+  frappe.pages[STOCK_POSTURE_PAGE_KEY].on_page_show = function (wrapper) { renderStockPostureReview(wrapper, stockPostureTokenFromRoute()); };
   scheduleActiveOverviewRender();
   bindActiveOverviewGuard();
   scheduleActiveInboundRender();
@@ -2566,4 +2918,6 @@
   bindActivePickingGuard();
   scheduleActiveStockExceptionRender();
   bindActiveStockExceptionGuard();
+  scheduleActiveStockPostureRender();
+  bindActiveStockPostureGuard();
 })();

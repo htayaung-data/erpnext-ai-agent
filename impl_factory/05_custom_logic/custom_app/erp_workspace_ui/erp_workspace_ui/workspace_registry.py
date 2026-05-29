@@ -188,7 +188,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 
 _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 	"workspace_id": "warehouse",
-	"status": "w6b_stock_exception_review",
+	"status": "w7a_stock_posture_review",
 	"title": "Warehouse Console",
 	"mode_label": "Warehouse Workspace",
 	"role_family": "Warehouse",
@@ -203,6 +203,8 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 		"picking_path": "/desk/warehouse-console-picking",
 		"stock_exception": "warehouse-console-stock-exception",
 		"stock_exception_path": "/desk/warehouse-console-stock-exception",
+		"stock_posture": "warehouse-console-stock-posture",
+		"stock_posture_path": "/desk/warehouse-console-stock-posture",
 	},
 	"methods": {
 		"overview": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
@@ -212,6 +214,7 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 		"picking_detail": "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review",
 		"stock_exceptions": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
 		"stock_exception_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review",
+		"stock_posture_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
 		"sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
 	},
 	"managed_doctypes": {
@@ -284,7 +287,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Warehouse Console",
 		"wave": "first",
 		"priority": 3,
-		"status": "w6b_stock_exception_review",
+		"status": "w7a_stock_posture_review",
 	},
 	{
 		"workspace_id": "finance",

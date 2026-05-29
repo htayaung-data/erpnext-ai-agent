@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "warehouse-console-stock-posture",
+  "page_name": "warehouse-console-stock-posture",
+  "title": "Warehouse Stock Posture Review",
+  "icon": "octicon octicon-package",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

@@ -274,6 +274,7 @@ ROUTE_MANIFEST: tuple[dict[str, Any], ...] = (
 	_route("warehouse", "warehouse-console-receiving", "detail", "productized_detail", "/desk/warehouse-console-receiving/<purchase-order>", "warehouse_receiving_shell", required_smoke_category="warehouse_phase_w4b_smoke", notes="Read-only receiving review for inbound purchase orders."),
 	_route("warehouse", "warehouse-console-picking", "detail", "productized_detail", "/desk/warehouse-console-picking/<sales-order>", "warehouse_picking_shell", required_smoke_category="warehouse_phase_w5b_smoke", notes="Read-only picking review for outbound sales orders."),
 	_route("warehouse", "warehouse-console-stock-exception", "detail", "productized_detail", "/desk/warehouse-console-stock-exception/<encoded-context>", "warehouse_stock_exception_review_shell", required_smoke_category="warehouse_phase_w6b_smoke", notes="Read-only stock exception review with custom Warehouse drilldowns only."),
+	_route("warehouse", "warehouse-console-stock-posture", "detail", "productized_detail", "/desk/warehouse-console-stock-posture/<encoded-context>", "warehouse_stock_posture_shell", required_smoke_category="warehouse_phase_w7a_smoke", notes="Read-only item and warehouse stock posture review with custom Warehouse drilldowns only."),
 )
 
 ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
@@ -396,6 +397,12 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("warehouse-stock-exception-back-to-list", "warehouse", "warehouse-console-stock-exception/<encoded-context>", "back_to_stock_exceptions", "productized_navigation", "worklist", label="Back to stock exceptions", target_route_pattern="/desk/warehouse-console-worklist/stock-exceptions"),
 	_action("warehouse-stock-exception-open-picking-review", "warehouse", "warehouse-console-stock-exception/<encoded-context>", "open_picking_review", "productized_navigation", "page", label="Review picking posture", target_route_pattern="/desk/warehouse-console-picking/<sales-order>"),
 	_action("warehouse-stock-exception-open-receiving-review", "warehouse", "warehouse-console-stock-exception/<encoded-context>", "open_receiving_review", "productized_navigation", "page", label="Review inbound cover", target_route_pattern="/desk/warehouse-console-receiving/<purchase-order>"),
+	_action("warehouse-stock-exception-open-stock-posture", "warehouse", "warehouse-console-stock-exception/<encoded-context>", "open_stock_posture", "productized_navigation", "page", label="Review stock posture", target_route_pattern="/desk/warehouse-console-stock-posture/<encoded-context>"),
+	_action("warehouse-stock-posture-refresh", "warehouse", "warehouse-console-stock-posture/<encoded-context>", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
+	_action("warehouse-stock-posture-back", "warehouse", "warehouse-console-stock-posture/<encoded-context>", "back", "productized_navigation", "page", label="Back", target_route_pattern="/desk/warehouse-console-*"),
+	_action("warehouse-stock-posture-open-picking-review", "warehouse", "warehouse-console-stock-posture/<encoded-context>", "open_picking_review", "productized_navigation", "page", label="Review picking posture", target_route_pattern="/desk/warehouse-console-picking/<sales-order>"),
+	_action("warehouse-stock-posture-open-receiving-review", "warehouse", "warehouse-console-stock-posture/<encoded-context>", "open_receiving_review", "productized_navigation", "page", label="Review inbound cover", target_route_pattern="/desk/warehouse-console-receiving/<purchase-order>"),
+	_action("warehouse-stock-posture-open-stock-exception", "warehouse", "warehouse-console-stock-posture/<encoded-context>", "open_stock_exception_review", "productized_navigation", "page", label="Review stock exception", target_route_pattern="/desk/warehouse-console-stock-exception/<encoded-context>"),
 	_action("warehouse-sidebar-overview-navigation", "warehouse", "warehouse-sidebar", "sidebar_overview_navigation", "productized_navigation", "page", label="Overview", target_route_pattern="/desk/warehouse-console", notes="Sidebar entry opens the Warehouse Overview."),
 	_action("warehouse-sidebar-inbound-navigation", "warehouse", "warehouse-sidebar", "sidebar_inbound_navigation", "productized_navigation", "worklist", label="Inbound Receiving", target_route_pattern="/desk/warehouse-console-worklist/inbound-receiving", notes="Sidebar entry opens the read-only inbound queue."),
 	_action("warehouse-sidebar-outbound-navigation", "warehouse", "warehouse-sidebar", "sidebar_outbound_navigation", "productized_navigation", "worklist", label="Outbound Picking", target_route_pattern="/desk/warehouse-console-worklist/outbound-picking", notes="Sidebar entry opens the read-only outbound queue."),
@@ -419,7 +426,7 @@ FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
 	},
 	{
 		"workspace_id": "warehouse",
-		"scope": "w6a_productized_overview_inbound_outbound_detail_and_stock_exception_read_only_pages",
+		"scope": "w7a_productized_overview_inbound_outbound_stock_exception_and_stock_posture_read_only_pages",
 		"labels": FORBIDDEN_MUTATION_LABELS,
 		"allowed_only_when": "future controlled Warehouse execution design and manifest update",
 		"policy_doc": "_docs/erp-ui-customization/native-exception-policy-v1.md",

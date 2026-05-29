@@ -186,6 +186,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-console-receiving",
                 "warehouse-console-picking",
                 "warehouse-console-stock-exception",
+                "warehouse-console-stock-posture",
             ],
             [route["route_key"] for route in warehouse_routes],
         )
@@ -197,6 +198,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("productized_detail", warehouse_routes[5]["classification"])
         self.assertEqual("productized_detail", warehouse_routes[6]["classification"])
         self.assertEqual("productized_detail", warehouse_routes[7]["classification"])
+        self.assertEqual("productized_detail", warehouse_routes[8]["classification"])
         self.assertEqual("/desk/warehouse-console", warehouse_routes[0]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/inbound-receiving", warehouse_routes[2]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/outbound-picking", warehouse_routes[3]["route_pattern"])
@@ -204,6 +206,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("/desk/warehouse-console-receiving/<purchase-order>", warehouse_routes[5]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-picking/<sales-order>", warehouse_routes[6]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-stock-exception/<encoded-context>", warehouse_routes[7]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-stock-posture/<encoded-context>", warehouse_routes[8]["route_pattern"])
         for route in warehouse_routes:
             self.assertNotEqual("governed_native_exception", route["classification"])
             self.assertIsNone(route.get("native_exception_ref"), route)
@@ -244,6 +247,12 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-stock-exception-back-to-list",
                 "warehouse-stock-exception-open-picking-review",
                 "warehouse-stock-exception-open-receiving-review",
+                "warehouse-stock-exception-open-stock-posture",
+                "warehouse-stock-posture-refresh",
+                "warehouse-stock-posture-back",
+                "warehouse-stock-posture-open-picking-review",
+                "warehouse-stock-posture-open-receiving-review",
+                "warehouse-stock-posture-open-stock-exception",
                 "warehouse-sidebar-overview-navigation",
                 "warehouse-sidebar-inbound-navigation",
                 "warehouse-sidebar-outbound-navigation",
@@ -274,6 +283,12 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("worklist", warehouse_actions["warehouse-stock-exception-back-to-list"]["target_kind"])
         self.assertEqual("page", warehouse_actions["warehouse-stock-exception-open-picking-review"]["target_kind"])
         self.assertEqual("page", warehouse_actions["warehouse-stock-exception-open-receiving-review"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-stock-exception-open-stock-posture"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-stock-posture-refresh"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-stock-posture-back"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-stock-posture-open-picking-review"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-stock-posture-open-receiving-review"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-stock-posture-open-stock-exception"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-inbound-navigation"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-outbound-navigation"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-stock-exceptions-navigation"]["target_kind"])
