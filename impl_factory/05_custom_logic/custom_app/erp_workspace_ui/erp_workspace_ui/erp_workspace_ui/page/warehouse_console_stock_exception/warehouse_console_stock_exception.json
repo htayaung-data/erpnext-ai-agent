@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "warehouse-console-stock-exception",
+  "page_name": "warehouse-console-stock-exception",
+  "title": "Warehouse Stock Exception Review",
+  "icon": "octicon octicon-package",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

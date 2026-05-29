@@ -9,6 +9,7 @@
   const WORKLIST_PAGE_KEY = warehouseRoutes.worklist || "warehouse-console-worklist";
   const RECEIVING_PAGE_KEY = warehouseRoutes.receiving || "warehouse-console-receiving";
   const PICKING_PAGE_KEY = warehouseRoutes.picking || "warehouse-console-picking";
+  const STOCK_EXCEPTION_PAGE_KEY = warehouseRoutes.stockException || warehouseRoutes.stock_exception || "warehouse-console-stock-exception";
   const INBOUND_QUEUE_KEY = "inbound_receiving";
   const OUTBOUND_QUEUE_KEY = "outbound_picking";
   const STOCK_EXCEPTIONS_KEY = "stock_exceptions";
@@ -18,6 +19,7 @@
   const STOCK_EXCEPTIONS_METHOD = warehouseMethods.stockExceptions || warehouseMethods.stock_exceptions || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions";
   const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
   const PICKING_METHOD = warehouseMethods.pickingDetail || warehouseMethods.picking_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review";
+  const STOCK_EXCEPTION_REVIEW_METHOD = warehouseMethods.stockExceptionReview || warehouseMethods.stock_exception_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
@@ -30,6 +32,8 @@
   let receivingRouteRenderSerial = 0;
   let pickingRouteGuardBound = false;
   let pickingRouteRenderSerial = 0;
+  let stockExceptionRouteGuardBound = false;
+  let stockExceptionRouteRenderSerial = 0;
 
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
@@ -181,6 +185,28 @@
     if (String(pathRoute[0] || "") === PICKING_PAGE_KEY) return true;
     const route = frappe.get_route ? frappe.get_route() : [];
     return Array.isArray(route) && String(route[0] || "") === PICKING_PAGE_KEY;
+  }
+
+  function stockExceptionRouteSignature() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === STOCK_EXCEPTION_PAGE_KEY) return pathRoute.join("|");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) ? route.join("|") : "";
+  }
+
+  function stockExceptionTokenFromRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === STOCK_EXCEPTION_PAGE_KEY) return String(pathRoute[1] || "");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (Array.isArray(route) && String(route[0] || "") === STOCK_EXCEPTION_PAGE_KEY) return String(route[1] || "");
+    return "";
+  }
+
+  function isActiveStockExceptionRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === STOCK_EXCEPTION_PAGE_KEY) return true;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) && String(route[0] || "") === STOCK_EXCEPTION_PAGE_KEY;
   }
 
   function warehouseConsoleDiagnostics() {
@@ -739,6 +765,75 @@
         font-size: 12px;
         line-height: 1.35;
       }
+      .warehouse-stock-exception-review-shell {
+        width: min(1180px, calc(100% - 24px));
+        min-width: 0;
+      }
+      .warehouse-stock-exception-review-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        min-width: 0;
+        margin-top: 12px;
+      }
+      .warehouse-stock-exception-review-panel {
+        display: grid;
+        gap: 10px;
+        min-width: 0;
+        padding: 14px;
+        border: 1px solid rgba(228, 236, 232, 0.98);
+        border-radius: 8px;
+        background: #fbfdfc;
+      }
+      .warehouse-stock-exception-review-facts {
+        display: grid;
+        gap: 8px;
+      }
+      .warehouse-stock-exception-review-fact {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-width: 0;
+        padding: 9px 10px;
+        border-radius: 8px;
+        background: #f4f8f6;
+        color: #51645c;
+        font-size: 12px;
+      }
+      .warehouse-stock-exception-review-fact strong {
+        min-width: 0;
+        color: #24352f;
+        font-size: 13px;
+        text-align: right;
+      }
+      .warehouse-stock-exception-next-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .warehouse-stock-exception-next-card {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+        min-height: 74px;
+        padding: 11px;
+        border: 1px solid rgba(212, 226, 219, 0.98);
+        border-radius: 8px;
+        background: #f8fbfa;
+        color: #29463c;
+        text-align: left;
+      }
+      .warehouse-stock-exception-next-card span {
+        font-size: 12px;
+        font-weight: 760;
+      }
+      .warehouse-stock-exception-next-card strong {
+        color: #65756e;
+        font-size: 12px;
+        font-weight: 560;
+        line-height: 1.35;
+      }
       .warehouse-receiving-strong {
         color: #263530;
         font-size: 13px;
@@ -782,6 +877,8 @@
         .warehouse-inbound-row-main,
         .warehouse-receiving-line,
         .warehouse-receiving-history-row,
+        .warehouse-stock-exception-review-grid,
+        .warehouse-stock-exception-next-grid,
         .warehouse-stock-exception-row-main,
         .warehouse-stock-exception-facts {
           grid-template-columns: minmax(0, 1fr);
@@ -1228,6 +1325,12 @@
     return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
   }
 
+  function directStockExceptionRenderWrapper() {
+    const pageDef = frappe.pages && frappe.pages[STOCK_EXCEPTION_PAGE_KEY] ? frappe.pages[STOCK_EXCEPTION_PAGE_KEY] : null;
+    if (pageDef && pageDef.wrapper) return pageDef.wrapper;
+    return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
+  }
+
   function hasReadyWorklistShell(queueKey) {
     return Boolean(document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${worklistViewName(queueKey)}"]`));
   }
@@ -1344,6 +1447,45 @@
     pickingRouteGuardBound = true;
     window.setInterval(() => {
       if (shouldSelfRenderPicking()) renderActivePickingRoute();
+    }, 220);
+  }
+
+  function hasReadyStockExceptionReviewShell() {
+    const token = stockExceptionTokenFromRoute();
+    const shell = document.querySelector('.warehouse-stock-exception-review-shell[data-warehouse-view="stock-exception-review"]');
+    if (!shell) return false;
+    return !token || String(shell.getAttribute("data-warehouse-stock-exception-token") || "") === token;
+  }
+
+  function shouldSelfRenderStockExceptionReview() {
+    return isActiveStockExceptionRoute() && !hasReadyStockExceptionReviewShell();
+  }
+
+  function renderActiveStockExceptionRoute() {
+    if (!shouldSelfRenderStockExceptionReview()) return;
+    const signature = stockExceptionRouteSignature();
+    const token = ++stockExceptionRouteRenderSerial;
+    markWarehouseDiagnostic("stockExceptionActiveRouteGuardFired");
+    const wrapper = directStockExceptionRenderWrapper();
+    if (!wrapper) return;
+    window.setTimeout(() => {
+      if (token !== stockExceptionRouteRenderSerial || !shouldSelfRenderStockExceptionReview() || stockExceptionRouteSignature() !== signature) return;
+      renderStockExceptionReview(wrapper, stockExceptionTokenFromRoute());
+    }, 0);
+  }
+
+  function scheduleActiveStockExceptionRender() {
+    renderActiveStockExceptionRoute();
+    setTimeout(renderActiveStockExceptionRoute, 80);
+    setTimeout(renderActiveStockExceptionRoute, 220);
+    setTimeout(renderActiveStockExceptionRoute, 700);
+  }
+
+  function bindActiveStockExceptionGuard() {
+    if (stockExceptionRouteGuardBound || !window || typeof window.setInterval !== "function") return;
+    stockExceptionRouteGuardBound = true;
+    window.setInterval(() => {
+      if (shouldSelfRenderStockExceptionReview()) renderActiveStockExceptionRoute();
     }, 220);
   }
 
@@ -1485,8 +1627,13 @@
 
   function renderStockExceptionRow(row) {
     const targets = row.route_targets || {};
+    const reviewTarget = targets.exception_review || {};
     const pickingTarget = targets.picking || {};
     const receivingTarget = targets.receiving || {};
+    const reviewToken = reviewTarget.context_token || row.context_token || "";
+    const reviewButton = reviewToken
+      ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-detail>Review exception</button>'
+      : "";
     const pickingButton = pickingTarget.sales_order
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-picking>View picking review</button>'
       : "";
@@ -1494,7 +1641,7 @@
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-receiving>View inbound review</button>'
       : "";
     return `
-      <article class="warehouse-stock-exception-row" data-warehouse-stock-exception-row="${escapeHtml(row.key || "")}" data-warehouse-stock-exception-sales-order="${escapeHtml(row.sales_order || "")}" data-warehouse-stock-exception-receiving-order="${escapeHtml(row.expected_inbound_order || "")}">
+      <article class="warehouse-stock-exception-row" data-warehouse-stock-exception-row="${escapeHtml(row.key || "")}" data-warehouse-stock-exception-token="${escapeHtml(reviewToken)}" data-warehouse-stock-exception-sales-order="${escapeHtml(row.sales_order || "")}" data-warehouse-stock-exception-receiving-order="${escapeHtml(row.expected_inbound_order || "")}">
         <div class="warehouse-stock-exception-row-main">
           <div>
             <div class="warehouse-inbound-order">${escapeHtml(row.sales_order || "")}</div>
@@ -1510,6 +1657,7 @@
             <div class="warehouse-inbound-meta">${escapeHtml(row.urgency_label || "")}</div>
           </div>
           <div class="warehouse-receiving-actions">
+            ${reviewButton}
             ${pickingButton}
             ${receivingButton}
           </div>
@@ -1594,6 +1742,11 @@
       event.preventDefault();
       const salesOrder = String($(this).closest("[data-warehouse-stock-exception-sales-order]").attr("data-warehouse-stock-exception-sales-order") || "").trim();
       if (salesOrder) frappe.set_route(PICKING_PAGE_KEY, salesOrder);
+    });
+    $root.find("[data-warehouse-stock-exception-route-detail]").on("click", function (event) {
+      event.preventDefault();
+      const token = String($(this).closest("[data-warehouse-stock-exception-token]").attr("data-warehouse-stock-exception-token") || "").trim();
+      if (token) frappe.set_route(STOCK_EXCEPTION_PAGE_KEY, token);
     });
     $root.find("[data-warehouse-stock-exception-route-receiving]").on("click", function (event) {
       event.preventDefault();
@@ -1964,6 +2117,229 @@
     loadPickingReview(viewState, salesOrder || pickingSalesOrderFromRoute());
   }
 
+  function makeStockExceptionPage(wrapper) {
+    const existing = wrapper && wrapper.__erpwWarehouseStockExceptionReview;
+    if (existing && existing.page && existing.$host && document.documentElement.contains(existing.$host.get(0))) {
+      return existing;
+    }
+    const page = frappe.ui.make_app_page({
+      parent: wrapper,
+      title: "Stock Exception Review",
+      single_column: true,
+    });
+    const $parent = page && page.body ? $(page.body) : $(wrapper);
+    const $host = $('<section class="warehouse-stock-exception-route"></section>');
+    $parent.empty().append($host);
+    const state = { page, $host, contextToken: "" };
+    wrapper.__erpwWarehouseStockExceptionReview = state;
+    return state;
+  }
+
+  function stockExceptionSummaryText(header) {
+    const parts = [header.sales_order, header.item_code, header.source_warehouse].filter(Boolean);
+    return parts.join(" · ");
+  }
+
+  function renderStockExceptionReviewCard(card) {
+    return `
+      <div class="warehouse-receiving-card" data-warehouse-stock-exception-review-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
+        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderStockExceptionPanel(panel, panelKey) {
+    const items = Array.isArray(panel.items) ? panel.items : [];
+    return `
+      <section class="warehouse-stock-exception-review-panel" data-warehouse-stock-exception-${escapeHtml(panelKey)}-panel>
+        <div class="warehouse-inbound-group-head">
+          <h2 class="warehouse-inbound-group-title">${escapeHtml(panel.title || "")}</h2>
+          <div class="warehouse-inbound-group-note">${escapeHtml(panel.summary || "")}</div>
+        </div>
+        <div class="warehouse-stock-exception-review-facts">
+          ${items.length ? items.map((item) => `
+            <div class="warehouse-stock-exception-review-fact" data-warehouse-stock-exception-review-fact>
+              <span>${escapeHtml(item.label || "")}</span>
+              <strong>${escapeHtml(item.value == null ? "" : item.value)}</strong>
+            </div>
+          `).join("") : `<div class="warehouse-receiving-meta" data-warehouse-stock-exception-review-empty>No details visible for this section.</div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderNextReviewPanel(panel) {
+    const items = Array.isArray(panel.items) ? panel.items : [];
+    return `
+      <section class="warehouse-stock-exception-review-panel" data-warehouse-stock-exception-next-panel>
+        <div class="warehouse-inbound-group-head">
+          <h2 class="warehouse-inbound-group-title">${escapeHtml(panel.title || "Recommended Review")}</h2>
+          <div class="warehouse-inbound-group-note">${escapeHtml(panel.summary || "")}</div>
+        </div>
+        <div class="warehouse-stock-exception-next-grid">
+          ${items.length ? items.map((item) => {
+            const target = item.target || {};
+            const targetKind = target.purchase_order ? "receiving" : target.sales_order ? "picking" : "stock";
+            return `
+              <button type="button" class="warehouse-stock-exception-next-card" data-warehouse-stock-exception-next-target="${escapeHtml(targetKind)}" data-warehouse-stock-exception-next-sales-order="${escapeHtml(target.sales_order || "")}" data-warehouse-stock-exception-next-purchase-order="${escapeHtml(target.purchase_order || "")}">
+                <span>${escapeHtml(item.label || "")}</span>
+                <strong>${escapeHtml(item.value || "")}</strong>
+              </button>
+            `;
+          }).join("") : `<div class="warehouse-receiving-meta" data-warehouse-stock-exception-review-empty>No review path visible.</div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderStockExceptionRelatedRow(row) {
+    const target = row.route_target || {};
+    const targetKind = target.purchase_order ? "receiving" : target.sales_order ? "picking" : "";
+    return `
+      <button type="button" class="warehouse-receiving-history-row" data-warehouse-stock-exception-related-row="${escapeHtml(row.key || "")}" data-warehouse-stock-exception-related-target="${escapeHtml(targetKind)}" data-warehouse-stock-exception-related-sales-order="${escapeHtml(target.sales_order || "")}" data-warehouse-stock-exception-related-purchase-order="${escapeHtml(target.purchase_order || "")}">
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(row.title || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(row.label || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">${escapeHtml(row.detail || "")}</div>
+      </button>
+    `;
+  }
+
+  function routeStockExceptionTarget(kind, salesOrder, purchaseOrder) {
+    if (kind === "picking" && salesOrder) {
+      frappe.set_route(PICKING_PAGE_KEY, salesOrder);
+      return;
+    }
+    if (kind === "receiving" && purchaseOrder) {
+      frappe.set_route(RECEIVING_PAGE_KEY, purchaseOrder);
+      return;
+    }
+    frappe.set_route(WORKLIST_PAGE_KEY, "stock-exceptions");
+  }
+
+  function renderStockExceptionReviewPayload(viewState, payload) {
+    ensureStyle();
+    const header = payload.header || {};
+    const cards = Array.isArray(payload.summary_cards) ? payload.summary_cards : [];
+    const panels = payload.panels || {};
+    const relatedRows = Array.isArray(payload.related_rows) ? payload.related_rows : [];
+    const statePayload = payload.state || {};
+    const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const $root = $(`
+      <div class="sales-console-shell warehouse-receiving-shell warehouse-stock-exception-review-shell" data-erpw-workspace="warehouse" data-warehouse-view="stock-exception-review" data-erpw-console-runtime="ready" data-warehouse-stock-exception-review-shell="true" data-warehouse-stock-exception-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
+        <section class="warehouse-receiving-header">
+          <div class="warehouse-receiving-head">
+            <div>
+              <h1 class="warehouse-receiving-title">Stock Exception Review</h1>
+              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Stock exception review could not be loaded. Refresh or contact an administrator." : stockExceptionSummaryText(header))}</div>
+            </div>
+            <div class="warehouse-receiving-actions">
+              <button type="button" class="warehouse-receiving-button" data-warehouse-stock-exception-back>Back to stock exceptions</button>
+              <button type="button" class="warehouse-receiving-button" data-warehouse-stock-exception-refresh>Refresh</button>
+            </div>
+          </div>
+          ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-stock-exception-review-empty>${escapeHtml(statePayload.title || "Stock exception review unavailable")}</div>` : `
+            <div class="warehouse-receiving-note"><span class="warehouse-inbound-badge">${escapeHtml(header.exception_label || "")}</span> ${escapeHtml(header.urgency_label || "")} · ${escapeHtml(header.explanation || "")}</div>
+            <div class="warehouse-receiving-cards">${cards.map(renderStockExceptionReviewCard).join("")}</div>
+          `}
+        </section>
+        <section class="warehouse-stock-exception-review-grid">
+          ${renderStockExceptionPanel(panels.demand || {}, "demand")}
+          ${renderStockExceptionPanel(panels.stock || {}, "stock")}
+          ${renderStockExceptionPanel(panels.inbound || {}, "inbound")}
+          ${renderNextReviewPanel(panels.next_reviews || {})}
+        </section>
+        <section class="warehouse-receiving-detail" data-warehouse-stock-exception-related-panel>
+          <div class="warehouse-inbound-group-head">
+            <h2 class="warehouse-inbound-group-title">Related Reviews</h2>
+            <div class="warehouse-inbound-group-note">Custom Warehouse review paths for this exception.</div>
+          </div>
+          <div class="warehouse-receiving-panel is-active">
+            ${relatedRows.length ? relatedRows.map(renderStockExceptionRelatedRow).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-stock-exception-review-empty><span class="warehouse-receiving-meta">No related review path visible.</span></div>`}
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-stock-exception-back]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(WORKLIST_PAGE_KEY, "stock-exceptions");
+    });
+    $root.find("[data-warehouse-stock-exception-refresh]").on("click", (event) => {
+      event.preventDefault();
+      loadStockExceptionReview(viewState, viewState.contextToken);
+    });
+    $root.find("[data-warehouse-stock-exception-next-target]").on("click", function (event) {
+      event.preventDefault();
+      routeStockExceptionTarget(
+        String(this.getAttribute("data-warehouse-stock-exception-next-target") || ""),
+        String(this.getAttribute("data-warehouse-stock-exception-next-sales-order") || ""),
+        String(this.getAttribute("data-warehouse-stock-exception-next-purchase-order") || "")
+      );
+    });
+    $root.find("[data-warehouse-stock-exception-related-target]").on("click", function (event) {
+      event.preventDefault();
+      routeStockExceptionTarget(
+        String(this.getAttribute("data-warehouse-stock-exception-related-target") || ""),
+        String(this.getAttribute("data-warehouse-stock-exception-related-sales-order") || ""),
+        String(this.getAttribute("data-warehouse-stock-exception-related-purchase-order") || "")
+      );
+    });
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+  }
+
+  function renderStockExceptionReviewLoading(viewState) {
+    renderStockExceptionReviewPayload(viewState, {
+      state: { kind: "loading", title: "Checking stock exception", detail: "Checking stock exception..." },
+      header: { context_token: viewState.contextToken || "" },
+      summary_cards: [],
+      panels: {
+        demand: { title: "Demand at Risk", items: [] },
+        stock: { title: "Stock Posture", items: [] },
+        inbound: { title: "Inbound Cover", items: [] },
+        next_reviews: { title: "Recommended Review", items: [] },
+      },
+      related_rows: [],
+    });
+  }
+
+  function loadStockExceptionReview(viewState, contextToken) {
+    markWarehouseDiagnostic("stockExceptionReviewServiceCallAttempted");
+    viewState.contextToken = contextToken || stockExceptionTokenFromRoute();
+    renderStockExceptionReviewLoading(viewState);
+    return frappe.call({
+      method: STOCK_EXCEPTION_REVIEW_METHOD,
+      args: { context_token: viewState.contextToken },
+    }).then((response) => {
+      renderStockExceptionReviewPayload(viewState, response && response.message ? response.message : {});
+    }).catch(() => {
+      renderStockExceptionReviewPayload(viewState, {
+        state: { kind: "error", title: "Stock exception review unavailable", detail: "Stock exception review could not be loaded. Refresh or contact an administrator." },
+        header: { context_token: viewState.contextToken || "" },
+        summary_cards: [],
+        panels: {
+          demand: { title: "Demand at Risk", items: [] },
+          stock: { title: "Stock Posture", items: [] },
+          inbound: { title: "Inbound Cover", items: [] },
+          next_reviews: { title: "Recommended Review", items: [] },
+        },
+        related_rows: [],
+      });
+    });
+  }
+
+  function renderStockExceptionReview(wrapper, contextToken) {
+    markWarehouseDiagnostic("renderStockExceptionReviewEntered");
+    const viewState = makeStockExceptionPage(wrapper);
+    if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+      window.erpWorkspaceConsoleSidebar.refresh();
+    }
+    loadStockExceptionReview(viewState, contextToken || stockExceptionTokenFromRoute());
+  }
+
   function makeInboundPage(wrapper) {
     const existing = wrapper && wrapper.__erpwWarehouseInboundQueue;
     if (existing && existing.page && existing.$host && document.documentElement.contains(existing.$host.get(0))) {
@@ -2147,12 +2523,14 @@
   warehouseConsoleApi.renderStockExceptions = renderStockExceptions;
   warehouseConsoleApi.renderReceivingReview = renderReceivingReview;
   warehouseConsoleApi.renderPickingReview = renderPickingReview;
+  warehouseConsoleApi.renderStockExceptionReview = renderStockExceptionReview;
   warehouseConsoleApi.renderOverview = render;
   warehouseConsoleApi.diagnostics = warehouseConsoleApi.diagnostics || {};
   warehouseConsoleApi.diagnostics.exportedRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedReceivingRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedPickingRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockExceptionsRendererReady = true;
+  warehouseConsoleApi.diagnostics.exportedStockExceptionReviewRendererReady = true;
 
   frappe.pages[WORKLIST_PAGE_KEY] = frappe.pages[WORKLIST_PAGE_KEY] || {};
   frappe.pages[WORKLIST_PAGE_KEY].__erpwWarehouseInboundRenderer = true;
@@ -2173,6 +2551,11 @@
   frappe.pages[PICKING_PAGE_KEY].__erpwRenderWarehousePickingReview = renderPickingReview;
   frappe.pages[PICKING_PAGE_KEY].on_page_load = function (wrapper) { renderPickingReview(wrapper, pickingSalesOrderFromRoute()); };
   frappe.pages[PICKING_PAGE_KEY].on_page_show = function (wrapper) { renderPickingReview(wrapper, pickingSalesOrderFromRoute()); };
+  frappe.pages[STOCK_EXCEPTION_PAGE_KEY] = frappe.pages[STOCK_EXCEPTION_PAGE_KEY] || {};
+  frappe.pages[STOCK_EXCEPTION_PAGE_KEY].__erpwWarehouseStockExceptionReviewRenderer = true;
+  frappe.pages[STOCK_EXCEPTION_PAGE_KEY].__erpwRenderWarehouseStockExceptionReview = renderStockExceptionReview;
+  frappe.pages[STOCK_EXCEPTION_PAGE_KEY].on_page_load = function (wrapper) { renderStockExceptionReview(wrapper, stockExceptionTokenFromRoute()); };
+  frappe.pages[STOCK_EXCEPTION_PAGE_KEY].on_page_show = function (wrapper) { renderStockExceptionReview(wrapper, stockExceptionTokenFromRoute()); };
   scheduleActiveOverviewRender();
   bindActiveOverviewGuard();
   scheduleActiveInboundRender();
@@ -2181,4 +2564,6 @@
   bindActiveReceivingGuard();
   scheduleActivePickingRender();
   bindActivePickingGuard();
+  scheduleActiveStockExceptionRender();
+  bindActiveStockExceptionGuard();
 })();

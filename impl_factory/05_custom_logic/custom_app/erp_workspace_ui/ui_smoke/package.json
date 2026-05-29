@@ -70,7 +70,9 @@
     "test:warehouse-w5b-picking-review": "node warehouse_phase_w5b_picking_review_smoke.js",
     "test:warehouse-w5b-picking-review:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w5b-picking-review",
     "test:warehouse-w6a-stock-exceptions": "node warehouse_phase_w6a_stock_exceptions_smoke.js",
-    "test:warehouse-w6a-stock-exceptions:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w6a-stock-exceptions"
+    "test:warehouse-w6a-stock-exceptions:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w6a-stock-exceptions",
+    "test:warehouse-w6b-stock-exception-review": "node warehouse_phase_w6b_stock_exception_review_smoke.js",
+    "test:warehouse-w6b-stock-exception-review:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w6b-stock-exception-review"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

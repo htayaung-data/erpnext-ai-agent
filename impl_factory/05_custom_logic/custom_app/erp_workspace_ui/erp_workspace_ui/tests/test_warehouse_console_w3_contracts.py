@@ -573,11 +573,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
 
-    def test_warehouse_workspace_registry_definition_has_w6a_stock_exceptions_route(self):
+    def test_warehouse_workspace_registry_definition_has_w6b_stock_exception_review_route(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w6a_stock_exceptions_visibility")
+        self.assertEqual(workspace["status"], "w6b_stock_exception_review")
         self.assertEqual(
             workspace["routes"],
             {
@@ -589,6 +589,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
                 "receiving_path": "/desk/warehouse-console-receiving",
                 "picking": "warehouse-console-picking",
                 "picking_path": "/desk/warehouse-console-picking",
+                "stock_exception": "warehouse-console-stock-exception",
+                "stock_exception_path": "/desk/warehouse-console-stock-exception",
             },
         )
         self.assertEqual(
@@ -614,6 +616,10 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["stock_exceptions"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
+        )
+        self.assertEqual(
+            workspace["methods"]["stock_exception_review"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review",
         )
         self.assertFalse(workspace["search"]["enabled"])
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
@@ -796,6 +802,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
 
         allowed_row_keys = {
             "key",
+            "context_token",
             "sales_order",
             "customer",
             "item_code",
@@ -819,6 +826,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         }
         for row in payload["rows"]:
             self.assertLessEqual(set(row), allowed_row_keys)
+            self.assertTrue(row["context_token"])
+            self.assertEqual(row["route_targets"]["exception_review"]["route"], "warehouse-console-stock-exception")
             self.assertEqual(row["route_targets"]["picking"]["route"], "warehouse-console-picking")
             if row.get("expected_inbound_order"):
                 self.assertEqual(row["route_targets"]["receiving"]["route"], "warehouse-console-receiving")
@@ -848,6 +857,57 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(payload["controls"]["fields"][2]["value"], "Power")
         self.assertEqual(payload["workspace"]["routes"]["worklist"], "warehouse-console-worklist")
         self.assertNotIn("native", str(payload).lower())
+
+
+    def test_stock_exception_review_payload_is_read_only_and_custom_routed(self):
+        token = service._stock_exception_context_token("SO-REVIEW", "ITEM-105", "Short - M")
+
+        payload = service.get_warehouse_stock_exception_review(token)
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "stock_exception_review")
+        self.assertEqual(payload["page"]["context_token"], token)
+        self.assertEqual(payload["header"]["sales_order"], "SO-REVIEW")
+        self.assertEqual(payload["header"]["item_code"], "ITEM-105")
+        self.assertEqual(payload["header"]["source_warehouse"], "Short - M")
+        self.assertEqual({card["key"] for card in payload["summary_cards"]}, {"state", "pending_qty", "available_qty", "inbound_cover"})
+        self.assertEqual(set(payload["panels"]), {"demand", "stock", "inbound", "next_reviews"})
+        self.assertEqual(payload["action_targets"]["stock_exceptions"]["route"], "warehouse-console-worklist")
+        self.assertEqual(payload["action_targets"]["picking"]["route"], "warehouse-console-picking")
+        self.assertEqual(payload["action_targets"]["receiving"]["route"], "warehouse-console-receiving")
+        self.assertTrue(any(row["route_target"]["route"] == "warehouse-console-picking" for row in payload["related_rows"]))
+        self.assertTrue(any(row["route_target"]["route"] == "warehouse-console-receiving" for row in payload["related_rows"]))
+
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("base_net_rate", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("gl", payload_text)
+        self.assertNotIn("item price", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertTrue(any(call["doctype"] == "Sales Order" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Sales Order Item" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Bin" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
+
+    def test_stock_exception_review_uses_parent_sales_order_when_child_table_read_is_unavailable(self):
+        READABLE_DOCTYPES.discard("Sales Order Item")
+        token = service._stock_exception_context_token("SO-REVIEW", "ITEM-105", "Short - M")
+
+        payload = service.get_warehouse_stock_exception_review(token)
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["header"]["item_code"], "ITEM-105")
+        self.assertFalse(any(call["doctype"] == "Sales Order Item" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Sales Order" for call in GET_DOC_CALLS))
+        self.assertNotIn("valuation_rate", str(payload).lower())
+
+    def test_stock_exception_review_invalid_context_returns_controlled_state(self):
+        payload = service.get_warehouse_stock_exception_review("not-a-review")
+
+        self.assertEqual(payload["state"]["kind"], "unavailable")
+        self.assertEqual(payload["related_rows"], [])
 
 
     def test_receiving_review_payload_is_read_only_allowlisted_and_history_bounded(self):
@@ -943,6 +1003,9 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         detail = service.get_warehouse_receiving_review("PO-OVERDUE")
         picking_detail = service.get_warehouse_picking_review("SO-OVERDUE")
         stock_exceptions = service.get_warehouse_stock_exceptions("stock_exceptions")
+        stock_exception_detail = service.get_warehouse_stock_exception_review(
+            service._stock_exception_context_token("SO-REVIEW", "ITEM-105", "Short - M")
+        )
 
         self.assertEqual(overview["state"]["kind"], "restricted")
         self.assertFalse(overview["context"]["has_warehouse_access"])
@@ -958,6 +1021,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(picking_detail["lines"], [])
         self.assertEqual(stock_exceptions["state"]["kind"], "restricted")
         self.assertEqual(stock_exceptions["rows"], [])
+        self.assertEqual(stock_exception_detail["state"]["kind"], "restricted")
+        self.assertEqual(stock_exception_detail["related_rows"], [])
 
     def test_permission_limited_sources_return_controlled_empty_inbound_state(self):
         READABLE_DOCTYPES.discard("Purchase Order")

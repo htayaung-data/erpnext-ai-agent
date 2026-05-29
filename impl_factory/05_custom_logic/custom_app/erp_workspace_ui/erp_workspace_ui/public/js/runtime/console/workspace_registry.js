@@ -149,7 +149,7 @@
 
   const warehouseWorkspace = {
     workspaceId: "warehouse",
-    status: "w6a_stock_exceptions_visibility",
+    status: "w6b_stock_exception_review",
     title: "Warehouse Console",
     modeLabel: "Warehouse Workspace",
     roleFamily: "Warehouse",
@@ -162,6 +162,8 @@
       receivingPath: "/desk/warehouse-console-receiving",
       picking: "warehouse-console-picking",
       pickingPath: "/desk/warehouse-console-picking",
+      stockException: "warehouse-console-stock-exception",
+      stockExceptionPath: "/desk/warehouse-console-stock-exception",
     },
     methods: {
       overview: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
@@ -170,6 +172,7 @@
       receivingDetail: "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review",
       pickingDetail: "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review",
       stockExceptions: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
+      stockExceptionReview: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review",
       sidebarContext: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
     },
     managedDoctypes: {
@@ -208,7 +211,7 @@
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
     { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
-    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w6a_stock_exceptions_visibility" },
+    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w6b_stock_exception_review" },
     { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
     { workspaceId: "customer_service", matrixName: "Customer Service Console", recommendedName: "Customer Service Console", wave: "second", priority: 6, status: "planned" },
