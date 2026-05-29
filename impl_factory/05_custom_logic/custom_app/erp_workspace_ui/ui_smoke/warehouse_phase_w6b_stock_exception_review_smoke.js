@@ -681,8 +681,12 @@ async function exerciseUser(browser, user) {
     assert(state.hasExportedStockReviewRenderer, "Warehouse exported stock exception review renderer is missing", { user: user.key, state, diagnostics });
     assert((state.diagnostics || {}).renderStockExceptionsEntered >= 1, "Warehouse stock exceptions renderer was not entered", { user: user.key, state, diagnostics });
     assert((state.diagnostics || {}).stockExceptionsServiceCallAttempted >= 1, "Warehouse stock exceptions service call was not attempted", { user: user.key, state, diagnostics });
-    assert(sawStockExceptionReviewRenderer || (state.diagnostics || {}).renderStockExceptionReviewEntered >= 1, "Warehouse stock exception review renderer was not entered", { user: user.key, state, diagnostics });
-    assert(sawStockExceptionReviewServiceCall || (state.diagnostics || {}).stockExceptionReviewServiceCallAttempted >= 1, "Warehouse stock exception review service call was not attempted", { user: user.key, state, diagnostics });
+    if (ASSET_ROOT || hasStockRows) {
+      assert(sawStockExceptionReviewRenderer || (state.diagnostics || {}).renderStockExceptionReviewEntered >= 1, "Warehouse stock exception review renderer was not entered", { user: user.key, state, diagnostics });
+      assert(sawStockExceptionReviewServiceCall || (state.diagnostics || {}).stockExceptionReviewServiceCallAttempted >= 1, "Warehouse stock exception review service call was not attempted", { user: user.key, state, diagnostics });
+    } else {
+      assert(state.stockEmptyCount >= 1, "Live Stock Exceptions empty state did not remain visible", { user: user.key, state, diagnostics });
+    }
     if (ASSET_ROOT) {
       assert(diagnostics.overrideHits.some((hit) => hit.key === "desk-page-getpage" && hit.page === "warehouse-console-worklist"), "Warehouse worklist getpage source override was not used", { user: user.key, diagnostics });
       assert(diagnostics.overrideHits.some((hit) => hit.key === "warehouse-page-asset"), "Warehouse page asset source override was not used", { user: user.key, diagnostics });
