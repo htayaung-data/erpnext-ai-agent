@@ -149,7 +149,7 @@
 
   const warehouseWorkspace = {
     workspaceId: "warehouse",
-    status: "w7a_stock_posture_review",
+    status: "w8a_movement_visibility",
     title: "Warehouse Console",
     modeLabel: "Warehouse Workspace",
     roleFamily: "Warehouse",
@@ -176,6 +176,7 @@
       stockExceptions: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
       stockExceptionReview: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review",
       stockPostureReview: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
+      movementVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
       sidebarContext: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
     },
     managedDoctypes: {
@@ -186,6 +187,8 @@
       "Sales Order": "outbound_picking",
       "Purchase Order Item": "stock_exceptions",
       "Sales Order Item": "stock_exceptions",
+      "Stock Entry": "movement_visibility",
+      "Stock Entry Detail": "movement_visibility",
     },
     sidebar: {
       homeKey: "warehouse_console_home",
@@ -201,6 +204,7 @@
       { key: "inbound_receiving", label: "Inbound Receiving", icon: "quotation", target: { kind: "worklist", queue_key: "inbound_receiving" } },
       { key: "outbound_picking", label: "Outbound Picking", icon: "order", target: { kind: "worklist", queue_key: "outbound_picking" } },
       { key: "stock_exceptions", label: "Stock Exceptions", icon: "report", target: { kind: "worklist", queue_key: "stock_exceptions" } },
+      { key: "movement_visibility", label: "Movement Visibility", icon: "stock", target: { kind: "worklist", queue_key: "movement_visibility" } },
     ],
   };
 
@@ -214,7 +218,7 @@
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
     { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
-    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w7a_stock_posture_review" },
+    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w8a_movement_visibility" },
     { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
     { workspaceId: "customer_service", matrixName: "Customer Service Console", recommendedName: "Customer Service Console", wave: "second", priority: 6, status: "planned" },

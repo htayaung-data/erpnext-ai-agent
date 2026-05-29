@@ -14,10 +14,12 @@
   const INBOUND_QUEUE_KEY = "inbound_receiving";
   const OUTBOUND_QUEUE_KEY = "outbound_picking";
   const STOCK_EXCEPTIONS_KEY = "stock_exceptions";
+  const MOVEMENT_VISIBILITY_KEY = "movement_visibility";
   const OVERVIEW_METHOD = warehouseMethods.overview || "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview";
   const INBOUND_METHOD = warehouseMethods.inboundQueue || warehouseMethods.inbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue";
   const OUTBOUND_METHOD = warehouseMethods.outboundQueue || warehouseMethods.outbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue";
   const STOCK_EXCEPTIONS_METHOD = warehouseMethods.stockExceptions || warehouseMethods.stock_exceptions || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions";
+  const MOVEMENT_VISIBILITY_METHOD = warehouseMethods.movementVisibility || warehouseMethods.movement_visibility || "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue";
   const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
   const PICKING_METHOD = warehouseMethods.pickingDetail || warehouseMethods.picking_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review";
   const STOCK_EXCEPTION_REVIEW_METHOD = warehouseMethods.stockExceptionReview || warehouseMethods.stock_exception_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review";
@@ -108,13 +110,14 @@
 
   function isSupportedWorklistQueue(queueKey) {
     const key = normalizeQueueKey(queueKey);
-    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY || key === STOCK_EXCEPTIONS_KEY;
+    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY || key === STOCK_EXCEPTIONS_KEY || key === MOVEMENT_VISIBILITY_KEY;
   }
 
   function worklistViewName(queueKey) {
     const key = normalizeQueueKey(queueKey);
     if (key === OUTBOUND_QUEUE_KEY) return "outbound-picking";
     if (key === STOCK_EXCEPTIONS_KEY) return "stock-exceptions";
+    if (key === MOVEMENT_VISIBILITY_KEY) return "movement-visibility";
     return "inbound-receiving";
   }
 
@@ -1828,6 +1831,150 @@
     viewState.$host.empty().append($root);
   }
 
+  function renderMovementCard(card) {
+    return `
+      <div class="warehouse-inbound-queue-card" data-warehouse-movement-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
+        <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
+        <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderMovementSampleItem(item) {
+    const target = item.route_target || {};
+    const token = target.route === STOCK_POSTURE_PAGE_KEY ? String(target.context_token || "") : "";
+    const button = token
+      ? `<button type="button" class="warehouse-inbound-queue-button" data-warehouse-movement-route-stock-posture data-warehouse-stock-posture-token="${escapeHtml(token)}">Review stock posture</button>`
+      : "";
+    return `
+      <div class="warehouse-inbound-line" data-warehouse-movement-sample-item="${escapeHtml(item.item_code || "")}">
+        <span>${escapeHtml(item.item_code || "")} ${escapeHtml(item.item_name || "")}</span>
+        <span>${escapeHtml(item.qty || "0")} ${escapeHtml(item.uom || "")}</span>
+        <span>${escapeHtml(item.target_warehouse || item.source_warehouse || "")}</span>
+        <span>${button}</span>
+      </div>
+    `;
+  }
+
+  function renderMovementRow(row) {
+    const items = Array.isArray(row.sample_items) ? row.sample_items : [];
+    return `
+      <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-movement-row" data-warehouse-movement-row="${escapeHtml(row.movement_id || row.key || "")}">
+        <div class="warehouse-stock-exception-row-main">
+          <div>
+            <div class="warehouse-inbound-order">${escapeHtml(row.movement_id || "")}</div>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.posting_date || "")} ${escapeHtml(row.posting_time || "")}</div>
+          </div>
+          <div>
+            <span class="warehouse-inbound-badge">${escapeHtml(row.movement_type || row.purpose || "")}</span>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.group_label || "")}</div>
+          </div>
+          <div class="warehouse-inbound-meta">${escapeHtml(row.direction_label || "")}</div>
+          <div>
+            <div class="warehouse-inbound-order">${escapeHtml(row.quantity_summary || "")}</div>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.item_count == null ? "0" : row.item_count)} items</div>
+          </div>
+          <div class="warehouse-receiving-actions">
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
+          </div>
+        </div>
+        <div class="warehouse-inbound-lines">
+          ${items.length ? items.map(renderMovementSampleItem).join("") : `<div class="warehouse-inbound-line" data-warehouse-movement-empty><span>No item summary available.</span></div>`}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderMovementGroup(group) {
+    const rows = Array.isArray(group.rows) ? group.rows : [];
+    return `
+      <section class="warehouse-inbound-group" data-warehouse-movement-group="${escapeHtml(group.key || "")}">
+        <div class="warehouse-inbound-group-head">
+          <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
+          <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
+        </div>
+        <div class="warehouse-console-card-grid">
+          ${rows.length ? rows.map(renderMovementRow).join("") : `<div class="warehouse-stock-exception-row" data-warehouse-movement-empty><span class="warehouse-inbound-meta">No movement records match these filters.</span></div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderMovementPayload(viewState, payload) {
+    ensureStyle();
+    const controls = payload.controls || {};
+    const fields = Array.isArray(controls.fields) ? controls.fields : [];
+    const cards = Array.isArray(payload.cards) ? payload.cards : [];
+    const groups = Array.isArray(payload.groups) ? payload.groups : [];
+    const statePayload = payload.state || {};
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-movement-shell" data-erpw-workspace="warehouse" data-warehouse-view="movement-visibility" data-warehouse-queue-key="${MOVEMENT_VISIBILITY_KEY}" data-warehouse-movement-shell="true" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header">
+          <div class="warehouse-inbound-queue-head">
+            <div>
+              <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Movement Visibility")}</h1>
+              <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Recorded stock movement posture across warehouses.")}</div>
+            </div>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
+          </div>
+          <div class="warehouse-inbound-queue-cards">${cards.map(renderMovementCard).join("")}</div>
+          <div class="warehouse-inbound-controls">
+            ${fields.map(controlField).join("")}
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-refresh>Refresh</button>
+          </div>
+        </section>
+        <div class="warehouse-inbound-groups">
+          ${statePayload.kind === "restricted" || statePayload.kind === "error"
+            ? `<section class="warehouse-inbound-group" data-warehouse-movement-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Movement visibility unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-movement-empty>${escapeHtml(statePayload.detail || "Movement visibility could not be loaded. Refresh or contact an administrator.")}</div></section>`
+            : groups.map(renderMovementGroup).join("")}
+        </div>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-filter-apply]").on("click", (event) => {
+      event.preventDefault();
+      viewState.activeFilters = collectInboundFilters($root);
+      loadInboundQueue(viewState);
+    });
+    $root.find("[data-warehouse-filter-reset]").on("click", (event) => {
+      event.preventDefault();
+      viewState.activeFilters = {};
+      loadInboundQueue(viewState);
+    });
+    $root.find("[data-warehouse-filter-refresh]").on("click", (event) => {
+      event.preventDefault();
+      loadInboundQueue(viewState);
+    });
+    $root.find("[data-warehouse-row-toggle]").on("click", function (event) {
+      event.preventDefault();
+      $(this).closest("[data-warehouse-movement-row]").toggleClass("is-expanded");
+    });
+    $root.find("[data-warehouse-movement-route-stock-posture]").on("click", function (event) {
+      event.preventDefault();
+      const token = String(this.getAttribute("data-warehouse-stock-posture-token") || "").trim();
+      if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
+    });
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+  }
+
+  function renderMovementLoading(viewState) {
+    renderMovementPayload(viewState, {
+      page: { key: MOVEMENT_VISIBILITY_KEY },
+      summary: { title: "Movement Visibility", subtitle: "Checking movement visibility..." },
+      controls: { fields: [], actions: [] },
+      cards: [],
+      groups: [],
+      state: { kind: "loading", title: "Checking movement visibility", detail: "Checking movement visibility..." },
+    });
+  }
+
   function renderStockExceptionsLoading(viewState) {
     renderStockExceptionsPayload(viewState, {
       page: { key: STOCK_EXCEPTIONS_KEY },
@@ -2791,7 +2938,8 @@
     const queueKey = normalizeQueueKey(viewState.queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
     const isOutbound = queueKey === OUTBOUND_QUEUE_KEY;
     const isStockExceptions = queueKey === STOCK_EXCEPTIONS_KEY;
-    markWarehouseDiagnostic(isStockExceptions ? "stockExceptionsServiceCallAttempted" : isOutbound ? "outboundQueueServiceCallAttempted" : "queueServiceCallAttempted");
+    const isMovementVisibility = queueKey === MOVEMENT_VISIBILITY_KEY;
+    markWarehouseDiagnostic(isMovementVisibility ? "movementVisibilityServiceCallAttempted" : isStockExceptions ? "stockExceptionsServiceCallAttempted" : isOutbound ? "outboundQueueServiceCallAttempted" : "queueServiceCallAttempted");
     viewState.queueKey = queueKey;
     if (isStockExceptions) {
       renderStockExceptionsLoading(viewState);
@@ -2808,6 +2956,24 @@
           cards: [],
           groups: [],
           state: { kind: "error", title: "Stock exceptions unavailable", detail: "Stock exceptions could not be loaded. Refresh or contact an administrator." },
+        });
+      });
+    }
+    if (isMovementVisibility) {
+      renderMovementLoading(viewState);
+      return frappe.call({
+        method: MOVEMENT_VISIBILITY_METHOD,
+        args: { queue_key: queueKey, filters: viewState.activeFilters || {} },
+      }).then((response) => {
+        renderMovementPayload(viewState, response && response.message ? response.message : {});
+      }).catch(() => {
+        renderMovementPayload(viewState, {
+          page: { key: MOVEMENT_VISIBILITY_KEY },
+          summary: { title: "Movement Visibility", subtitle: "Movement visibility could not be loaded. Refresh or contact an administrator." },
+          controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
+          cards: [],
+          groups: [],
+          state: { kind: "error", title: "Movement visibility unavailable", detail: "Movement visibility could not be loaded. Refresh or contact an administrator." },
         });
       });
     }
@@ -2831,7 +2997,7 @@
 
   function renderWarehouseWorklist(wrapper, queueKey) {
     const resolvedQueueKey = normalizeQueueKey(queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
-    markWarehouseDiagnostic(resolvedQueueKey === STOCK_EXCEPTIONS_KEY ? "renderStockExceptionsEntered" : resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
+    markWarehouseDiagnostic(resolvedQueueKey === MOVEMENT_VISIBILITY_KEY ? "renderMovementVisibilityEntered" : resolvedQueueKey === STOCK_EXCEPTIONS_KEY ? "renderStockExceptionsEntered" : resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
     const viewState = makeInboundPage(wrapper);
     viewState.queueKey = resolvedQueueKey;
     if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
@@ -2852,6 +3018,10 @@
     renderWarehouseWorklist(wrapper, STOCK_EXCEPTIONS_KEY);
   }
 
+  function renderMovementVisibility(wrapper) {
+    renderWarehouseWorklist(wrapper, MOVEMENT_VISIBILITY_KEY);
+  }
+
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
   frappe.pages[PAGE_KEY].__erpwWarehouseConsoleRenderer = true;
   frappe.pages[PAGE_KEY].on_page_load = function (wrapper) { render(wrapper); };
@@ -2866,6 +3036,7 @@
   warehouseConsoleApi.renderOutboundQueue = renderOutboundQueue;
   warehouseConsoleApi.renderWarehouseWorklist = renderWarehouseWorklist;
   warehouseConsoleApi.renderStockExceptions = renderStockExceptions;
+  warehouseConsoleApi.renderMovementVisibility = renderMovementVisibility;
   warehouseConsoleApi.renderReceivingReview = renderReceivingReview;
   warehouseConsoleApi.renderPickingReview = renderPickingReview;
   warehouseConsoleApi.renderStockExceptionReview = renderStockExceptionReview;
@@ -2876,6 +3047,7 @@
   warehouseConsoleApi.diagnostics.exportedReceivingRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedPickingRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockExceptionsRendererReady = true;
+  warehouseConsoleApi.diagnostics.exportedMovementVisibilityRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockExceptionReviewRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockPostureReviewRendererReady = true;
 

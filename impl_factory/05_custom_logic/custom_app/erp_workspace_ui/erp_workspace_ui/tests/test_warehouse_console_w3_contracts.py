@@ -18,6 +18,8 @@ READABLE_DOCTYPES = {
     "Purchase Receipt Item",
     "Sales Order",
     "Sales Order Item",
+    "Stock Entry",
+    "Stock Entry Detail",
 }
 COUNT_CALLS = []
 LIST_CALLS = []
@@ -262,6 +264,61 @@ PO_ITEM_ROWS = [
     },
 ]
 
+STOCK_ENTRY_ROWS = [
+    {
+        "name": "MAT-MOV-0001",
+        "purpose": "Material Transfer",
+        "stock_entry_type": "Material Transfer",
+        "posting_date": "2026-05-27",
+        "posting_time": "09:15:00",
+        "from_warehouse": "Stores - M",
+        "to_warehouse": "Main - M",
+        "docstatus": 1,
+        "modified": "2026-05-27 09:15:00",
+    },
+    {
+        "name": "MAT-MOV-0002",
+        "purpose": "Material Receipt",
+        "stock_entry_type": "Material Receipt",
+        "posting_date": "2026-05-26",
+        "posting_time": "10:20:00",
+        "from_warehouse": "",
+        "to_warehouse": "Receiving - M",
+        "docstatus": 1,
+        "modified": "2026-05-26 10:20:00",
+    },
+    {
+        "name": "MAT-MOV-0003",
+        "purpose": "Material Issue",
+        "stock_entry_type": "Material Issue",
+        "posting_date": "2026-05-25",
+        "posting_time": "11:30:00",
+        "from_warehouse": "Main - M",
+        "to_warehouse": "",
+        "docstatus": 1,
+        "modified": "2026-05-25 11:30:00",
+    },
+    {
+        "name": "MAT-MOV-0004",
+        "purpose": "Repack",
+        "stock_entry_type": "Repack",
+        "posting_date": "2026-05-24",
+        "posting_time": "12:40:00",
+        "from_warehouse": "Main - M",
+        "to_warehouse": "Main - M",
+        "docstatus": 1,
+        "modified": "2026-05-24 12:40:00",
+    },
+]
+
+STOCK_ENTRY_DETAIL_ROWS = [
+    {"parent": "MAT-MOV-0001", "idx": 1, "item_code": "ITEM-103", "item_name": "Bluetooth Speaker", "qty": 5, "s_warehouse": "Stores - M", "t_warehouse": "Main - M", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "MAT-MOV-0001", "idx": 2, "item_code": "ITEM-104", "item_name": "Cable Pack", "qty": 2, "s_warehouse": "Stores - M", "t_warehouse": "Main - M", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "MAT-MOV-0002", "idx": 1, "item_code": "ITEM-105", "item_name": "Power Bank", "qty": 10, "s_warehouse": "", "t_warehouse": "Receiving - M", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "MAT-MOV-0003", "idx": 1, "item_code": "ITEM-102", "item_name": "Screen Guard", "qty": 3, "s_warehouse": "Main - M", "t_warehouse": "", "stock_uom": "Nos", "uom": "Nos"},
+    {"parent": "MAT-MOV-0004", "idx": 1, "item_code": "ITEM-101", "item_name": "Phone Case", "qty": 1, "s_warehouse": "Main - M", "t_warehouse": "Main - M", "stock_uom": "Nos", "uom": "Nos"},
+]
+
 
 def _identity_whitelist(*args, **kwargs):
     if args and callable(args[0]) and len(args) == 1 and not kwargs:
@@ -294,6 +351,7 @@ def _count(doctype, filters=None):
         "Sales Order": 5,
         "Pick List": 1,
         "Material Request": 3,
+        "Stock Entry": 4,
     }.get(doctype, 0)
 
 
@@ -371,6 +429,28 @@ def _get_meta(doctype):
         },
         "Pick List": {"docstatus", "status"},
         "Material Request": {"docstatus", "material_request_type", "status"},
+        "Stock Entry": {
+            "name",
+            "purpose",
+            "stock_entry_type",
+            "posting_date",
+            "posting_time",
+            "from_warehouse",
+            "to_warehouse",
+            "docstatus",
+            "modified",
+        },
+        "Stock Entry Detail": {
+            "parent",
+            "idx",
+            "item_code",
+            "item_name",
+            "qty",
+            "s_warehouse",
+            "t_warehouse",
+            "stock_uom",
+            "uom",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -433,6 +513,24 @@ def _filter_sales_orders(filters):
     return rows
 
 
+def _filter_stock_entries(filters):
+    rows = list(STOCK_ENTRY_ROWS)
+    for condition in filters or []:
+        if not isinstance(condition, list) or len(condition) < 4:
+            continue
+        _, field, operator, value = condition[:4]
+        if field == "name" and operator == "like":
+            needle = str(value).replace("%", "").lower()
+            rows = [row for row in rows if needle in row["name"].lower()]
+        if field == "name" and operator == "=":
+            rows = [row for row in rows if row["name"] == value]
+        if field == "docstatus" and operator == "=":
+            rows = [row for row in rows if int(row["docstatus"]) == int(value)]
+        if field == "posting_date" and operator == ">=":
+            rows = [row for row in rows if row["posting_date"] >= str(value)]
+    return rows
+
+
 def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_length=None, **kwargs):
     LIST_CALLS.append({"doctype": doctype, "fields": fields, "filters": filters, "limit": limit_page_length})
     if doctype == "Purchase Order":
@@ -440,6 +538,9 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
         return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Sales Order":
         rows = _filter_sales_orders(filters)
+        return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Stock Entry":
+        rows = _filter_stock_entries(filters)
         return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
     return []
 
@@ -485,17 +586,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             if (not items or row["item_code"] in items) and (not warehouses or row["warehouse"] in warehouses)
         ]
         return [_selected(row, fields or ["item_code"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Stock Entry Detail":
+        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
+        if isinstance(parent_filter, list) and parent_filter[0] == "in":
+            parents = set(parent_filter[1])
+        elif parent_filter:
+            parents = {parent_filter}
+        else:
+            parents = set()
+        rows = [row for row in STOCK_ENTRY_DETAIL_ROWS if not parents or row["parent"] in parents]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     return []
 
 
 def _get_doc(doctype, name, *args, **kwargs):
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
-    if doctype not in {"Purchase Order", "Sales Order"}:
+    if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
         raise _FakePermissionError("No read permission")
-    rows = PO_ROWS if doctype == "Purchase Order" else SO_ROWS
-    child_rows = PO_ITEM_ROWS if doctype == "Purchase Order" else SO_ITEM_ROWS
+    rows = PO_ROWS if doctype == "Purchase Order" else SO_ROWS if doctype == "Sales Order" else STOCK_ENTRY_ROWS
+    child_rows = PO_ITEM_ROWS if doctype == "Purchase Order" else SO_ITEM_ROWS if doctype == "Sales Order" else STOCK_ENTRY_DETAIL_ROWS
     record = next((row for row in rows if row["name"] == name), None)
     if not record:
         raise Exception(f"Missing {doctype}")
@@ -567,17 +678,19 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             "Material Request",
             "Sales Order",
             "Sales Order Item",
+            "Stock Entry",
+            "Stock Entry Detail",
         })
         COUNT_CALLS.clear()
         LIST_CALLS.clear()
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
 
-    def test_warehouse_workspace_registry_definition_has_w7a_stock_posture_review_route(self):
+    def test_warehouse_workspace_registry_definition_has_w8a_movement_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w7a_stock_posture_review")
+        self.assertEqual(workspace["status"], "w8a_movement_visibility")
         self.assertEqual(
             workspace["routes"],
             {
@@ -627,12 +740,17 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             workspace["methods"]["stock_posture_review"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
         )
+        self.assertEqual(
+            workspace["methods"]["movement_visibility"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
+        )
         self.assertFalse(workspace["search"]["enabled"])
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
             "warehouse_console_home",
             "inbound_receiving",
             "outbound_picking",
             "stock_exceptions",
+            "movement_visibility",
         ])
 
     def test_overview_payload_adds_inbound_preview_and_hides_valuation(self):
@@ -865,6 +983,81 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("native", str(payload).lower())
 
 
+    def test_movement_visibility_payload_is_grouped_read_only_and_allowlisted(self):
+        payload = service.get_warehouse_movement_visibility_queue("movement-visibility")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"], {"title": "Movement Visibility", "key": "movement_visibility"})
+        self.assertEqual(payload["action_targets"]["stock_posture"]["route"], "warehouse-console-stock-posture")
+        self.assertGreaterEqual(len(payload["rows"]), 4)
+        groups = {group["key"]: group for group in payload["groups"]}
+        self.assertEqual(len(groups["internal_transfers"]["rows"]), 1)
+        self.assertEqual(len(groups["receipts"]["rows"]), 1)
+        self.assertEqual(len(groups["issues"]["rows"]), 1)
+        self.assertEqual(len(groups["adjustments_repack"]["rows"]), 1)
+
+        allowed_row_keys = {
+            "key",
+            "movement_id",
+            "movement_type",
+            "purpose",
+            "posting_date",
+            "posting_time",
+            "source_warehouse",
+            "target_warehouse",
+            "direction_label",
+            "item_count",
+            "quantity_summary",
+            "sample_items",
+            "group_key",
+            "group_label",
+            "route_targets",
+        }
+        allowed_item_keys = {
+            "item_code",
+            "item_name",
+            "qty",
+            "uom",
+            "source_warehouse",
+            "target_warehouse",
+            "route_target",
+        }
+        for row in payload["rows"]:
+            self.assertLessEqual(set(row), allowed_row_keys)
+            self.assertEqual(row["route_targets"]["stock_posture"]["route"], "warehouse-console-stock-posture")
+            for item in row["sample_items"]:
+                self.assertLessEqual(set(item), allowed_item_keys)
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("incoming_rate", payload_text)
+        self.assertNotIn("outgoing_rate", payload_text)
+        self.assertNotIn("base_amount", payload_text)
+        self.assertNotIn("transfer_price", payload_text)
+        self.assertNotIn("stock_queue", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertTrue(any(call["doctype"] == "Stock Entry" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Stock Entry Detail" for call in GET_ALL_CALLS))
+
+    def test_movement_visibility_filters_and_fallback_stay_inside_custom_routes(self):
+        READABLE_DOCTYPES.discard("Stock Entry Detail")
+
+        payload = service.get_warehouse_movement_visibility_queue(
+            "movement-visibility",
+            {"state": "receipts", "warehouse": "Receiving", "movement": "0002"},
+        )
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual([row["movement_id"] for row in payload["rows"]], ["MAT-MOV-0002"])
+        self.assertEqual(payload["controls"]["fields"][0]["value"], "receipts")
+        self.assertEqual(payload["controls"]["fields"][1]["value"], "Receiving")
+        self.assertEqual(payload["controls"]["fields"][2]["value"], "0002")
+        self.assertEqual(payload["workspace"]["routes"]["worklist"], "warehouse-console-worklist")
+        self.assertFalse(any(call["doctype"] == "Stock Entry Detail" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Stock Entry" for call in GET_DOC_CALLS))
+        self.assertNotIn("native", str(payload).lower())
+
+
     def test_stock_exception_review_payload_is_read_only_and_custom_routed(self):
         token = service._stock_exception_context_token("SO-REVIEW", "ITEM-105", "Short - M")
 
@@ -1081,6 +1274,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         stock_posture_detail = service.get_warehouse_stock_posture_review(
             service._stock_posture_context_token("ITEM-105", "Short - M")
         )
+        movement = service.get_warehouse_movement_visibility_queue("movement_visibility")
 
         self.assertEqual(overview["state"]["kind"], "restricted")
         self.assertFalse(overview["context"]["has_warehouse_access"])
@@ -1100,6 +1294,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(stock_exception_detail["related_rows"], [])
         self.assertEqual(stock_posture_detail["state"]["kind"], "restricted")
         self.assertEqual(stock_posture_detail["related_rows"], [])
+        self.assertEqual(movement["state"]["kind"], "restricted")
+        self.assertEqual(movement["rows"], [])
 
     def test_permission_limited_sources_return_controlled_empty_inbound_state(self):
         READABLE_DOCTYPES.discard("Purchase Order")
@@ -1126,6 +1322,15 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(queue["state"]["kind"], "restricted")
         self.assertEqual(queue["rows"], [])
         self.assertFalse(any(call["doctype"] == "Sales Order" for call in LIST_CALLS))
+
+    def test_permission_limited_sources_return_controlled_empty_movement_state(self):
+        READABLE_DOCTYPES.discard("Stock Entry")
+
+        movement = service.get_warehouse_movement_visibility_queue("movement_visibility")
+
+        self.assertEqual(movement["state"]["kind"], "restricted")
+        self.assertEqual(movement["rows"], [])
+        self.assertFalse(any(call["doctype"] == "Stock Entry" for call in LIST_CALLS))
 
 
 if __name__ == "__main__":

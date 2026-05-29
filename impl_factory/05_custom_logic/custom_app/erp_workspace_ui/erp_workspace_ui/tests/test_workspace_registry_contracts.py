@@ -248,11 +248,11 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "procurement")
 
-    def test_warehouse_console_w7a_registry_definition(self):
+    def test_warehouse_console_w8a_registry_definition(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w7a_stock_posture_review")
+        self.assertEqual(workspace["status"], "w8a_movement_visibility")
         self.assertEqual(workspace["title"], "Warehouse Console")
         self.assertEqual(
             workspace["routes"],
@@ -282,6 +282,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "stock_exceptions": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
                 "stock_exception_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review",
                 "stock_posture_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
+                "movement_visibility": "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
                 "sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
             },
         )
@@ -312,6 +313,12 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                     "label": "Stock Exceptions",
                     "icon": "report",
                     "target": {"kind": "worklist", "queue_key": "stock_exceptions"},
+                },
+                {
+                    "key": "movement_visibility",
+                    "label": "Movement Visibility",
+                    "icon": "stock",
+                    "target": {"kind": "worklist", "queue_key": "movement_visibility"},
                 },
             ],
         )
@@ -368,7 +375,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(procurement["recommended_name"], "Procurement Console")
         self.assertEqual(procurement["status"], "phase_3")
         self.assertEqual(warehouse["recommended_name"], "Warehouse Console")
-        self.assertEqual(warehouse["status"], "w7a_stock_posture_review")
+        self.assertEqual(warehouse["status"], "w8a_movement_visibility")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
         self.assertEqual(finance["status"], "name_review")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")

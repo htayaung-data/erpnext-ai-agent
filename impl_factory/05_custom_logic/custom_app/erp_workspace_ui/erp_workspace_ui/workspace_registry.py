@@ -188,7 +188,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 
 _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 	"workspace_id": "warehouse",
-	"status": "w7a_stock_posture_review",
+	"status": "w8a_movement_visibility",
 	"title": "Warehouse Console",
 	"mode_label": "Warehouse Workspace",
 	"role_family": "Warehouse",
@@ -215,6 +215,7 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 		"stock_exceptions": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
 		"stock_exception_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review",
 		"stock_posture_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
+		"movement_visibility": "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
 		"sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
 	},
 	"managed_doctypes": {
@@ -225,6 +226,8 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 		"Sales Order": "outbound_picking",
 		"Purchase Order Item": "stock_exceptions",
 		"Sales Order Item": "stock_exceptions",
+		"Stock Entry": "movement_visibility",
+		"Stock Entry Detail": "movement_visibility",
 	},
 	"sidebar": {
 		"home_key": "warehouse_console_home",
@@ -260,6 +263,12 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 			"icon": "report",
 			"target": {"kind": "worklist", "queue_key": "stock_exceptions"},
 		},
+		{
+			"key": "movement_visibility",
+			"label": "Movement Visibility",
+			"icon": "stock",
+			"target": {"kind": "worklist", "queue_key": "movement_visibility"},
+		},
 	],
 }
 
@@ -287,7 +296,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Warehouse Console",
 		"wave": "first",
 		"priority": 3,
-		"status": "w7a_stock_posture_review",
+		"status": "w8a_movement_visibility",
 	},
 	{
 		"workspace_id": "finance",

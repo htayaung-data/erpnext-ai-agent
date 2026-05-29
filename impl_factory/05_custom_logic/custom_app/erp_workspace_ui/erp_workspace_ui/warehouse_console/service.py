@@ -42,6 +42,12 @@ STOCK_POSTURE_REVIEW_DETAIL_KEY = "stock_posture_review"
 STOCK_POSTURE_OUTBOUND_LIMIT = 8
 STOCK_POSTURE_INBOUND_LIMIT = 8
 
+MOVEMENT_VISIBILITY_KEY = "movement_visibility"
+MOVEMENT_VISIBILITY_LIMIT = 50
+MOVEMENT_VISIBILITY_SCAN_LIMIT = 80
+MOVEMENT_VISIBILITY_HORIZON_DAYS = 14
+MOVEMENT_VISIBILITY_GROUP_ORDER = ("internal_transfers", "receipts", "issues", "adjustments_repack", "needs_review")
+
 PURCHASE_ORDER_INBOUND_FIELDS = [
 	"name",
 	"supplier",
@@ -146,6 +152,30 @@ BIN_OUTBOUND_FIELDS = [
 	"actual_qty",
 	"reserved_qty",
 	"projected_qty",
+]
+
+STOCK_ENTRY_MOVEMENT_FIELDS = [
+	"name",
+	"purpose",
+	"stock_entry_type",
+	"posting_date",
+	"posting_time",
+	"from_warehouse",
+	"to_warehouse",
+	"docstatus",
+	"modified",
+]
+
+STOCK_ENTRY_DETAIL_MOVEMENT_FIELDS = [
+	"parent",
+	"idx",
+	"item_code",
+	"item_name",
+	"qty",
+	"s_warehouse",
+	"t_warehouse",
+	"stock_uom",
+	"uom",
 ]
 
 STANDARD_SAFE_FIELDS = frozenset({"name", "parent", "idx", "docstatus", "modified", "owner", "creation"})
@@ -631,6 +661,26 @@ def get_warehouse_stock_exceptions(
 		)
 	exceptions = _build_stock_exceptions_visibility(applied_filters, row_limit=STOCK_EXCEPTIONS_LIMIT)
 	return _stock_exceptions_payload(context, exceptions, applied_filters)
+
+
+@frappe.whitelist()
+def get_warehouse_movement_visibility_queue(
+	queue_key: str | None = None,
+	filters: str | dict[str, object] | None = None,
+) -> dict[str, object]:
+	ensure_authenticated()
+	context = build_context()
+	applied_filters = _normalize_filters(filters)
+	if not has_warehouse_access(context):
+		return _movement_visibility_state_payload(context, restricted_state(), applied_filters)
+	if _normalize_queue_key(queue_key) not in {"", MOVEMENT_VISIBILITY_KEY}:
+		return _movement_visibility_state_payload(
+			context,
+			state("unavailable", "Movement visibility unavailable", "This movement visibility view is not available."),
+			applied_filters,
+		)
+	movement = _build_movement_visibility(applied_filters, row_limit=MOVEMENT_VISIBILITY_LIMIT)
+	return _movement_visibility_payload(context, movement, applied_filters)
 
 
 @frappe.whitelist()
@@ -1658,6 +1708,380 @@ def _remaining_summary(summary: dict[str, object]) -> str:
 		return f"{_number_text(qty)} {uom} remaining"
 	open_lines = int(summary.get("open_lines") or 0)
 	return f"{open_lines} open lines" if open_lines else "Open quantity pending"
+
+
+def _build_movement_visibility(
+	filters: dict[str, str] | None = None,
+	*,
+	row_limit: int = MOVEMENT_VISIBILITY_LIMIT,
+) -> dict[str, object]:
+	applied_filters = filters or {}
+	if not _can_read("Stock Entry"):
+		return {
+			"state": restricted_state(),
+			"counts": _empty_movement_counts(),
+			"cards": _movement_cards(_empty_movement_counts(), 0),
+			"groups": _empty_movement_groups(),
+			"rows": [],
+			"total_count": 0,
+			"queue_key": MOVEMENT_VISIBILITY_KEY,
+			"queue_route": "warehouse-console-worklist",
+		}
+
+	rows = _movement_visibility_rows(applied_filters, row_limit=row_limit)
+	counts = _empty_movement_counts()
+	groups = {group["key"]: group for group in _empty_movement_groups()}
+	for row in rows:
+		group_key = cstr(row.get("group_key")).strip() or "needs_review"
+		if group_key not in counts:
+			group_key = "needs_review"
+		counts[group_key] += 1
+		groups[group_key]["rows"].append(row)
+
+	total_count = len(rows)
+	payload_state = ready_state() if total_count else state(
+		"empty",
+		"No movement records found",
+		"No posted movements found for the selected window.",
+	)
+	return {
+		"state": payload_state,
+		"counts": counts,
+		"cards": _movement_cards(counts, total_count),
+		"groups": [groups[key] for key in MOVEMENT_VISIBILITY_GROUP_ORDER],
+		"rows": rows,
+		"total_count": total_count,
+		"queue_key": MOVEMENT_VISIBILITY_KEY,
+		"queue_route": "warehouse-console-worklist",
+		"row_limit": row_limit,
+		"horizon_days": MOVEMENT_VISIBILITY_HORIZON_DAYS,
+	}
+
+
+def _empty_movement_counts() -> dict[str, int]:
+	return {key: 0 for key in MOVEMENT_VISIBILITY_GROUP_ORDER}
+
+
+def _empty_movement_groups() -> list[dict[str, object]]:
+	labels = {
+		"internal_transfers": ("Internal Transfers", "Warehouse-to-warehouse movements recorded recently."),
+		"receipts": ("Receipts", "Stock arriving into a warehouse."),
+		"issues": ("Issues", "Stock leaving a warehouse for operational use."),
+		"adjustments_repack": ("Adjustments and Repack", "Recorded adjustment or repack movements."),
+		"needs_review": ("Needs Review", "Movements with incomplete warehouse posture."),
+	}
+	return [
+		{"key": key, "title": labels[key][0], "summary": labels[key][1], "rows": []}
+		for key in MOVEMENT_VISIBILITY_GROUP_ORDER
+	]
+
+
+def _movement_cards(counts: dict[str, int], total_count: int) -> list[dict[str, object]]:
+	return [
+		{"key": "total_movements", "label": "Total Movements", "title": "Total Movements", "value": int(total_count or 0), "state": "live", "note": f"Latest {MOVEMENT_VISIBILITY_HORIZON_DAYS} day window."},
+		{"key": "internal_transfers", "label": "Internal Transfers", "title": "Internal Transfers", "value": int(counts.get("internal_transfers") or 0), "state": "live", "note": "Warehouse-to-warehouse posture."},
+		{"key": "receipts", "label": "Receipts", "title": "Receipts", "value": int(counts.get("receipts") or 0), "state": "live", "note": "Stock arriving into warehouse."},
+		{"key": "needs_review", "label": "Needs Review", "title": "Needs Review", "value": int(counts.get("needs_review") or 0), "state": "live", "note": "Warehouse posture needs checking."},
+	]
+
+
+def _movement_visibility_state_payload(
+	context: dict[str, object],
+	payload_state: dict[str, str],
+	filters: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": payload_state,
+		"page": {"title": "Movement Visibility", "key": MOVEMENT_VISIBILITY_KEY},
+		"summary": {
+			"title": "Movement Visibility",
+			"subtitle": payload_state.get("detail") or "Movement visibility could not be loaded.",
+			"chips": [{"label": payload_state.get("kind") or "state"}],
+		},
+		"controls": _movement_controls(filters),
+		"cards": _movement_cards(_empty_movement_counts(), 0),
+		"groups": _empty_movement_groups(),
+		"rows": [],
+		"action_targets": {},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _movement_visibility_payload(
+	context: dict[str, object],
+	movement: dict[str, object],
+	filters: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": movement.get("state") or ready_state(),
+		"page": {"title": "Movement Visibility", "key": MOVEMENT_VISIBILITY_KEY},
+		"summary": {
+			"title": "Movement Visibility",
+			"subtitle": "Recorded stock movement posture across warehouses.",
+			"chips": [{"label": "Read-only"}, {"label": f"{movement.get('total_count') or 0} shown"}],
+		},
+		"controls": _movement_controls(filters),
+		"cards": movement.get("cards") or [],
+		"groups": movement.get("groups") or [],
+		"rows": movement.get("rows") or [],
+		"action_targets": {
+			"stock_posture": {"route": "warehouse-console-stock-posture"},
+		},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _movement_controls(filters: dict[str, str]) -> dict[str, object]:
+	return {
+		"fields": [
+			{
+				"key": "state",
+				"label": "Movement State",
+				"type": "select",
+				"value": filters.get("state", ""),
+				"options": [
+					{"label": "All", "value": ""},
+					{"label": "Internal Transfers", "value": "internal_transfers"},
+					{"label": "Receipts", "value": "receipts"},
+					{"label": "Issues", "value": "issues"},
+					{"label": "Adjustments and Repack", "value": "adjustments_repack"},
+					{"label": "Needs Review", "value": "needs_review"},
+				],
+			},
+			{"key": "warehouse", "label": "Warehouse", "type": "text", "value": filters.get("warehouse", ""), "placeholder": "Filter warehouse"},
+			{"key": "movement", "label": "Movement ID", "type": "text", "value": filters.get("movement", ""), "placeholder": "Filter movement"},
+		],
+		"actions": [
+			{"key": "refresh", "label": "Refresh"},
+			{"key": "reset_filters", "label": "Reset"},
+			{"key": "apply_filters", "label": "Apply", "kind": "primary"},
+		],
+		"scopeChips": ["Recorded movements", "Read-only movement board"],
+	}
+
+
+def _movement_visibility_rows(filters: dict[str, str], *, row_limit: int) -> list[dict[str, object]]:
+	records = _safe_get_list(
+		"Stock Entry",
+		fields=_available_fields("Stock Entry", STOCK_ENTRY_MOVEMENT_FIELDS),
+		filters=_stock_entry_movement_filters(filters),
+		order_by="posting_date desc, posting_time desc, modified desc",
+		limit=MOVEMENT_VISIBILITY_SCAN_LIMIT,
+	)
+	if not records:
+		return []
+
+	names = [cstr(record.get("name")).strip() for record in records if cstr(record.get("name")).strip()]
+	line_map = _movement_line_map(names)
+	rows: list[dict[str, object]] = []
+	for record in records:
+		name = cstr(record.get("name")).strip()
+		if not name:
+			continue
+		row = _movement_row(record, line_map.get(name) or [])
+		if not row:
+			continue
+		if not _movement_row_matches(row, filters):
+			continue
+		rows.append(row)
+		if len(rows) >= row_limit:
+			break
+	return rows
+
+
+def _stock_entry_movement_filters(filters: dict[str, str]) -> list[list[object]]:
+	conditions: list[list[object]] = [["Stock Entry", "docstatus", "=", 1]]
+	if _has_field("Stock Entry", "posting_date"):
+		window_start = getdate(nowdate()) - timedelta(days=MOVEMENT_VISIBILITY_HORIZON_DAYS)
+		conditions.append(["Stock Entry", "posting_date", ">=", str(window_start)])
+	movement = cstr(filters.get("movement")).strip()
+	if movement:
+		conditions.append(["Stock Entry", "name", "like", f"%{movement}%"])
+	return conditions
+
+
+def _movement_line_map(names: list[str]) -> dict[str, list[dict[str, object]]]:
+	if not names:
+		return {}
+	if _can_read("Stock Entry Detail"):
+		rows = _safe_get_all(
+			"Stock Entry Detail",
+			fields=_available_fields("Stock Entry Detail", STOCK_ENTRY_DETAIL_MOVEMENT_FIELDS),
+			filters={"parent": ["in", names]},
+			order_by="idx asc",
+			limit=min(max(len(names) * 12, 120), 1000),
+		)
+		if rows:
+			grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
+			for row in rows:
+				parent = cstr(row.get("parent")).strip()
+				if parent:
+					grouped[parent].append(row)
+			return grouped
+	return _movement_lines_from_entries(names)
+
+
+def _movement_lines_from_entries(names: list[str]) -> dict[str, list[dict[str, object]]]:
+	grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
+	for name in names[:MOVEMENT_VISIBILITY_SCAN_LIMIT]:
+		try:
+			doc = frappe.get_doc("Stock Entry", name)
+			doc.check_permission("read")
+		except Exception:
+			_clear_transient_frappe_messages()
+			continue
+		for row in list(doc.get("items") or [])[:80]:
+			grouped[name].append(
+				{
+					"parent": name,
+					"idx": row.get("idx"),
+					"item_code": row.get("item_code"),
+					"item_name": row.get("item_name"),
+					"qty": row.get("qty"),
+					"s_warehouse": row.get("s_warehouse"),
+					"t_warehouse": row.get("t_warehouse"),
+					"stock_uom": row.get("stock_uom"),
+					"uom": row.get("uom"),
+				}
+			)
+	return grouped
+
+
+def _movement_row(record: dict[str, object], lines: list[dict[str, object]]) -> dict[str, object]:
+	source_warehouse = cstr(record.get("from_warehouse")).strip() or _warehouse_summary(_unique_text(line.get("s_warehouse") for line in lines))
+	target_warehouse = cstr(record.get("to_warehouse")).strip() or _warehouse_summary(_unique_text(line.get("t_warehouse") for line in lines))
+	if source_warehouse == "Warehouse not set":
+		source_warehouse = ""
+	if target_warehouse == "Warehouse not set":
+		target_warehouse = ""
+	group_key = _movement_group_key(record, source_warehouse, target_warehouse)
+	item_codes = _unique_text(line.get("item_code") for line in lines)
+	qty_by_uom: dict[str, float] = defaultdict(float)
+	sample_items: list[dict[str, object]] = []
+	for line in lines:
+		uom = cstr(line.get("stock_uom") or line.get("uom")).strip()
+		if uom:
+			qty_by_uom[uom] += flt(line.get("qty"))
+		if len(sample_items) < 3:
+			line_item = cstr(line.get("item_code")).strip()
+			line_warehouse = cstr(line.get("t_warehouse") or line.get("s_warehouse") or target_warehouse or source_warehouse).strip()
+			target = {}
+			if line_item and line_warehouse:
+				target = {
+					"route": "warehouse-console-stock-posture",
+					"context_token": _stock_posture_context_token(line_item, line_warehouse),
+				}
+			sample_items.append(
+				{
+					"item_code": line_item,
+					"item_name": cstr(line.get("item_name")).strip(),
+					"qty": _number_text(line.get("qty")),
+					"uom": uom,
+					"source_warehouse": cstr(line.get("s_warehouse")).strip(),
+					"target_warehouse": cstr(line.get("t_warehouse")).strip(),
+					"route_target": target,
+				}
+			)
+	movement_id = cstr(record.get("name")).strip()
+	route_targets: dict[str, dict[str, object]] = {}
+	for sample in sample_items:
+		target = sample.get("route_target") if isinstance(sample, dict) else {}
+		if isinstance(target, dict) and cstr(target.get("context_token")).strip():
+			route_targets["stock_posture"] = target
+			break
+	return {
+		"key": movement_id,
+		"movement_id": movement_id,
+		"movement_type": _movement_type_label(record),
+		"purpose": _movement_type_label(record),
+		"posting_date": cstr(record.get("posting_date")).strip(),
+		"posting_time": cstr(record.get("posting_time")).split(".")[0].strip(),
+		"source_warehouse": source_warehouse,
+		"target_warehouse": target_warehouse,
+		"direction_label": _movement_direction_label(source_warehouse, target_warehouse, group_key),
+		"item_count": len(item_codes),
+		"quantity_summary": _quantity_summary(qty_by_uom),
+		"sample_items": sample_items,
+		"group_key": group_key,
+		"group_label": _movement_group_label(group_key),
+		"route_targets": route_targets,
+	}
+
+
+def _unique_text(values) -> list[str]:
+	unique: list[str] = []
+	seen: set[str] = set()
+	for value in values:
+		text = cstr(value).strip()
+		if not text or text in seen:
+			continue
+		seen.add(text)
+		unique.append(text)
+	return unique
+
+
+def _movement_type_label(record: dict[str, object]) -> str:
+	return cstr(record.get("purpose") or record.get("stock_entry_type") or "Recorded Movement").strip()
+
+
+def _movement_group_key(record: dict[str, object], source_warehouse: str, target_warehouse: str) -> str:
+	purpose = _movement_type_label(record).lower()
+	if not source_warehouse and not target_warehouse:
+		return "needs_review"
+	if "repack" in purpose or "manufacture" in purpose:
+		return "adjustments_repack"
+	if "transfer" in purpose or (source_warehouse and target_warehouse):
+		return "internal_transfers"
+	if "receipt" in purpose or (target_warehouse and not source_warehouse):
+		return "receipts"
+	if "issue" in purpose or (source_warehouse and not target_warehouse):
+		return "issues"
+	if "material" in purpose:
+		return "adjustments_repack"
+	return "needs_review"
+
+
+def _movement_group_label(group_key: str) -> str:
+	return {
+		"internal_transfers": "Internal Transfers",
+		"receipts": "Receipts",
+		"issues": "Issues",
+		"adjustments_repack": "Adjustments and Repack",
+		"needs_review": "Needs Review",
+	}.get(group_key, "Needs Review")
+
+
+def _movement_direction_label(source_warehouse: str, target_warehouse: str, group_key: str) -> str:
+	if source_warehouse and target_warehouse:
+		return f"{source_warehouse} to {target_warehouse}"
+	if target_warehouse:
+		return f"Into {target_warehouse}"
+	if source_warehouse:
+		return f"From {source_warehouse}"
+	return _movement_group_label(group_key)
+
+
+def _movement_row_matches(row: dict[str, object], filters: dict[str, str]) -> bool:
+	state_filter = cstr(filters.get("state")).strip()
+	if state_filter and row.get("group_key") != state_filter:
+		return False
+	warehouse_filter = cstr(filters.get("warehouse")).strip().lower()
+	if warehouse_filter:
+		warehouses = {
+			cstr(row.get("source_warehouse")).strip().lower(),
+			cstr(row.get("target_warehouse")).strip().lower(),
+		}
+		for item in row.get("sample_items") or []:
+			if isinstance(item, dict):
+				warehouses.add(cstr(item.get("source_warehouse")).strip().lower())
+				warehouses.add(cstr(item.get("target_warehouse")).strip().lower())
+		if not any(warehouse_filter in warehouse for warehouse in warehouses if warehouse):
+			return False
+	return True
 
 
 
