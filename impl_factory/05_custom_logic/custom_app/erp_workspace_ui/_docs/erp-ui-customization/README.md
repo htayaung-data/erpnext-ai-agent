@@ -144,6 +144,7 @@ Documents in this folder:
 
 - `warehouse-console-phase-w5-outbound-picking-visibility-design-plan-2026-05-28.md`
 - `warehouse-console-phase-w6a-stock-exceptions-baseline-2026-05-29.md`
+- `warehouse-console-phase-w6b-stock-exception-review-baseline-2026-05-29.md`
 - `frozen-workspace-protection-package-standard-v1.md`
 - `sales-console-frozen-protection-package-2026-05-09.md`
 - `procurement-console-phase3-stable-baseline-2026-05-10.md`
