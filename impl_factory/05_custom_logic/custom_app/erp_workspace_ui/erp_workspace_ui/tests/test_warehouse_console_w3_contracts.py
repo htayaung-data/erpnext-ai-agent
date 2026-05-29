@@ -478,18 +478,20 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
 
 def _get_doc(doctype, name, *args, **kwargs):
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
-    if doctype != "Purchase Order":
+    if doctype not in {"Purchase Order", "Sales Order"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
         raise _FakePermissionError("No read permission")
-    record = next((row for row in PO_ROWS if row["name"] == name), None)
+    rows = PO_ROWS if doctype == "Purchase Order" else SO_ROWS
+    child_rows = PO_ITEM_ROWS if doctype == "Purchase Order" else SO_ITEM_ROWS
+    record = next((row for row in rows if row["name"] == name), None)
     if not record:
-        raise Exception("Missing Purchase Order")
+        raise Exception(f"Missing {doctype}")
 
-    class _FakePurchaseOrderDoc:
+    class _FakeOrderDoc:
         def get(self, fieldname, default=None):
             if fieldname == "items":
-                return [dict(row) for row in PO_ITEM_ROWS if row["parent"] == name]
+                return [dict(row) for row in child_rows if row["parent"] == name]
             return record.get(fieldname, default)
 
         def check_permission(self, ptype=None):
@@ -497,7 +499,7 @@ def _get_doc(doctype, name, *args, **kwargs):
                 raise _FakePermissionError("No read permission")
             return True
 
-    return _FakePurchaseOrderDoc()
+    return _FakeOrderDoc()
 
 
 def _flt(value=0):
@@ -540,7 +542,7 @@ from erp_workspace_ui.warehouse_console import service
 from erp_workspace_ui.workspace_registry import get_warehouse_workspace_definition
 
 
-class TestWarehouseConsoleW5AContracts(unittest.TestCase):
+class TestWarehouseConsoleW5BContracts(unittest.TestCase):
     def setUp(self):
         CURRENT_ROLES[:] = ["Stock User"]
         READABLE_DOCTYPES.update({
@@ -559,11 +561,11 @@ class TestWarehouseConsoleW5AContracts(unittest.TestCase):
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
 
-    def test_warehouse_workspace_registry_definition_has_w5a_outbound_route(self):
+    def test_warehouse_workspace_registry_definition_has_w5b_picking_route(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w5a_outbound_picking")
+        self.assertEqual(workspace["status"], "w5b_outbound_picking_review")
         self.assertEqual(
             workspace["routes"],
             {
@@ -573,6 +575,8 @@ class TestWarehouseConsoleW5AContracts(unittest.TestCase):
                 "worklist_path": "/desk/warehouse-console-worklist",
                 "receiving": "warehouse-console-receiving",
                 "receiving_path": "/desk/warehouse-console-receiving",
+                "picking": "warehouse-console-picking",
+                "picking_path": "/desk/warehouse-console-picking",
             },
         )
         self.assertEqual(
@@ -590,6 +594,10 @@ class TestWarehouseConsoleW5AContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["receiving_detail"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review",
+        )
+        self.assertEqual(
+            workspace["methods"]["picking_detail"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review",
         )
         self.assertFalse(workspace["search"]["enabled"])
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
@@ -789,13 +797,63 @@ class TestWarehouseConsoleW5AContracts(unittest.TestCase):
         self.assertTrue(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
         self.assertTrue(any(call["doctype"] == "Purchase Order Item" for call in GET_ALL_CALLS))
 
-    def test_restricted_role_gets_controlled_state_and_no_sidebar_items(self):
+    def test_picking_review_payload_is_read_only_allowlisted_and_readiness_visible(self):
+        payload = service.get_warehouse_picking_review("SO-REVIEW")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["sales_order"], "SO-REVIEW")
+        self.assertNotIn("valuation", payload)
+        self.assertEqual(payload["action_targets"]["outbound_queue"]["route"], "warehouse-console-worklist")
+        self.assertEqual(payload["header"]["customer"], "Review Customer")
+        self.assertEqual(payload["header"]["delivered_percent"], "0%")
+        self.assertGreaterEqual(len(payload["lines"]), 1)
+        self.assertLessEqual(len(payload["lines"]), service.PICKING_DETAIL_LINE_LIMIT)
+        self.assertGreaterEqual(payload["header"]["review_line_count"], 1)
+
+        allowed_line_keys = {
+            "item_code",
+            "item_name",
+            "ordered_qty",
+            "delivered_qty",
+            "pending_qty",
+            "uom",
+            "source_warehouse",
+            "required_date",
+            "readiness",
+            "availability",
+        }
+        for line in payload["lines"]:
+            self.assertLessEqual(set(line), allowed_line_keys)
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("base_net_rate", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("gl", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertTrue(any(call["doctype"] == "Sales Order" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Sales Order Item" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Bin" for call in GET_ALL_CALLS))
+
+    def test_picking_review_uses_parent_sales_order_when_child_table_read_is_unavailable(self):
+        READABLE_DOCTYPES.discard("Sales Order Item")
+
+        payload = service.get_warehouse_picking_review("SO-READY")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertGreaterEqual(len(payload["lines"]), 1)
+        self.assertEqual(payload["lines"][0]["item_code"], "ITEM-103")
+        self.assertFalse(any(call["doctype"] == "Sales Order Item" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Sales Order" for call in GET_DOC_CALLS))
+        self.assertNotIn("valuation_rate", str(payload).lower())
+
         CURRENT_ROLES[:] = ["Purchase Manager"]
 
         overview = service.get_warehouse_console_overview()
         queue = service.get_warehouse_inbound_receiving_queue("inbound_receiving")
         outbound = service.get_warehouse_outbound_picking_queue("outbound_picking")
         detail = service.get_warehouse_receiving_review("PO-OVERDUE")
+        picking_detail = service.get_warehouse_picking_review("SO-OVERDUE")
 
         self.assertEqual(overview["state"]["kind"], "restricted")
         self.assertFalse(overview["context"]["has_warehouse_access"])
@@ -807,6 +865,8 @@ class TestWarehouseConsoleW5AContracts(unittest.TestCase):
         self.assertEqual(outbound["rows"], [])
         self.assertEqual(detail["state"]["kind"], "restricted")
         self.assertEqual(detail["lines"], [])
+        self.assertEqual(picking_detail["state"]["kind"], "restricted")
+        self.assertEqual(picking_detail["lines"], [])
 
     def test_permission_limited_sources_return_controlled_empty_inbound_state(self):
         READABLE_DOCTYPES.discard("Purchase Order")

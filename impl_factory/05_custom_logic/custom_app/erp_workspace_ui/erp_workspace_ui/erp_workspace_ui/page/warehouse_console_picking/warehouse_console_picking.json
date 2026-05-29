@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "warehouse-console-picking",
+  "page_name": "warehouse-console-picking",
+  "title": "Warehouse Picking Review",
+  "icon": "octicon octicon-package",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

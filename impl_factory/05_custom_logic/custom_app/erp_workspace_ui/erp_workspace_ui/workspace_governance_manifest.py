@@ -271,6 +271,7 @@ ROUTE_MANIFEST: tuple[dict[str, Any], ...] = (
 	_route("warehouse", "warehouse-console-worklist/inbound_receiving", "worklist", "productized_worklist", "/desk/warehouse-console-worklist/inbound-receiving", "warehouse_inbound_shell", required_smoke_category="warehouse_phase_w4a_smoke", notes="Read-only inbound supplier receiving queue."),
 	_route("warehouse", "warehouse-console-worklist/outbound_picking", "worklist", "productized_worklist", "/desk/warehouse-console-worklist/outbound-picking", "warehouse_outbound_shell", required_smoke_category="warehouse_phase_w5a_smoke", notes="Read-only outbound picking visibility queue."),
 	_route("warehouse", "warehouse-console-receiving", "detail", "productized_detail", "/desk/warehouse-console-receiving/<purchase-order>", "warehouse_receiving_shell", required_smoke_category="warehouse_phase_w4b_smoke", notes="Read-only receiving review for inbound purchase orders."),
+	_route("warehouse", "warehouse-console-picking", "detail", "productized_detail", "/desk/warehouse-console-picking/<sales-order>", "warehouse_picking_shell", required_smoke_category="warehouse_phase_w5b_smoke", notes="Read-only picking review for outbound sales orders."),
 )
 
 ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
@@ -376,6 +377,10 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("warehouse-outbound-reset", "warehouse", "warehouse-console-worklist/outbound_picking", "reset_filters", "productized_secondary_action", "current_shell", label="Reset"),
 	_action("warehouse-outbound-apply", "warehouse", "warehouse-console-worklist/outbound_picking", "apply_filters", "productized_primary_action", "current_shell", label="Apply"),
 	_action("warehouse-outbound-view-lines", "warehouse", "warehouse-console-worklist/outbound_picking", "view_lines", "productized_secondary_action", "current_shell", label="View lines"),
+	_action("warehouse-outbound-open-picking-review", "warehouse", "warehouse-console-worklist/outbound_picking", "open_picking_review", "productized_navigation", "page", label="View details", target_route_pattern="/desk/warehouse-console-picking/<sales-order>", notes="Read-only Warehouse picking review drilldown."),
+	_action("warehouse-picking-refresh", "warehouse", "warehouse-console-picking/<sales-order>", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
+	_action("warehouse-picking-back-to-queue", "warehouse", "warehouse-console-picking/<sales-order>", "back_to_outbound_picking", "productized_navigation", "worklist", label="Back to outbound picking", target_route_pattern="/desk/warehouse-console-worklist/outbound-picking"),
+	_action("warehouse-picking-tab-switch", "warehouse", "warehouse-console-picking/<sales-order>", "switch_tab", "productized_secondary_action", "current_shell", label_pattern="Item Lines|Stock Readiness"),
 	_action("warehouse-receiving-refresh", "warehouse", "warehouse-console-receiving/<purchase-order>", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
 	_action("warehouse-receiving-back-to-queue", "warehouse", "warehouse-console-receiving/<purchase-order>", "back_to_inbound_receiving", "productized_navigation", "worklist", label="Back to inbound receiving", target_route_pattern="/desk/warehouse-console-worklist/inbound-receiving"),
 	_action("warehouse-receiving-tab-switch", "warehouse", "warehouse-console-receiving/<purchase-order>", "switch_tab", "productized_secondary_action", "current_shell", label_pattern="Item Lines|Receipt History"),

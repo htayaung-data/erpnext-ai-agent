@@ -8,12 +8,14 @@
   const PAGE_KEY = warehouseRoutes.home || "warehouse-console";
   const WORKLIST_PAGE_KEY = warehouseRoutes.worklist || "warehouse-console-worklist";
   const RECEIVING_PAGE_KEY = warehouseRoutes.receiving || "warehouse-console-receiving";
+  const PICKING_PAGE_KEY = warehouseRoutes.picking || "warehouse-console-picking";
   const INBOUND_QUEUE_KEY = "inbound_receiving";
   const OUTBOUND_QUEUE_KEY = "outbound_picking";
   const OVERVIEW_METHOD = warehouseMethods.overview || "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview";
   const INBOUND_METHOD = warehouseMethods.inboundQueue || warehouseMethods.inbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue";
   const OUTBOUND_METHOD = warehouseMethods.outboundQueue || warehouseMethods.outbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue";
   const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
+  const PICKING_METHOD = warehouseMethods.pickingDetail || warehouseMethods.picking_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
@@ -24,6 +26,8 @@
   let inboundRouteRenderSerial = 0;
   let receivingRouteGuardBound = false;
   let receivingRouteRenderSerial = 0;
+  let pickingRouteGuardBound = false;
+  let pickingRouteRenderSerial = 0;
 
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
@@ -150,6 +154,28 @@
     if (String(pathRoute[0] || "") === RECEIVING_PAGE_KEY) return true;
     const route = frappe.get_route ? frappe.get_route() : [];
     return Array.isArray(route) && String(route[0] || "") === RECEIVING_PAGE_KEY;
+  }
+
+  function pickingRouteSignature() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === PICKING_PAGE_KEY) return pathRoute.join("|");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) ? route.join("|") : "";
+  }
+
+  function pickingSalesOrderFromRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === PICKING_PAGE_KEY) return String(pathRoute[1] || "");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (Array.isArray(route) && String(route[0] || "") === PICKING_PAGE_KEY) return String(route[1] || "");
+    return "";
+  }
+
+  function isActivePickingRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === PICKING_PAGE_KEY) return true;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) && String(route[0] || "") === PICKING_PAGE_KEY;
   }
 
   function warehouseConsoleDiagnostics() {
@@ -1124,6 +1150,12 @@
     return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
   }
 
+  function directPickingRenderWrapper() {
+    const pageDef = frappe.pages && frappe.pages[PICKING_PAGE_KEY] ? frappe.pages[PICKING_PAGE_KEY] : null;
+    if (pageDef && pageDef.wrapper) return pageDef.wrapper;
+    return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
+  }
+
   function hasReadyWorklistShell(queueKey) {
     return Boolean(document.querySelector(`.warehouse-inbound-shell[data-warehouse-view="${worklistViewName(queueKey)}"]`));
   }
@@ -1201,6 +1233,45 @@
     receivingRouteGuardBound = true;
     window.setInterval(() => {
       if (shouldSelfRenderReceiving()) renderActiveReceivingRoute();
+    }, 220);
+  }
+
+  function hasReadyPickingShell() {
+    const order = pickingSalesOrderFromRoute();
+    const shell = document.querySelector('.warehouse-picking-shell[data-warehouse-view="picking-review"]');
+    if (!shell) return false;
+    return !order || String(shell.getAttribute("data-warehouse-picking-order") || "") === order;
+  }
+
+  function shouldSelfRenderPicking() {
+    return isActivePickingRoute() && !hasReadyPickingShell();
+  }
+
+  function renderActivePickingRoute() {
+    if (!shouldSelfRenderPicking()) return;
+    const signature = pickingRouteSignature();
+    const token = ++pickingRouteRenderSerial;
+    markWarehouseDiagnostic("pickingActiveRouteGuardFired");
+    const wrapper = directPickingRenderWrapper();
+    if (!wrapper) return;
+    window.setTimeout(() => {
+      if (token !== pickingRouteRenderSerial || !shouldSelfRenderPicking() || pickingRouteSignature() !== signature) return;
+      renderPickingReview(wrapper, pickingSalesOrderFromRoute());
+    }, 0);
+  }
+
+  function scheduleActivePickingRender() {
+    renderActivePickingRoute();
+    setTimeout(renderActivePickingRoute, 80);
+    setTimeout(renderActivePickingRoute, 220);
+    setTimeout(renderActivePickingRoute, 700);
+  }
+
+  function bindActivePickingGuard() {
+    if (pickingRouteGuardBound || !window || typeof window.setInterval !== "function") return;
+    pickingRouteGuardBound = true;
+    window.setInterval(() => {
+      if (shouldSelfRenderPicking()) renderActivePickingRoute();
     }, 220);
   }
 
@@ -1282,7 +1353,11 @@
     const rowKey = row.primary_id || row.purchase_order || row.sales_order || row.name || row.key || "";
     const partner = row.partner || row.supplier || row.customer || "";
     const progress = row.received_percent || row.delivered_percent || "0%";
-    const detailButton = row.purchase_order ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>View details</button>' : "";
+    const detailButton = row.purchase_order
+      ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>View details</button>'
+      : row.sales_order
+        ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-picking-detail>View details</button>'
+        : "";
     return `
       <article class="warehouse-inbound-row" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}">
         <div class="warehouse-inbound-row-main">
@@ -1502,6 +1577,179 @@
     loadReceivingReview(viewState, purchaseOrder || receivingPurchaseOrderFromRoute());
   }
 
+  function makePickingPage(wrapper) {
+    const existing = wrapper && wrapper.__erpwWarehousePickingReview;
+    if (existing && existing.page && existing.$host && document.documentElement.contains(existing.$host.get(0))) {
+      return existing;
+    }
+    const page = frappe.ui.make_app_page({
+      parent: wrapper,
+      title: "Picking Review",
+      single_column: true,
+    });
+    const $parent = page && page.body ? $(page.body) : $(wrapper);
+    const $host = $('<section class="warehouse-picking-route"></section>');
+    $parent.empty().append($host);
+    const state = { page, $host, salesOrder: "" };
+    wrapper.__erpwWarehousePickingReview = state;
+    return state;
+  }
+
+  function pickingSummaryText(header) {
+    const parts = [header.sales_order, header.customer, header.target_warehouse].filter(Boolean);
+    return parts.join(" · ");
+  }
+
+  function renderPickingCard(card) {
+    return `
+      <div class="warehouse-receiving-card" data-warehouse-picking-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
+        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderPickingLine(line) {
+    return `
+      <div class="warehouse-receiving-line" data-warehouse-picking-line="${escapeHtml(line.item_code || "")}">
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">Ordered ${escapeHtml(line.ordered_qty || "0")} ${escapeHtml(line.uom || "")}</div>
+        <div class="warehouse-receiving-meta">Delivered ${escapeHtml(line.delivered_qty || "0")} ${escapeHtml(line.uom || "")}</div>
+        <div class="warehouse-receiving-meta">Pending ${escapeHtml(line.pending_qty || "0")} ${escapeHtml(line.uom || "")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.readiness || "")} · ${escapeHtml(line.availability || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderPickingReadinessRow(line) {
+    return `
+      <div class="warehouse-receiving-history-row" data-warehouse-picking-readiness-row="${escapeHtml(line.item_code || "")}">
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(line.source_warehouse || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.pending_qty || "0")} ${escapeHtml(line.uom || "")} pending</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.availability || "")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.readiness || "")}</div>
+      </div>
+    `;
+  }
+
+  function activatePickingTab($root, tabKey) {
+    const key = tabKey || "item_lines";
+    $root.find("[data-warehouse-picking-tab]").each(function () {
+      $(this).toggleClass("is-active", String(this.getAttribute("data-warehouse-picking-tab")) === key);
+    });
+    $root.find("[data-warehouse-picking-panel]").each(function () {
+      $(this).toggleClass("is-active", String(this.getAttribute("data-warehouse-picking-panel")) === key);
+    });
+  }
+
+  function renderPickingReviewPayload(viewState, payload) {
+    ensureStyle();
+    const header = payload.header || {};
+    const cards = Array.isArray(payload.summary_cards) ? payload.summary_cards : [];
+    const tabs = Array.isArray(payload.tabs) ? payload.tabs : [];
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
+    const statePayload = payload.state || {};
+    const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const $root = $(`
+      <div class="sales-console-shell warehouse-receiving-shell warehouse-picking-shell" data-erpw-workspace="warehouse" data-warehouse-view="picking-review" data-erpw-console-runtime="ready" data-warehouse-picking-order="${escapeHtml(header.sales_order || viewState.salesOrder || "")}">
+        <section class="warehouse-receiving-header">
+          <div class="warehouse-receiving-head">
+            <div>
+              <h1 class="warehouse-receiving-title">Picking Review</h1>
+              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Picking work could not be loaded. Refresh or contact an administrator." : pickingSummaryText(header))}</div>
+            </div>
+            <div class="warehouse-receiving-actions">
+              <button type="button" class="warehouse-receiving-button" data-warehouse-picking-back>Back to outbound picking</button>
+              <button type="button" class="warehouse-receiving-button" data-warehouse-picking-refresh>Refresh</button>
+            </div>
+          </div>
+          ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-picking-empty>${escapeHtml(statePayload.title || "Picking review unavailable")}</div>` : `
+            <div class="warehouse-receiving-note">${escapeHtml(header.age_label || "")} · ${escapeHtml(header.remaining_summary || "")}</div>
+            <div class="warehouse-receiving-cards">${cards.map(renderPickingCard).join("")}</div>
+          `}
+        </section>
+        <section class="warehouse-receiving-detail">
+          <div class="warehouse-receiving-tabs">
+            ${tabs.map((tab) => `<button type="button" class="warehouse-receiving-tab" data-warehouse-picking-tab="${escapeHtml(tab.key || "")}">${escapeHtml(tab.label || "")} ${escapeHtml(tab.count == null ? "" : `(${tab.count})`)}</button>`).join("")}
+          </div>
+          <div class="warehouse-receiving-panel is-active" data-warehouse-picking-panel="item_lines">
+            ${lines.length ? lines.map(renderPickingLine).join("") : `<div class="warehouse-receiving-line" data-warehouse-picking-empty><span class="warehouse-receiving-meta">No item lines visible for this order.</span></div>`}
+          </div>
+          <div class="warehouse-receiving-panel" data-warehouse-picking-panel="stock_readiness">
+            ${lines.length ? lines.map(renderPickingReadinessRow).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-picking-empty><span class="warehouse-receiving-meta">No stock readiness visible for this order.</span></div>`}
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-picking-back]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(WORKLIST_PAGE_KEY, "outbound-picking");
+    });
+    $root.find("[data-warehouse-picking-refresh]").on("click", (event) => {
+      event.preventDefault();
+      loadPickingReview(viewState, viewState.salesOrder);
+    });
+    $root.find("[data-warehouse-picking-tab]").on("click", function (event) {
+      event.preventDefault();
+      activatePickingTab($root, String(this.getAttribute("data-warehouse-picking-tab") || "item_lines"));
+    });
+    activatePickingTab($root, "item_lines");
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+  }
+
+  function renderPickingLoading(viewState) {
+    renderPickingReviewPayload(viewState, {
+      state: { kind: "loading", title: "Checking picking work", detail: "Checking picking work..." },
+      header: { sales_order: viewState.salesOrder || "" },
+      summary_cards: [],
+      tabs: [
+        { key: "item_lines", label: "Item Lines", count: 0 },
+        { key: "stock_readiness", label: "Stock Readiness", count: 0 },
+      ],
+      lines: [],
+    });
+  }
+
+  function loadPickingReview(viewState, salesOrder) {
+    markWarehouseDiagnostic("pickingServiceCallAttempted");
+    viewState.salesOrder = salesOrder || pickingSalesOrderFromRoute();
+    renderPickingLoading(viewState);
+    return frappe.call({
+      method: PICKING_METHOD,
+      args: { sales_order: viewState.salesOrder },
+    }).then((response) => {
+      renderPickingReviewPayload(viewState, response && response.message ? response.message : {});
+    }).catch(() => {
+      renderPickingReviewPayload(viewState, {
+        state: { kind: "error", title: "Picking review unavailable", detail: "Picking work could not be loaded. Refresh or contact an administrator." },
+        header: { sales_order: viewState.salesOrder || "" },
+        summary_cards: [],
+        tabs: [
+          { key: "item_lines", label: "Item Lines", count: 0 },
+          { key: "stock_readiness", label: "Stock Readiness", count: 0 },
+        ],
+        lines: [],
+      });
+    });
+  }
+
+  function renderPickingReview(wrapper, salesOrder) {
+    markWarehouseDiagnostic("renderPickingReviewEntered");
+    const viewState = makePickingPage(wrapper);
+    if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+      window.erpWorkspaceConsoleSidebar.refresh();
+    }
+    loadPickingReview(viewState, salesOrder || pickingSalesOrderFromRoute());
+  }
+
   function makeInboundPage(wrapper) {
     const existing = wrapper && wrapper.__erpwWarehouseInboundQueue;
     if (existing && existing.page && existing.$host && document.documentElement.contains(existing.$host.get(0))) {
@@ -1577,6 +1825,12 @@
       const row = $(this).closest("[data-warehouse-inbound-row]");
       const purchaseOrder = String(row.attr("data-warehouse-inbound-row") || "").trim();
       if (purchaseOrder) frappe.set_route(RECEIVING_PAGE_KEY, purchaseOrder);
+    });
+    $root.find("[data-warehouse-row-open-picking-detail]").on("click", function (event) {
+      event.preventDefault();
+      const row = $(this).closest("[data-warehouse-outbound-row]");
+      const salesOrder = String(row.attr("data-warehouse-outbound-row") || "").trim();
+      if (salesOrder) frappe.set_route(PICKING_PAGE_KEY, salesOrder);
     });
     $root.find("[data-warehouse-row-toggle]").on("click", function (event) {
       event.preventDefault();
@@ -1654,10 +1908,12 @@
   warehouseConsoleApi.renderOutboundQueue = renderOutboundQueue;
   warehouseConsoleApi.renderWarehouseWorklist = renderWarehouseWorklist;
   warehouseConsoleApi.renderReceivingReview = renderReceivingReview;
+  warehouseConsoleApi.renderPickingReview = renderPickingReview;
   warehouseConsoleApi.renderOverview = render;
   warehouseConsoleApi.diagnostics = warehouseConsoleApi.diagnostics || {};
   warehouseConsoleApi.diagnostics.exportedRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedReceivingRendererReady = true;
+  warehouseConsoleApi.diagnostics.exportedPickingRendererReady = true;
 
   frappe.pages[WORKLIST_PAGE_KEY] = frappe.pages[WORKLIST_PAGE_KEY] || {};
   frappe.pages[WORKLIST_PAGE_KEY].__erpwWarehouseInboundRenderer = true;
@@ -1672,10 +1928,18 @@
   frappe.pages[RECEIVING_PAGE_KEY].__erpwRenderWarehouseReceivingReview = renderReceivingReview;
   frappe.pages[RECEIVING_PAGE_KEY].on_page_load = function (wrapper) { renderReceivingReview(wrapper, receivingPurchaseOrderFromRoute()); };
   frappe.pages[RECEIVING_PAGE_KEY].on_page_show = function (wrapper) { renderReceivingReview(wrapper, receivingPurchaseOrderFromRoute()); };
+
+  frappe.pages[PICKING_PAGE_KEY] = frappe.pages[PICKING_PAGE_KEY] || {};
+  frappe.pages[PICKING_PAGE_KEY].__erpwWarehousePickingRenderer = true;
+  frappe.pages[PICKING_PAGE_KEY].__erpwRenderWarehousePickingReview = renderPickingReview;
+  frappe.pages[PICKING_PAGE_KEY].on_page_load = function (wrapper) { renderPickingReview(wrapper, pickingSalesOrderFromRoute()); };
+  frappe.pages[PICKING_PAGE_KEY].on_page_show = function (wrapper) { renderPickingReview(wrapper, pickingSalesOrderFromRoute()); };
   scheduleActiveOverviewRender();
   bindActiveOverviewGuard();
   scheduleActiveInboundRender();
   bindActiveInboundGuard();
   scheduleActiveReceivingRender();
   bindActiveReceivingGuard();
+  scheduleActivePickingRender();
+  bindActivePickingGuard();
 })();

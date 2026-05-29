@@ -116,6 +116,20 @@ SALES_ORDER_ITEM_OUTBOUND_FIELDS = [
 	"uom",
 ]
 
+SALES_ORDER_ITEM_DETAIL_FIELDS = [
+	"name",
+	"parent",
+	"idx",
+	"item_code",
+	"item_name",
+	"delivery_date",
+	"qty",
+	"delivered_qty",
+	"warehouse",
+	"stock_uom",
+	"uom",
+]
+
 BIN_OUTBOUND_FIELDS = [
 	"item_code",
 	"warehouse",
@@ -128,6 +142,7 @@ STANDARD_SAFE_FIELDS = frozenset({"name", "parent", "idx", "docstatus", "modifie
 RECEIVING_DETAIL_LINE_LIMIT = 80
 RECEIVING_DETAIL_HISTORY_ITEM_LIMIT = 120
 RECEIVING_DETAIL_HISTORY_LIMIT = 8
+PICKING_DETAIL_LINE_LIMIT = 80
 
 
 def ensure_authenticated() -> None:
@@ -847,6 +862,252 @@ def _quantity_summary(qty_by_uom: dict[str, float]) -> str:
 		uom, qty = next(iter(qty_by_uom.items()))
 		return f"{_number_text(qty)} {uom}"
 	return f"{len(qty_by_uom)} quantities"
+
+
+@frappe.whitelist()
+def get_warehouse_picking_review(sales_order: str | None = None) -> dict[str, object]:
+	ensure_authenticated()
+	context = build_context()
+	order_name = cstr(sales_order).strip()
+	if not has_warehouse_access(context):
+		return _picking_review_state_payload(context, restricted_state(), order_name)
+	if not order_name:
+		return _picking_review_state_payload(
+			context,
+			state("unavailable", "Picking review unavailable", "Choose an outbound order from the picking queue."),
+			order_name,
+		)
+	if not _can_read("Sales Order"):
+		return _picking_review_state_payload(
+			context,
+			state("restricted", "You do not have access to outbound picking", "You do not have access to outbound picking."),
+			order_name,
+		)
+
+	records = _safe_get_list(
+		"Sales Order",
+		fields=_available_fields("Sales Order", SALES_ORDER_OUTBOUND_FIELDS),
+		filters=_sales_order_picking_review_filters(order_name),
+		order_by="modified desc",
+		limit=1,
+	)
+	if not records:
+		return _picking_review_state_payload(
+			context,
+			state("unavailable", "Picking review unavailable", "This outbound order is not open for warehouse review."),
+			order_name,
+		)
+
+	record = records[0]
+	lines = _picking_review_lines(order_name)
+	header = _picking_review_header(record, lines)
+	payload = _picking_review_state_payload(context, ready_state(), order_name)
+	payload.update(
+		{
+			"state": ready_state(),
+			"page": {"title": "Picking Review", "key": "picking_review", "sales_order": order_name},
+			"header": header,
+			"summary_cards": _picking_summary_cards(header),
+			"tabs": [
+				{"key": "item_lines", "label": "Item Lines", "count": len(lines)},
+				{"key": "stock_readiness", "label": "Stock Readiness", "count": len(lines)},
+			],
+			"lines": lines,
+		}
+	)
+	return payload
+
+
+def _sales_order_picking_review_filters(order_name: str) -> list[list[object]]:
+	conditions: list[list[object]] = [["Sales Order", "name", "=", order_name], ["Sales Order", "docstatus", "=", 1]]
+	if _has_field("Sales Order", "per_delivered"):
+		conditions.append(["Sales Order", "per_delivered", "<", 100])
+	if _has_field("Sales Order", "status"):
+		conditions.append(["Sales Order", "status", "in", list(OUTBOUND_OPEN_STATUSES)])
+	return conditions
+
+
+def _picking_review_state_payload(
+	context: dict[str, object],
+	payload_state: dict[str, str],
+	order_name: str,
+) -> dict[str, object]:
+	can_access = has_warehouse_access(context)
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": payload_state,
+		"page": {"title": "Picking Review", "key": "picking_review", "sales_order": order_name},
+		"header": {
+			"sales_order": order_name,
+			"customer": "",
+			"target_warehouse": "",
+			"required_date": "",
+			"state_key": payload_state.get("kind") or "unavailable",
+			"state_label": payload_state.get("title") or "Unavailable",
+			"age_label": "",
+			"delivered_percent": "0%",
+			"remaining_summary": "",
+			"line_count": 0,
+			"item_count": 0,
+			"ready_line_count": 0,
+			"review_line_count": 0,
+			"status": "",
+		},
+		"summary_cards": [],
+		"tabs": [
+			{"key": "item_lines", "label": "Item Lines", "count": 0},
+			{"key": "stock_readiness", "label": "Stock Readiness", "count": 0},
+		],
+		"lines": [],
+		"allowed_actions": [
+			{"key": "refresh", "label": "Refresh", "kind": "read_only"},
+			{"key": "back_to_outbound", "label": "Back to outbound picking", "kind": "navigation"},
+		] if can_access else [],
+		"action_targets": {
+			"outbound_queue": {"route": "warehouse-console-worklist", "queue_key": OUTBOUND_QUEUE_KEY}
+		} if can_access else {},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _picking_review_lines(order_name: str) -> list[dict[str, object]]:
+	if not order_name:
+		return []
+	rows = []
+	if _can_read("Sales Order Item"):
+		rows = _safe_get_all(
+			"Sales Order Item",
+			fields=_available_fields("Sales Order Item", SALES_ORDER_ITEM_DETAIL_FIELDS),
+			filters={"parent": order_name},
+			order_by="delivery_date asc, idx asc",
+			limit=PICKING_DETAIL_LINE_LIMIT,
+		)
+	if not rows:
+		rows = _picking_review_lines_from_parent(order_name)
+	stock = _outbound_stock_map([_picking_requirements(rows)])
+	return [_picking_line(row, stock) for row in rows]
+
+
+def _picking_review_lines_from_parent(order_name: str) -> list[dict[str, object]]:
+	try:
+		doc = frappe.get_doc("Sales Order", order_name)
+		doc.check_permission("read")
+	except Exception:
+		return []
+	rows = []
+	for child in list(doc.get("items") or [])[:PICKING_DETAIL_LINE_LIMIT]:
+		row = {}
+		for field in SALES_ORDER_ITEM_DETAIL_FIELDS:
+			if hasattr(child, "get"):
+				row[field] = child.get(field)
+			else:
+				row[field] = getattr(child, field, None)
+		rows.append(row)
+	return sorted(rows, key=lambda row: (_date_key(row.get("delivery_date")), int(flt(row.get("idx")) or 0)))
+
+
+def _picking_requirements(rows: list[dict[str, object]]) -> dict[tuple[str, str], float]:
+	requirements: dict[tuple[str, str], float] = defaultdict(float)
+	for row in rows:
+		item_code = cstr(row.get("item_code")).strip()
+		warehouse = cstr(row.get("warehouse")).strip()
+		remaining = max(flt(row.get("qty")) - flt(row.get("delivered_qty")), 0)
+		if item_code and warehouse and remaining > 0:
+			requirements[(item_code, warehouse)] += remaining
+	return dict(requirements)
+
+
+def _picking_line(row: dict[str, object], stock: dict[tuple[str, str], float]) -> dict[str, object]:
+	ordered_qty = flt(row.get("qty"))
+	delivered_qty = flt(row.get("delivered_qty"))
+	pending_qty = max(ordered_qty - delivered_qty, 0)
+	item_code = cstr(row.get("item_code")).strip()
+	warehouse = cstr(row.get("warehouse") or "Warehouse not set").strip()
+	stock_pair = (item_code, warehouse)
+	available_qty = stock.get(stock_pair)
+	readiness = _picking_line_readiness(pending_qty, available_qty)
+	return {
+		"item_code": item_code,
+		"item_name": cstr(row.get("item_name")).strip(),
+		"ordered_qty": _number_text(ordered_qty),
+		"delivered_qty": _number_text(delivered_qty),
+		"pending_qty": _number_text(pending_qty),
+		"uom": cstr(row.get("stock_uom") or row.get("uom") or "").strip(),
+		"source_warehouse": warehouse,
+		"required_date": cstr(row.get("delivery_date")).strip(),
+		"readiness": readiness,
+		"availability": _picking_availability_text(available_qty),
+	}
+
+
+def _picking_line_readiness(pending_qty: float, available_qty: float | None) -> str:
+	if pending_qty <= 0:
+		return "Completed"
+	if available_qty is None:
+		return "Needs Stock Review"
+	if flt(available_qty) >= pending_qty:
+		return "Ready"
+	return "Needs Stock Review"
+
+
+def _picking_availability_text(available_qty: float | None) -> str:
+	if available_qty is None:
+		return "Availability not visible"
+	return f"{_number_text(available_qty)} available"
+
+
+def _picking_review_header(record: dict[str, object], lines: list[dict[str, object]]) -> dict[str, object]:
+	warehouses = sorted({cstr(line.get("source_warehouse")).strip() for line in lines if cstr(line.get("source_warehouse")).strip()})
+	item_codes = {cstr(line.get("item_code")).strip() for line in lines if cstr(line.get("item_code")).strip()}
+	dates = [cstr(line.get("required_date")).strip() for line in lines if cstr(line.get("required_date")).strip()]
+	required_date = min(dates, key=_date_key) if dates else cstr(record.get("delivery_date")).strip()
+	remaining_by_uom: dict[str, float] = defaultdict(float)
+	open_lines = 0
+	ready_lines = 0
+	review_lines = 0
+	for line in lines:
+		pending = flt(line.get("pending_qty"))
+		if pending <= 0:
+			continue
+		open_lines += 1
+		if cstr(line.get("readiness")) == "Ready":
+			ready_lines += 1
+		else:
+			review_lines += 1
+		uom = cstr(line.get("uom")).strip()
+		if uom:
+			remaining_by_uom[uom] += pending
+	summary = {
+		"open_lines": open_lines,
+		"remaining_by_uom": dict(remaining_by_uom),
+	}
+	state_key = _outbound_state_key(record, required_date, {"stock_state": "ready_to_pick" if review_lines == 0 and open_lines else "needs_stock_review"})
+	return {
+		"sales_order": cstr(record.get("name")).strip(),
+		"customer": cstr(record.get("customer_name") or record.get("customer") or "-").strip(),
+		"required_date": required_date,
+		"target_warehouse": _warehouse_summary(warehouses or [cstr(record.get("set_warehouse")).strip()]),
+		"state_key": state_key or "expected_soon",
+		"state_label": _outbound_state_label(state_key or "expected_soon"),
+		"age_label": _age_label(required_date, state_key or "expected_soon"),
+		"delivered_percent": _percent_text(record.get("per_delivered")),
+		"remaining_summary": _remaining_summary(summary),
+		"line_count": len(lines),
+		"item_count": len(item_codes),
+		"ready_line_count": ready_lines,
+		"review_line_count": review_lines,
+		"status": cstr(record.get("status") or "-").strip(),
+	}
+
+
+def _picking_summary_cards(header: dict[str, object]) -> list[dict[str, object]]:
+	return [
+		{"key": "state", "label": "Picking State", "value": header.get("state_label") or "-", "note": header.get("age_label") or ""},
+		{"key": "delivered", "label": "Delivered", "value": header.get("delivered_percent") or "0%", "note": "Quantity already delivered."},
+		{"key": "open_lines", "label": "Open Lines", "value": header.get("line_count") or 0, "note": header.get("remaining_summary") or ""},
+		{"key": "readiness", "label": "Readiness", "value": header.get("ready_line_count") or 0, "note": f"{header.get('review_line_count') or 0} lines need review"},
+	]
 
 
 def _normalize_queue_key(value: str | None) -> str:

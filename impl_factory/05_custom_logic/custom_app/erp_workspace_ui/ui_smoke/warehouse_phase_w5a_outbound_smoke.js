@@ -653,7 +653,7 @@ async function exerciseUser(browser, user) {
       assert(state.queueGroupCount >= 6, "Outbound queue groups did not render", { user: user.key, viewport, state });
       if (ASSET_ROOT) assert(state.queueRowCount >= 1, "Outbound queue rows did not render", { user: user.key, viewport, state });
       assert(state.filterCount >= 4, "Outbound filters did not render", { user: user.key, viewport, state });
-      assert(state.detailButtonCount === 0, "Outbound rows must not expose receiving detail navigation", { user: user.key, viewport, state });
+      assert(state.detailButtonCount >= 1, "Outbound rows must expose picking review navigation", { user: user.key, viewport, state });
 
       await page.locator('[data-warehouse-filter-key="customer"]').fill("Review");
       await page.locator('[data-warehouse-filter-key="state"]').selectOption("needs_stock_review");
