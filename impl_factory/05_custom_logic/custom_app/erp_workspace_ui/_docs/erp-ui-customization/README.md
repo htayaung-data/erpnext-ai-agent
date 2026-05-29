@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, and W6A stock exception visibility
+- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, and W8 movement visibility design
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
@@ -68,6 +68,9 @@ Freeze and governance status:
 - Warehouse Console Phase W5 outbound picking visibility is documented on 2026-05-28 as a docs-only plan for premium read-only outbound work posture at proposed route `/desk/warehouse-console-worklist/outbound-picking`; Pick List creation/submission, Delivery Note creation/submission, packing, shipping, dispatch, stock reservation, valuation, native escape, Quick Find, and Sales/Procurement runtime changes remain excluded.
 - Warehouse Console Phase W5B Picking Review is protected on 2026-05-29 at `724ccd2e09857c1df4fa85a7b2ec604448538e07`; `/desk/warehouse-console-worklist/outbound-picking` and `/desk/warehouse-console-picking/<sales-order>` provide read-only outbound posture and picking review without Pick List, Delivery Note, reservation, stock posting, valuation, native escape, Quick Find, or Sales/Procurement runtime change.
 - Warehouse Console Phase W6A Stock Exceptions is protected on 2026-05-29 at `982edba`; `/desk/warehouse-console-worklist/stock-exceptions` renders read-only grouped stock exception posture for Warehouse Manager/User, accepts live empty-state data safely, and preserves no stock mutation, valuation/accounting/commercial exposure, native escape, Quick Find/Search, or Sales/Procurement runtime change.
+- Warehouse Console Phase W6B Stock Exception Review is protected on 2026-05-29 at `edd9c7e`; `/desk/warehouse-console-stock-exception/<encoded-context>` renders read-only exception review and custom related Warehouse routes without Stock Entry, Pick List, Delivery Note, Purchase Receipt, reservation, reconciliation, valuation, native escape, Quick Find/Search, or Sales/Procurement runtime change.
+- Warehouse Console Phase W7A Stock Posture Review is protected on 2026-05-29 at `8ce0961`; `/desk/warehouse-console-stock-posture/<encoded-context>` renders read-only item/warehouse stock posture, inbound cover, open demand, and custom related route context without stock mutation, valuation/accounting/commercial exposure, native escape, Quick Find/Search, or Sales/Procurement runtime change.
+- Warehouse Console Phase W8 Movement Visibility is documented on 2026-05-29 as a docs-only design plan for a proposed read-only movement visibility worklist at `/desk/warehouse-console-worklist/movement-visibility`; Stock Entry creation/submission, Stock Ledger native report escape, Stock Balance native report escape, transfer execution, reconciliation, valuation/accounting/commercial exposure, Quick Find/Search, and Sales/Procurement runtime changes remain excluded.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -115,6 +118,8 @@ Current routing truth:
 - Warehouse Console W4A protected route is `/desk/warehouse-console-worklist/inbound-receiving`; W4B protected read-only receiving review route is `/desk/warehouse-console-receiving/<purchase-order>`.
 - Warehouse Console W5A protected route is `/desk/warehouse-console-worklist/outbound-picking`; W5B protected read-only picking review route is `/desk/warehouse-console-picking/<sales-order>`.
 - Warehouse Console W6A protected route is `/desk/warehouse-console-worklist/stock-exceptions`.
+- Warehouse Console W6B protected read-only stock exception review route is `/desk/warehouse-console-stock-exception/<encoded-context>`.
+- Warehouse Console W7A protected read-only stock posture review route is `/desk/warehouse-console-stock-posture/<encoded-context>`.
 
 Current visible report keys:
 
@@ -146,6 +151,7 @@ Documents in this folder:
 - `warehouse-console-phase-w6a-stock-exceptions-baseline-2026-05-29.md`
 - `warehouse-console-phase-w6b-stock-exception-review-baseline-2026-05-29.md`
 - `warehouse-console-phase-w7a-stock-posture-review-baseline-2026-05-29.md`
+- `warehouse-console-phase-w8-movement-visibility-design-plan-2026-05-29.md`
 - `frozen-workspace-protection-package-standard-v1.md`
 - `sales-console-frozen-protection-package-2026-05-09.md`
 - `procurement-console-phase3-stable-baseline-2026-05-10.md`
