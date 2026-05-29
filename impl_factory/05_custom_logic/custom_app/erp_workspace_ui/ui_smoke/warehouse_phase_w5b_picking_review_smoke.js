@@ -505,6 +505,13 @@ async function exerciseUser(browser, user) {
     await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
     if (ASSET_ROOT) await waitForOverrideHit(page, diagnostics, "warehouse-picking-detail", `${user.key}:row-drilldown`);
     await waitForPickingReady(page, diagnostics, `${user.key}:row-drilldown`);
+    const directSalesOrder = await page.evaluate(() => {
+      const route = window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : null;
+      if (Array.isArray(route) && route[0] === "warehouse-console-picking" && route[1]) return route[1];
+      const parts = location.pathname.split("/").filter(Boolean);
+      return parts[parts.length - 1] || "";
+    });
+    assert(directSalesOrder && directSalesOrder !== "warehouse-console-picking", "Picking review route did not expose a concrete Sales Order", { user: user.key, directSalesOrder });
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:row-drilldown`);
     assert(state.pickingCardCount >= 4, "Picking review cards did not render", { user: user.key, state });
@@ -535,7 +542,8 @@ async function exerciseUser(browser, user) {
 
     for (const viewport of VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await openRoute(page, ["warehouse-console-picking", "SO-REVIEW"], "/desk/warehouse-console-picking/SO-REVIEW", diagnostics, `${user.key}:${viewport.key}:direct`, "picking");
+      const directPickingPath = `/desk/warehouse-console-picking/${encodeURIComponent(directSalesOrder)}`;
+      await openRoute(page, ["warehouse-console-picking", directSalesOrder], directPickingPath, diagnostics, `${user.key}:${viewport.key}:direct`, "picking");
       state = await snapshot(page);
       assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:direct`);
       assert(state.pickingShellCount === 1, "Picking review shell count must remain 1", { user: user.key, viewport, state });
