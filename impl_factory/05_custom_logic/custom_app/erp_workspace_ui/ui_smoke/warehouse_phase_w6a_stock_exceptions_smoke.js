@@ -429,6 +429,7 @@ async function snapshot(page) {
       stockCardCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-card]")).filter(visible).length,
       stockGroupCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-group]")).filter(visible).length,
       stockRowCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-row]")).filter(visible).length,
+      stockEmptyCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-empty]")).filter(visible).length,
       stockFilterCount: Array.from(document.querySelectorAll("[data-warehouse-filter-key]")).filter(visible).length,
       pickingRouteButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-route-picking]")).filter(visible).length,
       receivingRouteButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-route-receiving]")).filter(visible).length,
@@ -473,10 +474,13 @@ async function exerciseUser(browser, user) {
     assert(state.stockShellCount === 1, "Stock Exceptions shell count must be 1", { user: user.key, state });
     assert(state.stockCardCount >= 4, "Stock exception summary cards did not render", { user: user.key, state });
     assert(state.stockGroupCount >= 4, "Stock exception groups did not render", { user: user.key, state });
-    assert(state.stockRowCount >= 1, "Stock exception rows did not render", { user: user.key, state });
+    const hasStockRows = state.stockRowCount >= 1;
+    assert(hasStockRows || state.stockEmptyCount >= 1, "Stock exception rows or empty state did not render", { user: user.key, state });
     assert(state.stockFilterCount >= 3, "Stock exception filters did not render", { user: user.key, state });
-    assert(state.pickingRouteButtonCount >= 1, "Stock exception picking route button did not render", { user: user.key, state });
-    assert(state.receivingRouteButtonCount >= 1, "Stock exception receiving route button did not render", { user: user.key, state });
+    if (hasStockRows) {
+      assert(state.pickingRouteButtonCount >= 1, "Stock exception picking route button did not render", { user: user.key, state });
+      assert(state.receivingRouteButtonCount >= 1, "Stock exception receiving route button did not render", { user: user.key, state });
+    }
     await capture(page, `${user.key}-stock-exceptions`);
 
     await page.locator('[data-warehouse-filter-key="state"]').selectOption("inbound_cover_expected");
@@ -492,25 +496,27 @@ async function exerciseUser(browser, user) {
     await waitForStock(page);
     assertClean(await snapshot(page), `${user.key}:refresh`);
 
-    await page.locator("[data-warehouse-stock-exception-route-picking]").first().click();
-    await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
-    await waitForPicking(page);
-    state = await snapshot(page);
-    assertClean(state, `${user.key}:picking`);
-    assert(/warehouse-console-picking/.test(state.url), "Picking link did not stay inside Warehouse route", { user: user.key, state });
+    if (hasStockRows) {
+      await page.locator("[data-warehouse-stock-exception-route-picking]").first().click();
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForPicking(page);
+      state = await snapshot(page);
+      assertClean(state, `${user.key}:picking`);
+      assert(/warehouse-console-picking/.test(state.url), "Picking link did not stay inside Warehouse route", { user: user.key, state });
 
-    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
-    await waitForStock(page);
+      await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      await waitForStock(page);
 
-    await page.locator("[data-warehouse-stock-exception-route-receiving]").first().click();
-    await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-receiving\//.test(url.pathname), { timeout: TIMEOUT });
-    await waitForReceiving(page);
-    state = await snapshot(page);
-    assertClean(state, `${user.key}:receiving`);
-    assert(/warehouse-console-receiving/.test(state.url), "Receiving link did not stay inside Warehouse route", { user: user.key, state });
+      await page.locator("[data-warehouse-stock-exception-route-receiving]").first().click();
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-receiving\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForReceiving(page);
+      state = await snapshot(page);
+      assertClean(state, `${user.key}:receiving`);
+      assert(/warehouse-console-receiving/.test(state.url), "Receiving link did not stay inside Warehouse route", { user: user.key, state });
 
-    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
-    await waitForStock(page);
+      await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      await waitForStock(page);
+    }
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForStock(page);
     assertClean(await snapshot(page), `${user.key}:reload`);

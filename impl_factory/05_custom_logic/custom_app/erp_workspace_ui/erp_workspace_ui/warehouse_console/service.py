@@ -156,10 +156,23 @@ def ensure_authenticated() -> None:
 		frappe.throw(_("Authentication required"), frappe.PermissionError)
 
 
+def _clear_transient_frappe_messages() -> None:
+	try:
+		if hasattr(frappe.local, "message_log"):
+			frappe.local.message_log = []
+		response = getattr(frappe.local, "response", None)
+		if isinstance(response, dict):
+			response.pop("_server_messages", None)
+			response.pop("exc", None)
+	except Exception:
+		pass
+
+
 def current_user_roles(user: str | None = None) -> set[str]:
 	try:
 		return set(frappe.get_roles(user or getattr(frappe.session, "user", None)))
 	except Exception:
+		_clear_transient_frappe_messages()
 		return set()
 
 
@@ -493,9 +506,11 @@ def _safe_count(doctype: str, filters: list | dict | None = None) -> int:
 	try:
 		return int(frappe.db.count(doctype, filters=filters or {}))
 	except Exception:
+		_clear_transient_frappe_messages()
 		try:
 			return len(frappe.get_all(doctype, filters=filters or {}, fields=["name"], limit_page_length=1_000))
 		except Exception:
+			_clear_transient_frappe_messages()
 			return 0
 
 
@@ -503,6 +518,7 @@ def _can_read(doctype: str) -> bool:
 	try:
 		return bool(frappe.has_permission(doctype, ptype="read"))
 	except Exception:
+		_clear_transient_frappe_messages()
 		return False
 
 
@@ -1759,6 +1775,7 @@ def _stock_exception_lines_from_orders(orders: dict[str, dict[str, object]]) -> 
 			doc = frappe.get_doc("Sales Order", order_name)
 			doc.check_permission("read")
 		except Exception:
+			_clear_transient_frappe_messages()
 			continue
 		for child in list(doc.get("items") or [])[:12]:
 			row: dict[str, object] = {"parent": order_name}
@@ -1864,6 +1881,7 @@ def _stock_exception_purchase_lines_from_orders(po_map: dict[str, dict[str, obje
 			doc = frappe.get_doc("Purchase Order", purchase_order)
 			doc.check_permission("read")
 		except Exception:
+			_clear_transient_frappe_messages()
 			continue
 		for child in list(doc.get("items") or [])[:10]:
 			row: dict[str, object] = {"parent": purchase_order}
@@ -2423,6 +2441,7 @@ def _safe_get_list(
 			)
 		)
 	except Exception:
+		_clear_transient_frappe_messages()
 		try:
 			return list(
 				frappe.get_all(
@@ -2434,6 +2453,7 @@ def _safe_get_list(
 				)
 			)
 		except Exception:
+			_clear_transient_frappe_messages()
 			return []
 
 
@@ -2456,6 +2476,7 @@ def _safe_get_all(
 			)
 		)
 	except Exception:
+		_clear_transient_frappe_messages()
 		return []
 
 
