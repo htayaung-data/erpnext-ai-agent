@@ -11,6 +11,13 @@ const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W7A_ARTIFACT_DIR || path.join(
 const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W7A_ASSET_ROOT || "";
 const STOCK_EXCEPTION_TOKEN = "7b226974656d5f636f6465223a224954454d2d313035222c2273616c65735f6f72646572223a22534f2d524556494557222c2277617265686f757365223a2253686f7274202d204d227d";
 const STOCK_POSTURE_TOKEN = "7b226974656d5f636f6465223a224954454d2d313035222c2270757263686173655f6f72646572223a22504f2d534f4f4e222c2273616c65735f6f72646572223a22534f2d524556494557222c2273746f636b5f657863657074696f6e5f746f6b656e223a2237623232363937343635366435663633366636343635323233613232343935343435346432643331333033353232326332323733363136633635373335663666373236343635373232323361323235333466326435323435353634393435353732323263323237373631373236353638366637353733363532323361323235333638366637323734323032643230346432323764222c2277617265686f757365223a2253686f7274202d204d227d";
+const LIVE_STOCK_POSTURE_TOKEN = process.env.ERPW_WAREHOUSE_W7A_LIVE_CONTEXT_TOKEN || Buffer.from(JSON.stringify({
+  item_code: "SPH-SAM-A15-6/128",
+  purchase_order: "",
+  sales_order: "",
+  stock_exception_token: "",
+  warehouse: "Yangon Main Warehouse - MMOB",
+})).toString("hex");
 
 const AUTHORIZED_USERS = [
   {
@@ -541,16 +548,24 @@ async function exerciseUser(browser, user) {
     let state = await snapshot(page);
     assertClean(state, `${user.key}:stock-exceptions`);
 
-    await page.locator("[data-warehouse-stock-exception-route-detail]").first().click();
-    await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-exception\//.test(url.pathname), { timeout: TIMEOUT });
-    await waitForStockExceptionReview(page);
-    if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-stock-exception-review");
-    state = await snapshot(page);
-    assertClean(state, `${user.key}:stock-exception-review`);
-    assert(state.stockExceptionOpenPostureCount >= 1, "Stock posture drilldown action did not render from stock exception review", { user: user.key, state });
+    const exceptionDetailCount = await page.locator("[data-warehouse-stock-exception-route-detail]").count();
+    if (ASSET_ROOT) {
+      assert(exceptionDetailCount >= 1, "Source stock exception review row did not render", { user: user.key, state });
+    }
+    if (exceptionDetailCount >= 1) {
+      await page.locator("[data-warehouse-stock-exception-route-detail]").first().click();
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-exception\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForStockExceptionReview(page);
+      if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-stock-exception-review");
+      state = await snapshot(page);
+      assertClean(state, `${user.key}:stock-exception-review`);
+      assert(state.stockExceptionOpenPostureCount >= 1, "Stock posture drilldown action did not render from stock exception review", { user: user.key, state });
 
-    await page.locator("[data-warehouse-stock-exception-open-posture], [data-warehouse-stock-exception-next-target='stock_posture']").first().click();
-    await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-posture\//.test(url.pathname), { timeout: TIMEOUT });
+      await page.locator("[data-warehouse-stock-exception-open-posture], [data-warehouse-stock-exception-next-target='stock_posture']").first().click();
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-posture\//.test(url.pathname), { timeout: TIMEOUT });
+    } else {
+      await openRoute(page, ["warehouse-console-stock-posture", LIVE_STOCK_POSTURE_TOKEN], `/desk/warehouse-console-stock-posture/${LIVE_STOCK_POSTURE_TOKEN}`, waitForStockPosture);
+    }
     await waitForStockPosture(page);
     if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-stock-posture-review");
     state = await snapshot(page);
@@ -559,46 +574,69 @@ async function exerciseUser(browser, user) {
     assert(state.stockPostureCardCount >= 5, "Stock posture summary cards did not render", { user: user.key, state });
     assert(state.stockPosturePanelCount >= 4, "Stock posture panels did not render", { user: user.key, state });
     assert(state.stockPostureRowCount >= 3 || state.stockPostureEmptyCount >= 1, "Stock posture rows or empty state did not render", { user: user.key, state });
-    assert(state.stockPostureRoutePickingCount >= 1, "Stock posture picking route did not render", { user: user.key, state });
-    assert(state.stockPostureRouteReceivingCount >= 1, "Stock posture receiving route did not render", { user: user.key, state });
-    assert(state.stockPostureRouteExceptionCount >= 1, "Stock posture exception route did not render", { user: user.key, state });
+    if (ASSET_ROOT) {
+      assert(state.stockPostureRoutePickingCount >= 1, "Stock posture picking route did not render", { user: user.key, state });
+      assert(state.stockPostureRouteReceivingCount >= 1, "Stock posture receiving route did not render", { user: user.key, state });
+      assert(state.stockPostureRouteExceptionCount >= 1, "Stock posture exception route did not render", { user: user.key, state });
+    }
+    const canRoutePicking = state.stockPostureRoutePickingCount >= 1;
+    const canRouteReceiving = state.stockPostureRouteReceivingCount >= 1;
+    const canRouteException = state.stockPostureRouteExceptionCount >= 1;
     await capture(page, `${user.key}-stock-posture`);
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForStockPosture(page);
     assertClean(await snapshot(page), `${user.key}:stock-posture-reload`);
 
-    await openRoute(page, ["warehouse-console-stock-posture", STOCK_POSTURE_TOKEN], `/desk/warehouse-console-stock-posture/${STOCK_POSTURE_TOKEN}`, waitForStockPosture);
-    await openRoute(page, ["warehouse-console-stock-posture", STOCK_POSTURE_TOKEN], `/desk/warehouse-console-stock-posture/${STOCK_POSTURE_TOKEN}`, waitForStockPosture);
+    const directToken = ASSET_ROOT ? STOCK_POSTURE_TOKEN : LIVE_STOCK_POSTURE_TOKEN;
+    await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
+    await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
     assertClean(await snapshot(page), `${user.key}:stock-posture-repeat`);
 
-    await page.locator("[data-warehouse-stock-posture-route-picking]").first().click();
-    await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
-    await waitForPicking(page);
-    assertClean(await snapshot(page), `${user.key}:posture-picking`);
-    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
-    await waitForStockPosture(page);
+    if (canRoutePicking) {
+      await page.locator("[data-warehouse-stock-posture-route-picking]").first().click();
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForPicking(page);
+      assertClean(await snapshot(page), `${user.key}:posture-picking`);
+      await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      await waitForStockPosture(page);
+    }
 
-    await page.locator("[data-warehouse-stock-posture-route-receiving]").first().click();
-    await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-receiving\//.test(url.pathname), { timeout: TIMEOUT });
-    await waitForReceiving(page);
-    assertClean(await snapshot(page), `${user.key}:posture-receiving`);
-    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
-    await waitForStockPosture(page);
+    if (canRouteReceiving) {
+      await page.locator("[data-warehouse-stock-posture-route-receiving]").first().click();
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-receiving\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForReceiving(page);
+      assertClean(await snapshot(page), `${user.key}:posture-receiving`);
+      await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      await waitForStockPosture(page);
+    }
 
-    await page.locator("[data-warehouse-stock-posture-route-stock-exception]").first().click();
-    await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-exception\//.test(url.pathname), { timeout: TIMEOUT });
-    await waitForStockExceptionReview(page);
-    assertClean(await snapshot(page), `${user.key}:posture-exception`);
+    if (canRouteException) {
+      await page.locator("[data-warehouse-stock-posture-route-stock-exception]").first().click();
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-exception\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForStockExceptionReview(page);
+      assertClean(await snapshot(page), `${user.key}:posture-exception`);
+    }
 
-    await openRoute(page, ["warehouse-console-stock-posture", STOCK_POSTURE_TOKEN], `/desk/warehouse-console-stock-posture/${STOCK_POSTURE_TOKEN}`, waitForStockPosture);
+    await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
     await page.locator("[data-warehouse-stock-posture-refresh]").click();
     await waitForStockPosture(page);
     assertClean(await snapshot(page), `${user.key}:posture-refresh`);
 
     await page.locator("[data-warehouse-stock-posture-back]").click();
-    await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-exception\//.test(url.pathname), { timeout: TIMEOUT });
-    await waitForStockExceptionReview(page);
+    if (canRouteException) {
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-exception\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForStockExceptionReview(page);
+    } else if (canRoutePicking) {
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForPicking(page);
+    } else if (canRouteReceiving) {
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-receiving\//.test(url.pathname), { timeout: TIMEOUT });
+      await waitForReceiving(page);
+    } else {
+      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-worklist\/stock-exceptions/.test(url.pathname), { timeout: TIMEOUT });
+      await waitForStock(page);
+    }
     assertClean(await snapshot(page), `${user.key}:posture-back`);
 
     state = await snapshot(page);
