@@ -1565,7 +1565,7 @@ def _build_stock_exceptions_visibility(
 	row_limit: int = STOCK_EXCEPTIONS_LIMIT,
 ) -> dict[str, object]:
 	applied_filters = filters or {}
-	if not (_can_read("Sales Order") and _can_read("Sales Order Item")):
+	if not _can_read("Sales Order"):
 		return {
 			"state": restricted_state(),
 			"counts": _empty_stock_exception_counts(),
@@ -1724,13 +1724,17 @@ def _stock_exception_rows(filters: dict[str, str], *, row_limit: int) -> list[di
 		return []
 
 	orders = {cstr(record.get("name")).strip(): record for record in records if cstr(record.get("name")).strip()}
-	line_rows = _safe_get_all(
-		"Sales Order Item",
-		fields=_available_fields("Sales Order Item", SALES_ORDER_ITEM_DETAIL_FIELDS),
-		filters={"parent": ["in", sorted(orders)]},
-		order_by="delivery_date asc, idx asc",
-		limit=min(max(len(orders) * 12, 120), 1200),
-	)
+	line_rows = []
+	if _can_read("Sales Order Item"):
+		line_rows = _safe_get_all(
+			"Sales Order Item",
+			fields=_available_fields("Sales Order Item", SALES_ORDER_ITEM_DETAIL_FIELDS),
+			filters={"parent": ["in", sorted(orders)]},
+			order_by="delivery_date asc, idx asc",
+			limit=min(max(len(orders) * 12, 120), 1200),
+		)
+	if not line_rows:
+		line_rows = _stock_exception_lines_from_orders(orders)
 	pairs = _stock_exception_pairs(line_rows)
 	stock = _stock_exception_stock_map(pairs)
 	inbound = _stock_exception_inbound_map(pairs)
@@ -1745,6 +1749,29 @@ def _stock_exception_rows(filters: dict[str, str], *, row_limit: int) -> list[di
 		if len(rows) >= row_limit:
 			break
 	return sorted(rows, key=lambda row: (STOCK_EXCEPTIONS_GROUP_ORDER.index(row.get("exception_key")) if row.get("exception_key") in STOCK_EXCEPTIONS_GROUP_ORDER else 99, _date_key(row.get("required_date")), cstr(row.get("sales_order"))))
+
+
+def _stock_exception_lines_from_orders(orders: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+	rows: list[dict[str, object]] = []
+	limit = min(max(len(orders) * 12, 120), 1200)
+	for order_name in sorted(orders):
+		try:
+			doc = frappe.get_doc("Sales Order", order_name)
+			doc.check_permission("read")
+		except Exception:
+			continue
+		for child in list(doc.get("items") or [])[:12]:
+			row: dict[str, object] = {"parent": order_name}
+			for field in SALES_ORDER_ITEM_DETAIL_FIELDS:
+				if hasattr(child, "get"):
+					row[field] = child.get(field)
+				else:
+					row[field] = getattr(child, field, None)
+			row["parent"] = row.get("parent") or order_name
+			rows.append(row)
+			if len(rows) >= limit:
+				return sorted(rows, key=lambda row: (_date_key(row.get("delivery_date")), int(flt(row.get("idx")) or 0)))
+	return sorted(rows, key=lambda row: (_date_key(row.get("delivery_date")), int(flt(row.get("idx")) or 0)))
 
 
 def _stock_exception_pairs(line_rows: list[dict[str, object]]) -> set[tuple[str, str]]:
@@ -1782,7 +1809,7 @@ def _stock_exception_stock_map(pairs: set[tuple[str, str]]) -> dict[tuple[str, s
 
 
 def _stock_exception_inbound_map(pairs: set[tuple[str, str]]) -> dict[tuple[str, str], dict[str, object]]:
-	if not pairs or not (_can_read("Purchase Order") and _can_read("Purchase Order Item")):
+	if not pairs or not _can_read("Purchase Order"):
 		return {}
 	po_records = _safe_get_list(
 		"Purchase Order",
@@ -1794,13 +1821,17 @@ def _stock_exception_inbound_map(pairs: set[tuple[str, str]]) -> dict[tuple[str,
 	po_map = {cstr(record.get("name")).strip(): record for record in po_records if cstr(record.get("name")).strip()}
 	if not po_map:
 		return {}
-	rows = _safe_get_all(
-		"Purchase Order Item",
-		fields=_available_fields("Purchase Order Item", PURCHASE_ORDER_ITEM_INBOUND_FIELDS),
-		filters={"parent": ["in", sorted(po_map)]},
-		order_by="schedule_date asc, expected_delivery_date asc, idx asc",
-		limit=min(max(len(po_map) * 10, 120), 1200),
-	)
+	rows = []
+	if _can_read("Purchase Order Item"):
+		rows = _safe_get_all(
+			"Purchase Order Item",
+			fields=_available_fields("Purchase Order Item", PURCHASE_ORDER_ITEM_INBOUND_FIELDS),
+			filters={"parent": ["in", sorted(po_map)]},
+			order_by="schedule_date asc, expected_delivery_date asc, idx asc",
+			limit=min(max(len(po_map) * 10, 120), 1200),
+		)
+	if not rows:
+		rows = _stock_exception_purchase_lines_from_orders(po_map)
 	horizon = getdate(nowdate()) + timedelta(days=STOCK_EXCEPTIONS_HORIZON_DAYS)
 	result: dict[tuple[str, str], dict[str, object]] = {}
 	for row in rows:
@@ -1823,6 +1854,29 @@ def _stock_exception_inbound_map(pairs: set[tuple[str, str]]) -> dict[tuple[str,
 			entry["expected_inbound_date"] = expected_date
 			entry["purchase_order"] = parent
 	return result
+
+
+def _stock_exception_purchase_lines_from_orders(po_map: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+	rows: list[dict[str, object]] = []
+	limit = min(max(len(po_map) * 10, 120), 1200)
+	for purchase_order in sorted(po_map):
+		try:
+			doc = frappe.get_doc("Purchase Order", purchase_order)
+			doc.check_permission("read")
+		except Exception:
+			continue
+		for child in list(doc.get("items") or [])[:10]:
+			row: dict[str, object] = {"parent": purchase_order}
+			for field in PURCHASE_ORDER_ITEM_INBOUND_FIELDS:
+				if hasattr(child, "get"):
+					row[field] = child.get(field)
+				else:
+					row[field] = getattr(child, field, None)
+			row["parent"] = row.get("parent") or purchase_order
+			rows.append(row)
+			if len(rows) >= limit:
+				return sorted(rows, key=lambda row: (_date_key(row.get("schedule_date") or row.get("expected_delivery_date")), int(flt(row.get("idx")) or 0)))
+	return sorted(rows, key=lambda row: (_date_key(row.get("schedule_date") or row.get("expected_delivery_date")), int(flt(row.get("idx")) or 0)))
 
 
 def _stock_exception_row(
