@@ -325,6 +325,146 @@
         font-size: 12px;
         font-weight: 700;
       }
+      .warehouse-cockpit-command-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        align-items: start;
+      }
+      .warehouse-cockpit-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin-top: 12px;
+      }
+      .warehouse-cockpit-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        border: 1px solid rgba(188, 211, 200, 0.88);
+        border-radius: 999px;
+        background: rgba(244, 250, 247, 0.92);
+        color: #29463c;
+        font-size: 10.5px;
+        font-weight: 760;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .warehouse-cockpit-pulse {
+        display: grid;
+        gap: 9px;
+      }
+      .warehouse-cockpit-label {
+        color: #597168;
+        font-size: 11px;
+        font-weight: 780;
+        letter-spacing: 0.08em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-cockpit-pulse-card {
+        border-color: rgba(198, 220, 210, 0.98);
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdfc 100%);
+      }
+      .warehouse-cockpit-start,
+      .warehouse-cockpit-route-section,
+      .warehouse-cockpit-guardrail {
+        min-width: 0;
+        padding: 18px;
+        border: 1px solid rgba(219, 231, 225, 0.96);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+      .warehouse-cockpit-section-head {
+        display: grid;
+        gap: 4px;
+        margin-bottom: 12px;
+      }
+      .warehouse-cockpit-section-title {
+        margin: 0;
+        color: #1f2b27;
+        font-size: 16px;
+        font-weight: 780;
+        line-height: 1.25;
+      }
+      .warehouse-cockpit-section-note {
+        color: #64766e;
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .warehouse-cockpit-start-grid,
+      .warehouse-cockpit-route-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 9px;
+      }
+      .warehouse-cockpit-route-grid.is-two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .warehouse-cockpit-start-card,
+      .warehouse-cockpit-route-card {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 8px;
+        min-width: 0;
+        min-height: 148px;
+        padding: 14px;
+        border: 1px solid rgba(212, 226, 219, 0.98);
+        border-radius: 8px;
+        background: #fbfdfc;
+      }
+      .warehouse-cockpit-start-card.is-risk,
+      .warehouse-cockpit-route-card.is-risk {
+        border-color: rgba(227, 194, 135, 0.78);
+        background: #fffaf0;
+      }
+      .warehouse-cockpit-start-card.is-movement,
+      .warehouse-cockpit-route-card.is-movement {
+        border-color: rgba(181, 209, 214, 0.88);
+        background: #f6fbfb;
+      }
+      .warehouse-cockpit-card-kicker {
+        color: #65776f;
+        font-size: 10.5px;
+        font-weight: 780;
+        letter-spacing: 0.06em;
+        line-height: 1.25;
+        text-transform: uppercase;
+      }
+      .warehouse-cockpit-card-title {
+        color: #20332d;
+        font-size: 14px;
+        font-weight: 780;
+        line-height: 1.3;
+      }
+      .warehouse-cockpit-card-note {
+        color: #65776f;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .warehouse-cockpit-card-action {
+        width: fit-content;
+        min-height: 32px;
+        padding: 0 11px;
+        border: 1px solid rgba(177, 199, 189, 0.95);
+        border-radius: 8px;
+        background: #ffffff;
+        color: #1f3b31;
+        font-size: 12px;
+        font-weight: 730;
+      }
+      .warehouse-cockpit-work-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .warehouse-cockpit-guardrail {
+        color: #52655d;
+        font-size: 12.5px;
+        line-height: 1.5;
+        background: #f8fbfa;
+      }
       .warehouse-console-kpi-grid {
         display: grid;
         grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -918,6 +1058,9 @@
         .warehouse-receiving-cards {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+        .warehouse-cockpit-start-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
         .warehouse-inbound-controls {
           grid-template-columns: repeat(4, minmax(0, 1fr));
         }
@@ -932,6 +1075,11 @@
         .warehouse-inbound-row-main,
         .warehouse-receiving-line,
         .warehouse-receiving-history-row,
+        .warehouse-cockpit-command-row,
+        .warehouse-cockpit-work-grid,
+        .warehouse-cockpit-route-grid,
+        .warehouse-cockpit-route-grid.is-two,
+        .warehouse-cockpit-start-grid,
         .warehouse-stock-exception-review-grid,
         .warehouse-stock-exception-next-grid,
         .warehouse-stock-exception-row-main,
@@ -1081,6 +1229,204 @@
         <div class="warehouse-console-kpi-value">${escapeHtml(metricText(metric))}</div>
         <div class="warehouse-console-kpi-meta">${escapeHtml(metricNote(metric))}</div>
       </div>
+    `;
+  }
+
+  function metricByKey(metrics, key) {
+    return (Array.isArray(metrics) ? metrics : []).find((metric) => String(metric && metric.key || "") === key) || {};
+  }
+
+  function cardByKey(cards, key) {
+    return (Array.isArray(cards) ? cards : []).find((card) => String(card && card.key || "") === key) || {};
+  }
+
+  function metricNumber(metric) {
+    const value = metric && metric.value;
+    if (value == null || value === "") return 0;
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : 0;
+  }
+
+  function countFrom(payload, key) {
+    const counts = payload && payload.counts && typeof payload.counts === "object" ? payload.counts : {};
+    const value = counts[key];
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : 0;
+  }
+
+  function freshnessText(payload) {
+    const fetchedAt = payload && payload.fetched_at ? String(payload.fetched_at) : "";
+    if (!fetchedAt) return "Freshness checked";
+    return `Fresh ${fetchedAt}`;
+  }
+
+  function cockpitPulseCards(payload, kpis) {
+    const inbound = payload.inbound || {};
+    const outbound = payload.outbound || {};
+    const stockExceptions = payload.stock_exceptions || {};
+    const receivingAttention = countFrom(inbound, "overdue") + countFrom(inbound, "due_today");
+    const pickingAttention = countFrom(outbound, "overdue") + countFrom(outbound, "due_today") + countFrom(outbound, "short_stock");
+    const exceptionCard = cardByKey(stockExceptions.cards || [], "total_exceptions");
+    const activeWarehouses = metricByKey(kpis, "active_warehouses");
+    const movementMetric = metricByKey(kpis, "transfer_requests");
+    return [
+      { key: "receiving_attention", label: "Receiving Attention", value: receivingAttention, note: "Supplier-side receiving review.", state: "live" },
+      { key: "picking_attention", label: "Picking Attention", value: pickingAttention, note: "Customer-side picking review.", state: "live" },
+      { key: "stock_exceptions", label: "Stock Exceptions", value: metricNumber(exceptionCard), note: "Shortage and posture issues.", state: "live" },
+      { key: "movement_records", label: "Movement Records", value: metricNumber(movementMetric), note: "Posted movement visibility.", state: "live" },
+      { key: "active_warehouse_posture", label: "Warehouse Posture", value: metricNumber(activeWarehouses), note: "Active locations in view.", state: "live" },
+      { key: "freshness", label: "Freshness", value: "Now", note: freshnessText(payload), state: "live" },
+    ];
+  }
+
+  function renderCockpitChip(label) {
+    return `<span class="warehouse-cockpit-chip">${escapeHtml(label)}</span>`;
+  }
+
+  function renderPulseCard(metric) {
+    return `
+      <div class="warehouse-console-kpi-card warehouse-cockpit-pulse-card" data-warehouse-kpi="${escapeHtml(metric.key || "")}" data-warehouse-cockpit-pulse-card="${escapeHtml(metric.key || "")}">
+        <div class="warehouse-console-kpi-label">${escapeHtml(metric.label || "")}</div>
+        <div class="warehouse-console-kpi-value">${escapeHtml(metricText(metric))}</div>
+        <div class="warehouse-console-kpi-meta">${escapeHtml(metricNote(metric))}</div>
+      </div>
+    `;
+  }
+
+  function renderCockpitStartCard(card) {
+    return `
+      <article class="warehouse-cockpit-start-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-start-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-cockpit-card-kicker">${escapeHtml(card.kicker || "")}</div>
+        <div class="warehouse-cockpit-card-title">${escapeHtml(card.title || "")}</div>
+        <div class="warehouse-cockpit-card-note">${escapeHtml(card.note || "")}</div>
+        <button type="button" class="warehouse-cockpit-card-action" ${card.actionAttr}>${escapeHtml(card.action || "")}</button>
+      </article>
+    `;
+  }
+
+  function renderCockpitRouteCard(card) {
+    return `
+      <article class="warehouse-cockpit-route-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-route-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-cockpit-card-kicker">${escapeHtml(card.kicker || "")}</div>
+        <div class="warehouse-cockpit-card-title">${escapeHtml(card.title || "")}</div>
+        <div class="warehouse-cockpit-card-note">${escapeHtml(card.note || "")}</div>
+        ${card.action ? `<button type="button" class="warehouse-cockpit-card-action" ${card.actionAttr}>${escapeHtml(card.action)}</button>` : ""}
+      </article>
+    `;
+  }
+
+  function renderCockpitStart(payload, kpis) {
+    const inbound = payload.inbound || {};
+    const outbound = payload.outbound || {};
+    const stockExceptions = payload.stock_exceptions || {};
+    const receivingAttention = countFrom(inbound, "overdue") + countFrom(inbound, "due_today");
+    const pickingAttention = countFrom(outbound, "overdue") + countFrom(outbound, "due_today") + countFrom(outbound, "short_stock");
+    const exceptionTotal = metricNumber(cardByKey(stockExceptions.cards || [], "total_exceptions"));
+    const movementMetric = metricByKey(kpis, "transfer_requests");
+    const cards = [
+      {
+        key: "inbound_due",
+        kicker: receivingAttention ? `${receivingAttention} needs review` : "Supplier-side work",
+        title: "Review inbound due soon",
+        note: "Expected supplier stock and partial receiving posture.",
+        action: "Open inbound receiving",
+        actionAttr: "data-warehouse-open-inbound",
+      },
+      {
+        key: "outbound_risk",
+        kicker: pickingAttention ? `${pickingAttention} needs review` : "Customer-side work",
+        title: "Review outbound picking risk",
+        note: "Customer demand, pending quantity, and warehouse readiness.",
+        action: "Open outbound picking",
+        actionAttr: "data-warehouse-open-outbound",
+      },
+      {
+        key: "stock_exceptions",
+        kicker: exceptionTotal ? `${exceptionTotal} visible` : "Risk review",
+        title: "Check stock exceptions",
+        note: "Shortage risk, inbound cover, and posture gaps.",
+        action: "Open stock exceptions",
+        actionAttr: "data-warehouse-open-stock-exceptions",
+        variant: "is-risk",
+      },
+      {
+        key: "movement_visibility",
+        kicker: metricText(movementMetric),
+        title: "Inspect recent movement",
+        note: "Posted movement visibility and item posture drilldowns.",
+        action: "Open movement visibility",
+        actionAttr: "data-warehouse-open-movement",
+        variant: "is-movement",
+      },
+    ];
+    return `
+      <section class="warehouse-cockpit-start" data-warehouse-cockpit-start>
+        <div class="warehouse-cockpit-section-head">
+          <h2 class="warehouse-cockpit-section-title">Start Here</h2>
+          <div class="warehouse-cockpit-section-note">Prioritized read-only starts using protected Warehouse routes.</div>
+        </div>
+        <div class="warehouse-cockpit-start-grid">${cards.map(renderCockpitStartCard).join("")}</div>
+      </section>
+    `;
+  }
+
+  function renderCockpitRiskSection() {
+    const cards = [
+      {
+        key: "stock_exceptions",
+        kicker: "Risk",
+        title: "Stock Exceptions",
+        note: "Shortage risk, inbound cover, and missing warehouse posture.",
+        action: "Open stock exceptions",
+        actionAttr: "data-warehouse-open-stock-exceptions",
+        variant: "is-risk",
+      },
+      {
+        key: "stock_posture_context",
+        kicker: "Context detail",
+        title: "Stock Posture",
+        note: "Item and warehouse posture opens from protected review pages. It is not a top-level lookup.",
+        variant: "is-risk",
+      },
+    ];
+    return `
+      <section class="warehouse-cockpit-route-section" data-warehouse-cockpit-risk>
+        <div class="warehouse-cockpit-section-head">
+          <h2 class="warehouse-cockpit-section-title">Risks To Resolve</h2>
+          <div class="warehouse-cockpit-section-note">Understand blockers before warehouse work stalls.</div>
+        </div>
+        <div class="warehouse-cockpit-route-grid is-two">${cards.map(renderCockpitRouteCard).join("")}</div>
+      </section>
+    `;
+  }
+
+  function renderCockpitMovementSection() {
+    const cards = [
+      {
+        key: "movement_visibility",
+        kicker: "Visibility",
+        title: "Movement Visibility",
+        note: "Posted movement records grouped for operational review.",
+        action: "Open movement visibility",
+        actionAttr: "data-warehouse-open-movement",
+        variant: "is-movement",
+      },
+      {
+        key: "movement_review_context",
+        kicker: "Context detail",
+        title: "Movement Review",
+        note: "Detailed read-only review opens from Movement Visibility rows.",
+        variant: "is-movement",
+      },
+    ];
+    return `
+      <section class="warehouse-cockpit-route-section" data-warehouse-cockpit-movement>
+        <div class="warehouse-cockpit-section-head">
+          <h2 class="warehouse-cockpit-section-title">Movement To Understand</h2>
+          <div class="warehouse-cockpit-section-note">Review what already changed without leaving this read-only workspace.</div>
+        </div>
+        <div class="warehouse-cockpit-route-grid is-two">${cards.map(renderCockpitRouteCard).join("")}</div>
+      </section>
     `;
   }
 
@@ -1241,23 +1587,40 @@
   function renderOverview(page, payload) {
     ensureStyle();
     const kpis = Array.isArray(payload.kpis) ? payload.kpis.slice(0, 6) : [];
-    const sections = Array.isArray(payload.sections) ? payload.sections.slice(0, 5) : [];
+    const pulseCards = cockpitPulseCards(payload, kpis);
+    const chips = ["Read-only", "Warehouse workspace", freshnessText(payload)];
     const $root = $(`
-      <div class="sales-console-shell warehouse-console-shell" data-erpw-workspace="warehouse" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="ready">
-        <section class="warehouse-console-header">
-          <div class="warehouse-console-header-row">
+      <div class="sales-console-shell warehouse-console-shell" data-erpw-workspace="warehouse" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="ready" data-warehouse-cockpit="ready">
+        <section class="warehouse-console-header" data-warehouse-cockpit-command>
+          <div class="warehouse-cockpit-command-row">
             <div>
               <h1 class="warehouse-console-title">Warehouse Console</h1>
-              <div class="warehouse-console-note">Stock visibility, receiving posture, movement watch, and warehouse exceptions.</div>
+              <div class="warehouse-console-note">Protected read-only workspace for inbound receiving, outbound picking, stock exceptions, and posted movement visibility.</div>
+              <div class="warehouse-cockpit-chip-row">${chips.map(renderCockpitChip).join("")}</div>
             </div>
             <button class="warehouse-console-refresh" type="button" data-warehouse-refresh>Refresh</button>
           </div>
-          <div class="warehouse-console-kpi-grid">${kpis.map(renderKpi).join("")}</div>
-          ${renderInboundOverviewPanel(payload.inbound || {})}
-          ${renderOutboundOverviewPanel(payload.outbound || {})}
-          ${renderStockExceptionsOverviewPanel(payload.stock_exceptions || {})}
         </section>
-        <div class="warehouse-console-grid">${sections.map(renderSection).join("")}</div>
+        <section class="warehouse-cockpit-pulse" data-warehouse-cockpit-pulse>
+          <div class="warehouse-cockpit-label">Warehouse Pulse</div>
+          <div class="warehouse-console-kpi-grid warehouse-cockpit-pulse-grid">${pulseCards.map(renderPulseCard).join("")}</div>
+        </section>
+        ${renderCockpitStart(payload, kpis)}
+        <section class="warehouse-cockpit-route-section" data-warehouse-cockpit-work>
+          <div class="warehouse-cockpit-section-head">
+            <h2 class="warehouse-cockpit-section-title">Work To Do</h2>
+            <div class="warehouse-cockpit-section-note">Supplier-side receiving review and customer-side picking review are paired for daily operations.</div>
+          </div>
+          <div class="warehouse-cockpit-work-grid">
+            ${renderInboundOverviewPanel(payload.inbound || {})}
+            ${renderOutboundOverviewPanel(payload.outbound || {})}
+          </div>
+        </section>
+        ${renderCockpitRiskSection()}
+        ${renderCockpitMovementSection()}
+        <section class="warehouse-cockpit-guardrail" data-warehouse-cockpit-guardrail>
+          Warehouse Console is read-only in this phase. Stock updates stay in controlled ERP operations.
+        </section>
       </div>
     `);
     $root.find("[data-warehouse-refresh]").on("click", (event) => {
@@ -1280,6 +1643,11 @@
       event.preventDefault();
       frappe.route_options = {};
       frappe.set_route(WORKLIST_PAGE_KEY, "stock-exceptions");
+    });
+    $root.find("[data-warehouse-open-movement]").on("click", (event) => {
+      event.preventDefault();
+      frappe.route_options = {};
+      frappe.set_route(WORKLIST_PAGE_KEY, "movement-visibility");
     });
     replacePageBody(page, $root);
     cleanupOverviewPageHeads();
