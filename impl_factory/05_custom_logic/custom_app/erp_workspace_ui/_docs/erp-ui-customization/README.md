@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility design, and W9/W9A/W9B cockpit information architecture and usability review
+- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, and W9/W9A/W9B cockpit information architecture and usability review
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
@@ -77,6 +77,7 @@ Freeze and governance status:
 - Warehouse Console Phase W9A Cockpit Information Architecture is protected on 2026-05-30 at `97b7f063a8ec9f248e6aaea63a8b5f4444f68336`; `/desk/warehouse-console` now renders a premium read-only Warehouse Cockpit with command header, Warehouse Pulse, Start Here, Work To Do, Risks To Resolve, Movement To Understand, and guardrail footer while preserving accepted Warehouse routes and excluding new backend methods, transfer visibility, native escape, Quick Find/Search, stock mutation, valuation/accounting/commercial exposure, and Sales/Procurement runtime changes.
 - Warehouse Console Phase W9B Cockpit Usability Review is documented on 2026-05-30 as a docs-only control-agent review of the accepted W9A live cockpit; W9A is accepted, the immediate recommendation is owner visual walkthrough before W8C, and any optional W9B implementation must remain limited to cockpit polish and smoke screenshot evidence hardening without new routes, backend methods, native escape, Quick Find/Search, stock mutation, valuation/accounting/commercial exposure, or Sales/Procurement runtime changes.
 - Warehouse Console Phase W8C Transfer Visibility is documented on 2026-05-30 as a docs-only design plan for proposed route `/desk/warehouse-console-worklist/transfer-visibility`; implementation is deferred until owner approval and must remain read-only, using submitted material-transfer Stock Entry posture and custom Warehouse drilldowns only, without transfer execution, Stock Entry lifecycle controls, Stock Ledger/Stock Balance exposure, valuation/accounting/commercial exposure, native escape, Quick Find/Search, or Sales/Procurement runtime changes.
+- Warehouse Console Phase W8C Transfer Visibility is protected on 2026-05-30 at `97cf78485ba5c1cf371dcce8348bab222755df37`; `/desk/warehouse-console-worklist/transfer-visibility` renders read-only warehouse-to-warehouse transfer posture from submitted material-transfer Stock Entry records with custom Movement Review and Stock Posture drilldowns only, while excluding transfer execution, Stock Entry lifecycle controls, Stock Ledger/Stock Balance exposure, valuation/accounting/commercial exposure, native escape, Quick Find/Search, and Sales/Procurement runtime changes.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -128,7 +129,7 @@ Current routing truth:
 - Warehouse Console W7A protected read-only stock posture review route is `/desk/warehouse-console-stock-posture/<encoded-context>`.
 - Warehouse Console W8A protected read-only movement visibility route is `/desk/warehouse-console-worklist/movement-visibility`.
 - Warehouse Console W8B protected read-only movement review route is `/desk/warehouse-console-movement/<encoded-context>`.
-- Warehouse Console W8C proposed transfer visibility route is `/desk/warehouse-console-worklist/transfer-visibility`; it is not implemented yet and requires owner approval before any source changes.
+- Warehouse Console W8C protected read-only transfer visibility route is `/desk/warehouse-console-worklist/transfer-visibility`.
 - Warehouse Console W9A protected home cockpit keeps `/desk/warehouse-console` as the top-level Warehouse start and organizes existing protected Warehouse routes into Work To Do, Risks To Resolve, and Movement To Understand; W9B recommends owner visual acceptance or narrowly scoped cockpit polish before W8C Transfer Visibility.
 
 Current visible report keys:
@@ -166,6 +167,7 @@ Documents in this folder:
 - `warehouse-console-phase-w8b-movement-review-design-plan-2026-05-30.md`
 - `warehouse-console-phase-w8b-movement-review-baseline-2026-05-30.md`
 - `warehouse-console-phase-w8c-transfer-visibility-design-plan-2026-05-30.md`
+- `warehouse-console-phase-w8c-transfer-visibility-baseline-2026-05-30.md`
 - `warehouse-console-phase-w9-information-architecture-review-plan-2026-05-30.md`
 - `warehouse-console-phase-w9a-cockpit-information-architecture-baseline-2026-05-30.md`
 - `warehouse-console-phase-w9b-cockpit-usability-review-2026-05-30.md`
