@@ -287,6 +287,25 @@
     return Array.isArray(route) && String(route[0] || "") === MOVEMENT_PAGE_KEY;
   }
 
+  function activeWarehouseRouteKey() {
+    const pathRoute = pathRouteParts();
+    const pathKey = String(pathRoute[0] || "");
+    if (pathKey) return pathKey;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) ? String(route[0] || "") : "";
+  }
+
+  function isWarehouseOwnedRouteKey(routeKey) {
+    const key = String(routeKey || "");
+    return key === PAGE_KEY
+      || key === WORKLIST_PAGE_KEY
+      || key === RECEIVING_PAGE_KEY
+      || key === PICKING_PAGE_KEY
+      || key === STOCK_EXCEPTION_PAGE_KEY
+      || key === STOCK_POSTURE_PAGE_KEY
+      || key === MOVEMENT_PAGE_KEY;
+  }
+
   function warehouseConsoleDiagnostics() {
     const api = window.erpWorkspaceWarehouseConsole = window.erpWorkspaceWarehouseConsole || {};
     api.diagnostics = api.diagnostics || {};
@@ -1227,7 +1246,7 @@
       </div>
     `);
     replacePageBody(page, $root);
-    cleanupOverviewPageHeads();
+    cleanupWarehousePageHeads();
   }
 
   function renderLoadingState(page) {
@@ -1246,7 +1265,7 @@
       </div>
     `);
     replacePageBody(page, $root);
-    cleanupOverviewPageHeads();
+    cleanupWarehousePageHeads();
   }
 
   function metricText(metric) {
@@ -1702,7 +1721,7 @@
       frappe.set_route(WORKLIST_PAGE_KEY, "transfer-visibility");
     });
     replacePageBody(page, $root);
-    cleanupOverviewPageHeads();
+    cleanupWarehousePageHeads();
   }
 
   function fetchOverviewWithRetry(attempt) {
@@ -1715,18 +1734,18 @@
     });
   }
 
-  function cleanupOverviewPageHeads() {
-    const route = frappe.get_route ? frappe.get_route() : [];
-    const routeKey = Array.isArray(route) ? String(route[0] || "") : "";
-    if (routeKey !== PAGE_KEY) return;
+  function cleanupWarehousePageHeads() {
+    if (!isWarehouseOwnedRouteKey(activeWarehouseRouteKey())) return;
     document.querySelectorAll(".page-head").forEach((head) => {
-      if (!(head instanceof HTMLElement)) return;
-      const text = String(head.textContent || "").replace(/\s+/g, " ").trim();
-      const hasManagedTitle = /Warehouse Console/i.test(text);
-      if (!hasManagedTitle && (!text || text === "Actions")) {
-        head.remove();
-      }
+      if (head instanceof HTMLElement) head.remove();
     });
+  }
+
+  function replaceWarehouseRouteHost(viewState, $root) {
+    if (!viewState || !viewState.$host) return;
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+    cleanupWarehousePageHeads();
   }
 
   function rootHasWarehouseShell(root) {
@@ -2318,8 +2337,7 @@
       const purchaseOrder = String($(this).closest("[data-warehouse-stock-exception-receiving-order]").attr("data-warehouse-stock-exception-receiving-order") || "").trim();
       if (purchaseOrder) frappe.set_route(RECEIVING_PAGE_KEY, purchaseOrder);
     });
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderMovementCard(card) {
@@ -2463,8 +2481,7 @@
       const token = String(this.getAttribute("data-warehouse-stock-posture-token") || "").trim();
       if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
     });
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderTransferCard(card) {
@@ -2641,8 +2658,7 @@
       const token = String(this.getAttribute("data-warehouse-stock-posture-token") || "").trim();
       if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
     });
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderTransferLoading(viewState) {
@@ -2803,8 +2819,7 @@
       activateReceivingTab($root, String(this.getAttribute("data-warehouse-receiving-tab") || "item_lines"));
     });
     activateReceivingTab($root, "item_lines");
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderReceivingLoading(viewState) {
@@ -2978,8 +2993,7 @@
       activatePickingTab($root, String(this.getAttribute("data-warehouse-picking-tab") || "item_lines"));
     });
     activatePickingTab($root, "item_lines");
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderPickingLoading(viewState) {
@@ -3211,8 +3225,7 @@
       const token = String(this.getAttribute("data-warehouse-stock-exception-posture-token") || "");
       if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
     });
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderStockExceptionReviewLoading(viewState) {
@@ -3467,8 +3480,7 @@
       event.preventDefault();
       routeStockPostureElement(this);
     });
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderStockPostureReviewLoading(viewState) {
@@ -3704,8 +3716,7 @@
       const token = String(this.getAttribute("data-warehouse-stock-posture-token") || this.getAttribute("data-warehouse-movement-review-route-stock-posture") || "").trim();
       if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
     });
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderMovementReviewLoading(viewState) {
@@ -3850,8 +3861,7 @@
       event.preventDefault();
       $(this).closest("[data-warehouse-inbound-row]").toggleClass("is-expanded");
     });
-    removeDuplicateWarehouseHosts(viewState.$host.get(0));
-    viewState.$host.empty().append($root);
+    replaceWarehouseRouteHost(viewState, $root);
   }
 
   function renderInboundLoading(viewState) {

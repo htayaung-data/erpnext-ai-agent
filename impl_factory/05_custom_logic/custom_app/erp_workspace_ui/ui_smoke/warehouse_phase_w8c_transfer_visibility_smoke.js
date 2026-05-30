@@ -416,6 +416,7 @@ async function snapshot(page) {
       actionText,
       hrefs,
       shellCount: Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace="warehouse"]')).filter(visible).length,
+      pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       headerCount: Array.from(document.querySelectorAll(".warehouse-console-header, .warehouse-inbound-queue-header, .warehouse-receiving-header")).filter(visible).length,
       transferShellCount: Array.from(document.querySelectorAll('[data-warehouse-transfer-shell="true"][data-warehouse-view="transfer-visibility"]')).filter(visible).length,
       transferCardCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-card]")).filter(visible).length,
@@ -435,6 +436,7 @@ async function snapshot(page) {
 
 function assertClean(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
+  assert(state.pageHeadCount === 0, "Warehouse Frappe page-head chrome must not be visible", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
   assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W8C", { context, state });
