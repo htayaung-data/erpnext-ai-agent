@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, W9/W9A/W9B cockpit information architecture and usability review, W10 phase-boundary review, W10A read-only hardening baseline, and W10B read-only freeze closure
+- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, W9/W9A/W9B cockpit information architecture and usability review, W10 phase-boundary review, W10A read-only hardening baseline, W10B read-only freeze closure, and W10C page chrome fix
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
@@ -81,6 +81,7 @@ Freeze and governance status:
 - Warehouse Console Phase W10 Operations Review and Phase Boundary is documented on 2026-05-30 as a docs-only main-control decision to pause net-new Warehouse feature implementation and run W10A multi-agent protected-surface audit before adding more routes, execution capability, valuation/accounting exposure, native escape, Quick Find/Search, or lifecycle behavior.
 - Warehouse Console Phase W10A Read-Only Hardening Baseline is protected on 2026-05-31 at `fa73deb5dddad0dc356876a320a6adba1a6b7acb`; Warehouse parent document reads no longer fall back to `frappe.get_all`, W4/W5 bounded filter placeholders use `Filter ...`, W4-W6 smokes harden visible `Search`/`Quick Find` negatives, source and live Warehouse W4A-W8C smokes passed, and final protected live gate passed at `/tmp/warehouse-w10a-hardening-protected-live-20260530T181654Z/protected-workspace-gate-summary.json`.
 - Warehouse Console Phase W10B Read-Only Freeze Closure is documented on 2026-05-31 as a docs-only acceptance of `warehouse-console-read-only-visibility-v1`; owner manual UI review remains recommended as supplemental evidence, but W10B does not block on it because W10A was narrow hardening and source/live Warehouse W4A-W8C smokes plus protected gates passed.
+- Warehouse Console Phase W10C Page Chrome Fix is protected on 2026-05-31 at `23dc8d42fe8bdef31eec2008efa20666abba9b8a`; owner-reported repeated top-left Frappe page-head icons are removed across Warehouse-owned routes, W8C smoke now asserts zero visible `.page-head` chrome, live W8C passed, and final protected live gate passed at `/tmp/warehouse-w10c-page-head-protected-live-20260530T190659Z/protected-workspace-gate-summary.json`.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -134,7 +135,7 @@ Current routing truth:
 - Warehouse Console W8B protected read-only movement review route is `/desk/warehouse-console-movement/<encoded-context>`.
 - Warehouse Console W8C protected read-only transfer visibility route is `/desk/warehouse-console-worklist/transfer-visibility`.
 - Warehouse Console W9A protected home cockpit keeps `/desk/warehouse-console` as the top-level Warehouse start and organizes existing protected Warehouse routes into Work To Do, Risks To Resolve, and Movement To Understand; W9B recommends owner visual acceptance or narrowly scoped cockpit polish before W8C Transfer Visibility.
-- Warehouse Console W10B is closed as `warehouse-console-read-only-visibility-v1`; owner visual walkthrough may produce W10C polish notes, but no next Warehouse implementation phase should start without explicit owner selection.
+- Warehouse Console W10C removes duplicate Frappe page chrome after owner feedback; broader premium visual polish remains a separate owner-approved task and no next Warehouse implementation phase should start without explicit owner selection.
 
 Current visible report keys:
 
@@ -178,6 +179,7 @@ Documents in this folder:
 - `warehouse-console-phase-w10-operations-review-and-phase-boundary-2026-05-30.md`
 - `warehouse-console-phase-w10a-read-only-hardening-baseline-2026-05-31.md`
 - `warehouse-console-phase-w10b-read-only-freeze-closure-2026-05-31.md`
+- `warehouse-console-phase-w10c-page-chrome-fix-2026-05-31.md`
 - `frozen-workspace-protection-package-standard-v1.md`
 - `sales-console-frozen-protection-package-2026-05-09.md`
 - `procurement-console-phase3-stable-baseline-2026-05-10.md`
