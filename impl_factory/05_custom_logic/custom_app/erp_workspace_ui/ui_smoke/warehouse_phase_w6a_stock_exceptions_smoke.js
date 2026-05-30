@@ -30,7 +30,7 @@ const VIEWPORTS = [
 ];
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Allocate|Item Price|Default Supplier|Item Supplier)\b/i;
-const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find)\b/i;
+const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|base_net_rate|\bamount\b|profit|margin|\bcost\b|\bgl\b|accounting|buying price|selling price|item price/i;
 

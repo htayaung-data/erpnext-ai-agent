@@ -33,7 +33,7 @@ const VIEWPORTS = [
 ];
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Item Price|Default Supplier|Item Supplier)\b/i;
-const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test)\b/i;
+const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|base_net_rate|amount/i;
 
@@ -296,9 +296,9 @@ function sourceOutboundPayload(filters = {}) {
     },
     controls: {
       fields: [
-        { key: "sales_order", label: "Sales Order", type: "text", value: filters.sales_order || "", placeholder: "Search order" },
-        { key: "customer", label: "Customer", type: "text", value: filters.customer || "", placeholder: "Search customer" },
-        { key: "warehouse", label: "Warehouse", type: "text", value: filters.warehouse || "", placeholder: "Search warehouse" },
+        { key: "sales_order", label: "Sales Order", type: "text", value: filters.sales_order || "", placeholder: "Filter order" },
+        { key: "customer", label: "Customer", type: "text", value: filters.customer || "", placeholder: "Filter customer" },
+        { key: "warehouse", label: "Warehouse", type: "text", value: filters.warehouse || "", placeholder: "Filter warehouse" },
         {
           key: "state",
           label: "Picking State",
@@ -593,7 +593,7 @@ async function snapshot(page) {
       queueCardCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-queue-card]")).filter(visible).length,
       queueGroupCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-group]")).filter(visible).length,
       queueRowCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-row]")).filter(visible).length,
-      detailButtonCount: Array.from(document.querySelectorAll("[data-warehouse-row-open-detail]")).filter(visible).length,
+      detailButtonCount: Array.from(document.querySelectorAll("[data-warehouse-row-open-detail], [data-warehouse-row-open-picking-detail]")).filter(visible).length,
       filterCount: Array.from(document.querySelectorAll("[data-warehouse-filter-key]")).filter(visible).length,
       expandedLineCount: Array.from(document.querySelectorAll(".warehouse-inbound-line")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),

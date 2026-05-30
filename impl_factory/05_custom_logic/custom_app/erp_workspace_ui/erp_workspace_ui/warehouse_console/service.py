@@ -1543,9 +1543,9 @@ def _inbound_queue_payload(
 def _inbound_controls(filters: dict[str, str]) -> dict[str, object]:
 	return {
 		"fields": [
-			{"key": "purchase_order", "label": "Purchase Order", "type": "text", "value": filters.get("purchase_order", ""), "placeholder": "Search order"},
-			{"key": "supplier", "label": "Supplier", "type": "text", "value": filters.get("supplier", ""), "placeholder": "Search supplier"},
-			{"key": "warehouse", "label": "Warehouse", "type": "text", "value": filters.get("warehouse", ""), "placeholder": "Search warehouse"},
+			{"key": "purchase_order", "label": "Purchase Order", "type": "text", "value": filters.get("purchase_order", ""), "placeholder": "Filter order"},
+			{"key": "supplier", "label": "Supplier", "type": "text", "value": filters.get("supplier", ""), "placeholder": "Filter supplier"},
+			{"key": "warehouse", "label": "Warehouse", "type": "text", "value": filters.get("warehouse", ""), "placeholder": "Filter warehouse"},
 			{
 				"key": "state",
 				"label": "Receiving State",
@@ -4191,9 +4191,9 @@ def _outbound_queue_payload(
 def _outbound_controls(filters: dict[str, str]) -> dict[str, object]:
 	return {
 		"fields": [
-			{"key": "sales_order", "label": "Sales Order", "type": "text", "value": filters.get("sales_order", ""), "placeholder": "Search order"},
-			{"key": "customer", "label": "Customer", "type": "text", "value": filters.get("customer", ""), "placeholder": "Search customer"},
-			{"key": "warehouse", "label": "Warehouse", "type": "text", "value": filters.get("warehouse", ""), "placeholder": "Search warehouse"},
+			{"key": "sales_order", "label": "Sales Order", "type": "text", "value": filters.get("sales_order", ""), "placeholder": "Filter order"},
+			{"key": "customer", "label": "Customer", "type": "text", "value": filters.get("customer", ""), "placeholder": "Filter customer"},
+			{"key": "warehouse", "label": "Warehouse", "type": "text", "value": filters.get("warehouse", ""), "placeholder": "Filter warehouse"},
 			{
 				"key": "state",
 				"label": "Picking State",
@@ -4471,19 +4471,8 @@ def _safe_get_list(
 		)
 	except Exception:
 		_clear_transient_frappe_messages()
-		try:
-			return list(
-				frappe.get_all(
-					doctype,
-					fields=fields,
-					filters=filters or [],
-					order_by=order_by,
-					limit_page_length=limit,
-				)
-			)
-		except Exception:
-			_clear_transient_frappe_messages()
-			return []
+		# Parent document queries must stay permission-aware; do not fall back to frappe.get_all here.
+		return []
 
 
 def _safe_get_all(

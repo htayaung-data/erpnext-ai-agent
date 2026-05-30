@@ -33,7 +33,7 @@ const VIEWPORTS = [
 ];
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Reserve|Unreserve|Assign Serial|Assign Batch|Item Price|Default Supplier|Item Supplier)\b/i;
-const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test)\b/i;
+const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|landed cost|billing|payment|tax/i;
 
@@ -224,9 +224,9 @@ function sourceInboundPayload(filters = {}) {
     summary: { title: "Inbound Receiving", subtitle: "Expected supplier stock due into warehouse.", chips: [{ label: "Read-only" }, { label: `${rows.length} shown` }] },
     controls: {
       fields: [
-        { key: "purchase_order", label: "Purchase Order", type: "text", value: filters.purchase_order || "", placeholder: "Search order" },
-        { key: "supplier", label: "Supplier", type: "text", value: filters.supplier || "", placeholder: "Search supplier" },
-        { key: "warehouse", label: "Warehouse", type: "text", value: filters.warehouse || "", placeholder: "Search warehouse" },
+        { key: "purchase_order", label: "Purchase Order", type: "text", value: filters.purchase_order || "", placeholder: "Filter order" },
+        { key: "supplier", label: "Supplier", type: "text", value: filters.supplier || "", placeholder: "Filter supplier" },
+        { key: "warehouse", label: "Warehouse", type: "text", value: filters.warehouse || "", placeholder: "Filter warehouse" },
         { key: "state", label: "Receiving State", type: "select", value: filters.state || "", options: [{ label: "All", value: "" }, { label: "Overdue", value: "overdue" }] },
       ],
       actions: [{ key: "refresh", label: "Refresh" }, { key: "reset_filters", label: "Reset" }, { key: "apply_filters", label: "Apply", kind: "primary" }],

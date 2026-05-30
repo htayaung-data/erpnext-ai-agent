@@ -32,7 +32,7 @@ const VIEWPORTS = [
 ];
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Item Price|Default Supplier|Item Supplier)\b/i;
-const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test)\b/i;
+const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|base_net_rate|amount|profit|margin|cost|gl|accounting/i;
 
@@ -223,9 +223,9 @@ function sourceOutboundPayload(filters = {}) {
     summary: { title: "Outbound Picking", subtitle: "Pending customer demand waiting for warehouse review.", chips: [{ label: "Read-only" }, { label: `${rows.length} shown` }] },
     controls: {
       fields: [
-        { key: "sales_order", label: "Sales Order", type: "text", value: filters.sales_order || "", placeholder: "Search order" },
-        { key: "customer", label: "Customer", type: "text", value: filters.customer || "", placeholder: "Search customer" },
-        { key: "warehouse", label: "Warehouse", type: "text", value: filters.warehouse || "", placeholder: "Search warehouse" },
+        { key: "sales_order", label: "Sales Order", type: "text", value: filters.sales_order || "", placeholder: "Filter order" },
+        { key: "customer", label: "Customer", type: "text", value: filters.customer || "", placeholder: "Filter customer" },
+        { key: "warehouse", label: "Warehouse", type: "text", value: filters.warehouse || "", placeholder: "Filter warehouse" },
         { key: "state", label: "Picking State", type: "select", value: filters.state || "", options: [{ label: "All", value: "" }, { label: "Needs Stock Review", value: "needs_stock_review" }, { label: "Ready to Pick", value: "ready_to_pick" }] },
       ],
       actions: [{ key: "refresh", label: "Refresh" }, { key: "reset_filters", label: "Reset" }, { key: "apply_filters", label: "Apply", kind: "primary" }],
