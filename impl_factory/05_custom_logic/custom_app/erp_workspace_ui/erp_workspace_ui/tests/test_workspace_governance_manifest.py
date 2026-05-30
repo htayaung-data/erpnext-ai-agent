@@ -174,7 +174,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                     continue
                 self.assertIn(value, manifest_keys, key)
 
-    def test_warehouse_w6b_routes_and_actions_are_read_only(self):
+    def test_warehouse_w8c_routes_and_actions_are_read_only(self):
         warehouse_routes = [route for route in ROUTE_MANIFEST if route["workspace_id"] == "warehouse"]
         self.assertEqual(
             [
@@ -184,6 +184,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-console-worklist/outbound_picking",
                 "warehouse-console-worklist/stock_exceptions",
                 "warehouse-console-worklist/movement_visibility",
+                "warehouse-console-worklist/transfer_visibility",
                 "warehouse-console-receiving",
                 "warehouse-console-picking",
                 "warehouse-console-stock-exception",
@@ -198,21 +199,23 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("productized_worklist", warehouse_routes[3]["classification"])
         self.assertEqual("productized_worklist", warehouse_routes[4]["classification"])
         self.assertEqual("productized_worklist", warehouse_routes[5]["classification"])
-        self.assertEqual("productized_detail", warehouse_routes[6]["classification"])
+        self.assertEqual("productized_worklist", warehouse_routes[6]["classification"])
         self.assertEqual("productized_detail", warehouse_routes[7]["classification"])
         self.assertEqual("productized_detail", warehouse_routes[8]["classification"])
         self.assertEqual("productized_detail", warehouse_routes[9]["classification"])
         self.assertEqual("productized_detail", warehouse_routes[10]["classification"])
+        self.assertEqual("productized_detail", warehouse_routes[11]["classification"])
         self.assertEqual("/desk/warehouse-console", warehouse_routes[0]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/inbound-receiving", warehouse_routes[2]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/outbound-picking", warehouse_routes[3]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/stock-exceptions", warehouse_routes[4]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/movement-visibility", warehouse_routes[5]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-receiving/<purchase-order>", warehouse_routes[6]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-picking/<sales-order>", warehouse_routes[7]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-stock-exception/<encoded-context>", warehouse_routes[8]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-stock-posture/<encoded-context>", warehouse_routes[9]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-movement/<encoded-context>", warehouse_routes[10]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-worklist/transfer-visibility", warehouse_routes[6]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-receiving/<purchase-order>", warehouse_routes[7]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-picking/<sales-order>", warehouse_routes[8]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-stock-exception/<encoded-context>", warehouse_routes[9]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-stock-posture/<encoded-context>", warehouse_routes[10]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-movement/<encoded-context>", warehouse_routes[11]["route_pattern"])
         for route in warehouse_routes:
             self.assertNotEqual("governed_native_exception", route["classification"])
             self.assertIsNone(route.get("native_exception_ref"), route)
@@ -227,6 +230,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-overview-refresh",
                 "warehouse-overview-open-inbound",
                 "warehouse-overview-open-outbound",
+                "warehouse-overview-open-transfer",
                 "warehouse-inbound-refresh",
                 "warehouse-inbound-reset",
                 "warehouse-inbound-apply",
@@ -249,6 +253,12 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-movement-view-lines",
                 "warehouse-movement-open-stock-posture",
                 "warehouse-movement-open-movement-review",
+                "warehouse-transfer-refresh",
+                "warehouse-transfer-reset",
+                "warehouse-transfer-apply",
+                "warehouse-transfer-view-lines",
+                "warehouse-transfer-open-stock-posture",
+                "warehouse-transfer-open-movement-review",
                 "warehouse-movement-review-refresh",
                 "warehouse-movement-review-back",
                 "warehouse-movement-review-open-stock-posture",
@@ -273,12 +283,14 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-sidebar-outbound-navigation",
                 "warehouse-sidebar-stock-exceptions-navigation",
                 "warehouse-sidebar-movement-navigation",
+                "warehouse-sidebar-transfer-navigation",
             },
             set(warehouse_actions),
         )
         self.assertEqual("current_shell", warehouse_actions["warehouse-overview-refresh"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-overview-open-inbound"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-overview-open-outbound"]["target_kind"])
+        self.assertEqual("worklist", warehouse_actions["warehouse-overview-open-transfer"]["target_kind"])
         self.assertEqual("current_shell", warehouse_actions["warehouse-inbound-view-lines"]["target_kind"])
         self.assertEqual("current_shell", warehouse_actions["warehouse-outbound-view-lines"]["target_kind"])
         self.assertEqual("page", warehouse_actions["warehouse-inbound-open-receiving-review"]["target_kind"])
@@ -295,6 +307,12 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("current_shell", warehouse_actions["warehouse-movement-view-lines"]["target_kind"])
         self.assertEqual("page", warehouse_actions["warehouse-movement-open-stock-posture"]["target_kind"])
         self.assertEqual("page", warehouse_actions["warehouse-movement-open-movement-review"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-transfer-refresh"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-transfer-reset"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-transfer-apply"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-transfer-view-lines"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-transfer-open-stock-posture"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-transfer-open-movement-review"]["target_kind"])
         self.assertEqual("current_shell", warehouse_actions["warehouse-movement-review-refresh"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-movement-review-back"]["target_kind"])
         self.assertEqual("page", warehouse_actions["warehouse-movement-review-open-stock-posture"]["target_kind"])
@@ -318,6 +336,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-outbound-navigation"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-stock-exceptions-navigation"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-movement-navigation"]["target_kind"])
+        self.assertEqual("worklist", warehouse_actions["warehouse-sidebar-transfer-navigation"]["target_kind"])
         for action in warehouse_actions.values():
             self.assertNotIn(action["target_kind"], {"form", "report", "list", "new_doc"}, action)
             self.assertIsNone(action.get("native_exception_ref"), action)

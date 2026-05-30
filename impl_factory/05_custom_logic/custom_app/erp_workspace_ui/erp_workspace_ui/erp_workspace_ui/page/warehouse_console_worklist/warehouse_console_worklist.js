@@ -30,6 +30,8 @@
     const key = activeQueueKey();
     if (key === "outbound_picking") return "outbound-picking";
     if (key === "stock_exceptions") return "stock-exceptions";
+    if (key === "movement_visibility") return "movement-visibility";
+    if (key === "transfer_visibility") return "transfer-visibility";
     return "inbound-receiving";
   }
 
@@ -70,7 +72,8 @@
     frappe.require([ASSET], () => {
       const attempt = () => {
         const shell = document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${activeViewName()}"]`);
-        if (token !== renderSerial && shell) return true;
+        if (shell) return true;
+        if (token !== renderSerial) return true;
         return invokeRenderer(wrapper);
       };
       attempt();

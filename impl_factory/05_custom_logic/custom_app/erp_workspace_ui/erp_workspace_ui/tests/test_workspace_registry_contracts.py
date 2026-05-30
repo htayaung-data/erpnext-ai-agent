@@ -248,11 +248,11 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "procurement")
 
-    def test_warehouse_console_w8b_registry_definition(self):
+    def test_warehouse_console_w8c_registry_definition(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w8b_movement_review")
+        self.assertEqual(workspace["status"], "w8c_transfer_visibility")
         self.assertEqual(workspace["title"], "Warehouse Console")
         self.assertEqual(
             workspace["routes"],
@@ -286,6 +286,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "stock_posture_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
                 "movement_visibility": "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
                 "movement_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review",
+                "transfer_visibility": "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
                 "sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
             },
         )
@@ -322,6 +323,12 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                     "label": "Movement Visibility",
                     "icon": "stock",
                     "target": {"kind": "worklist", "queue_key": "movement_visibility"},
+                },
+                {
+                    "key": "transfer_visibility",
+                    "label": "Transfer Visibility",
+                    "icon": "stock",
+                    "target": {"kind": "worklist", "queue_key": "transfer_visibility"},
                 },
             ],
         )
@@ -378,7 +385,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(procurement["recommended_name"], "Procurement Console")
         self.assertEqual(procurement["status"], "phase_3")
         self.assertEqual(warehouse["recommended_name"], "Warehouse Console")
-        self.assertEqual(warehouse["status"], "w8b_movement_review")
+        self.assertEqual(warehouse["status"], "w8c_transfer_visibility")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
         self.assertEqual(finance["status"], "name_review")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")

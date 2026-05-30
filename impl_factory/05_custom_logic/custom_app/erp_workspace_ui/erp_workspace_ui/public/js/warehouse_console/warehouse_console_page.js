@@ -16,11 +16,13 @@
   const OUTBOUND_QUEUE_KEY = "outbound_picking";
   const STOCK_EXCEPTIONS_KEY = "stock_exceptions";
   const MOVEMENT_VISIBILITY_KEY = "movement_visibility";
+  const TRANSFER_VISIBILITY_KEY = "transfer_visibility";
   const OVERVIEW_METHOD = warehouseMethods.overview || "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview";
   const INBOUND_METHOD = warehouseMethods.inboundQueue || warehouseMethods.inbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue";
   const OUTBOUND_METHOD = warehouseMethods.outboundQueue || warehouseMethods.outbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue";
   const STOCK_EXCEPTIONS_METHOD = warehouseMethods.stockExceptions || warehouseMethods.stock_exceptions || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions";
   const MOVEMENT_VISIBILITY_METHOD = warehouseMethods.movementVisibility || warehouseMethods.movement_visibility || "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue";
+  const TRANSFER_VISIBILITY_METHOD = warehouseMethods.transferVisibility || warehouseMethods.transfer_visibility || "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue";
   const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
   const PICKING_METHOD = warehouseMethods.pickingDetail || warehouseMethods.picking_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review";
   const STOCK_EXCEPTION_REVIEW_METHOD = warehouseMethods.stockExceptionReview || warehouseMethods.stock_exception_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review";
@@ -114,7 +116,7 @@
 
   function isSupportedWorklistQueue(queueKey) {
     const key = normalizeQueueKey(queueKey);
-    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY || key === STOCK_EXCEPTIONS_KEY || key === MOVEMENT_VISIBILITY_KEY;
+    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY || key === STOCK_EXCEPTIONS_KEY || key === MOVEMENT_VISIBILITY_KEY || key === TRANSFER_VISIBILITY_KEY;
   }
 
   function worklistViewName(queueKey) {
@@ -122,7 +124,28 @@
     if (key === OUTBOUND_QUEUE_KEY) return "outbound-picking";
     if (key === STOCK_EXCEPTIONS_KEY) return "stock-exceptions";
     if (key === MOVEMENT_VISIBILITY_KEY) return "movement-visibility";
+    if (key === TRANSFER_VISIBILITY_KEY) return "transfer-visibility";
     return "inbound-receiving";
+  }
+
+  function stableObjectSignature(value) {
+    if (!value || typeof value !== "object") return "";
+    return Object.keys(value).sort().map((key) => `${key}:${String(value[key] == null ? "" : value[key])}`).join("|");
+  }
+
+  function worklistLoadSignature(queueKey, filters) {
+    return `${inboundRouteSignature()}::${normalizeQueueKey(queueKey)}::${stableObjectSignature(filters || {})}`;
+  }
+
+  function hasRenderedWorklistShell(viewState, queueKey) {
+    const host = viewState && viewState.$host && viewState.$host.get ? viewState.$host.get(0) : null;
+    if (!host || !document.documentElement.contains(host)) return false;
+    const viewName = worklistViewName(queueKey);
+    return Boolean(host.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${viewName}"]`));
+  }
+
+  function isActiveWorklistQueue(queueKey) {
+    return normalizeQueueKey(activeWorklistQueueKey()) === normalizeQueueKey(queueKey);
   }
 
   function overviewRouteSignature() {
@@ -1086,6 +1109,12 @@
         .warehouse-stock-exception-facts {
           grid-template-columns: minmax(0, 1fr);
         }
+        .warehouse-inbound-controls {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .warehouse-receiving-actions {
+          justify-content: flex-start;
+        }
         .warehouse-console-section-note {
           text-align: left;
         }
@@ -1093,6 +1122,15 @@
       @media (max-width: 680px) {
         .warehouse-console-kpi-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .warehouse-inbound-controls,
+        .warehouse-inbound-line {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .warehouse-inbound-controls .warehouse-inbound-queue-button,
+        .warehouse-receiving-actions .warehouse-inbound-queue-button,
+        .warehouse-receiving-actions .warehouse-receiving-button {
+          width: 100%;
         }
       }
     `;
@@ -1412,6 +1450,15 @@
         variant: "is-movement",
       },
       {
+        key: "transfer_visibility",
+        kicker: "Transfer posture",
+        title: "Transfer Visibility",
+        note: "Warehouse-to-warehouse transfer posture from submitted movement records.",
+        action: "Open transfer visibility",
+        actionAttr: "data-warehouse-open-transfer",
+        variant: "is-movement",
+      },
+      {
         key: "movement_review_context",
         kicker: "Context detail",
         title: "Movement Review",
@@ -1425,7 +1472,7 @@
           <h2 class="warehouse-cockpit-section-title">Movement To Understand</h2>
           <div class="warehouse-cockpit-section-note">Review what already changed without leaving this read-only workspace.</div>
         </div>
-        <div class="warehouse-cockpit-route-grid is-two">${cards.map(renderCockpitRouteCard).join("")}</div>
+        <div class="warehouse-cockpit-route-grid">${cards.map(renderCockpitRouteCard).join("")}</div>
       </section>
     `;
   }
@@ -1648,6 +1695,11 @@
       event.preventDefault();
       frappe.route_options = {};
       frappe.set_route(WORKLIST_PAGE_KEY, "movement-visibility");
+    });
+    $root.find("[data-warehouse-open-transfer]").on("click", (event) => {
+      event.preventDefault();
+      frappe.route_options = {};
+      frappe.set_route(WORKLIST_PAGE_KEY, "transfer-visibility");
     });
     replacePageBody(page, $root);
     cleanupOverviewPageHeads();
@@ -2240,16 +2292,16 @@
     $root.find("[data-warehouse-filter-apply]").on("click", (event) => {
       event.preventDefault();
       viewState.activeFilters = collectInboundFilters($root);
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-filter-reset]").on("click", (event) => {
       event.preventDefault();
       viewState.activeFilters = {};
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-filter-refresh]").on("click", (event) => {
       event.preventDefault();
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-stock-exception-route-picking]").on("click", function (event) {
       event.preventDefault();
@@ -2386,16 +2438,16 @@
     $root.find("[data-warehouse-filter-apply]").on("click", (event) => {
       event.preventDefault();
       viewState.activeFilters = collectInboundFilters($root);
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-filter-reset]").on("click", (event) => {
       event.preventDefault();
       viewState.activeFilters = {};
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-filter-refresh]").on("click", (event) => {
       event.preventDefault();
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-row-toggle]").on("click", function (event) {
       event.preventDefault();
@@ -2413,6 +2465,195 @@
     });
     removeDuplicateWarehouseHosts(viewState.$host.get(0));
     viewState.$host.empty().append($root);
+  }
+
+  function renderTransferCard(card) {
+    return `
+      <div class="warehouse-inbound-queue-card" data-warehouse-transfer-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
+        <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
+        <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function transferItemCountLabel(count) {
+    const value = count == null || count === "" ? 0 : Number(count);
+    const normalized = Number.isFinite(value) ? value : count;
+    return `${normalized} ${String(normalized) === "1" ? "item" : "items"}`;
+  }
+
+  function transferDirectionText(source, target, fallback) {
+    const fromText = String(source || "").trim();
+    const toText = String(target || "").trim();
+    if (fromText && toText) return `${fromText} -> ${toText}`;
+    if (fromText) return `${fromText} -> target needs review`;
+    if (toText) return `Source needs review -> ${toText}`;
+    return fallback || "Warehouse direction needs review";
+  }
+
+  function transferGroupEmptyText(group) {
+    const key = String(group && group.key || "").trim();
+    const messages = {
+      direct_transfers: "No direct transfers match these filters. Clear source-to-target records will appear here.",
+      transit_related: "No transit-related transfers match these filters. Transit warehouse posture will appear here.",
+      needs_review: "No transfers need review for these filters. Missing or mixed warehouse posture will appear here.",
+      recently_posted: "No recently posted transfers match these filters. Submitted transfer records in the selected window will appear here.",
+    };
+    return messages[key] || "No posted transfers match these filters.";
+  }
+
+  function renderTransferSampleItem(item) {
+    const target = item.route_target || {};
+    const token = target.route === STOCK_POSTURE_PAGE_KEY ? String(target.context_token || "") : "";
+    const button = token
+      ? `<button type="button" class="warehouse-inbound-queue-button" data-warehouse-transfer-route-stock-posture data-warehouse-stock-posture-token="${escapeHtml(token)}">Review stock posture</button>`
+      : "";
+    return `
+      <div class="warehouse-inbound-line" data-warehouse-transfer-sample-item="${escapeHtml(item.item_code || "")}">
+        <span>${escapeHtml(item.item_code || "")} ${escapeHtml(item.item_name || "")}</span>
+        <span>${escapeHtml(item.qty || "0")} ${escapeHtml(item.uom || "")}</span>
+        <span>${escapeHtml(transferDirectionText(item.source_warehouse, item.target_warehouse, ""))}</span>
+        <span>${button}</span>
+      </div>
+    `;
+  }
+
+  function renderTransferRow(row) {
+    const items = Array.isArray(row.sample_items) ? row.sample_items : [];
+    const targets = row.route_targets || {};
+    const reviewTarget = targets.movement_review || {};
+    const reviewToken = reviewTarget.route === MOVEMENT_PAGE_KEY ? String(reviewTarget.context_token || "") : "";
+    const postureTarget = targets.stock_posture || {};
+    const postureToken = postureTarget.route === STOCK_POSTURE_PAGE_KEY ? String(postureTarget.context_token || "") : "";
+    const reviewButton = reviewToken
+      ? `<button type="button" class="warehouse-inbound-queue-button" data-warehouse-transfer-route-movement data-warehouse-transfer-movement-token="${escapeHtml(reviewToken)}">Review movement</button>`
+      : "";
+    const postureButton = postureToken
+      ? `<button type="button" class="warehouse-inbound-queue-button" data-warehouse-transfer-route-stock-posture data-warehouse-stock-posture-token="${escapeHtml(postureToken)}">Review stock posture</button>`
+      : "";
+    return `
+      <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-transfer-row" data-warehouse-transfer-row="${escapeHtml(row.transfer_id || row.key || "")}">
+        <div class="warehouse-stock-exception-row-main">
+          <div>
+            <div class="warehouse-inbound-order">${escapeHtml(row.transfer_id || "")}</div>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.posting_date || "")} ${escapeHtml(row.posting_time || "")}</div>
+          </div>
+          <div>
+            <span class="warehouse-inbound-badge">${escapeHtml(row.posture || row.group_label || "")}</span>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.movement_type || "Material Transfer")}</div>
+          </div>
+          <div class="warehouse-inbound-meta">${escapeHtml(transferDirectionText(row.source_warehouse, row.target_warehouse, row.direction_label || "Warehouse direction needs review"))}</div>
+          <div>
+            <div class="warehouse-inbound-order">${escapeHtml(row.quantity_summary || "")}</div>
+            <div class="warehouse-inbound-meta">${escapeHtml(transferItemCountLabel(row.item_count))}</div>
+          </div>
+          <div class="warehouse-receiving-actions">
+            ${reviewButton}
+            ${postureButton}
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
+          </div>
+        </div>
+        <div class="warehouse-inbound-lines">
+          ${items.length ? items.map(renderTransferSampleItem).join("") : `<div class="warehouse-inbound-line" data-warehouse-transfer-empty><span>No item summary visible for this transfer record.</span></div>`}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderTransferGroup(group) {
+    const rows = Array.isArray(group.rows) ? group.rows : [];
+    return `
+      <section class="warehouse-inbound-group" data-warehouse-transfer-group="${escapeHtml(group.key || "")}">
+        <div class="warehouse-inbound-group-head">
+          <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
+          <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
+        </div>
+        <div class="warehouse-console-card-grid">
+          ${rows.length ? rows.map(renderTransferRow).join("") : `<div class="warehouse-stock-exception-row" data-warehouse-transfer-empty><span class="warehouse-inbound-meta">${escapeHtml(transferGroupEmptyText(group))}</span></div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderTransferPayload(viewState, payload) {
+    ensureStyle();
+    const controls = payload.controls || {};
+    const fields = Array.isArray(controls.fields) ? controls.fields : [];
+    const cards = Array.isArray(payload.cards) ? payload.cards : [];
+    const groups = Array.isArray(payload.groups) ? payload.groups : [];
+    const statePayload = payload.state || {};
+    const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-transfer-shell" data-erpw-workspace="warehouse" data-warehouse-view="transfer-visibility" data-warehouse-queue-key="${TRANSFER_VISIBILITY_KEY}" data-warehouse-transfer-shell="true" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header">
+          <div class="warehouse-inbound-queue-head">
+            <div>
+              <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Transfer Visibility")}</h1>
+              <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Read-only warehouse-to-warehouse transfer posture.")}</div>
+            </div>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
+          </div>
+          <div class="warehouse-inbound-queue-cards">${cards.map(renderTransferCard).join("")}</div>
+          <div class="warehouse-inbound-controls">
+            ${fields.map(controlField).join("")}
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-refresh>Refresh</button>
+          </div>
+        </section>
+        <div class="warehouse-inbound-groups">
+          ${unavailable
+            ? `<section class="warehouse-inbound-group" data-warehouse-transfer-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Transfer visibility unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-transfer-empty>${escapeHtml(statePayload.detail || "Transfer visibility could not be loaded. Refresh or contact an administrator.")}</div></section>`
+            : groups.map(renderTransferGroup).join("")}
+        </div>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-filter-apply]").on("click", (event) => {
+      event.preventDefault();
+      viewState.activeFilters = collectInboundFilters($root);
+      loadInboundQueue(viewState, { force: true });
+    });
+    $root.find("[data-warehouse-filter-reset]").on("click", (event) => {
+      event.preventDefault();
+      viewState.activeFilters = {};
+      loadInboundQueue(viewState, { force: true });
+    });
+    $root.find("[data-warehouse-filter-refresh]").on("click", (event) => {
+      event.preventDefault();
+      loadInboundQueue(viewState, { force: true });
+    });
+    $root.find("[data-warehouse-row-toggle]").on("click", function (event) {
+      event.preventDefault();
+      $(this).closest("[data-warehouse-transfer-row]").toggleClass("is-expanded");
+    });
+    $root.find("[data-warehouse-transfer-route-movement]").on("click", function (event) {
+      event.preventDefault();
+      const token = String(this.getAttribute("data-warehouse-transfer-movement-token") || "").trim();
+      if (token) frappe.set_route(MOVEMENT_PAGE_KEY, token);
+    });
+    $root.find("[data-warehouse-transfer-route-stock-posture]").on("click", function (event) {
+      event.preventDefault();
+      const token = String(this.getAttribute("data-warehouse-stock-posture-token") || "").trim();
+      if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
+    });
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+  }
+
+  function renderTransferLoading(viewState) {
+    renderTransferPayload(viewState, {
+      page: { key: TRANSFER_VISIBILITY_KEY },
+      summary: { title: "Transfer Visibility", subtitle: "Checking transfer visibility..." },
+      controls: { fields: [], actions: [] },
+      cards: [],
+      groups: [],
+      state: { kind: "loading", title: "Checking transfer visibility", detail: "Checking transfer visibility..." },
+    });
   }
 
   function renderMovementLoading(viewState) {
@@ -3386,6 +3627,10 @@
   function routeMovementBack(target) {
     const route = String((target && target.route) || "");
     const queueKey = normalizeQueueKey((target && target.queue_key) || "");
+    if (route === WORKLIST_PAGE_KEY && queueKey === TRANSFER_VISIBILITY_KEY) {
+      frappe.set_route(WORKLIST_PAGE_KEY, "transfer-visibility");
+      return;
+    }
     if (route === WORKLIST_PAGE_KEY && queueKey === MOVEMENT_VISIBILITY_KEY) {
       frappe.set_route(WORKLIST_PAGE_KEY, "movement-visibility");
       return;
@@ -3403,6 +3648,8 @@
     const statePayload = payload.state || {};
     const actionTargets = payload.action_targets || {};
     const backTarget = actionTargets.back || {};
+    const backQueueKey = normalizeQueueKey(backTarget.queue_key || "");
+    const backLabel = backQueueKey === TRANSFER_VISIBILITY_KEY ? "Back to transfer visibility" : "Back to movement visibility";
     const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
     const $root = $(`
       <div class="sales-console-shell warehouse-receiving-shell warehouse-movement-review-shell" data-erpw-workspace="warehouse" data-warehouse-view="movement-review" data-erpw-console-runtime="ready" data-warehouse-movement-review-shell="true" data-warehouse-movement-review-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
@@ -3413,7 +3660,7 @@
               <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Movement review could not be loaded. Refresh or contact an administrator." : movementSummaryText(header))}</div>
             </div>
             <div class="warehouse-receiving-actions">
-              <button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-back data-warehouse-movement-review-back-route="${escapeHtml(backTarget.route || "")}" data-warehouse-movement-review-back-queue="${escapeHtml(backTarget.queue_key || "")}">Back to movement visibility</button>
+              <button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-back data-warehouse-movement-review-back-route="${escapeHtml(backTarget.route || "")}" data-warehouse-movement-review-back-queue="${escapeHtml(backTarget.queue_key || "")}">${escapeHtml(backLabel)}</button>
               <button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-refresh>Refresh</button>
             </div>
           </div>
@@ -3521,7 +3768,16 @@
     const $parent = page && page.body ? $(page.body) : $(wrapper);
     const $host = $('<section class="warehouse-inbound-route"></section>');
     $parent.empty().append($host);
-    const state = { page, $host, activeFilters: {} };
+    const state = {
+      page,
+      $host,
+      activeFilters: {},
+      requestSerial: 0,
+      loadingSignature: "",
+      loadingPromise: null,
+      loadedSignature: "",
+      lastPayload: null,
+    };
     wrapper.__erpwWarehouseInboundQueue = state;
     return state;
   }
@@ -3567,16 +3823,16 @@
     $root.find("[data-warehouse-filter-apply]").on("click", (event) => {
       event.preventDefault();
       viewState.activeFilters = collectInboundFilters($root);
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-filter-reset]").on("click", (event) => {
       event.preventDefault();
       viewState.activeFilters = {};
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-filter-refresh]").on("click", (event) => {
       event.preventDefault();
-      loadInboundQueue(viewState);
+      loadInboundQueue(viewState, { force: true });
     });
     $root.find("[data-warehouse-row-open-detail]").on("click", function (event) {
       event.preventDefault();
@@ -3610,73 +3866,121 @@
     });
   }
 
-  function loadInboundQueue(viewState) {
+  function loadInboundQueue(viewState, options) {
     const queueKey = normalizeQueueKey(viewState.queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
+    const force = Boolean(options && options.force);
+    const signature = worklistLoadSignature(queueKey, viewState.activeFilters || {});
+    if (!force && viewState.loadingPromise && viewState.loadingSignature === signature) {
+      markWarehouseDiagnostic("worklistDuplicateLoadReused");
+      return viewState.loadingPromise;
+    }
+    if (!force && viewState.loadedSignature === signature && hasRenderedWorklistShell(viewState, queueKey)) {
+      markWarehouseDiagnostic("worklistDuplicateRenderSkipped");
+      return Promise.resolve(viewState.lastPayload || {});
+    }
+
     const isOutbound = queueKey === OUTBOUND_QUEUE_KEY;
     const isStockExceptions = queueKey === STOCK_EXCEPTIONS_KEY;
     const isMovementVisibility = queueKey === MOVEMENT_VISIBILITY_KEY;
-    markWarehouseDiagnostic(isMovementVisibility ? "movementVisibilityServiceCallAttempted" : isStockExceptions ? "stockExceptionsServiceCallAttempted" : isOutbound ? "outboundQueueServiceCallAttempted" : "queueServiceCallAttempted");
+    const isTransferVisibility = queueKey === TRANSFER_VISIBILITY_KEY;
+    markWarehouseDiagnostic(isTransferVisibility ? "transferVisibilityServiceCallAttempted" : isMovementVisibility ? "movementVisibilityServiceCallAttempted" : isStockExceptions ? "stockExceptionsServiceCallAttempted" : isOutbound ? "outboundQueueServiceCallAttempted" : "queueServiceCallAttempted");
     viewState.queueKey = queueKey;
-    if (isStockExceptions) {
-      renderStockExceptionsLoading(viewState);
-      return frappe.call({
-        method: STOCK_EXCEPTIONS_METHOD,
-        args: { queue_key: queueKey, filters: viewState.activeFilters || {} },
-      }).then((response) => {
-        renderStockExceptionsPayload(viewState, response && response.message ? response.message : {});
-      }).catch(() => {
-        renderStockExceptionsPayload(viewState, {
-          page: { key: STOCK_EXCEPTIONS_KEY },
-          summary: { title: "Stock Exceptions", subtitle: "Stock exceptions could not be loaded. Refresh or contact an administrator." },
-          controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
-          cards: [],
-          groups: [],
-          state: { kind: "error", title: "Stock exceptions unavailable", detail: "Stock exceptions could not be loaded. Refresh or contact an administrator." },
-        });
-      });
-    }
-    if (isMovementVisibility) {
-      renderMovementLoading(viewState);
-      return frappe.call({
-        method: MOVEMENT_VISIBILITY_METHOD,
-        args: { queue_key: queueKey, filters: viewState.activeFilters || {} },
-      }).then((response) => {
-        renderMovementPayload(viewState, response && response.message ? response.message : {});
-      }).catch(() => {
-        renderMovementPayload(viewState, {
-          page: { key: MOVEMENT_VISIBILITY_KEY },
-          summary: { title: "Movement Visibility", subtitle: "Movement visibility could not be loaded. Refresh or contact an administrator." },
-          controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
-          cards: [],
-          groups: [],
-          state: { kind: "error", title: "Movement visibility unavailable", detail: "Movement visibility could not be loaded. Refresh or contact an administrator." },
-        });
-      });
-    }
-    renderInboundLoading(viewState);
-    return frappe.call({
-      method: isOutbound ? OUTBOUND_METHOD : INBOUND_METHOD,
-      args: { queue_key: queueKey, filters: viewState.activeFilters || {} },
-    }).then((response) => {
-      renderInboundQueuePayload(viewState, response && response.message ? response.message : {});
-    }).catch(() => {
-      renderInboundQueuePayload(viewState, {
-        page: { key: queueKey },
-        summary: { title: isOutbound ? "Outbound Picking" : "Inbound Receiving", subtitle: "Warehouse work could not be loaded. Refresh or contact an administrator." },
+    const requestToken = (viewState.requestSerial || 0) + 1;
+    viewState.requestSerial = requestToken;
+    viewState.loadingSignature = signature;
+    viewState.loadedSignature = "";
+
+    const isCurrentRequest = () => (
+      viewState.requestSerial === requestToken
+      && viewState.loadingSignature === signature
+      && isActiveWarehouseWorklistRoute()
+      && isActiveWorklistQueue(queueKey)
+    );
+    const finishRequest = (renderer, payload) => {
+      const shouldRender = isCurrentRequest();
+      if (viewState.requestSerial === requestToken && viewState.loadingSignature === signature) {
+        viewState.loadingPromise = null;
+        viewState.loadingSignature = "";
+      }
+      if (!shouldRender) {
+        markWarehouseDiagnostic("worklistStaleResponseIgnored");
+        return payload;
+      }
+      viewState.loadedSignature = signature;
+      viewState.lastPayload = payload;
+      renderer(viewState, payload);
+      return payload;
+    };
+
+    let method = INBOUND_METHOD;
+    let loadingRenderer = renderInboundLoading;
+    let payloadRenderer = renderInboundQueuePayload;
+    let errorPayload = {
+      page: { key: queueKey },
+      summary: { title: isOutbound ? "Outbound Picking" : "Inbound Receiving", subtitle: "Warehouse work could not be loaded. Refresh or contact an administrator." },
+      controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
+      cards: [],
+      groups: [],
+      state: { kind: "error", title: isOutbound ? "Outbound picking unavailable" : "Inbound receiving unavailable", detail: "Warehouse work could not be loaded. Refresh or contact an administrator." },
+    };
+    if (isOutbound) {
+      method = OUTBOUND_METHOD;
+    } else if (isStockExceptions) {
+      method = STOCK_EXCEPTIONS_METHOD;
+      loadingRenderer = renderStockExceptionsLoading;
+      payloadRenderer = renderStockExceptionsPayload;
+      errorPayload = {
+        page: { key: STOCK_EXCEPTIONS_KEY },
+        summary: { title: "Stock Exceptions", subtitle: "Stock exceptions could not be loaded. Refresh or contact an administrator." },
         controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
         cards: [],
         groups: [],
-        state: { kind: "error", title: isOutbound ? "Outbound picking unavailable" : "Inbound receiving unavailable", detail: "Warehouse work could not be loaded. Refresh or contact an administrator." },
-      });
-    });
+        state: { kind: "error", title: "Stock exceptions unavailable", detail: "Stock exceptions could not be loaded. Refresh or contact an administrator." },
+      };
+    } else if (isMovementVisibility) {
+      method = MOVEMENT_VISIBILITY_METHOD;
+      loadingRenderer = renderMovementLoading;
+      payloadRenderer = renderMovementPayload;
+      errorPayload = {
+        page: { key: MOVEMENT_VISIBILITY_KEY },
+        summary: { title: "Movement Visibility", subtitle: "Movement visibility could not be loaded. Refresh or contact an administrator." },
+        controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
+        cards: [],
+        groups: [],
+        state: { kind: "error", title: "Movement visibility unavailable", detail: "Movement visibility could not be loaded. Refresh or contact an administrator." },
+      };
+    } else if (isTransferVisibility) {
+      method = TRANSFER_VISIBILITY_METHOD;
+      loadingRenderer = renderTransferLoading;
+      payloadRenderer = renderTransferPayload;
+      errorPayload = {
+        page: { key: TRANSFER_VISIBILITY_KEY },
+        summary: { title: "Transfer Visibility", subtitle: "Transfer visibility could not be loaded. Refresh or contact an administrator." },
+        controls: { fields: [], actions: [{ key: "refresh", label: "Refresh" }] },
+        cards: [],
+        groups: [],
+        state: { kind: "error", title: "Transfer visibility unavailable", detail: "Transfer visibility could not be loaded. Refresh or contact an administrator." },
+      };
+    }
+
+    loadingRenderer(viewState);
+    const requestPromise = frappe.call({
+      method,
+      args: { queue_key: queueKey, filters: viewState.activeFilters || {} },
+    }).then((response) => finishRequest(payloadRenderer, response && response.message ? response.message : {})).catch(() => finishRequest(payloadRenderer, errorPayload));
+    viewState.loadingPromise = requestPromise;
+    return requestPromise;
   }
 
   function renderWarehouseWorklist(wrapper, queueKey) {
     const resolvedQueueKey = normalizeQueueKey(queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
-    markWarehouseDiagnostic(resolvedQueueKey === MOVEMENT_VISIBILITY_KEY ? "renderMovementVisibilityEntered" : resolvedQueueKey === STOCK_EXCEPTIONS_KEY ? "renderStockExceptionsEntered" : resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
+    markWarehouseDiagnostic(resolvedQueueKey === TRANSFER_VISIBILITY_KEY ? "renderTransferVisibilityEntered" : resolvedQueueKey === MOVEMENT_VISIBILITY_KEY ? "renderMovementVisibilityEntered" : resolvedQueueKey === STOCK_EXCEPTIONS_KEY ? "renderStockExceptionsEntered" : resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
     const viewState = makeInboundPage(wrapper);
     viewState.queueKey = resolvedQueueKey;
-    if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+    const signature = worklistLoadSignature(resolvedQueueKey, viewState.activeFilters || {});
+    const duplicateInFlight = Boolean(viewState.loadingPromise && viewState.loadingSignature === signature);
+    const duplicateLoaded = Boolean(viewState.loadedSignature === signature && hasRenderedWorklistShell(viewState, resolvedQueueKey));
+    if (!duplicateInFlight && !duplicateLoaded && window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
       window.erpWorkspaceConsoleSidebar.refresh();
     }
     loadInboundQueue(viewState);
@@ -3698,6 +4002,10 @@
     renderWarehouseWorklist(wrapper, MOVEMENT_VISIBILITY_KEY);
   }
 
+  function renderTransferVisibility(wrapper) {
+    renderWarehouseWorklist(wrapper, TRANSFER_VISIBILITY_KEY);
+  }
+
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
   frappe.pages[PAGE_KEY].__erpwWarehouseConsoleRenderer = true;
   frappe.pages[PAGE_KEY].on_page_load = function (wrapper) { render(wrapper); };
@@ -3713,6 +4021,7 @@
   warehouseConsoleApi.renderWarehouseWorklist = renderWarehouseWorklist;
   warehouseConsoleApi.renderStockExceptions = renderStockExceptions;
   warehouseConsoleApi.renderMovementVisibility = renderMovementVisibility;
+  warehouseConsoleApi.renderTransferVisibility = renderTransferVisibility;
   warehouseConsoleApi.renderReceivingReview = renderReceivingReview;
   warehouseConsoleApi.renderPickingReview = renderPickingReview;
   warehouseConsoleApi.renderStockExceptionReview = renderStockExceptionReview;
@@ -3725,6 +4034,7 @@
   warehouseConsoleApi.diagnostics.exportedPickingRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockExceptionsRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedMovementVisibilityRendererReady = true;
+  warehouseConsoleApi.diagnostics.exportedTransferVisibilityRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockExceptionReviewRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockPostureReviewRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedMovementReviewRendererReady = true;

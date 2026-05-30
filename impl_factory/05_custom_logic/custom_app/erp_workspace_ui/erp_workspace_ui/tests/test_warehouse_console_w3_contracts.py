@@ -686,11 +686,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
 
-    def test_warehouse_workspace_registry_definition_has_w8b_movement_review_route(self):
+    def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w8b_movement_review")
+        self.assertEqual(workspace["status"], "w8c_transfer_visibility")
         self.assertEqual(
             workspace["routes"],
             {
@@ -750,6 +750,10 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             workspace["methods"]["movement_review"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review",
         )
+        self.assertEqual(
+            workspace["methods"]["transfer_visibility"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
+        )
         self.assertFalse(workspace["search"]["enabled"])
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
             "warehouse_console_home",
@@ -757,6 +761,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             "outbound_picking",
             "stock_exceptions",
             "movement_visibility",
+            "transfer_visibility",
         ])
 
     def test_overview_payload_adds_inbound_preview_and_hides_valuation(self):
@@ -1066,6 +1071,88 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("native", str(payload).lower())
 
 
+    def test_transfer_visibility_payload_is_grouped_read_only_and_allowlisted(self):
+        payload = service.get_warehouse_transfer_visibility_queue("transfer-visibility")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"], {"title": "Transfer Visibility", "key": "transfer_visibility"})
+        self.assertEqual(payload["action_targets"]["movement_review"]["route"], "warehouse-console-movement")
+        self.assertEqual(payload["action_targets"]["stock_posture"]["route"], "warehouse-console-stock-posture")
+        groups = {group["key"]: group for group in payload["groups"]}
+        self.assertEqual(len(groups["direct_transfers"]["rows"]), 1)
+        self.assertEqual([row["transfer_id"] for row in payload["rows"]], ["MAT-MOV-0001"])
+
+        allowed_row_keys = {
+            "key",
+            "transfer_id",
+            "movement_id",
+            "movement_type",
+            "purpose",
+            "posting_date",
+            "posting_time",
+            "source_warehouse",
+            "target_warehouse",
+            "direction_label",
+            "posture_key",
+            "posture",
+            "item_count",
+            "quantity_summary",
+            "sample_items",
+            "group_key",
+            "group_label",
+            "route_targets",
+        }
+        allowed_item_keys = {
+            "item_code",
+            "item_name",
+            "qty",
+            "uom",
+            "source_warehouse",
+            "target_warehouse",
+            "route_target",
+        }
+        for row in payload["rows"]:
+            self.assertLessEqual(set(row), allowed_row_keys)
+            self.assertEqual(row["route_targets"]["movement_review"]["route"], "warehouse-console-movement")
+            self.assertTrue(row["route_targets"]["movement_review"]["context_token"])
+            self.assertEqual(row["route_targets"]["stock_posture"]["route"], "warehouse-console-stock-posture")
+            for item in row["sample_items"]:
+                self.assertLessEqual(set(item), allowed_item_keys)
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("incoming_rate", payload_text)
+        self.assertNotIn("outgoing_rate", payload_text)
+        self.assertNotIn("base_amount", payload_text)
+        self.assertNotIn("transfer_price", payload_text)
+        self.assertNotIn("stock_queue", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertTrue(any(call["doctype"] == "Stock Entry" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Stock Entry Detail" for call in GET_ALL_CALLS))
+
+    def test_transfer_visibility_filters_and_movement_review_return_route_are_custom(self):
+        READABLE_DOCTYPES.discard("Stock Entry Detail")
+
+        payload = service.get_warehouse_transfer_visibility_queue(
+            "transfer_visibility",
+            {"transfer_state": "direct_transfers", "source_warehouse": "Stores", "target_warehouse": "Main", "item": "Speaker"},
+        )
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual([row["transfer_id"] for row in payload["rows"]], ["MAT-MOV-0001"])
+        self.assertEqual(payload["controls"]["fields"][0]["value"], "direct_transfers")
+        self.assertEqual(payload["controls"]["fields"][2]["value"], "Stores")
+        self.assertEqual(payload["controls"]["fields"][3]["value"], "Main")
+        self.assertEqual(payload["controls"]["fields"][4]["value"], "Speaker")
+        self.assertFalse(any(call["doctype"] == "Stock Entry Detail" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Stock Entry" for call in GET_DOC_CALLS))
+        token = payload["rows"][0]["route_targets"]["movement_review"]["context_token"]
+        review = service.get_warehouse_movement_review(token)
+        self.assertEqual(review["state"]["kind"], "ready")
+        self.assertEqual(review["action_targets"]["back"], {"route": "warehouse-console-worklist", "queue_key": "transfer_visibility"})
+        self.assertNotIn("native", str(payload).lower())
+
+
     def test_movement_review_payload_is_read_only_and_custom_routed(self):
         token = service._movement_review_context_token("MAT-MOV-0001")
 
@@ -1364,6 +1451,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             service._stock_posture_context_token("ITEM-105", "Short - M")
         )
         movement = service.get_warehouse_movement_visibility_queue("movement_visibility")
+        transfer = service.get_warehouse_transfer_visibility_queue("transfer_visibility")
         movement_detail = service.get_warehouse_movement_review(
             service._movement_review_context_token("MAT-MOV-0001")
         )
@@ -1388,6 +1476,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(stock_posture_detail["related_rows"], [])
         self.assertEqual(movement["state"]["kind"], "restricted")
         self.assertEqual(movement["rows"], [])
+        self.assertEqual(transfer["state"]["kind"], "restricted")
+        self.assertEqual(transfer["rows"], [])
         self.assertEqual(movement_detail["state"]["kind"], "restricted")
         self.assertEqual(movement_detail["line_groups"], [])
 
@@ -1421,11 +1511,13 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         READABLE_DOCTYPES.discard("Stock Entry")
 
         movement = service.get_warehouse_movement_visibility_queue("movement_visibility")
+        transfer = service.get_warehouse_transfer_visibility_queue("transfer_visibility")
         movement_detail = service.get_warehouse_movement_review(
             service._movement_review_context_token("MAT-MOV-0001")
         )
 
         self.assertEqual(movement["state"]["kind"], "restricted")
+        self.assertEqual(transfer["state"]["kind"], "restricted")
         self.assertEqual(movement["rows"], [])
         self.assertEqual(movement_detail["state"]["kind"], "restricted")
         self.assertEqual(movement_detail["line_groups"], [])

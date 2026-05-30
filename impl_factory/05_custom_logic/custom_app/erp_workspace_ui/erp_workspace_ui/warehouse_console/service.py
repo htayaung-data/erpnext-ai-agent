@@ -51,6 +51,13 @@ MOVEMENT_VISIBILITY_GROUP_ORDER = ("internal_transfers", "receipts", "issues", "
 MOVEMENT_REVIEW_LINE_LIMIT = 120
 MOVEMENT_CONTEXT_MAX_LENGTH = 512
 
+TRANSFER_VISIBILITY_KEY = "transfer_visibility"
+TRANSFER_VISIBILITY_LIMIT = 50
+TRANSFER_VISIBILITY_SCAN_LIMIT = 80
+TRANSFER_VISIBILITY_HORIZON_DAYS = 14
+TRANSFER_VISIBILITY_GROUP_ORDER = ("direct_transfers", "transit_related", "needs_review", "recently_posted")
+TRANSFER_VISIBILITY_DATE_WINDOWS = {"today": 0, "last_7_days": 7, "last_14_days": 14}
+
 PURCHASE_ORDER_INBOUND_FIELDS = [
 	"name",
 	"supplier",
@@ -684,6 +691,26 @@ def get_warehouse_movement_visibility_queue(
 		)
 	movement = _build_movement_visibility(applied_filters, row_limit=MOVEMENT_VISIBILITY_LIMIT)
 	return _movement_visibility_payload(context, movement, applied_filters)
+
+
+@frappe.whitelist()
+def get_warehouse_transfer_visibility_queue(
+	queue_key: str | None = None,
+	filters: str | dict[str, object] | None = None,
+) -> dict[str, object]:
+	ensure_authenticated()
+	context = build_context()
+	applied_filters = _normalize_filters(filters)
+	if not has_warehouse_access(context):
+		return _transfer_visibility_state_payload(context, restricted_state(), applied_filters)
+	if _normalize_queue_key(queue_key) not in {"", TRANSFER_VISIBILITY_KEY}:
+		return _transfer_visibility_state_payload(
+			context,
+			state("unavailable", "Transfer visibility unavailable", "This transfer visibility view is not available."),
+			applied_filters,
+		)
+	transfer = _build_transfer_visibility(applied_filters, row_limit=TRANSFER_VISIBILITY_LIMIT)
+	return _transfer_visibility_payload(context, transfer, applied_filters)
 
 
 @frappe.whitelist()
@@ -1879,6 +1906,356 @@ def _movement_visibility_payload(
 	}
 
 
+def _build_transfer_visibility(
+	filters: dict[str, str] | None = None,
+	*,
+	row_limit: int = TRANSFER_VISIBILITY_LIMIT,
+) -> dict[str, object]:
+	applied_filters = filters or {}
+	if not _can_read("Stock Entry"):
+		return {
+			"state": restricted_state(),
+			"counts": _empty_transfer_counts(),
+			"cards": _transfer_cards(_empty_transfer_counts(), 0, "No transfer quantity visible"),
+			"groups": _empty_transfer_groups(),
+			"rows": [],
+			"total_count": 0,
+			"queue_key": TRANSFER_VISIBILITY_KEY,
+			"queue_route": "warehouse-console-worklist",
+		}
+
+	rows = _transfer_visibility_rows(applied_filters, row_limit=row_limit)
+	counts = _empty_transfer_counts()
+	groups = {group["key"]: group for group in _empty_transfer_groups()}
+	qty_by_uom: dict[str, float] = defaultdict(float)
+	public_rows: list[dict[str, object]] = []
+	for row in rows:
+		group_key = cstr(row.get("group_key")).strip() or "needs_review"
+		if group_key not in counts:
+			group_key = "needs_review"
+		counts[group_key] += 1
+		for uom, qty in (row.get("_qty_by_uom") or {}).items():
+			if cstr(uom).strip():
+				qty_by_uom[cstr(uom).strip()] += flt(qty)
+		public_row = _public_transfer_row(row)
+		groups[group_key]["rows"].append(public_row)
+		public_rows.append(public_row)
+
+	total_count = len(public_rows)
+	payload_state = ready_state() if total_count else state(
+		"empty",
+		"No transfer records found",
+		"No posted transfers found for the selected window.",
+	)
+	return {
+		"state": payload_state,
+		"counts": counts,
+		"cards": _transfer_cards(counts, total_count, _quantity_summary(qty_by_uom)),
+		"groups": [groups[key] for key in TRANSFER_VISIBILITY_GROUP_ORDER],
+		"rows": public_rows,
+		"total_count": total_count,
+		"queue_key": TRANSFER_VISIBILITY_KEY,
+		"queue_route": "warehouse-console-worklist",
+		"row_limit": row_limit,
+		"horizon_days": TRANSFER_VISIBILITY_HORIZON_DAYS,
+	}
+
+
+def _empty_transfer_counts() -> dict[str, int]:
+	return {key: 0 for key in TRANSFER_VISIBILITY_GROUP_ORDER}
+
+
+def _empty_transfer_groups() -> list[dict[str, object]]:
+	labels = {
+		"direct_transfers": ("Direct Transfers", "Posted warehouse-to-warehouse transfers with clear direction."),
+		"transit_related": ("Transit Related", "Transfers involving a transit warehouse posture."),
+		"needs_review": ("Needs Review", "Transfers with incomplete or mixed warehouse posture."),
+		"recently_posted": ("Recently Posted", "Submitted transfer records visible in the current window."),
+	}
+	return [
+		{"key": key, "title": labels[key][0], "summary": labels[key][1], "rows": []}
+		for key in TRANSFER_VISIBILITY_GROUP_ORDER
+	]
+
+
+def _transfer_cards(counts: dict[str, int], _total_count: int, quantity_summary: str) -> list[dict[str, object]]:
+	return [
+		{"key": "needs_review", "label": "Needs Review", "title": "Needs Review", "value": int(counts.get("needs_review") or 0), "state": "live", "note": "Missing or mixed warehouse posture."},
+		{"key": "direct_transfers", "label": "Direct Transfers", "title": "Direct Transfers", "value": int(counts.get("direct_transfers") or 0), "state": "live", "note": "Clear source and target warehouse posture."},
+		{"key": "transit_related", "label": "Transit Related", "title": "Transit Related", "value": int(counts.get("transit_related") or 0), "state": "live", "note": "Transit warehouse posture visible."},
+		{"key": "transfer_quantity", "label": "Transfer Quantity", "title": "Transfer Quantity", "value": quantity_summary or "Recorded quantity", "state": "live", "note": "Operational quantity summary."},
+	]
+
+
+def _transfer_visibility_state_payload(
+	context: dict[str, object],
+	payload_state: dict[str, str],
+	filters: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": payload_state,
+		"page": {"title": "Transfer Visibility", "key": TRANSFER_VISIBILITY_KEY},
+		"summary": {
+			"title": "Transfer Visibility",
+			"subtitle": payload_state.get("detail") or "Transfer visibility could not be loaded.",
+			"chips": [{"label": payload_state.get("kind") or "state"}],
+		},
+		"controls": _transfer_controls(filters),
+		"cards": _transfer_cards(_empty_transfer_counts(), 0, "No transfer quantity visible"),
+		"groups": _empty_transfer_groups(),
+		"rows": [],
+		"action_targets": {},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _transfer_visibility_payload(
+	context: dict[str, object],
+	transfer: dict[str, object],
+	filters: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": transfer.get("state") or ready_state(),
+		"page": {"title": "Transfer Visibility", "key": TRANSFER_VISIBILITY_KEY},
+		"summary": {
+			"title": "Transfer Visibility",
+			"subtitle": "Read-only warehouse-to-warehouse transfer posture.",
+			"chips": [{"label": "Read-only"}, {"label": "Submitted movement records"}, {"label": f"{transfer.get('total_count') or 0} shown"}],
+		},
+		"controls": _transfer_controls(filters),
+		"cards": transfer.get("cards") or [],
+		"groups": transfer.get("groups") or [],
+		"rows": transfer.get("rows") or [],
+		"action_targets": {
+			"movement_review": {"route": "warehouse-console-movement"},
+			"stock_posture": {"route": "warehouse-console-stock-posture"},
+		},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _transfer_controls(filters: dict[str, str]) -> dict[str, object]:
+	return {
+		"fields": [
+			{
+				"key": "transfer_state",
+				"label": "Transfer Posture",
+				"type": "select",
+				"value": filters.get("transfer_state", filters.get("state", "")),
+				"options": [
+					{"label": "All", "value": ""},
+					{"label": "Direct Transfers", "value": "direct_transfers"},
+					{"label": "Transit Related", "value": "transit_related"},
+					{"label": "Needs Review", "value": "needs_review"},
+					{"label": "Recently Posted", "value": "recently_posted"},
+				],
+			},
+			{
+				"key": "date_window",
+				"label": "Date Window",
+				"type": "select",
+				"value": filters.get("date_window", "last_14_days"),
+				"options": [
+					{"label": "Today", "value": "today"},
+					{"label": "Last 7 Days", "value": "last_7_days"},
+					{"label": "Last 14 Days", "value": "last_14_days"},
+				],
+			},
+			{"key": "source_warehouse", "label": "Source Warehouse", "type": "text", "value": filters.get("source_warehouse", ""), "placeholder": "Filter source warehouse"},
+			{"key": "target_warehouse", "label": "Target Warehouse", "type": "text", "value": filters.get("target_warehouse", ""), "placeholder": "Filter target warehouse"},
+			{"key": "item", "label": "Item", "type": "text", "value": filters.get("item", ""), "placeholder": "Filter item"},
+		],
+		"actions": [
+			{"key": "refresh", "label": "Refresh"},
+			{"key": "reset_filters", "label": "Reset"},
+			{"key": "apply_filters", "label": "Apply", "kind": "primary"},
+		],
+		"scopeChips": ["Submitted movement records", "Read-only transfer board"],
+	}
+
+
+def _transfer_visibility_rows(filters: dict[str, str], *, row_limit: int) -> list[dict[str, object]]:
+	records = _safe_get_list(
+		"Stock Entry",
+		fields=_available_fields("Stock Entry", STOCK_ENTRY_MOVEMENT_FIELDS),
+		filters=_stock_entry_transfer_filters(filters),
+		order_by="posting_date desc, posting_time desc, modified desc",
+		limit=TRANSFER_VISIBILITY_SCAN_LIMIT,
+	)
+	if not records:
+		return []
+
+	transfer_records = [record for record in records if _is_material_transfer_record(record)]
+	names = [cstr(record.get("name")).strip() for record in transfer_records if cstr(record.get("name")).strip()]
+	line_map = _movement_line_map(names)
+	rows: list[dict[str, object]] = []
+	for record in transfer_records:
+		name = cstr(record.get("name")).strip()
+		if not name:
+			continue
+		row = _transfer_row(record, line_map.get(name) or [])
+		if not row:
+			continue
+		if not _transfer_row_matches(row, filters):
+			continue
+		rows.append(row)
+		if len(rows) >= row_limit:
+			break
+	return rows
+
+
+def _stock_entry_transfer_filters(filters: dict[str, str]) -> list[list[object]]:
+	conditions: list[list[object]] = [["Stock Entry", "docstatus", "=", 1]]
+	if _has_field("Stock Entry", "posting_date"):
+		conditions.append(["Stock Entry", "posting_date", ">=", str(_transfer_window_start(filters))])
+	if _has_field("Stock Entry", "purpose"):
+		conditions.append(["Stock Entry", "purpose", "=", "Material Transfer"])
+	elif _has_field("Stock Entry", "stock_entry_type"):
+		conditions.append(["Stock Entry", "stock_entry_type", "=", "Material Transfer"])
+	movement_id = cstr(filters.get("transfer_id") or filters.get("movement") or "").strip()
+	if movement_id:
+		conditions.append(["Stock Entry", "name", "like", f"%{movement_id}%"])
+	return conditions
+
+
+def _transfer_window_start(filters: dict[str, str]):
+	window_key = cstr(filters.get("date_window") or "last_14_days").strip() or "last_14_days"
+	days = TRANSFER_VISIBILITY_DATE_WINDOWS.get(window_key, TRANSFER_VISIBILITY_HORIZON_DAYS)
+	return getdate(nowdate()) - timedelta(days=int(days or 0))
+
+
+def _is_material_transfer_record(record: dict[str, object]) -> bool:
+	label = f"{record.get('purpose') or ''} {record.get('stock_entry_type') or ''}".lower()
+	return "material transfer" in label
+
+
+def _transfer_row(record: dict[str, object], lines: list[dict[str, object]]) -> dict[str, object]:
+	source_warehouse = cstr(record.get("from_warehouse")).strip() or _warehouse_summary(_unique_text(line.get("s_warehouse") for line in lines))
+	target_warehouse = cstr(record.get("to_warehouse")).strip() or _warehouse_summary(_unique_text(line.get("t_warehouse") for line in lines))
+	if source_warehouse == "Warehouse not set":
+		source_warehouse = ""
+	if target_warehouse == "Warehouse not set":
+		target_warehouse = ""
+	group_key = _transfer_group_key(source_warehouse, target_warehouse, lines)
+	item_codes = _unique_text(line.get("item_code") for line in lines)
+	qty_by_uom: dict[str, float] = defaultdict(float)
+	sample_items: list[dict[str, object]] = []
+	for line in lines:
+		uom = cstr(line.get("stock_uom") or line.get("uom")).strip()
+		if uom:
+			qty_by_uom[uom] += flt(line.get("qty"))
+		if len(sample_items) < 3:
+			line_item = cstr(line.get("item_code")).strip()
+			line_warehouse = cstr(line.get("t_warehouse") or line.get("s_warehouse") or target_warehouse or source_warehouse).strip()
+			target = {}
+			if line_item and line_warehouse:
+				target = {
+					"route": "warehouse-console-stock-posture",
+					"context_token": _stock_posture_context_token(line_item, line_warehouse),
+				}
+			sample_items.append(
+				{
+					"item_code": line_item,
+					"item_name": cstr(line.get("item_name")).strip(),
+					"qty": _number_text(line.get("qty")),
+					"uom": uom,
+					"source_warehouse": cstr(line.get("s_warehouse")).strip(),
+					"target_warehouse": cstr(line.get("t_warehouse")).strip(),
+					"route_target": target,
+				}
+			)
+	transfer_id = cstr(record.get("name")).strip()
+	route_targets: dict[str, dict[str, object]] = {}
+	if transfer_id:
+		route_targets["movement_review"] = {
+			"route": "warehouse-console-movement",
+			"context_token": _movement_review_context_token(
+				transfer_id,
+				{"route": "warehouse-console-worklist", "queue_key": TRANSFER_VISIBILITY_KEY},
+			),
+		}
+	for sample in sample_items:
+		target = sample.get("route_target") if isinstance(sample, dict) else {}
+		if isinstance(target, dict) and cstr(target.get("context_token")).strip():
+			route_targets["stock_posture"] = target
+			break
+	return {
+		"key": transfer_id,
+		"transfer_id": transfer_id,
+		"movement_id": transfer_id,
+		"movement_type": _movement_type_label(record),
+		"purpose": _movement_type_label(record),
+		"posting_date": cstr(record.get("posting_date")).strip(),
+		"posting_time": cstr(record.get("posting_time")).split(".")[0].strip(),
+		"source_warehouse": source_warehouse,
+		"target_warehouse": target_warehouse,
+		"direction_label": _movement_direction_label(source_warehouse, target_warehouse, "internal_transfers"),
+		"posture_key": group_key,
+		"posture": _transfer_group_label(group_key),
+		"item_count": len(item_codes),
+		"quantity_summary": _quantity_summary(qty_by_uom),
+		"sample_items": sample_items,
+		"group_key": group_key,
+		"group_label": _transfer_group_label(group_key),
+		"route_targets": route_targets,
+		"_qty_by_uom": dict(qty_by_uom),
+	}
+
+
+def _public_transfer_row(row: dict[str, object]) -> dict[str, object]:
+	return {key: value for key, value in row.items() if not str(key).startswith("_")}
+
+
+def _transfer_group_key(source_warehouse: str, target_warehouse: str, lines: list[dict[str, object]]) -> str:
+	warehouses = [source_warehouse, target_warehouse]
+	for line in lines:
+		warehouses.extend([cstr(line.get("s_warehouse")).strip(), cstr(line.get("t_warehouse")).strip()])
+	if any(_is_transit_warehouse(warehouse) for warehouse in warehouses):
+		return "transit_related"
+	if not source_warehouse or not target_warehouse or not lines:
+		return "needs_review"
+	if source_warehouse and target_warehouse:
+		return "direct_transfers"
+	return "recently_posted"
+
+
+def _is_transit_warehouse(warehouse: object) -> bool:
+	return "transit" in cstr(warehouse).strip().lower()
+
+
+def _transfer_group_label(group_key: str) -> str:
+	return {
+		"direct_transfers": "Direct Transfer",
+		"transit_related": "Transit Related",
+		"needs_review": "Needs Review",
+		"recently_posted": "Recently Posted",
+	}.get(group_key, "Needs Review")
+
+
+def _transfer_row_matches(row: dict[str, object], filters: dict[str, str]) -> bool:
+	state_filter = cstr(filters.get("transfer_state") or filters.get("state")).strip()
+	if state_filter and row.get("group_key") != state_filter:
+		return False
+	for field in ("source_warehouse", "target_warehouse"):
+		needle = cstr(filters.get(field)).strip().lower()
+		if needle and needle not in cstr(row.get(field)).strip().lower():
+			return False
+	item_filter = cstr(filters.get("item")).strip().lower()
+	if item_filter:
+		item_text = " ".join(
+			f"{sample.get('item_code') or ''} {sample.get('item_name') or ''}".lower()
+			for sample in row.get("sample_items") or []
+			if isinstance(sample, dict)
+		)
+		if item_filter not in item_text:
+			return False
+	return True
+
+
 def _movement_controls(filters: dict[str, str]) -> dict[str, object]:
 	return {
 		"fields": [
@@ -2166,8 +2543,8 @@ def _safe_movement_return_route(value: object) -> dict[str, str]:
 		return {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY}
 	route = cstr(value.get("route")).strip()
 	queue_key = _normalize_queue_key(cstr(value.get("queue_key")).strip())
-	if route == "warehouse-console-worklist" and queue_key == MOVEMENT_VISIBILITY_KEY:
-		return {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY}
+	if route == "warehouse-console-worklist" and queue_key in {MOVEMENT_VISIBILITY_KEY, TRANSFER_VISIBILITY_KEY}:
+		return {"route": "warehouse-console-worklist", "queue_key": queue_key}
 	return {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY}
 
 

@@ -79,6 +79,8 @@
     "test:warehouse-w8a-movement-visibility:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w8a-movement-visibility",
     "test:warehouse-w8b-movement-review": "node warehouse_phase_w8b_movement_review_smoke.js",
     "test:warehouse-w8b-movement-review:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w8b-movement-review",
+    "test:warehouse-w8c-transfer-visibility": "node warehouse_phase_w8c_transfer_visibility_smoke.js",
+    "test:warehouse-w8c-transfer-visibility:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w8c-transfer-visibility",
     "test:warehouse-w9a-cockpit": "node warehouse_phase_w9a_cockpit_smoke.js",
     "test:warehouse-w9a-cockpit:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w9a-cockpit"
   },

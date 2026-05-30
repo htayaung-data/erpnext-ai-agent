@@ -149,7 +149,7 @@
 
   const warehouseWorkspace = {
     workspaceId: "warehouse",
-    status: "w8b_movement_review",
+    status: "w8c_transfer_visibility",
     title: "Warehouse Console",
     modeLabel: "Warehouse Workspace",
     roleFamily: "Warehouse",
@@ -180,6 +180,7 @@
       stockPostureReview: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
       movementVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
       movementReview: "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review",
+      transferVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
       sidebarContext: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
     },
     managedDoctypes: {
@@ -208,6 +209,7 @@
       { key: "outbound_picking", label: "Outbound Picking", icon: "order", target: { kind: "worklist", queue_key: "outbound_picking" } },
       { key: "stock_exceptions", label: "Stock Exceptions", icon: "report", target: { kind: "worklist", queue_key: "stock_exceptions" } },
       { key: "movement_visibility", label: "Movement Visibility", icon: "stock", target: { kind: "worklist", queue_key: "movement_visibility" } },
+      { key: "transfer_visibility", label: "Transfer Visibility", icon: "stock", target: { kind: "worklist", queue_key: "transfer_visibility" } },
     ],
   };
 
