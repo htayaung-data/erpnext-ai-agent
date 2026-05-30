@@ -38,6 +38,9 @@ const FORBIDDEN_ACTION_RE = /\b(Open Stock Entry|Open Ledger|Stock Ledger|Stock 
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|incoming_rate|outgoing_rate|basic_rate|\brate\b|\bamount\b|base_amount|transfer_price|profit|margin|\bcost\b|\bgl\b|accounting|billing|payment|tax|item price|stock_queue/i;
+const MOVEMENT_VISIBILITY_METHOD = "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue";
+const MOVEMENT_REVIEW_METHOD = "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review";
+const STOCK_POSTURE_REVIEW_METHOD = "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review";
 
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
@@ -78,6 +81,12 @@ function makeDiagnostics(label) {
 }
 
 function attachDiagnostics(page, diagnostics) {
+  page.on("request", (request) => {
+    const text = requestText(request);
+    if (text.includes(MOVEMENT_VISIBILITY_METHOD)) recordOverrideHit(diagnostics, "warehouse-movement-visibility", request, { source: "network" });
+    if (text.includes(MOVEMENT_REVIEW_METHOD)) recordOverrideHit(diagnostics, "warehouse-movement-review", request, { source: "network" });
+    if (text.includes(STOCK_POSTURE_REVIEW_METHOD)) recordOverrideHit(diagnostics, "warehouse-stock-posture-review", request, { source: "network" });
+  });
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) remember(diagnostics.consoleErrors, { type: message.type(), text: message.text().slice(0, 900), location: message.location() });
   });
@@ -546,9 +555,20 @@ async function exerciseUser(browser, user) {
     assert(state.movementRowCount >= 1 || state.movementEmptyCount >= 1, "Movement rows or empty state did not render", { user: user.key, state });
     if (ASSET_ROOT) assert(state.movementRouteReviewCount >= 1, "Source movement review route did not render", { user: user.key, state });
 
-    if (await page.locator("[data-warehouse-movement-route-review]").count()) {
+    let directMovementReviewParts = ["warehouse-console-movement", MOVEMENT_REVIEW_TOKEN];
+    let directMovementReviewPath = `/desk/warehouse-console-movement/${MOVEMENT_REVIEW_TOKEN}`;
+    const movementReviewRouteCount = await page.locator("[data-warehouse-movement-route-review]").count();
+    assert(movementReviewRouteCount >= 1, "Movement review route did not render", { user: user.key, state });
+    if (movementReviewRouteCount) {
       await page.locator("[data-warehouse-movement-route-review]").first().click();
       await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-movement\//.test(url.pathname), { timeout: TIMEOUT });
+      const currentMovementPath = new URL(page.url()).pathname;
+      const currentMovementParts = currentMovementPath.split("/").filter(Boolean);
+      const currentMovementToken = currentMovementParts[currentMovementParts.length - 1] || "";
+      if (currentMovementToken) {
+        directMovementReviewParts = ["warehouse-console-movement", currentMovementToken];
+        directMovementReviewPath = `/desk/warehouse-console-movement/${currentMovementToken}`;
+      }
       await waitForMovementReview(page);
       if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-movement-review");
       state = await snapshot(page);
@@ -561,7 +581,7 @@ async function exerciseUser(browser, user) {
       assert(state.movementReviewLineCount >= 1 || state.movementReviewEmptyCount >= 1, "Movement review lines or empty state did not render", { user: user.key, state });
     }
 
-    await openRoute(page, ["warehouse-console-movement", MOVEMENT_REVIEW_TOKEN], `/desk/warehouse-console-movement/${MOVEMENT_REVIEW_TOKEN}`, waitForMovementReview);
+    await openRoute(page, directMovementReviewParts, directMovementReviewPath, waitForMovementReview);
     state = await snapshot(page);
     assertClean(state, `${user.key}:movement-review-direct`);
     assert(state.movementReviewShellCount === 1, "Direct movement review shell count must be 1", { user: user.key, state });
@@ -570,8 +590,8 @@ async function exerciseUser(browser, user) {
     await waitForMovementReview(page);
     assertClean(await snapshot(page), `${user.key}:movement-review-reload`);
 
-    await openRoute(page, ["warehouse-console-movement", MOVEMENT_REVIEW_TOKEN], `/desk/warehouse-console-movement/${MOVEMENT_REVIEW_TOKEN}`, waitForMovementReview);
-    await openRoute(page, ["warehouse-console-movement", MOVEMENT_REVIEW_TOKEN], `/desk/warehouse-console-movement/${MOVEMENT_REVIEW_TOKEN}`, waitForMovementReview);
+    await openRoute(page, directMovementReviewParts, directMovementReviewPath, waitForMovementReview);
+    await openRoute(page, directMovementReviewParts, directMovementReviewPath, waitForMovementReview);
     assertClean(await snapshot(page), `${user.key}:movement-review-repeat`);
 
     if (await page.locator("[data-warehouse-movement-review-route-stock-posture]").count()) {
