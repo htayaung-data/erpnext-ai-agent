@@ -188,6 +188,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-console-picking",
                 "warehouse-console-stock-exception",
                 "warehouse-console-stock-posture",
+                "warehouse-console-movement",
             ],
             [route["route_key"] for route in warehouse_routes],
         )
@@ -201,6 +202,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("productized_detail", warehouse_routes[7]["classification"])
         self.assertEqual("productized_detail", warehouse_routes[8]["classification"])
         self.assertEqual("productized_detail", warehouse_routes[9]["classification"])
+        self.assertEqual("productized_detail", warehouse_routes[10]["classification"])
         self.assertEqual("/desk/warehouse-console", warehouse_routes[0]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/inbound-receiving", warehouse_routes[2]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/outbound-picking", warehouse_routes[3]["route_pattern"])
@@ -210,6 +212,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("/desk/warehouse-console-picking/<sales-order>", warehouse_routes[7]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-stock-exception/<encoded-context>", warehouse_routes[8]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-stock-posture/<encoded-context>", warehouse_routes[9]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-movement/<encoded-context>", warehouse_routes[10]["route_pattern"])
         for route in warehouse_routes:
             self.assertNotEqual("governed_native_exception", route["classification"])
             self.assertIsNone(route.get("native_exception_ref"), route)
@@ -245,6 +248,10 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-movement-apply",
                 "warehouse-movement-view-lines",
                 "warehouse-movement-open-stock-posture",
+                "warehouse-movement-open-movement-review",
+                "warehouse-movement-review-refresh",
+                "warehouse-movement-review-back",
+                "warehouse-movement-review-open-stock-posture",
                 "warehouse-picking-refresh",
                 "warehouse-picking-back-to-queue",
                 "warehouse-picking-tab-switch",
@@ -287,6 +294,10 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("current_shell", warehouse_actions["warehouse-movement-apply"]["target_kind"])
         self.assertEqual("current_shell", warehouse_actions["warehouse-movement-view-lines"]["target_kind"])
         self.assertEqual("page", warehouse_actions["warehouse-movement-open-stock-posture"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-movement-open-movement-review"]["target_kind"])
+        self.assertEqual("current_shell", warehouse_actions["warehouse-movement-review-refresh"]["target_kind"])
+        self.assertEqual("worklist", warehouse_actions["warehouse-movement-review-back"]["target_kind"])
+        self.assertEqual("page", warehouse_actions["warehouse-movement-review-open-stock-posture"]["target_kind"])
         self.assertEqual("current_shell", warehouse_actions["warehouse-picking-refresh"]["target_kind"])
         self.assertEqual("worklist", warehouse_actions["warehouse-picking-back-to-queue"]["target_kind"])
         self.assertEqual("current_shell", warehouse_actions["warehouse-picking-tab-switch"]["target_kind"])

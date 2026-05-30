@@ -43,10 +43,13 @@ STOCK_POSTURE_OUTBOUND_LIMIT = 8
 STOCK_POSTURE_INBOUND_LIMIT = 8
 
 MOVEMENT_VISIBILITY_KEY = "movement_visibility"
+MOVEMENT_REVIEW_DETAIL_KEY = "movement_review"
 MOVEMENT_VISIBILITY_LIMIT = 50
 MOVEMENT_VISIBILITY_SCAN_LIMIT = 80
 MOVEMENT_VISIBILITY_HORIZON_DAYS = 14
 MOVEMENT_VISIBILITY_GROUP_ORDER = ("internal_transfers", "receipts", "issues", "adjustments_repack", "needs_review")
+MOVEMENT_REVIEW_LINE_LIMIT = 120
+MOVEMENT_CONTEXT_MAX_LENGTH = 512
 
 PURCHASE_ORDER_INBOUND_FIELDS = [
 	"name",
@@ -681,6 +684,47 @@ def get_warehouse_movement_visibility_queue(
 		)
 	movement = _build_movement_visibility(applied_filters, row_limit=MOVEMENT_VISIBILITY_LIMIT)
 	return _movement_visibility_payload(context, movement, applied_filters)
+
+
+@frappe.whitelist()
+def get_warehouse_movement_review(context: str | None = None) -> dict[str, object]:
+	ensure_authenticated()
+	request_context = build_context()
+	context_token = cstr(context).strip()
+	if not has_warehouse_access(request_context):
+		return _movement_review_state_payload(request_context, restricted_state(), context_token)
+	if not context_token:
+		return _movement_review_state_payload(
+			request_context,
+			state("unavailable", "Movement review unavailable", "Choose a movement from Movement Visibility."),
+			context_token,
+		)
+	if not _can_read("Stock Entry"):
+		return _movement_review_state_payload(
+			request_context,
+			state("restricted", "You do not have access to movement review", "You do not have access to movement review."),
+			context_token,
+		)
+
+	decoded = _decode_movement_review_context(context_token)
+	if not decoded.get("movement_id"):
+		return _movement_review_state_payload(
+			request_context,
+			state("unavailable", "Movement review unavailable", "This movement reference is not available."),
+			context_token,
+		)
+
+	review = _build_movement_review(decoded, context_token)
+	if not review:
+		return _movement_review_state_payload(
+			request_context,
+			state("unavailable", "Movement review unavailable", "This posted movement is not visible for warehouse review."),
+			context_token,
+		)
+	payload = _movement_review_state_payload(request_context, ready_state(), context_token)
+	payload.update(review)
+	payload["state"] = ready_state()
+	return payload
 
 
 @frappe.whitelist()
@@ -1988,6 +2032,11 @@ def _movement_row(record: dict[str, object], lines: list[dict[str, object]]) -> 
 			)
 	movement_id = cstr(record.get("name")).strip()
 	route_targets: dict[str, dict[str, object]] = {}
+	if movement_id:
+		route_targets["movement_review"] = {
+			"route": "warehouse-console-movement",
+			"context_token": _movement_review_context_token(movement_id),
+		}
 	for sample in sample_items:
 		target = sample.get("route_target") if isinstance(sample, dict) else {}
 		if isinstance(target, dict) and cstr(target.get("context_token")).strip():
@@ -2082,6 +2131,309 @@ def _movement_row_matches(row: dict[str, object], filters: dict[str, str]) -> bo
 		if not any(warehouse_filter in warehouse for warehouse in warehouses if warehouse):
 			return False
 	return True
+
+
+def _movement_review_context_token(movement_id: object, return_route: dict[str, object] | None = None) -> str:
+	payload = {
+		"movement_id": cstr(movement_id).strip(),
+		"return_route": return_route or {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY},
+	}
+	return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8").hex()
+
+
+def _decode_movement_review_context(context_token: str) -> dict[str, object]:
+	token = cstr(context_token).strip()
+	if not token or len(token) > MOVEMENT_CONTEXT_MAX_LENGTH:
+		return {}
+	try:
+		payload = json.loads(bytes.fromhex(token).decode("utf-8"))
+	except Exception:
+		_clear_transient_frappe_messages()
+		return {}
+	if not isinstance(payload, dict):
+		return {}
+	movement_id = cstr(payload.get("movement_id")).strip()
+	if not movement_id or len(movement_id) > 140 or any(character in movement_id for character in ("/", "\\", "#", "?")):
+		return {}
+	return {
+		"movement_id": movement_id,
+		"return_route": _safe_movement_return_route(payload.get("return_route")),
+	}
+
+
+def _safe_movement_return_route(value: object) -> dict[str, str]:
+	if not isinstance(value, dict):
+		return {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY}
+	route = cstr(value.get("route")).strip()
+	queue_key = _normalize_queue_key(cstr(value.get("queue_key")).strip())
+	if route == "warehouse-console-worklist" and queue_key == MOVEMENT_VISIBILITY_KEY:
+		return {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY}
+	return {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY}
+
+
+def _movement_review_state_payload(
+	context: dict[str, object],
+	payload_state: dict[str, str],
+	context_token: str,
+) -> dict[str, object]:
+	can_access = has_warehouse_access(context)
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": payload_state,
+		"page": {
+			"title": "Movement Review",
+			"key": MOVEMENT_REVIEW_DETAIL_KEY,
+			"context_token": context_token,
+		},
+		"header": {
+			"title": payload_state.get("title") or "Movement Review",
+			"subtitle": payload_state.get("detail") or "",
+			"context_token": context_token,
+			"movement_id": "",
+			"purpose": "",
+			"movement_type": "",
+			"posting_date": "",
+			"posting_time": "",
+			"source_warehouse": "",
+			"target_warehouse": "",
+			"direction_label": "",
+			"docstatus_label": "",
+			"freshness": str(now_datetime()),
+		},
+		"movement": {},
+		"summary_cards": [],
+		"panels": {
+			"direction": {"title": "Movement Direction", "items": []},
+			"related": {"title": "Related Reviews", "items": []},
+		},
+		"line_groups": [],
+		"related_routes": [],
+		"allowed_actions": [
+			{"key": "back_to_movement_visibility", "label": "Back to movement visibility", "kind": "navigation"},
+			{"key": "refresh", "label": "Refresh", "kind": "read_only"},
+		] if can_access else [],
+		"action_targets": {
+			"back": {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY},
+		} if can_access else {},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _build_movement_review(decoded: dict[str, object], context_token: str) -> dict[str, object] | None:
+	movement_id = cstr(decoded.get("movement_id")).strip()
+	records = _safe_get_list(
+		"Stock Entry",
+		fields=_available_fields("Stock Entry", STOCK_ENTRY_MOVEMENT_FIELDS),
+		filters=_stock_entry_movement_review_filters(movement_id),
+		order_by="modified desc",
+		limit=1,
+	)
+	if not records:
+		return None
+	record = records[0]
+	lines = (_movement_line_map([movement_id]).get(movement_id) or [])[:MOVEMENT_REVIEW_LINE_LIMIT]
+	summary = _movement_row(record, lines)
+	header = _movement_review_header(summary, context_token)
+	review_lines = [_movement_review_line(line, summary) for line in lines[:MOVEMENT_REVIEW_LINE_LIMIT]]
+	line_groups = _movement_review_line_groups(review_lines)
+	related_routes = _movement_review_related_routes(review_lines)
+	action_targets = {
+		"back": decoded.get("return_route") or {"route": "warehouse-console-worklist", "queue_key": MOVEMENT_VISIBILITY_KEY},
+	}
+	return {
+		"page": {
+			"title": "Movement Review",
+			"key": MOVEMENT_REVIEW_DETAIL_KEY,
+			"context_token": context_token,
+			"movement_id": movement_id,
+		},
+		"header": header,
+		"movement": _movement_review_parent(summary),
+		"summary_cards": _movement_review_cards(summary, review_lines, related_routes),
+		"panels": {
+			"direction": _movement_review_direction_panel(summary),
+			"related": _movement_review_related_panel(related_routes),
+		},
+		"line_groups": line_groups,
+		"related_routes": related_routes,
+		"allowed_actions": [
+			{"key": "back_to_movement_visibility", "label": "Back to movement visibility", "kind": "navigation"},
+			{"key": "refresh", "label": "Refresh", "kind": "read_only"},
+		],
+		"action_targets": action_targets,
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _stock_entry_movement_review_filters(movement_id: str) -> list[list[object]]:
+	return [
+		["Stock Entry", "name", "=", movement_id],
+		["Stock Entry", "docstatus", "=", 1],
+	]
+
+
+def _movement_review_header(summary: dict[str, object], context_token: str) -> dict[str, object]:
+	return {
+		"title": "Movement Review",
+		"subtitle": "Posted movement direction, item lines, and related Warehouse stock posture.",
+		"context_token": context_token,
+		"movement_id": summary.get("movement_id") or "",
+		"purpose": summary.get("purpose") or "",
+		"movement_type": summary.get("movement_type") or "",
+		"posting_date": summary.get("posting_date") or "",
+		"posting_time": summary.get("posting_time") or "",
+		"source_warehouse": summary.get("source_warehouse") or "",
+		"target_warehouse": summary.get("target_warehouse") or "",
+		"direction_label": summary.get("direction_label") or "",
+		"docstatus_label": "Posted",
+		"freshness": str(now_datetime()),
+	}
+
+
+def _movement_review_parent(summary: dict[str, object]) -> dict[str, object]:
+	return {
+		"movement_id": summary.get("movement_id") or "",
+		"purpose": summary.get("purpose") or "",
+		"movement_type": summary.get("movement_type") or "",
+		"posting_date": summary.get("posting_date") or "",
+		"posting_time": summary.get("posting_time") or "",
+		"source_warehouse": summary.get("source_warehouse") or "",
+		"target_warehouse": summary.get("target_warehouse") or "",
+		"direction_label": summary.get("direction_label") or "",
+		"docstatus_label": "Posted",
+		"item_count": summary.get("item_count") or 0,
+		"quantity_summary": summary.get("quantity_summary") or "",
+		"freshness": str(now_datetime()),
+	}
+
+
+def _movement_review_line(line: dict[str, object], summary: dict[str, object]) -> dict[str, object]:
+	item_code = cstr(line.get("item_code")).strip()
+	source_warehouse = cstr(line.get("s_warehouse") or summary.get("source_warehouse")).strip()
+	target_warehouse = cstr(line.get("t_warehouse") or summary.get("target_warehouse")).strip()
+	warehouse = target_warehouse or source_warehouse
+	stock_posture_route = {}
+	if item_code and warehouse:
+		stock_posture_route = {
+			"route": "warehouse-console-stock-posture",
+			"context_token": _stock_posture_context_token(item_code, warehouse),
+		}
+	return {
+		"item_code": item_code,
+		"item_name": cstr(line.get("item_name")).strip(),
+		"stock_uom": cstr(line.get("stock_uom") or line.get("uom")).strip(),
+		"quantity": _number_text(line.get("qty")),
+		"source_warehouse": source_warehouse,
+		"target_warehouse": target_warehouse,
+		"direction_label": _movement_direction_label(source_warehouse, target_warehouse, "needs_review"),
+		"line_note": _movement_line_note(source_warehouse, target_warehouse),
+		"stock_posture_route": stock_posture_route,
+	}
+
+
+def _movement_line_note(source_warehouse: str, target_warehouse: str) -> str:
+	if source_warehouse and target_warehouse:
+		return "Moves between warehouses."
+	if target_warehouse:
+		return "Adds stock into the target warehouse."
+	if source_warehouse:
+		return "Removes stock from the source warehouse."
+	return "Warehouse direction is not fully visible."
+
+
+def _movement_review_line_groups(lines: list[dict[str, object]]) -> list[dict[str, object]]:
+	groups: dict[str, dict[str, object]] = {}
+	for line in lines:
+		key = _movement_line_group_key(line)
+		if key not in groups:
+			groups[key] = {
+				"key": key,
+				"title": line.get("direction_label") or "Warehouse Direction",
+				"summary": "Read-only item movement lines.",
+				"rows": [],
+			}
+		groups[key]["rows"].append(line)
+	return list(groups.values()) or [
+		{
+			"key": "empty",
+			"title": "Movement Lines",
+			"summary": "No movement lines are visible for this movement.",
+			"rows": [],
+		}
+	]
+
+
+def _movement_line_group_key(line: dict[str, object]) -> str:
+	source = cstr(line.get("source_warehouse")).strip() or "no-source"
+	target = cstr(line.get("target_warehouse")).strip() or "no-target"
+	return f"{source}->{target}".lower().replace(" ", "_")
+
+
+def _movement_review_related_routes(lines: list[dict[str, object]]) -> list[dict[str, object]]:
+	routes: list[dict[str, object]] = []
+	seen: set[str] = set()
+	for line in lines:
+		target = line.get("stock_posture_route") if isinstance(line, dict) else {}
+		token = cstr((target or {}).get("context_token")).strip() if isinstance(target, dict) else ""
+		if not token or token in seen:
+			continue
+		seen.add(token)
+		routes.append(
+			{
+				"key": f"stock_posture_{len(routes) + 1}",
+				"label": "Stock Posture",
+				"title": cstr(line.get("item_code")).strip(),
+				"detail": cstr(line.get("target_warehouse") or line.get("source_warehouse")).strip(),
+				"route_target": {"route": "warehouse-console-stock-posture", "context_token": token},
+			}
+		)
+		if len(routes) >= 6:
+			break
+	return routes
+
+
+def _movement_review_cards(summary: dict[str, object], lines: list[dict[str, object]], related_routes: list[dict[str, object]]) -> list[dict[str, object]]:
+	warehouses = _unique_text(
+		warehouse
+		for line in lines
+		for warehouse in (line.get("source_warehouse"), line.get("target_warehouse"))
+	)
+	return [
+		{"key": "items", "label": "Item Lines", "value": len(lines), "note": f"{summary.get('item_count') or len(lines)} unique items"},
+		{"key": "quantity", "label": "Quantity", "value": summary.get("quantity_summary") or "-", "note": "Operational quantity summary."},
+		{"key": "warehouses", "label": "Warehouses", "value": len(warehouses), "note": _warehouse_summary(warehouses)},
+		{"key": "posture_routes", "label": "Posture Reviews", "value": len(related_routes), "note": "Custom Warehouse review paths."},
+	]
+
+
+def _movement_review_direction_panel(summary: dict[str, object]) -> dict[str, object]:
+	return {
+		"title": "Movement Direction",
+		"summary": summary.get("direction_label") or "Warehouse movement direction.",
+		"items": _panel_items(
+			("Source Warehouse", summary.get("source_warehouse")),
+			("Target Warehouse", summary.get("target_warehouse")),
+			("Movement Type", summary.get("movement_type")),
+			("Posted", f"{summary.get('posting_date') or ''} {summary.get('posting_time') or ''}".strip()),
+			("Status", "Posted"),
+		),
+	}
+
+
+def _movement_review_related_panel(related_routes: list[dict[str, object]]) -> dict[str, object]:
+	return {
+		"title": "Related Reviews",
+		"summary": "Custom Warehouse review paths for item and warehouse posture.",
+		"items": [
+			{
+				"label": row.get("label") or "",
+				"value": f"{row.get('title') or ''} {row.get('detail') or ''}".strip(),
+				"target": row.get("route_target") or {},
+			}
+			for row in related_routes
+		],
+	}
 
 
 

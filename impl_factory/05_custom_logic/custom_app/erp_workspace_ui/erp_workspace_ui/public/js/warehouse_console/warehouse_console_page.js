@@ -11,6 +11,7 @@
   const PICKING_PAGE_KEY = warehouseRoutes.picking || "warehouse-console-picking";
   const STOCK_EXCEPTION_PAGE_KEY = warehouseRoutes.stockException || warehouseRoutes.stock_exception || "warehouse-console-stock-exception";
   const STOCK_POSTURE_PAGE_KEY = warehouseRoutes.stockPosture || warehouseRoutes.stock_posture || "warehouse-console-stock-posture";
+  const MOVEMENT_PAGE_KEY = warehouseRoutes.movement || warehouseRoutes.movement_review || "warehouse-console-movement";
   const INBOUND_QUEUE_KEY = "inbound_receiving";
   const OUTBOUND_QUEUE_KEY = "outbound_picking";
   const STOCK_EXCEPTIONS_KEY = "stock_exceptions";
@@ -24,6 +25,7 @@
   const PICKING_METHOD = warehouseMethods.pickingDetail || warehouseMethods.picking_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review";
   const STOCK_EXCEPTION_REVIEW_METHOD = warehouseMethods.stockExceptionReview || warehouseMethods.stock_exception_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review";
   const STOCK_POSTURE_REVIEW_METHOD = warehouseMethods.stockPostureReview || warehouseMethods.stock_posture_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review";
+  const MOVEMENT_REVIEW_METHOD = warehouseMethods.movementReview || warehouseMethods.movement_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
@@ -40,6 +42,8 @@
   let stockExceptionRouteRenderSerial = 0;
   let stockPostureRouteGuardBound = false;
   let stockPostureRouteRenderSerial = 0;
+  let movementRouteGuardBound = false;
+  let movementRouteRenderSerial = 0;
 
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
@@ -236,6 +240,28 @@
     if (String(pathRoute[0] || "") === STOCK_POSTURE_PAGE_KEY) return true;
     const route = frappe.get_route ? frappe.get_route() : [];
     return Array.isArray(route) && String(route[0] || "") === STOCK_POSTURE_PAGE_KEY;
+  }
+
+  function movementRouteSignature() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === MOVEMENT_PAGE_KEY) return pathRoute.join("|");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) ? route.join("|") : "";
+  }
+
+  function movementTokenFromRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === MOVEMENT_PAGE_KEY) return String(pathRoute[1] || "");
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (Array.isArray(route) && String(route[0] || "") === MOVEMENT_PAGE_KEY) return String(route[1] || "");
+    return "";
+  }
+
+  function isActiveMovementRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === MOVEMENT_PAGE_KEY) return true;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) && String(route[0] || "") === MOVEMENT_PAGE_KEY;
   }
 
   function warehouseConsoleDiagnostics() {
@@ -1366,6 +1392,12 @@
     return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
   }
 
+  function directMovementRenderWrapper() {
+    const pageDef = frappe.pages && frappe.pages[MOVEMENT_PAGE_KEY] ? frappe.pages[MOVEMENT_PAGE_KEY] : null;
+    if (pageDef && pageDef.wrapper) return pageDef.wrapper;
+    return (frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body");
+  }
+
   function hasReadyWorklistShell(queueKey) {
     return Boolean(document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${worklistViewName(queueKey)}"]`));
   }
@@ -1560,6 +1592,45 @@
     stockPostureRouteGuardBound = true;
     window.setInterval(() => {
       if (shouldSelfRenderStockPostureReview()) renderActiveStockPostureRoute();
+    }, 220);
+  }
+
+  function hasReadyMovementReviewShell() {
+    const token = movementTokenFromRoute();
+    const shell = document.querySelector('.warehouse-movement-review-shell[data-warehouse-view="movement-review"]');
+    if (!shell) return false;
+    return !token || String(shell.getAttribute("data-warehouse-movement-review-token") || "") === token;
+  }
+
+  function shouldSelfRenderMovementReview() {
+    return isActiveMovementRoute() && !hasReadyMovementReviewShell();
+  }
+
+  function renderActiveMovementRoute() {
+    if (!shouldSelfRenderMovementReview()) return;
+    const signature = movementRouteSignature();
+    const token = ++movementRouteRenderSerial;
+    markWarehouseDiagnostic("movementActiveRouteGuardFired");
+    const wrapper = directMovementRenderWrapper();
+    if (!wrapper) return;
+    window.setTimeout(() => {
+      if (token !== movementRouteRenderSerial || !shouldSelfRenderMovementReview() || movementRouteSignature() !== signature) return;
+      renderMovementReview(wrapper, movementTokenFromRoute());
+    }, 0);
+  }
+
+  function scheduleActiveMovementRender() {
+    renderActiveMovementRoute();
+    setTimeout(renderActiveMovementRoute, 80);
+    setTimeout(renderActiveMovementRoute, 220);
+    setTimeout(renderActiveMovementRoute, 700);
+  }
+
+  function bindActiveMovementGuard() {
+    if (movementRouteGuardBound || !window || typeof window.setInterval !== "function") return;
+    movementRouteGuardBound = true;
+    window.setInterval(() => {
+      if (shouldSelfRenderMovementReview()) renderActiveMovementRoute();
     }, 220);
   }
 
@@ -1859,6 +1930,12 @@
 
   function renderMovementRow(row) {
     const items = Array.isArray(row.sample_items) ? row.sample_items : [];
+    const targets = row.route_targets || {};
+    const reviewTarget = targets.movement_review || {};
+    const reviewToken = reviewTarget.route === MOVEMENT_PAGE_KEY ? String(reviewTarget.context_token || "") : "";
+    const reviewButton = reviewToken
+      ? `<button type="button" class="warehouse-inbound-queue-button" data-warehouse-movement-route-review data-warehouse-movement-review-token="${escapeHtml(reviewToken)}">Review movement</button>`
+      : "";
     return `
       <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-movement-row" data-warehouse-movement-row="${escapeHtml(row.movement_id || row.key || "")}">
         <div class="warehouse-stock-exception-row-main">
@@ -1876,6 +1953,7 @@
             <div class="warehouse-inbound-meta">${escapeHtml(row.item_count == null ? "0" : row.item_count)} items</div>
           </div>
           <div class="warehouse-receiving-actions">
+            ${reviewButton}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
         </div>
@@ -1954,6 +2032,11 @@
     $root.find("[data-warehouse-row-toggle]").on("click", function (event) {
       event.preventDefault();
       $(this).closest("[data-warehouse-movement-row]").toggleClass("is-expanded");
+    });
+    $root.find("[data-warehouse-movement-route-review]").on("click", function (event) {
+      event.preventDefault();
+      const token = String(this.getAttribute("data-warehouse-movement-review-token") || "").trim();
+      if (token) frappe.set_route(MOVEMENT_PAGE_KEY, token);
     });
     $root.find("[data-warehouse-movement-route-stock-posture]").on("click", function (event) {
       event.preventDefault();
@@ -2832,6 +2915,231 @@
     loadStockPostureReview(viewState, contextToken || stockPostureTokenFromRoute());
   }
 
+  function makeMovementPage(wrapper) {
+    const existing = wrapper && wrapper.__erpwWarehouseMovementReview;
+    if (existing && existing.page && existing.$host && document.documentElement.contains(existing.$host.get(0))) {
+      return existing;
+    }
+    const page = frappe.ui.make_app_page({
+      parent: wrapper,
+      title: "Movement Review",
+      single_column: true,
+    });
+    const $parent = page && page.body ? $(page.body) : $(wrapper);
+    const $host = $('<section class="warehouse-movement-review-route"></section>');
+    $parent.empty().append($host);
+    const state = { page, $host, contextToken: "" };
+    wrapper.__erpwWarehouseMovementReview = state;
+    return state;
+  }
+
+  function movementSummaryText(header) {
+    const parts = [header.movement_id, header.purpose || header.movement_type, header.direction_label].filter(Boolean);
+    return parts.join(" - ");
+  }
+
+  function renderMovementReviewCard(card) {
+    return `
+      <div class="warehouse-receiving-card" data-warehouse-movement-review-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
+        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
+  }
+
+  function renderMovementReviewPanel(panel, panelKey) {
+    const items = Array.isArray(panel.items) ? panel.items : [];
+    return `
+      <section class="warehouse-stock-exception-panel" data-warehouse-movement-review-panel="${escapeHtml(panelKey || "")}">
+        <div class="warehouse-stock-exception-panel-title">${escapeHtml(panel.title || "")}</div>
+        <div class="warehouse-inbound-meta">${escapeHtml(panel.summary || "")}</div>
+        <div class="warehouse-stock-exception-panel-items">
+          ${items.length ? items.map((item) => `
+            <div class="warehouse-stock-exception-panel-item">
+              <span>${escapeHtml(item.label || "")}</span>
+              <strong>${escapeHtml(item.value || "")}</strong>
+            </div>
+          `).join("") : `<div class="warehouse-inbound-meta" data-warehouse-movement-review-empty>No related posture visible.</div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderMovementReviewLine(line) {
+    const target = line.stock_posture_route || {};
+    const token = target.route === STOCK_POSTURE_PAGE_KEY ? String(target.context_token || "") : "";
+    const postureButton = token
+      ? `<button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-route-stock-posture data-warehouse-stock-posture-token="${escapeHtml(token)}">Review stock posture</button>`
+      : "";
+    return `
+      <div class="warehouse-receiving-line" data-warehouse-movement-review-line="${escapeHtml(line.item_code || "")}">
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.quantity || "0")} ${escapeHtml(line.stock_uom || "")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.direction_label || "")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.line_note || "")}</div>
+        <div class="warehouse-receiving-actions">${postureButton}</div>
+      </div>
+    `;
+  }
+
+  function renderMovementReviewLineGroup(group) {
+    const rows = Array.isArray(group.rows) ? group.rows : [];
+    return `
+      <section class="warehouse-receiving-detail" data-warehouse-movement-review-line-group="${escapeHtml(group.key || "")}">
+        <div class="warehouse-inbound-group-head">
+          <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "Movement Lines")}</h2>
+          <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} lines` : group.summary || "")}</div>
+        </div>
+        <div class="warehouse-receiving-panel is-active">
+          ${rows.length ? rows.map(renderMovementReviewLine).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-movement-review-empty><span class="warehouse-receiving-meta">No movement lines visible.</span></div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderMovementRelatedRow(row) {
+    const target = row.route_target || {};
+    const token = target.route === STOCK_POSTURE_PAGE_KEY ? String(target.context_token || "") : "";
+    return `
+      <button type="button" class="warehouse-receiving-history-row" data-warehouse-movement-review-related-row="${escapeHtml(row.key || "")}" data-warehouse-movement-review-route-stock-posture="${escapeHtml(token)}">
+        <div>
+          <div class="warehouse-receiving-strong">${escapeHtml(row.title || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(row.label || "")}</div>
+        </div>
+        <div class="warehouse-receiving-meta">${escapeHtml(row.detail || "")}</div>
+      </button>
+    `;
+  }
+
+  function routeMovementBack(target) {
+    const route = String((target && target.route) || "");
+    const queueKey = normalizeQueueKey((target && target.queue_key) || "");
+    if (route === WORKLIST_PAGE_KEY && queueKey === MOVEMENT_VISIBILITY_KEY) {
+      frappe.set_route(WORKLIST_PAGE_KEY, "movement-visibility");
+      return;
+    }
+    frappe.set_route(WORKLIST_PAGE_KEY, "movement-visibility");
+  }
+
+  function renderMovementReviewPayload(viewState, payload) {
+    ensureStyle();
+    const header = payload.header || {};
+    const cards = Array.isArray(payload.summary_cards) ? payload.summary_cards : [];
+    const panels = payload.panels || {};
+    const lineGroups = Array.isArray(payload.line_groups) ? payload.line_groups : [];
+    const relatedRoutes = Array.isArray(payload.related_routes) ? payload.related_routes : [];
+    const statePayload = payload.state || {};
+    const actionTargets = payload.action_targets || {};
+    const backTarget = actionTargets.back || {};
+    const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const $root = $(`
+      <div class="sales-console-shell warehouse-receiving-shell warehouse-movement-review-shell" data-erpw-workspace="warehouse" data-warehouse-view="movement-review" data-erpw-console-runtime="ready" data-warehouse-movement-review-shell="true" data-warehouse-movement-review-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
+        <section class="warehouse-receiving-header">
+          <div class="warehouse-receiving-head">
+            <div>
+              <h1 class="warehouse-receiving-title">Movement Review</h1>
+              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Movement review could not be loaded. Refresh or contact an administrator." : movementSummaryText(header))}</div>
+            </div>
+            <div class="warehouse-receiving-actions">
+              <button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-back data-warehouse-movement-review-back-route="${escapeHtml(backTarget.route || "")}" data-warehouse-movement-review-back-queue="${escapeHtml(backTarget.queue_key || "")}">Back to movement visibility</button>
+              <button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-refresh>Refresh</button>
+            </div>
+          </div>
+          ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-movement-review-empty>${escapeHtml(statePayload.title || "Movement review unavailable")}</div>` : `
+            <div class="warehouse-receiving-note"><span class="warehouse-inbound-badge">${escapeHtml(header.docstatus_label || "Posted")}</span> ${escapeHtml(header.direction_label || "")}</div>
+            <div class="warehouse-receiving-cards">${cards.map(renderMovementReviewCard).join("")}</div>
+          `}
+        </section>
+        <section class="warehouse-stock-exception-review-grid">
+          ${renderMovementReviewPanel(panels.direction || {}, "direction")}
+          ${renderMovementReviewPanel(panels.related || {}, "related")}
+        </section>
+        ${lineGroups.length ? lineGroups.map(renderMovementReviewLineGroup).join("") : `<section class="warehouse-receiving-detail" data-warehouse-movement-review-line-group="empty"><div class="warehouse-receiving-history-row" data-warehouse-movement-review-empty><span class="warehouse-receiving-meta">No movement lines visible.</span></div></section>`}
+        <section class="warehouse-receiving-detail" data-warehouse-movement-review-related-panel>
+          <div class="warehouse-inbound-group-head">
+            <h2 class="warehouse-inbound-group-title">Related Reviews</h2>
+            <div class="warehouse-inbound-group-note">Custom Warehouse review paths for item and warehouse posture.</div>
+          </div>
+          <div class="warehouse-receiving-panel is-active">
+            ${relatedRoutes.length ? relatedRoutes.map(renderMovementRelatedRow).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-movement-review-empty><span class="warehouse-receiving-meta">No related stock posture visible.</span></div>`}
+          </div>
+        </section>
+        <section class="warehouse-receiving-detail" data-warehouse-movement-review-footer>
+          <div class="warehouse-inbound-meta">Read-only warehouse movement visibility for operational review.</div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-movement-review-back]").on("click", function (event) {
+      event.preventDefault();
+      routeMovementBack({
+        route: String(this.getAttribute("data-warehouse-movement-review-back-route") || ""),
+        queue_key: String(this.getAttribute("data-warehouse-movement-review-back-queue") || ""),
+      });
+    });
+    $root.find("[data-warehouse-movement-review-refresh]").on("click", (event) => {
+      event.preventDefault();
+      loadMovementReview(viewState, viewState.contextToken);
+    });
+    $root.find("[data-warehouse-movement-review-route-stock-posture], [data-warehouse-movement-review-related-row]").on("click", function (event) {
+      event.preventDefault();
+      const token = String(this.getAttribute("data-warehouse-stock-posture-token") || this.getAttribute("data-warehouse-movement-review-route-stock-posture") || "").trim();
+      if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
+    });
+    removeDuplicateWarehouseHosts(viewState.$host.get(0));
+    viewState.$host.empty().append($root);
+  }
+
+  function renderMovementReviewLoading(viewState) {
+    renderMovementReviewPayload(viewState, {
+      state: { kind: "loading", title: "Checking movement review", detail: "Checking movement review..." },
+      header: { context_token: viewState.contextToken || "" },
+      summary_cards: [],
+      panels: {
+        direction: { title: "Movement Direction", items: [] },
+        related: { title: "Related Reviews", items: [] },
+      },
+      line_groups: [],
+      related_routes: [],
+    });
+  }
+
+  function loadMovementReview(viewState, contextToken) {
+    markWarehouseDiagnostic("movementReviewServiceCallAttempted");
+    viewState.contextToken = contextToken || movementTokenFromRoute();
+    renderMovementReviewLoading(viewState);
+    return frappe.call({
+      method: MOVEMENT_REVIEW_METHOD,
+      args: { context: viewState.contextToken },
+    }).then((response) => {
+      renderMovementReviewPayload(viewState, response && response.message ? response.message : {});
+    }).catch(() => {
+      renderMovementReviewPayload(viewState, {
+        state: { kind: "error", title: "Movement review unavailable", detail: "Movement review could not be loaded. Refresh or contact an administrator." },
+        header: { context_token: viewState.contextToken || "" },
+        summary_cards: [],
+        panels: {
+          direction: { title: "Movement Direction", items: [] },
+          related: { title: "Related Reviews", items: [] },
+        },
+        line_groups: [],
+        related_routes: [],
+      });
+    });
+  }
+
+  function renderMovementReview(wrapper, contextToken) {
+    markWarehouseDiagnostic("renderMovementReviewEntered");
+    const viewState = makeMovementPage(wrapper);
+    if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+      window.erpWorkspaceConsoleSidebar.refresh();
+    }
+    loadMovementReview(viewState, contextToken || movementTokenFromRoute());
+  }
+
   function makeInboundPage(wrapper) {
     const existing = wrapper && wrapper.__erpwWarehouseInboundQueue;
     if (existing && existing.page && existing.$host && document.documentElement.contains(existing.$host.get(0))) {
@@ -3041,6 +3349,7 @@
   warehouseConsoleApi.renderPickingReview = renderPickingReview;
   warehouseConsoleApi.renderStockExceptionReview = renderStockExceptionReview;
   warehouseConsoleApi.renderStockPostureReview = renderStockPostureReview;
+  warehouseConsoleApi.renderMovementReview = renderMovementReview;
   warehouseConsoleApi.renderOverview = render;
   warehouseConsoleApi.diagnostics = warehouseConsoleApi.diagnostics || {};
   warehouseConsoleApi.diagnostics.exportedRendererReady = true;
@@ -3050,6 +3359,7 @@
   warehouseConsoleApi.diagnostics.exportedMovementVisibilityRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockExceptionReviewRendererReady = true;
   warehouseConsoleApi.diagnostics.exportedStockPostureReviewRendererReady = true;
+  warehouseConsoleApi.diagnostics.exportedMovementReviewRendererReady = true;
 
   frappe.pages[WORKLIST_PAGE_KEY] = frappe.pages[WORKLIST_PAGE_KEY] || {};
   frappe.pages[WORKLIST_PAGE_KEY].__erpwWarehouseInboundRenderer = true;
@@ -3080,6 +3390,11 @@
   frappe.pages[STOCK_POSTURE_PAGE_KEY].__erpwRenderWarehouseStockPostureReview = renderStockPostureReview;
   frappe.pages[STOCK_POSTURE_PAGE_KEY].on_page_load = function (wrapper) { renderStockPostureReview(wrapper, stockPostureTokenFromRoute()); };
   frappe.pages[STOCK_POSTURE_PAGE_KEY].on_page_show = function (wrapper) { renderStockPostureReview(wrapper, stockPostureTokenFromRoute()); };
+  frappe.pages[MOVEMENT_PAGE_KEY] = frappe.pages[MOVEMENT_PAGE_KEY] || {};
+  frappe.pages[MOVEMENT_PAGE_KEY].__erpwWarehouseMovementReviewRenderer = true;
+  frappe.pages[MOVEMENT_PAGE_KEY].__erpwRenderWarehouseMovementReview = renderMovementReview;
+  frappe.pages[MOVEMENT_PAGE_KEY].on_page_load = function (wrapper) { renderMovementReview(wrapper, movementTokenFromRoute()); };
+  frappe.pages[MOVEMENT_PAGE_KEY].on_page_show = function (wrapper) { renderMovementReview(wrapper, movementTokenFromRoute()); };
   scheduleActiveOverviewRender();
   bindActiveOverviewGuard();
   scheduleActiveInboundRender();
@@ -3092,4 +3407,6 @@
   bindActiveStockExceptionGuard();
   scheduleActiveStockPostureRender();
   bindActiveStockPostureGuard();
+  scheduleActiveMovementRender();
+  bindActiveMovementGuard();
 })();

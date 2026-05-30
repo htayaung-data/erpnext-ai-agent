@@ -686,11 +686,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
 
-    def test_warehouse_workspace_registry_definition_has_w8a_movement_visibility_route(self):
+    def test_warehouse_workspace_registry_definition_has_w8b_movement_review_route(self):
         workspace = get_warehouse_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "warehouse")
-        self.assertEqual(workspace["status"], "w8a_movement_visibility")
+        self.assertEqual(workspace["status"], "w8b_movement_review")
         self.assertEqual(
             workspace["routes"],
             {
@@ -706,6 +706,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
                 "stock_exception_path": "/desk/warehouse-console-stock-exception",
                 "stock_posture": "warehouse-console-stock-posture",
                 "stock_posture_path": "/desk/warehouse-console-stock-posture",
+                "movement": "warehouse-console-movement",
+                "movement_path": "/desk/warehouse-console-movement",
             },
         )
         self.assertEqual(
@@ -743,6 +745,10 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["movement_visibility"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
+        )
+        self.assertEqual(
+            workspace["methods"]["movement_review"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review",
         )
         self.assertFalse(workspace["search"]["enabled"])
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
@@ -1024,6 +1030,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         }
         for row in payload["rows"]:
             self.assertLessEqual(set(row), allowed_row_keys)
+            self.assertEqual(row["route_targets"]["movement_review"]["route"], "warehouse-console-movement")
+            self.assertTrue(row["route_targets"]["movement_review"]["context_token"])
             self.assertEqual(row["route_targets"]["stock_posture"]["route"], "warehouse-console-stock-posture")
             for item in row["sample_items"]:
                 self.assertLessEqual(set(item), allowed_item_keys)
@@ -1056,6 +1064,87 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(any(call["doctype"] == "Stock Entry Detail" for call in GET_ALL_CALLS))
         self.assertTrue(any(call["doctype"] == "Stock Entry" for call in GET_DOC_CALLS))
         self.assertNotIn("native", str(payload).lower())
+
+
+    def test_movement_review_payload_is_read_only_and_custom_routed(self):
+        token = service._movement_review_context_token("MAT-MOV-0001")
+
+        payload = service.get_warehouse_movement_review(token)
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "movement_review")
+        self.assertEqual(payload["page"]["context_token"], token)
+        self.assertEqual(payload["header"]["movement_id"], "MAT-MOV-0001")
+        self.assertEqual(payload["header"]["docstatus_label"], "Posted")
+        self.assertEqual(payload["action_targets"]["back"], {"route": "warehouse-console-worklist", "queue_key": "movement_visibility"})
+        self.assertGreaterEqual(len(payload["line_groups"]), 1)
+        self.assertGreaterEqual(len(payload["related_routes"]), 1)
+        self.assertEqual({card["key"] for card in payload["summary_cards"]}, {"items", "quantity", "warehouses", "posture_routes"})
+
+        allowed_parent_keys = {
+            "movement_id",
+            "purpose",
+            "movement_type",
+            "posting_date",
+            "posting_time",
+            "source_warehouse",
+            "target_warehouse",
+            "direction_label",
+            "docstatus_label",
+            "item_count",
+            "quantity_summary",
+            "freshness",
+        }
+        self.assertLessEqual(set(payload["movement"]), allowed_parent_keys)
+        allowed_line_keys = {
+            "item_code",
+            "item_name",
+            "stock_uom",
+            "quantity",
+            "source_warehouse",
+            "target_warehouse",
+            "direction_label",
+            "line_note",
+            "stock_posture_route",
+        }
+        for group in payload["line_groups"]:
+            for row in group["rows"]:
+                self.assertLessEqual(set(row), allowed_line_keys)
+                self.assertEqual(row["stock_posture_route"]["route"], "warehouse-console-stock-posture")
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("stock_value_difference", payload_text)
+        self.assertNotIn("incoming_rate", payload_text)
+        self.assertNotIn("outgoing_rate", payload_text)
+        self.assertNotIn("basic_rate", payload_text)
+        self.assertNotIn("base_amount", payload_text)
+        self.assertNotIn("expense_account", payload_text)
+        self.assertNotIn("difference_account", payload_text)
+        self.assertNotIn("stock_queue", payload_text)
+        self.assertNotIn("stock ledger", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertTrue(any(call["doctype"] == "Stock Entry" for call in LIST_CALLS))
+        self.assertTrue(any(call["doctype"] == "Stock Entry Detail" for call in GET_ALL_CALLS))
+
+    def test_movement_review_uses_parent_stock_entry_when_child_table_read_is_unavailable(self):
+        READABLE_DOCTYPES.discard("Stock Entry Detail")
+        token = service._movement_review_context_token("MAT-MOV-0002")
+
+        payload = service.get_warehouse_movement_review(token)
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["header"]["movement_id"], "MAT-MOV-0002")
+        self.assertFalse(any(call["doctype"] == "Stock Entry Detail" for call in GET_ALL_CALLS))
+        self.assertTrue(any(call["doctype"] == "Stock Entry" for call in GET_DOC_CALLS))
+        self.assertNotIn("valuation_rate", str(payload).lower())
+
+    def test_movement_review_invalid_context_returns_controlled_state(self):
+        payload = service.get_warehouse_movement_review("not-a-movement")
+
+        self.assertEqual(payload["state"]["kind"], "unavailable")
+        self.assertEqual(payload["line_groups"], [])
+        self.assertEqual(payload["related_routes"], [])
 
 
     def test_stock_exception_review_payload_is_read_only_and_custom_routed(self):
@@ -1275,6 +1364,9 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             service._stock_posture_context_token("ITEM-105", "Short - M")
         )
         movement = service.get_warehouse_movement_visibility_queue("movement_visibility")
+        movement_detail = service.get_warehouse_movement_review(
+            service._movement_review_context_token("MAT-MOV-0001")
+        )
 
         self.assertEqual(overview["state"]["kind"], "restricted")
         self.assertFalse(overview["context"]["has_warehouse_access"])
@@ -1296,6 +1388,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(stock_posture_detail["related_rows"], [])
         self.assertEqual(movement["state"]["kind"], "restricted")
         self.assertEqual(movement["rows"], [])
+        self.assertEqual(movement_detail["state"]["kind"], "restricted")
+        self.assertEqual(movement_detail["line_groups"], [])
 
     def test_permission_limited_sources_return_controlled_empty_inbound_state(self):
         READABLE_DOCTYPES.discard("Purchase Order")
@@ -1327,9 +1421,14 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         READABLE_DOCTYPES.discard("Stock Entry")
 
         movement = service.get_warehouse_movement_visibility_queue("movement_visibility")
+        movement_detail = service.get_warehouse_movement_review(
+            service._movement_review_context_token("MAT-MOV-0001")
+        )
 
         self.assertEqual(movement["state"]["kind"], "restricted")
         self.assertEqual(movement["rows"], [])
+        self.assertEqual(movement_detail["state"]["kind"], "restricted")
+        self.assertEqual(movement_detail["line_groups"], [])
         self.assertFalse(any(call["doctype"] == "Stock Entry" for call in LIST_CALLS))
 
 

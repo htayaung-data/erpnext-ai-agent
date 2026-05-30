@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "warehouse-console-movement",
+  "page_name": "warehouse-console-movement",
+  "title": "Warehouse Movement Review",
+  "icon": "octicon octicon-arrow-switch",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}
