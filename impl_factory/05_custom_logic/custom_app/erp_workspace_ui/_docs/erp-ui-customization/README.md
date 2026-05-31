@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, W9/W9A/W9B cockpit information architecture and usability review, W10 phase-boundary review, W10A read-only hardening baseline, W10B read-only freeze closure, W10C page chrome fix, W11 execution-readiness boundary plan, W11A execution-readiness synthesis, W11B Purchase Receipt receiving execution design, and W12A premium Receiving Review polish plan
+- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, W9/W9A/W9B cockpit information architecture and usability review, W10 phase-boundary review, W10A read-only hardening baseline, W10B read-only freeze closure, W10C page chrome fix, W11 execution-readiness boundary plan, W11A execution-readiness synthesis, W11B Purchase Receipt receiving execution design, and W12A premium Receiving Review polish plan and protected baseline
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
@@ -86,6 +86,7 @@ Freeze and governance status:
 - Warehouse Console Phase W11A Execution Readiness Synthesis is documented on 2026-05-31 as a docs-only Main Control synthesis of Warehouse Agent, Security/Stability Review Agent, and Operation Reviewer Agent outputs; the next approved direction is docs-only Purchase Receipt receiving design, execution implementation remains blocked, premium UI polish remains required before execution implementation, and no runtime, test, smoke, live, Sales, or Procurement change is included.
 - Warehouse Console Phase W11B Purchase Receipt Receiving Execution Design is documented on 2026-05-31 as a docs-only design package for a possible future manager-only receiving workflow; Security/Stability and Operation Reviewer accepted it with docs hardening, draft Purchase Receipt creation remains a blocked mutation until future owner approval, submission remains a separate higher-risk milestone, and no runtime implementation, stock posting, valuation/accounting/commercial exposure, native escape, Quick Find/Search, Sales runtime change, or Procurement runtime change is included.
 - Warehouse Console Phase W12A Premium Receiving Review Polish Plan is documented on 2026-05-31 as a docs-only owner/Main Control decision to continue with read-only premium UI polish for `/desk/warehouse-console-receiving/<purchase-order>` before any execution implementation; Purchase Receipt draft creation and submission remain blocked, and no runtime, test, smoke, live, Sales, or Procurement change is included.
+- Warehouse Console Phase W12A Premium Receiving Review Polish is protected on 2026-05-31 at `041e4f011694561d1da4f9edaa79b8d7c7117e8d`; Receiving Review now has a premium read-only command header, readiness summary, clearer item-line scan layout, custom receipt history, guardrail copy, route idempotency/stale-response protection, mobile evidence, live W12A smoke passed, and final protected live gate passed at `/tmp/protected-workspaces-20260531T123337Z/protected-workspace-gate-summary.json`.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -188,6 +189,7 @@ Documents in this folder:
 - `warehouse-console-phase-w11a-execution-readiness-synthesis-2026-05-31.md`
 - `warehouse-console-phase-w11b-purchase-receipt-receiving-execution-design-2026-05-31.md`
 - `warehouse-console-phase-w12a-premium-receiving-review-polish-plan-2026-05-31.md`
+- `warehouse-console-phase-w12a-premium-receiving-review-polish-baseline-2026-05-31.md`
 - `warehouse-console-phase-w11b-purchase-receipt-receiving-execution-design-2026-05-31.md`
 - `frozen-workspace-protection-package-standard-v1.md`
 - `sales-console-frozen-protection-package-2026-05-09.md`
