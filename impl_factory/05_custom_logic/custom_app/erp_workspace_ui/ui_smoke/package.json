@@ -84,7 +84,9 @@
     "test:warehouse-w9a-cockpit": "node warehouse_phase_w9a_cockpit_smoke.js",
     "test:warehouse-w9a-cockpit:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w9a-cockpit",
     "test:warehouse-w12a-receiving-polish": "node warehouse_phase_w12a_receiving_polish_smoke.js",
-    "test:warehouse-w12a-receiving-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12a-receiving-polish"
+    "test:warehouse-w12a-receiving-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12a-receiving-polish",
+    "test:warehouse-w12b-inbound-polish": "node warehouse_phase_w12b_inbound_polish_smoke.js",
+    "test:warehouse-w12b-inbound-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12b-inbound-polish"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

@@ -3,13 +3,17 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W4A_TIMEOUT || process.env.ERPW_WAREHOUSE_W3_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W4A_ARTIFACT_DIR || path.join(
+const EXPECT_W12B = process.env.ERPW_WAREHOUSE_W12B_EXPECT_POLISH === "1"
+  || Boolean(process.env.ERPW_WAREHOUSE_W12B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12B_TIMEOUT);
+const SMOKE_LABEL = EXPECT_W12B ? "W12B inbound receiving polish" : "W4A inbound";
+const SUMMARY_FILE = EXPECT_W12B ? "warehouse-w12b-inbound-polish-summary.json" : "warehouse-w4a-inbound-summary.json";
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W12B_TIMEOUT || process.env.ERPW_WAREHOUSE_W4A_TIMEOUT || process.env.ERPW_WAREHOUSE_W3_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W12B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W4A_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w4a-inbound-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `${EXPECT_W12B ? "warehouse-w12b-inbound-polish" : "warehouse-w4a-inbound"}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W4A_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W3_ASSET_ROOT || "";
-const WARM_TARGET_MS = Number(process.env.ERPW_WAREHOUSE_W4A_WARM_TARGET_MS || 3000);
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W12B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W4A_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W3_ASSET_ROOT || "";
+const WARM_TARGET_MS = Number(process.env.ERPW_WAREHOUSE_W12B_WARM_TARGET_MS || process.env.ERPW_WAREHOUSE_W4A_WARM_TARGET_MS || 3000);
 
 const AUTHORIZED_USERS = [
   {
@@ -31,6 +35,9 @@ const VIEWPORTS = [
   { key: "laptop-1240", width: 1240, height: 768 },
   { key: "desktop-1440", width: 1440, height: 900 },
 ];
+const ACTIVE_VIEWPORTS = EXPECT_W12B
+  ? [...VIEWPORTS, { key: "mobile-390", width: 390, height: 844 }]
+  : VIEWPORTS;
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Reserve|Unreserve|Assign Serial|Assign Batch|Item Price|Default Supplier|Item Supplier)\b/i;
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
@@ -550,7 +557,12 @@ async function waitForWarehouseInboundReady(page, diagnostics, label) {
       const hasFilters = shell.querySelectorAll("[data-warehouse-filter-key]").length >= 4;
       const hasGroups = shell.querySelectorAll("[data-warehouse-inbound-group]").length >= 4;
       const hasRowsOrEmpty = shell.querySelectorAll("[data-warehouse-inbound-row]").length >= 1 || shell.querySelector("[data-warehouse-inbound-empty]");
-      return ready && hasCards && hasFilters && hasGroups && hasRowsOrEmpty;
+      const hasW12BPolish = !window.__erpwWarehouseExpectW12B || (
+        shell.querySelectorAll("[data-warehouse-inbound-command-chip]").length >= 3
+        && shell.querySelector("[data-warehouse-inbound-guardrail]")
+        && shell.querySelectorAll("[data-warehouse-inbound-row-fact]").length >= 4
+      );
+      return ready && hasCards && hasFilters && hasGroups && hasRowsOrEmpty && hasW12BPolish;
     }, null, { timeout: TIMEOUT });
   } catch (error) {
     error.details = { ...(error.details || {}), snapshot: await diagnosticSnapshot(page, diagnostics, `${label}-inbound-timeout`) };
@@ -574,6 +586,21 @@ async function openRoute(page, routeParts, expectedPath, diagnostics, label, vie
   } else {
     await waitForWarehouseOverviewReady(page, diagnostics, label);
   }
+}
+
+async function collapseBodySidebarForNarrowViewport(page) {
+  const viewport = page.viewportSize();
+  if (!viewport || viewport.width > 520) return;
+  await page.evaluate(() => {
+    const sidebar = document.querySelector(".body-sidebar-container.expanded");
+    if (!sidebar) return;
+    const controls = Array.from(sidebar.querySelectorAll("button, a, [role='button'], [tabindex]"));
+    const collapseControl = controls.find((node) => /\bCollapse\b/i.test((node.innerText || node.getAttribute("aria-label") || "").trim()));
+    if (collapseControl && typeof collapseControl.click === "function") {
+      collapseControl.click();
+    }
+  });
+  await page.waitForTimeout(250);
 }
 
 async function snapshot(page) {
@@ -606,10 +633,15 @@ async function snapshot(page) {
       inboundCardCount: Array.from(document.querySelectorAll("[data-warehouse-inbound-card]")).filter(visible).length,
       inboundPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-inbound-preview-row]")).filter(visible).length,
       queueCardCount: Array.from(document.querySelectorAll("[data-warehouse-inbound-queue-card]")).filter(visible).length,
+      queueCommandChipCount: Array.from(document.querySelectorAll("[data-warehouse-inbound-command-chip]")).filter(visible).length,
+      queueGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-inbound-guardrail]")).filter(visible).length,
       queueGroupCount: Array.from(document.querySelectorAll(".warehouse-inbound-group")).filter(visible).length,
       queueRowCount: Array.from(document.querySelectorAll(".warehouse-inbound-row")).filter(visible).length,
+      queueRowFactCount: Array.from(document.querySelectorAll("[data-warehouse-inbound-row-fact]")).filter(visible).length,
+      queueReviewButtonCount: Array.from(document.querySelectorAll("[data-warehouse-row-open-detail]")).filter(visible).length,
       filterCount: Array.from(document.querySelectorAll("[data-warehouse-filter-key]")).filter(visible).length,
       expandedLineCount: Array.from(document.querySelectorAll(".warehouse-inbound-line")).filter(visible).length,
+      pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       bodyWidth: document.documentElement.clientWidth,
@@ -627,6 +659,7 @@ function assertCleanWarehouseUi(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
   assert(state.sidebarCount <= 1, "Warehouse sidebar count must not duplicate", { context, state });
+  assert(state.pageHeadCount <= 1, "Frappe page head must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
   assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W4A", { context, state });
   assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Forbidden stock action control is visible", { context, state });
@@ -647,6 +680,7 @@ async function exerciseUser(browser, user) {
     if (match && /warehouse_console/.test(match[1])) routeCalls.push(match[1]);
   });
   try {
+    await page.addInitScript((expectW12B) => { window.__erpwWarehouseExpectW12B = expectW12B; }, EXPECT_W12B);
     await login(page, user);
     await gotoDeskAndWait(page);
     await waitForWarehouseOverviewReady(page, diagnostics, `${user.key}:desk-landing`);
@@ -657,10 +691,12 @@ async function exerciseUser(browser, user) {
     assert(state.inboundPreviewCount >= 1, "Overview inbound preview did not render", { user: user.key, state });
     await capture(page, `${user.key}-overview-landing`);
 
-    for (const viewport of VIEWPORTS) {
+    for (const viewport of ACTIVE_VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await collapseBodySidebarForNarrowViewport(page);
       const started = Date.now();
       await openRoute(page, ["warehouse-console-worklist", "inbound-receiving"], "/desk/warehouse-console-worklist/inbound-receiving", diagnostics, `${user.key}:${viewport.key}:queue`, "inbound");
+      await collapseBodySidebarForNarrowViewport(page);
       const firstMs = Date.now() - started;
       state = await snapshot(page);
       assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:queue`);
@@ -668,6 +704,12 @@ async function exerciseUser(browser, user) {
       assert(state.queueGroupCount >= 4, "Inbound queue groups did not render", { user: user.key, viewport, state });
       assert(state.queueRowCount >= 1, "Inbound queue rows did not render", { user: user.key, viewport, state });
       assert(state.filterCount >= 4, "Inbound filters did not render", { user: user.key, viewport, state });
+      if (EXPECT_W12B) {
+        assert(state.queueCommandChipCount >= 3, "Inbound command chips did not render", { user: user.key, viewport, state });
+        assert(state.queueGuardrailCount === 1, "Inbound read-only guardrail did not render once", { user: user.key, viewport, state });
+        assert(state.queueRowFactCount >= 4, "Inbound premium row facts did not render", { user: user.key, viewport, state });
+        assert(state.queueReviewButtonCount >= 1, "Inbound custom receiving review action did not render", { user: user.key, viewport, state });
+      }
 
       await page.locator('[data-warehouse-filter-key="supplier"]').fill("Acme");
       await page.locator('button[data-warehouse-filter-apply]').click();
@@ -695,6 +737,35 @@ async function exerciseUser(browser, user) {
       await openRoute(page, ["warehouse-console-worklist", "inbound-receiving"], "/desk/warehouse-console-worklist/inbound-receiving", diagnostics, `${user.key}:${viewport.key}:queue`, "inbound");
       const warmMs = Date.now() - warmStarted;
       assert(warmMs < WARM_TARGET_MS, "Warehouse inbound warm route exceeded target", { user: user.key, viewport, warmMs, firstMs });
+      state = await snapshot(page);
+      assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:repeat-route`);
+      if (EXPECT_W12B) {
+        assert(state.queueCommandChipCount >= 3, "Inbound command chips did not survive repeated route navigation", { user: user.key, viewport, state });
+        assert(state.queueGuardrailCount === 1, "Inbound guardrail must remain single after repeated route navigation", { user: user.key, viewport, state });
+      }
+    }
+
+    if (EXPECT_W12B) {
+      await page.setViewportSize({ width: 1136, height: 768 });
+      await openRoute(page, ["warehouse-console-worklist", "inbound-receiving"], "/desk/warehouse-console-worklist/inbound-receiving", diagnostics, `${user.key}:drilldown-target`, "inbound");
+      const drilldownTarget = await page.evaluate(() => {
+        const button = document.querySelector("[data-warehouse-row-open-detail]");
+        if (!button || !window.frappe || typeof frappe.set_route !== "function") return null;
+        const originalSetRoute = frappe.set_route;
+        let captured = null;
+        frappe.set_route = function (...parts) {
+          captured = parts;
+          return undefined;
+        };
+        try {
+          button.click();
+        } finally {
+          frappe.set_route = originalSetRoute;
+        }
+        return captured;
+      });
+      assert(Array.isArray(drilldownTarget) && drilldownTarget[0] === "warehouse-console-receiving" && drilldownTarget[1], "Inbound receiving drilldown must target the custom receiving review route", { user: user.key, drilldownTarget });
+      await capture(page, `${user.key}-drilldown-target-source`);
     }
 
     const hitKeys = diagnostics.overrideHits.map((hit) => hit.key);
@@ -709,9 +780,9 @@ async function exerciseUser(browser, user) {
       assert(hitKeys.includes("warehouse-page-asset"), "Warehouse page asset source override was not used", { user: user.key, diagnostics });
       assert(hitKeys.includes("warehouse-inbound-queue"), "Warehouse inbound queue source override was not used", { user: user.key, diagnostics });
     }
-    assert(!diagnostics.consoleErrors.some((entry) => entry.type === "error"), "Warehouse W4A smoke recorded console errors", { user: user.key, diagnostics });
-    assert(diagnostics.pageErrors.length === 0, "Warehouse W4A smoke recorded page errors", { user: user.key, diagnostics });
-    assert(diagnostics.failedResponses.length === 0, "Warehouse W4A smoke recorded failed responses", { user: user.key, diagnostics });
+    assert(!diagnostics.consoleErrors.some((entry) => entry.type === "error"), `Warehouse ${SMOKE_LABEL} smoke recorded console errors`, { user: user.key, diagnostics });
+    assert(diagnostics.pageErrors.length === 0, `Warehouse ${SMOKE_LABEL} smoke recorded page errors`, { user: user.key, diagnostics });
+    assert(diagnostics.failedResponses.length === 0, `Warehouse ${SMOKE_LABEL} smoke recorded failed responses`, { user: user.key, diagnostics });
     await context.close();
     return { user: user.key, routeCalls, diagnostics };
   } catch (error) {
@@ -723,7 +794,7 @@ async function exerciseUser(browser, user) {
 }
 
 (async () => {
-  assert(AUTHORIZED_USERS.length > 0, "No Warehouse W4A smoke credentials were provided. Set ERPW_WAREHOUSE_MANAGER_USERNAME/PASSWORD or ERPW_WAREHOUSE_USER_USERNAME/PASSWORD.");
+  assert(AUTHORIZED_USERS.length > 0, `No Warehouse ${SMOKE_LABEL} smoke credentials were provided. Set ERPW_WAREHOUSE_MANAGER_USERNAME/PASSWORD or ERPW_WAREHOUSE_USER_USERNAME/PASSWORD.`);
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
   const summary = {
     status: "pass",
@@ -736,17 +807,17 @@ async function exerciseUser(browser, user) {
     for (const user of AUTHORIZED_USERS) {
       summary.authorized.push(await exerciseUser(browser, user));
     }
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w4a-inbound-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
   } catch (error) {
     summary.status = "fail";
     summary.error = error && error.message ? error.message : String(error);
     summary.details = error && error.details ? error.details : {};
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w4a-inbound-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
     throw error;
   } finally {
     await browser.close();
   }
-  console.log(`Warehouse W4A inbound smoke passed. Summary: ${path.join(ARTIFACT_DIR, "warehouse-w4a-inbound-summary.json")}`);
+  console.log(`Warehouse ${SMOKE_LABEL} smoke passed. Summary: ${path.join(ARTIFACT_DIR, SUMMARY_FILE)}`);
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);

@@ -727,6 +727,7 @@
         border: 1px solid rgba(210, 225, 218, 0.92);
         border-radius: 8px;
         background: linear-gradient(135deg, #ffffff 0%, #f8fbfa 58%, #eef7f2 100%);
+        box-shadow: 0 18px 44px rgba(34, 56, 48, 0.06);
       }
       .warehouse-inbound-controls {
         display: grid;
@@ -737,6 +738,62 @@
         border: 1px solid rgba(219, 231, 225, 0.96);
         border-radius: 8px;
         background: #ffffff;
+      }
+      .warehouse-inbound-command {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+      }
+      .warehouse-inbound-queue-eyebrow {
+        color: #376455;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-inbound-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .warehouse-inbound-chip,
+      .warehouse-inbound-status-chip {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        max-width: 100%;
+        min-height: 24px;
+        padding: 0 9px;
+        border: 1px solid rgba(195, 215, 206, 0.92);
+        border-radius: 999px;
+        background: #f5faf7;
+        color: #25483c;
+        font-size: 11px;
+        font-weight: 760;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+      }
+      .warehouse-inbound-chip.is-read-only {
+        border-color: rgba(55, 100, 85, 0.2);
+        background: #eaf6f0;
+      }
+      .warehouse-inbound-queue-guardrail {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        padding: 13px 14px;
+        border: 1px solid rgba(191, 126, 32, 0.22);
+        border-radius: 8px;
+        background: #fffaf1;
+        color: #5f4721;
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .warehouse-inbound-queue-guardrail strong {
+        color: #3c2f1b;
+        font-weight: 800;
       }
       .warehouse-inbound-field {
         display: grid;
@@ -800,11 +857,79 @@
         border-radius: 8px;
         background: #fbfdfc;
       }
+      .warehouse-inbound-row.is-receiving {
+        gap: 10px;
+        padding: 13px;
+        background: #ffffff;
+        box-shadow: 0 10px 28px rgba(34, 56, 48, 0.04);
+      }
       .warehouse-inbound-row-main {
         display: grid;
         grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.85fr) minmax(0, 0.9fr) minmax(0, 0.75fr) auto;
         gap: 10px;
         align-items: center;
+      }
+      .warehouse-inbound-row-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: start;
+      }
+      .warehouse-inbound-row-identity {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+      }
+      .warehouse-inbound-row-facts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .warehouse-inbound-row-fact {
+        min-width: 0;
+        padding: 10px 11px;
+        border: 1px solid rgba(224, 233, 229, 0.96);
+        border-radius: 8px;
+        background: #fbfdfc;
+      }
+      .warehouse-inbound-row-fact span {
+        display: block;
+        color: #667a71;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.05em;
+        line-height: 1.25;
+        text-transform: uppercase;
+      }
+      .warehouse-inbound-row-fact strong {
+        display: block;
+        margin-top: 5px;
+        color: #17231f;
+        font-size: 12.5px;
+        font-weight: 760;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+      }
+      .warehouse-inbound-row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .warehouse-inbound-status-chip.is-overdue {
+        border-color: rgba(191, 126, 32, 0.28);
+        background: #fff6e8;
+        color: #6a4417;
+      }
+      .warehouse-inbound-status-chip.is-partially_received {
+        border-color: rgba(86, 122, 147, 0.24);
+        background: #f4f8fb;
+        color: #254456;
+      }
+      .warehouse-inbound-status-chip.is-due_today {
+        border-color: rgba(52, 130, 91, 0.24);
+        background: #f4fbf7;
+        color: #24563d;
       }
       .warehouse-inbound-badge {
         display: inline-flex;
@@ -828,6 +953,9 @@
       }
       .warehouse-inbound-row.is-expanded .warehouse-inbound-lines {
         display: grid;
+      }
+      .warehouse-inbound-row.is-receiving .warehouse-inbound-lines {
+        padding-top: 9px;
       }
       .warehouse-inbound-line {
         display: grid;
@@ -1286,6 +1414,8 @@
         .warehouse-receiving-line-main,
         .warehouse-receiving-history-row,
         .warehouse-receiving-guardrail,
+        .warehouse-inbound-row-summary,
+        .warehouse-inbound-queue-guardrail,
         .warehouse-console-inbound-row,
         .warehouse-inbound-row-main,
         .warehouse-receiving-line,
@@ -1316,6 +1446,7 @@
         }
         .warehouse-inbound-controls,
         .warehouse-inbound-line,
+        .warehouse-inbound-row-facts,
         .warehouse-receiving-command-grid,
         .warehouse-receiving-readiness,
         .warehouse-receiving-line-facts {
@@ -2338,6 +2469,39 @@
     const rowKey = row.primary_id || row.purchase_order || row.sales_order || row.name || row.key || "";
     const partner = row.partner || row.supplier || row.customer || "";
     const progress = row.received_percent || row.delivered_percent || "0%";
+    if (row.purchase_order) {
+      const postureKey = String(row.state_key || "review").replace(/[^a-z0-9_-]+/gi, "_").toLowerCase();
+      return `
+        <article class="warehouse-inbound-row is-receiving" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}" data-warehouse-inbound-posture="${escapeHtml(postureKey)}">
+          <div class="warehouse-inbound-row-summary">
+            <div class="warehouse-inbound-row-identity">
+              <div class="warehouse-inbound-order">${escapeHtml(rowKey)}</div>
+              <div class="warehouse-inbound-meta">${escapeHtml(partner || "Supplier not visible")}</div>
+            </div>
+            <span class="warehouse-inbound-status-chip is-${escapeHtml(postureKey)}">${escapeHtml(row.state_label || row.status || "Review")}</span>
+          </div>
+          <div class="warehouse-inbound-row-facts">
+            <div class="warehouse-inbound-row-fact" data-warehouse-inbound-row-fact="supplier"><span>Supplier</span><strong>${escapeHtml(partner || "Not visible")}</strong></div>
+            <div class="warehouse-inbound-row-fact" data-warehouse-inbound-row-fact="warehouse"><span>Target warehouse</span><strong>${escapeHtml(row.target_warehouse || "Not visible")}</strong></div>
+            <div class="warehouse-inbound-row-fact" data-warehouse-inbound-row-fact="expected"><span>Expected</span><strong>${escapeHtml(row.age_label || row.required_date || "Not visible")}</strong></div>
+            <div class="warehouse-inbound-row-fact" data-warehouse-inbound-row-fact="open"><span>Open posture</span><strong>${escapeHtml(row.remaining_summary || "No open quantity summary")} · ${escapeHtml(progress)}</strong></div>
+          </div>
+          <div class="warehouse-inbound-row-actions">
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>Open receiving review</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
+          </div>
+          <div class="warehouse-inbound-lines">
+            ${lines.length ? lines.map((line) => `
+              <div class="warehouse-inbound-line">
+                <span>${escapeHtml(line.item_code || "")} ${escapeHtml(line.item_name || "")}</span>
+                <span>${escapeHtml(line.remaining_qty || "")} ${escapeHtml(line.uom || "")}</span>
+                <span>${escapeHtml(line.target_warehouse || "")}</span>
+              </div>
+            `).join("") : `<div class="warehouse-inbound-line"><span>No item line details available.</span></div>`}
+          </div>
+        </article>
+      `;
+    }
     const detailButton = row.purchase_order
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>View details</button>'
       : row.sales_order
@@ -2373,14 +2537,17 @@
 
   function renderQueueGroup(group) {
     const rows = Array.isArray(group.rows) ? group.rows : [];
+    const groupKey = String(group.key || "");
+    const inboundGroupKeys = ["overdue", "due_today", "partially_received", "expected_soon"];
+    const emptyText = inboundGroupKeys.includes(groupKey) ? "No receiving matches these filters." : "No work matches these filters.";
     return `
-      <section class="warehouse-inbound-group" data-warehouse-inbound-group="${escapeHtml(group.key || "")}" data-warehouse-outbound-group="${escapeHtml(group.key || "")}">
+      <section class="warehouse-inbound-group is-${escapeHtml(groupKey)}" data-warehouse-inbound-group="${escapeHtml(groupKey)}" data-warehouse-outbound-group="${escapeHtml(groupKey)}">
         <div class="warehouse-inbound-group-head">
           <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
         </div>
         <div class="warehouse-console-card-grid">
-          ${rows.length ? rows.map(renderQueueRow).join("") : `<div class="warehouse-inbound-row" data-warehouse-inbound-empty data-warehouse-outbound-empty><span class="warehouse-inbound-meta">No work matches these filters.</span></div>`}
+          ${rows.length ? rows.map(renderQueueRow).join("") : `<div class="warehouse-inbound-row" data-warehouse-inbound-empty data-warehouse-outbound-empty><span class="warehouse-inbound-meta">${escapeHtml(emptyText)}</span></div>`}
         </div>
       </section>
     `;
@@ -4130,13 +4297,25 @@
     const statePayload = payload.state || {};
     const queueKey = normalizeQueueKey((payload.page && payload.page.key) || viewState.queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
     const viewName = worklistViewName(queueKey);
+    const isInboundQueue = queueKey === INBOUND_QUEUE_KEY;
+    const rowCount = groups.reduce((total, group) => total + (Array.isArray(group.rows) ? group.rows.length : 0), 0);
+    const summaryChips = isInboundQueue
+      ? [
+          "Read-only",
+          "Supplier-side review",
+          `${rowCount} ${rowCount === 1 ? "candidate" : "candidates"}`,
+          payload.fetched_at ? `Fresh ${payload.fetched_at}` : "",
+        ].filter(Boolean)
+      : [];
     const $root = $(`
-      <div class="sales-console-shell warehouse-inbound-shell ${queueKey === OUTBOUND_QUEUE_KEY ? "warehouse-outbound-shell" : ""}" data-erpw-workspace="warehouse" data-warehouse-view="${escapeHtml(viewName)}" data-warehouse-queue-key="${escapeHtml(queueKey)}" data-erpw-console-runtime="ready">
+      <div class="sales-console-shell warehouse-inbound-shell ${queueKey === OUTBOUND_QUEUE_KEY ? "warehouse-outbound-shell" : ""} ${isInboundQueue ? "warehouse-inbound-premium-shell" : ""}" data-erpw-workspace="warehouse" data-warehouse-view="${escapeHtml(viewName)}" data-warehouse-queue-key="${escapeHtml(queueKey)}" data-erpw-console-runtime="ready">
         <section class="warehouse-inbound-queue-header">
           <div class="warehouse-inbound-queue-head">
-            <div>
+            <div class="${isInboundQueue ? "warehouse-inbound-command" : ""}">
+              ${isInboundQueue ? '<div class="warehouse-inbound-queue-eyebrow">Read-only receiving queue</div>' : ""}
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Inbound Receiving")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Expected supplier stock due into warehouse.")}</div>
+              ${isInboundQueue ? `<div class="warehouse-inbound-chip-row">${summaryChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-inbound-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
             </div>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
           </div>
@@ -4147,6 +4326,7 @@
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-refresh>Refresh</button>
           </div>
+          ${isInboundQueue ? '<div class="warehouse-inbound-queue-guardrail" data-warehouse-inbound-guardrail><strong>Review only</strong><span>No stock is posted and no Purchase Receipt is created from this queue. Use these filters and review links for planning before any separate receiving process.</span></div>' : ""}
         </section>
         <div class="warehouse-inbound-groups">
           ${statePayload.kind === "restricted" || statePayload.kind === "error"
