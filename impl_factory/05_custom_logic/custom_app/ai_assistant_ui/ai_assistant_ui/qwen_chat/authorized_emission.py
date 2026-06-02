@@ -297,6 +297,7 @@ def emit_authorized_assistant_answer(
 		answer_text=answer_text,
 		authority_context=_clean_dict(authority_context),
 	).to_payload()
+	_sanitize_user_intent_veto_audit_payload(audit_payload, runtime_trace_payload)
 	final_authority = _clean_dict(audit_payload.get("final_answer_authority"))
 	ok, reason = _validate_final_authority_for_answer_type(
 		answer_type=normalized_answer_type,
@@ -310,7 +311,6 @@ def emit_authorized_assistant_answer(
 			session_doc=session_doc,
 			final_answer_authority=final_authority,
 		)
-
 	contract = _emission_contract(
 		answer_type=normalized_answer_type,
 		emission_status=EMISSION_STATUS_EMITTED,
@@ -334,4 +334,265 @@ def emit_authorized_assistant_answer(
 		final_answer_authority=final_authority,
 		control_meta_authority={},
 		emission_contract=contract,
+	)
+
+
+def _sanitize_user_intent_veto_audit_payload(audit_payload: Dict[str, Any], runtime_trace_payload: Dict[str, Any]) -> None:
+	if not _clean_dict(runtime_trace_payload).get("user_intent_final_emission_veto"):
+		return
+	for selected_answer_key in (
+		"answer_text",
+		"rows",
+		"artifact",
+		"rendered",
+		"narrative",
+		"grounded_evidence",
+	):
+		audit_payload.pop(selected_answer_key, None)
+
+
+USER_INTENT_FINAL_EMISSION_VETO_CONTRACT_TYPE = "qwen_user_intent_final_emission_veto_contract"
+USER_INTENT_BOUNDARY_CONTRACT_TYPE = "qwen_user_intent_boundary_contract"
+
+
+def _interaction_raw_message_for_user_intent_veto(interaction_contract: InteractionContract | Dict[str, Any] | None) -> str:
+	if isinstance(interaction_contract, dict):
+		return _clean_text(interaction_contract.get("raw_message"))
+	return _clean_text(getattr(interaction_contract, "raw_message", ""))
+
+
+def _user_intent_boundary_matches_current_message(
+	user_intent_boundary: Dict[str, Any],
+	raw_message: str,
+) -> bool:
+	if not raw_message:
+		return False
+	if _clean_text(user_intent_boundary.get("trace_redaction_status")) != "safe":
+		return False
+	from .intent_boundary_contract import hash_text, normalize_message
+
+	normalized_message = normalize_message(raw_message)
+	return (
+		_clean_text(user_intent_boundary.get("raw_message_hash")) == hash_text(raw_message)
+		and _clean_text(user_intent_boundary.get("normalized_message_hash")) == hash_text(normalized_message)
+	)
+
+
+def _user_intent_boundary_for_final_emission_veto(
+	*,
+	interaction_contract: InteractionContract | Dict[str, Any] | None,
+	runtime_trace_payload: Dict[str, Any] | None,
+	authority_context: Dict[str, Any] | None,
+	pre_assistant_tool_payloads: Iterable[Dict[str, Any]] | None,
+) -> Dict[str, Any]:
+	raw_message = _interaction_raw_message_for_user_intent_veto(interaction_contract)
+	for payload in [
+		_clean_dict(authority_context),
+		_clean_dict(runtime_trace_payload),
+		*[_clean_dict(item) for item in (pre_assistant_tool_payloads or [])],
+	]:
+		if not payload:
+			continue
+		for candidate in (
+			payload.get("user_intent_boundary"),
+			payload.get("user_intent_boundary_contract"),
+			payload,
+		):
+			clean_candidate = _clean_dict(candidate)
+			if clean_candidate.get("type") == USER_INTENT_BOUNDARY_CONTRACT_TYPE:
+				if _user_intent_boundary_matches_current_message(clean_candidate, raw_message):
+					return clean_candidate
+	from .intent_boundary_runtime_integration import build_v1_ib_runtime_boundary, merge_v1_ib_with_legacy_boundary
+	from .user_intent_boundary import build_user_intent_boundary_contract
+
+	legacy_boundary = build_user_intent_boundary_contract(raw_message) if raw_message else {}
+	return merge_v1_ib_with_legacy_boundary(
+		build_v1_ib_runtime_boundary(raw_message),
+		legacy_boundary,
+	)
+
+
+def _user_intent_final_emission_veto_required(*, answer_type: str, user_intent_boundary: Dict[str, Any]) -> bool:
+	if answer_type not in BUSINESS_ANSWER_TYPES or not user_intent_boundary:
+		return False
+	required_mode = _clean_text(user_intent_boundary.get("required_answer_mode"))
+	if required_mode == "governed_erp_answer":
+		if answer_type == ANSWER_TYPE_VISIBLE_CONTEXT:
+			return not bool(user_intent_boundary.get("context_reuse_allowed"))
+		return not bool(user_intent_boundary.get("report_routing_allowed"))
+	if answer_type == ANSWER_TYPE_VISIBLE_CONTEXT and not bool(user_intent_boundary.get("context_reuse_allowed")):
+		return True
+	return not bool(user_intent_boundary.get("report_routing_allowed"))
+
+
+def _user_intent_final_emission_veto_answer_text(user_intent_boundary: Dict[str, Any]) -> str:
+	required_mode = _clean_text(user_intent_boundary.get("required_answer_mode"))
+	if required_mode == "control_boundary":
+		return (
+			"I can't create, change, hide, approve, submit, or remove ERP records from chat. "
+			"I can help you inspect the relevant ERP facts instead."
+		)
+	if required_mode == "policy_boundary":
+		return (
+			"I can help with factual ERP information, but I can't provide advice, predictions, "
+			"legal guidance, or decisions from this prompt. Please ask for the specific ERP facts "
+			"you want to review."
+		)
+	return (
+		"I need a bit more detail before I can answer safely. Please ask for a specific ERP fact, "
+		"report, customer, supplier, invoice, product, period, or metric."
+	)
+
+
+def _user_intent_final_emission_veto_payload(
+	*,
+	selected_answer_type: str,
+	emitted_answer_type: str,
+	user_intent_boundary: Dict[str, Any],
+) -> Dict[str, Any]:
+	return {
+		"type": USER_INTENT_FINAL_EMISSION_VETO_CONTRACT_TYPE,
+		"contract_version": "1.0",
+		"veto_applied": True,
+		"selected_answer_type": _clean_text(selected_answer_type),
+		"emitted_answer_type": _clean_text(emitted_answer_type),
+		"category": _clean_text(user_intent_boundary.get("category")),
+		"required_answer_mode": _clean_text(user_intent_boundary.get("required_answer_mode")),
+		"context_reuse_allowed": bool(user_intent_boundary.get("context_reuse_allowed")),
+		"report_routing_allowed": bool(user_intent_boundary.get("report_routing_allowed")),
+		"boundary_reason": _clean_text(user_intent_boundary.get("boundary_reason")),
+		"user_intent_boundary": dict(user_intent_boundary),
+	}
+
+
+def _user_intent_policy_boundary_payload(
+	*,
+	user_intent_boundary: Dict[str, Any],
+	interaction_contract: InteractionContract | Dict[str, Any] | None,
+) -> Dict[str, Any]:
+	payload = dict(user_intent_boundary)
+	payload.update(
+		{
+			"request_id": _clean_text(
+				interaction_contract.get("request_id") if isinstance(interaction_contract, dict) else getattr(interaction_contract, "request_id", "")
+			),
+			"session_id": _clean_text(
+				interaction_contract.get("session_id") if isinstance(interaction_contract, dict) else getattr(interaction_contract, "session_id", "")
+			),
+			"final_lane": "user_intent_boundary_final_emission_veto",
+			"knowledge_coverage_state": _clean_text(user_intent_boundary.get("category")) or "user_intent_boundary",
+			"user_response_mode": "policy_boundary",
+			"safe_next_action": "respond_with_final_emission_veto_boundary",
+			"boundary_status": _clean_text(user_intent_boundary.get("boundary_reason")) or "user_intent_boundary_final_emission_veto",
+		}
+	)
+	return payload
+
+
+_emit_authorized_assistant_answer_without_user_intent_veto = emit_authorized_assistant_answer
+
+
+def emit_authorized_assistant_answer(
+	*,
+	session_doc: Any,
+	answer_text: str,
+	answer_type: str,
+	append_message: Callable[[Any, str, str], None],
+	append_tool_payload: Callable[[Any, Dict[str, Any]], None],
+	assistant_text_payload: Callable[[str], Any],
+	interaction_contract: InteractionContract | Dict[str, Any] | None = None,
+	followup_resolution: FollowUpResolution | Dict[str, Any] | None = None,
+	execution_path: ExecutionPath | Dict[str, Any] | None = None,
+	runtime_trace_payload: Dict[str, Any] | None = None,
+	grounded_turn_context: Dict[str, Any] | None = None,
+	authority_context: Dict[str, Any] | None = None,
+	control_meta_authority: Dict[str, Any] | None = None,
+	pre_assistant_tool_payloads: Iterable[Dict[str, Any]] | None = None,
+) -> AuthorizedEmissionResult:
+	pre_assistant_payload_list = list(pre_assistant_tool_payloads or [])
+	normalized_answer_type = _clean_text(answer_type)
+	user_intent_boundary = _user_intent_boundary_for_final_emission_veto(
+		interaction_contract=interaction_contract,
+		runtime_trace_payload=runtime_trace_payload,
+		authority_context=authority_context,
+		pre_assistant_tool_payloads=pre_assistant_payload_list,
+	)
+	if not _user_intent_final_emission_veto_required(
+		answer_type=normalized_answer_type,
+		user_intent_boundary=user_intent_boundary,
+	):
+		return _emit_authorized_assistant_answer_without_user_intent_veto(
+			session_doc=session_doc,
+			answer_text=answer_text,
+			answer_type=answer_type,
+			append_message=append_message,
+			append_tool_payload=append_tool_payload,
+			assistant_text_payload=assistant_text_payload,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload=runtime_trace_payload,
+			grounded_turn_context=grounded_turn_context,
+			authority_context=authority_context,
+			control_meta_authority=control_meta_authority,
+			pre_assistant_tool_payloads=pre_assistant_payload_list,
+		)
+
+	required_mode = _clean_text(user_intent_boundary.get("required_answer_mode"))
+	safe_answer_text = _user_intent_final_emission_veto_answer_text(user_intent_boundary)
+	emitted_answer_type = ANSWER_TYPE_POLICY_BOUNDARY if required_mode == "policy_boundary" else ANSWER_TYPE_CONTROL
+	veto_payload = _user_intent_final_emission_veto_payload(
+		selected_answer_type=normalized_answer_type,
+		emitted_answer_type=emitted_answer_type,
+		user_intent_boundary=user_intent_boundary,
+	)
+	veto_pre_payloads = [
+		dict(user_intent_boundary),
+		veto_payload,
+	]
+	if emitted_answer_type == ANSWER_TYPE_POLICY_BOUNDARY:
+		return _emit_authorized_assistant_answer_without_user_intent_veto(
+			session_doc=session_doc,
+			answer_text=safe_answer_text,
+			answer_type=ANSWER_TYPE_POLICY_BOUNDARY,
+			append_message=append_message,
+			append_tool_payload=append_tool_payload,
+			assistant_text_payload=assistant_text_payload,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload={
+				"user_intent_final_emission_veto": veto_payload,
+				"selected_answer_payloads_redacted": True,
+			},
+			grounded_turn_context={},
+			authority_context={
+				"knowledge_boundary": _user_intent_policy_boundary_payload(
+					user_intent_boundary=user_intent_boundary,
+					interaction_contract=interaction_contract,
+				),
+				"user_intent_boundary": dict(user_intent_boundary),
+				"user_intent_final_emission_veto": veto_payload,
+			},
+			pre_assistant_tool_payloads=veto_pre_payloads,
+		)
+	control_answer_mode = (
+		"user_intent_final_emission_control_boundary"
+		if required_mode == "control_boundary"
+		else "user_intent_final_emission_clarification"
+	)
+	return _emit_authorized_assistant_answer_without_user_intent_veto(
+		session_doc=session_doc,
+		answer_text=safe_answer_text,
+		answer_type=ANSWER_TYPE_CONTROL,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		control_meta_authority={
+			"authority_source": "control_meta",
+			"answer_mode": control_answer_mode,
+			"reason": _clean_text(user_intent_boundary.get("boundary_reason")) or "User intent boundary vetoed final business emission.",
+			"preflight_status": PREFLIGHT_PASSED,
+		},
+		pre_assistant_tool_payloads=veto_pre_payloads,
 	)
