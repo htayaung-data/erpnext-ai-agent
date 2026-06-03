@@ -3,13 +3,17 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W5A_TIMEOUT || process.env.ERPW_WAREHOUSE_W4A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W5A_ARTIFACT_DIR || path.join(
+const EXPECT_W12C = process.env.ERPW_WAREHOUSE_W12C_EXPECT_POLISH === "1"
+  || Boolean(process.env.ERPW_WAREHOUSE_W12C_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12C_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12C_TIMEOUT);
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W12C_TIMEOUT || process.env.ERPW_WAREHOUSE_W5A_TIMEOUT || process.env.ERPW_WAREHOUSE_W4A_TIMEOUT || 60000);
+const SMOKE_LABEL = EXPECT_W12C ? "w12c-outbound-polish" : "w5a-outbound";
+const SUMMARY_FILE = EXPECT_W12C ? "warehouse-w12c-outbound-polish-summary.json" : "warehouse-w5a-outbound-summary.json";
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W12C_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W5A_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w5a-outbound-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `warehouse-${SMOKE_LABEL}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W5A_ASSET_ROOT || "";
-const WARM_TARGET_MS = Number(process.env.ERPW_WAREHOUSE_W5A_WARM_TARGET_MS || 3000);
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W12C_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W5A_ASSET_ROOT || "";
+const WARM_TARGET_MS = Number(process.env.ERPW_WAREHOUSE_W12C_WARM_TARGET_MS || process.env.ERPW_WAREHOUSE_W5A_WARM_TARGET_MS || 3000);
 
 const AUTHORIZED_USERS = [
   {
@@ -31,6 +35,9 @@ const VIEWPORTS = [
   { key: "laptop-1240", width: 1240, height: 768 },
   { key: "desktop-1440", width: 1440, height: 900 },
 ];
+const ACTIVE_VIEWPORTS = EXPECT_W12C
+  ? [...VIEWPORTS, { key: "mobile-390", width: 390, height: 844 }]
+  : VIEWPORTS;
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Item Price|Default Supplier|Item Supplier)\b/i;
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
@@ -132,6 +139,8 @@ function sourceSidebarPayload(allowed = true) {
         worklist_path: "/desk/warehouse-console-worklist",
         receiving: "warehouse-console-receiving",
         receiving_path: "/desk/warehouse-console-receiving",
+        picking: "warehouse-console-picking",
+        picking_path: "/desk/warehouse-console-picking",
       },
       search: { enabled: false },
     },
@@ -331,6 +340,61 @@ function sourceOutboundPayload(filters = {}) {
   };
 }
 
+function sourcePickingPayload(order = "SO-REVIEW") {
+  const row = sourceOutboundRows().find((item) => item.sales_order === order) || sourceOutboundRows()[0];
+  return {
+    workspace: sourceSidebarPayload(true).workspace,
+    context: { has_warehouse_access: true, role_family: "Warehouse", role_variant: "warehouse_manager", can_view_valuation: false },
+    state: { kind: "ready", title: "Warehouse Console ready", detail: "Stock visibility and warehouse posture are available for review." },
+    page: { title: "Picking Review", key: "picking_review", sales_order: row.sales_order },
+    header: {
+      sales_order: row.sales_order,
+      customer: row.customer,
+      required_date: row.required_date,
+      target_warehouse: row.target_warehouse,
+      state_key: row.state_key,
+      state_label: row.state_label,
+      age_label: row.age_label,
+      delivered_percent: row.delivered_percent,
+      remaining_summary: row.remaining_summary,
+      line_count: row.line_count,
+      item_count: row.item_count,
+      ready_line_count: row.state_key === "ready_to_pick" ? 1 : 0,
+      review_line_count: row.state_key === "needs_stock_review" ? 1 : 0,
+      status: row.status,
+    },
+    summary_cards: [
+      { key: "state", label: "Picking State", value: row.state_label, note: row.age_label },
+      { key: "delivered", label: "Delivered", value: row.delivered_percent, note: "Quantity already delivered." },
+      { key: "open_lines", label: "Open Lines", value: row.line_count, note: row.remaining_summary },
+      { key: "readiness", label: "Readiness", value: row.state_key === "ready_to_pick" ? 1 : 0, note: row.state_key === "needs_stock_review" ? "1 lines need review" : "0 lines need review" },
+    ],
+    tabs: [
+      { key: "item_lines", label: "Item Lines", count: row.lines.length },
+      { key: "stock_readiness", label: "Stock Readiness", count: row.lines.length },
+    ],
+    lines: row.lines.map((line) => ({
+      item_code: line.item_code,
+      item_name: line.item_name,
+      ordered_qty: row.state_key === "ready_to_pick" ? "5" : "8",
+      delivered_qty: "0",
+      pending_qty: line.remaining_qty,
+      uom: line.uom,
+      source_warehouse: line.target_warehouse,
+      required_date: line.required_date,
+      readiness: row.state_key === "ready_to_pick" ? "Ready" : "Needs Stock Review",
+      availability: row.state_key === "ready_to_pick" ? "12 available" : "2 available",
+    })),
+    allowed_actions: [
+      { key: "refresh", label: "Refresh", kind: "read_only" },
+      { key: "back_to_outbound", label: "Back to outbound picking", kind: "navigation" },
+    ],
+    action_targets: { outbound_queue: { route: "warehouse-console-worklist", queue_key: "outbound_picking" } },
+    valuation: { visible: false, fields: [] },
+    fetched_at: "2026-05-28 00:00:00",
+  };
+}
+
 function sourceInboundPayload() {
   return {
     state: { kind: "ready", title: "Warehouse Console ready", detail: "Stock visibility and warehouse posture are available for review." },
@@ -425,14 +489,17 @@ async function installSourceOverrides(context, diagnostics) {
     const request = route.request();
     const text = requestText(request);
     if (!/warehouse-console/i.test(text)) return route.continue();
+    const isPicking = /warehouse-console-picking/i.test(text);
     const isWorklist = /warehouse-console-worklist/i.test(text);
-    const file = isWorklist
+    const file = isPicking
+      ? "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_picking/warehouse_console_picking.js"
+      : isWorklist
       ? "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_worklist/warehouse_console_worklist.js"
       : "erp_workspace_ui/erp_workspace_ui/page/warehouse_console/warehouse_console.js";
-    const name = isWorklist ? "warehouse-console-worklist" : "warehouse-console";
+    const name = isPicking ? "warehouse-console-picking" : isWorklist ? "warehouse-console-worklist" : "warehouse-console";
     const script = readSource(file);
     recordOverrideHit(diagnostics, "desk-page-getpage", request, { fulfilled: Boolean(script), page: name });
-    const pageDoc = { doctype: "Page", name, page_name: name, title: isWorklist ? "Outbound Picking" : "Warehouse Console", module: "ERP Workspace UI", standard: "Yes", content: "", script };
+    const pageDoc = { doctype: "Page", name, page_name: name, title: isPicking ? "Picking Review" : isWorklist ? "Outbound Picking" : "Warehouse Console", module: "ERP Workspace UI", standard: "Yes", content: "", script };
     return route.fulfill({ status: script ? 200 : 404, contentType: "application/json", body: JSON.stringify({ docs: [pageDoc], message: pageDoc }) });
   });
   await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview**", async (route) => {
@@ -450,6 +517,17 @@ async function installSourceOverrides(context, diagnostics) {
     }
     recordOverrideHit(diagnostics, "warehouse-outbound-queue", route.request(), { fulfilled: true, filters });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceOutboundPayload(filters) }) });
+  });
+  await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review**", async (route) => {
+    let salesOrder = "SO-REVIEW";
+    try {
+      const body = route.request().postDataJSON() || {};
+      salesOrder = body.sales_order || salesOrder;
+    } catch (error) {
+      salesOrder = "SO-REVIEW";
+    }
+    recordOverrideHit(diagnostics, "warehouse-picking-detail", route.request(), { fulfilled: true, salesOrder });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourcePickingPayload(salesOrder) }) });
   });
   await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context**", async (route) => {
     recordOverrideHit(diagnostics, "warehouse-sidebar", route.request(), { fulfilled: true });
@@ -529,10 +607,31 @@ async function waitForWarehouseOutboundReady(page, diagnostics, label) {
       const hasFilters = shell.querySelectorAll("[data-warehouse-filter-key]").length >= 4;
       const hasGroups = shell.querySelectorAll("[data-warehouse-outbound-group]").length >= 6;
       const hasRowsOrEmpty = shell.querySelectorAll("[data-warehouse-outbound-row]").length >= (expectRows ? 1 : 0) || shell.querySelector("[data-warehouse-outbound-empty]");
-      return ready && hasCards && hasFilters && hasGroups && hasRowsOrEmpty;
+      const expectW12C = Boolean(window.__erpwWarehouseExpectW12C);
+      const hasPolish = !expectW12C || (
+        shell.querySelectorAll("[data-warehouse-outbound-command-chip]").length >= 3
+        && shell.querySelector("[data-warehouse-outbound-guardrail]")
+        && shell.querySelectorAll("[data-warehouse-outbound-row-fact]").length >= (expectRows ? 4 : 0)
+      );
+      return ready && hasCards && hasFilters && hasGroups && hasRowsOrEmpty && hasPolish;
     }, Boolean(ASSET_ROOT), { timeout: TIMEOUT });
   } catch (error) {
     error.details = { ...(error.details || {}), snapshot: await diagnosticSnapshot(page, diagnostics, `${label}-outbound-timeout`) };
+    throw error;
+  }
+}
+
+async function waitForWarehousePickingReady(page, diagnostics, label) {
+  try {
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('.warehouse-picking-shell[data-erpw-workspace="warehouse"][data-warehouse-view="picking-review"]');
+      return Boolean(shell
+        && shell.getAttribute("data-erpw-console-runtime") === "ready"
+        && shell.querySelectorAll("[data-warehouse-picking-card]").length >= 4
+        && shell.querySelectorAll("[data-warehouse-picking-line]").length >= 1);
+    }, null, { timeout: TIMEOUT });
+  } catch (error) {
+    error.details = { ...(error.details || {}), snapshot: await diagnosticSnapshot(page, diagnostics, `${label}-picking-timeout`) };
     throw error;
   }
 }
@@ -561,6 +660,21 @@ async function openOutboundRoute(page, diagnostics, label) {
   await waitForWarehouseOutboundReady(page, diagnostics, label);
 }
 
+async function collapseBodySidebarForNarrowViewport(page) {
+  const viewport = page.viewportSize();
+  if (!viewport || viewport.width > 520) return;
+  await page.evaluate(() => {
+    const sidebar = document.querySelector(".body-sidebar-container.expanded");
+    if (!sidebar) return;
+    const controls = Array.from(sidebar.querySelectorAll("button, a, [role='button'], [tabindex]"));
+    const collapseControl = controls.find((node) => /\bCollapse\b/i.test((node.innerText || node.getAttribute("aria-label") || "").trim()));
+    if (collapseControl && typeof collapseControl.click === "function") {
+      collapseControl.click();
+    }
+  });
+  await page.waitForTimeout(250);
+}
+
 async function snapshot(page) {
   return page.evaluate(() => {
     const visible = (node) => {
@@ -585,7 +699,7 @@ async function snapshot(page) {
       actionText,
       hrefs,
       shellCount: Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace="warehouse"]')).filter(visible).length,
-      headerCount: Array.from(document.querySelectorAll(".warehouse-console-header, .warehouse-inbound-queue-header")).filter(visible).length,
+      headerCount: Array.from(document.querySelectorAll(".warehouse-console-header, .warehouse-inbound-queue-header, .warehouse-receiving-header")).filter(visible).length,
       sidebarCount: Array.from(document.querySelectorAll(".erpw-sales-console-sidebar")).filter(visible).length,
       kpiCount: Array.from(document.querySelectorAll(".warehouse-console-kpi-card")).filter(visible).length,
       outboundCardCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-card]")).filter(visible).length,
@@ -593,10 +707,14 @@ async function snapshot(page) {
       queueCardCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-queue-card]")).filter(visible).length,
       queueGroupCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-group]")).filter(visible).length,
       queueRowCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-row]")).filter(visible).length,
+      queueCommandChipCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-command-chip]")).filter(visible).length,
+      queueGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-guardrail]")).filter(visible).length,
+      queueRowFactCount: Array.from(document.querySelectorAll("[data-warehouse-outbound-row-fact]")).filter(visible).length,
       detailButtonCount: Array.from(document.querySelectorAll("[data-warehouse-row-open-detail], [data-warehouse-row-open-picking-detail]")).filter(visible).length,
       filterCount: Array.from(document.querySelectorAll("[data-warehouse-filter-key]")).filter(visible).length,
       expandedLineCount: Array.from(document.querySelectorAll(".warehouse-inbound-line")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
+      pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       state: shell && shell.getAttribute ? shell.getAttribute("data-warehouse-console-state") || "" : "",
       diagnostics: window.erpWorkspaceWarehouseConsole && window.erpWorkspaceWarehouseConsole.diagnostics
@@ -611,6 +729,7 @@ async function snapshot(page) {
 function assertCleanWarehouseUi(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
+  assert(!state.pageHeadCount || state.pageHeadCount <= 1, "Frappe page chrome must not duplicate", { context, state });
   assert(state.sidebarCount <= 1, "Warehouse sidebar count must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
   assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W5A", { context, state });
@@ -624,6 +743,11 @@ async function exerciseUser(browser, user) {
   const diagnostics = makeDiagnostics(user.key);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await installSourceOverrides(context, diagnostics);
+  if (EXPECT_W12C) {
+    await context.addInitScript(() => {
+      window.__erpwWarehouseExpectW12C = true;
+    });
+  }
   const page = await context.newPage();
   attachDiagnostics(page, diagnostics);
   const routeCalls = [];
@@ -642,10 +766,12 @@ async function exerciseUser(browser, user) {
     if (ASSET_ROOT) assert(state.outboundPreviewCount >= 1, "Overview outbound preview did not render", { user: user.key, state });
     await capture(page, `${user.key}-overview-landing`);
 
-    for (const viewport of VIEWPORTS) {
+    for (const viewport of ACTIVE_VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await collapseBodySidebarForNarrowViewport(page);
       const started = Date.now();
       await openOutboundRoute(page, diagnostics, `${user.key}:${viewport.key}:queue`);
+      await collapseBodySidebarForNarrowViewport(page);
       const firstMs = Date.now() - started;
       state = await snapshot(page);
       assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:queue`);
@@ -654,6 +780,11 @@ async function exerciseUser(browser, user) {
       if (ASSET_ROOT) assert(state.queueRowCount >= 1, "Outbound queue rows did not render", { user: user.key, viewport, state });
       assert(state.filterCount >= 4, "Outbound filters did not render", { user: user.key, viewport, state });
       assert(state.detailButtonCount >= 1, "Outbound rows must expose picking review navigation", { user: user.key, viewport, state });
+      if (EXPECT_W12C) {
+        assert(state.queueCommandChipCount >= 3, "Outbound command chips did not render", { user: user.key, viewport, state });
+        assert(state.queueGuardrailCount === 1, "Outbound read-only guardrail did not render exactly once", { user: user.key, viewport, state });
+        if (ASSET_ROOT) assert(state.queueRowFactCount >= 4, "Outbound fact cards did not render", { user: user.key, viewport, state });
+      }
 
       await page.locator('[data-warehouse-filter-key="customer"]').fill("Review");
       await page.locator('[data-warehouse-filter-key="state"]').selectOption("needs_stock_review");
@@ -679,6 +810,20 @@ async function exerciseUser(browser, user) {
         assert(state.expandedLineCount >= 1, "Outbound row lines did not expand inline", { user: user.key, viewport, state });
         assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:expand`);
       }
+      if (EXPECT_W12C && viewport.key === "desktop-1440" && state.detailButtonCount > 0) {
+        await page.locator("button[data-warehouse-row-open-picking-detail]").first().click();
+        await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
+        if (ASSET_ROOT) await waitForOverrideHit(page, diagnostics, "warehouse-picking-detail", `${user.key}:${viewport.key}:drilldown`);
+        await waitForWarehousePickingReady(page, diagnostics, `${user.key}:${viewport.key}:drilldown`);
+        state = await snapshot(page);
+        assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:drilldown`);
+        assert(/\/(?:desk|app)\/warehouse-console-picking\//.test(new URL(state.url).pathname), "Outbound drilldown did not use custom picking review route", { user: user.key, viewport, state });
+        assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Outbound drilldown exposed a native route target", { user: user.key, viewport, state });
+        await capture(page, `${user.key}-${viewport.key}-outbound-drilldown-target`);
+        await openOutboundRoute(page, diagnostics, `${user.key}:${viewport.key}:return-after-drilldown`);
+        state = await snapshot(page);
+        assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:return-after-drilldown`);
+      }
       await capture(page, `${user.key}-${viewport.key}-outbound-queue`);
 
       const warmStarted = Date.now();
@@ -696,6 +841,10 @@ async function exerciseUser(browser, user) {
       assert(diagnostics.overrideHits.some((hit) => hit.key === "desk-page-getpage" && hit.page === "warehouse-console-worklist"), "Warehouse worklist getpage source override was not used", { user: user.key, diagnostics });
       assert(diagnostics.overrideHits.some((hit) => hit.key === "warehouse-page-asset"), "Warehouse page asset source override was not used", { user: user.key, diagnostics });
       assert(diagnostics.overrideHits.some((hit) => hit.key === "warehouse-outbound-queue"), "Warehouse outbound queue source override was not used", { user: user.key, diagnostics });
+      if (EXPECT_W12C) {
+        assert(diagnostics.overrideHits.some((hit) => hit.key === "desk-page-getpage" && hit.page === "warehouse-console-picking"), "Warehouse picking getpage source override was not used", { user: user.key, diagnostics });
+        assert(diagnostics.overrideHits.some((hit) => hit.key === "warehouse-picking-detail"), "Warehouse picking detail source override was not used", { user: user.key, diagnostics });
+      }
     }
     assert(!diagnostics.consoleErrors.some((entry) => entry.type === "error"), "Warehouse W5A smoke recorded console errors", { user: user.key, diagnostics });
     assert(diagnostics.pageErrors.length === 0, "Warehouse W5A smoke recorded page errors", { user: user.key, diagnostics });
@@ -715,6 +864,7 @@ async function exerciseUser(browser, user) {
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
   const summary = {
     status: "pass",
+    phase: EXPECT_W12C ? "W12C" : "W5A",
     artifactDir: ARTIFACT_DIR,
     sourceOverride: Boolean(ASSET_ROOT),
     authorizedUsers: AUTHORIZED_USERS.map((user) => user.key),
@@ -724,17 +874,17 @@ async function exerciseUser(browser, user) {
     for (const user of AUTHORIZED_USERS) {
       summary.authorized.push(await exerciseUser(browser, user));
     }
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w5a-outbound-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
   } catch (error) {
     summary.status = "fail";
     summary.error = error && error.message ? error.message : String(error);
     summary.details = error && error.details ? error.details : {};
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w5a-outbound-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
     throw error;
   } finally {
     await browser.close();
   }
-  console.log(`Warehouse W5A outbound smoke passed. Summary: ${path.join(ARTIFACT_DIR, "warehouse-w5a-outbound-summary.json")}`);
+  console.log(`Warehouse ${EXPECT_W12C ? "W12C outbound polish" : "W5A outbound"} smoke passed. Summary: ${path.join(ARTIFACT_DIR, SUMMARY_FILE)}`);
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);

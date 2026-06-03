@@ -863,6 +863,12 @@
         background: #ffffff;
         box-shadow: 0 10px 28px rgba(34, 56, 48, 0.04);
       }
+      .warehouse-outbound-row.is-picking {
+        gap: 10px;
+        padding: 13px;
+        background: #ffffff;
+        box-shadow: 0 10px 28px rgba(34, 56, 48, 0.04);
+      }
       .warehouse-inbound-row-main {
         display: grid;
         grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.85fr) minmax(0, 0.9fr) minmax(0, 0.75fr) auto;
@@ -931,6 +937,21 @@
         background: #f4fbf7;
         color: #24563d;
       }
+      .warehouse-outbound-status-chip.is-ready_to_pick {
+        border-color: rgba(52, 130, 91, 0.24);
+        background: #f4fbf7;
+        color: #24563d;
+      }
+      .warehouse-outbound-status-chip.is-partially_picked {
+        border-color: rgba(86, 122, 147, 0.24);
+        background: #f4f8fb;
+        color: #254456;
+      }
+      .warehouse-outbound-status-chip.is-needs_stock_review {
+        border-color: rgba(191, 126, 32, 0.28);
+        background: #fff6e8;
+        color: #6a4417;
+      }
       .warehouse-inbound-badge {
         display: inline-flex;
         align-items: center;
@@ -955,6 +976,9 @@
         display: grid;
       }
       .warehouse-inbound-row.is-receiving .warehouse-inbound-lines {
+        padding-top: 9px;
+      }
+      .warehouse-outbound-row.is-picking .warehouse-inbound-lines {
         padding-top: 9px;
       }
       .warehouse-inbound-line {
@@ -2502,6 +2526,39 @@
         </article>
       `;
     }
+    if (row.sales_order) {
+      const postureKey = String(row.state_key || "review").replace(/[^a-z0-9_-]+/gi, "_").toLowerCase();
+      return `
+        <article class="warehouse-inbound-row warehouse-outbound-row is-picking" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-posture="${escapeHtml(postureKey)}">
+          <div class="warehouse-inbound-row-summary warehouse-outbound-row-summary">
+            <div class="warehouse-inbound-row-identity">
+              <div class="warehouse-inbound-order">${escapeHtml(rowKey)}</div>
+              <div class="warehouse-inbound-meta">${escapeHtml(partner || "Customer not visible")}</div>
+            </div>
+            <span class="warehouse-inbound-status-chip warehouse-outbound-status-chip is-${escapeHtml(postureKey)}">${escapeHtml(row.state_label || row.status || "Review")}</span>
+          </div>
+          <div class="warehouse-inbound-row-facts warehouse-outbound-row-facts">
+            <div class="warehouse-inbound-row-fact" data-warehouse-outbound-row-fact="customer"><span>Customer</span><strong>${escapeHtml(partner || "Not visible")}</strong></div>
+            <div class="warehouse-inbound-row-fact" data-warehouse-outbound-row-fact="warehouse"><span>Warehouse</span><strong>${escapeHtml(row.target_warehouse || "Not visible")}</strong></div>
+            <div class="warehouse-inbound-row-fact" data-warehouse-outbound-row-fact="due"><span>Delivery timing</span><strong>${escapeHtml(row.age_label || row.required_date || "Not visible")}</strong></div>
+            <div class="warehouse-inbound-row-fact" data-warehouse-outbound-row-fact="open"><span>Picking posture</span><strong>${escapeHtml(row.remaining_summary || "No open quantity summary")} · ${escapeHtml(progress)}</strong></div>
+          </div>
+          <div class="warehouse-inbound-row-actions warehouse-outbound-row-actions">
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-picking-detail>Open picking review</button>
+            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
+          </div>
+          <div class="warehouse-inbound-lines">
+            ${lines.length ? lines.map((line) => `
+              <div class="warehouse-inbound-line">
+                <span>${escapeHtml(line.item_code || "")} ${escapeHtml(line.item_name || "")}</span>
+                <span>${escapeHtml(line.remaining_qty || "")} ${escapeHtml(line.uom || "")}</span>
+                <span>${escapeHtml(line.target_warehouse || "")}</span>
+              </div>
+            `).join("") : `<div class="warehouse-inbound-line"><span>No item line details available.</span></div>`}
+          </div>
+        </article>
+      `;
+    }
     const detailButton = row.purchase_order
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>View details</button>'
       : row.sales_order
@@ -2535,11 +2592,15 @@
     `;
   }
 
-  function renderQueueGroup(group) {
+  function renderQueueGroup(group, queueKey) {
     const rows = Array.isArray(group.rows) ? group.rows : [];
     const groupKey = String(group.key || "");
     const inboundGroupKeys = ["overdue", "due_today", "partially_received", "expected_soon"];
-    const emptyText = inboundGroupKeys.includes(groupKey) ? "No receiving matches these filters." : "No work matches these filters.";
+    const emptyText = normalizeQueueKey(queueKey) === OUTBOUND_QUEUE_KEY
+      ? "No outbound picking matches these filters."
+      : inboundGroupKeys.includes(groupKey)
+        ? "No receiving matches these filters."
+        : "No work matches these filters.";
     return `
       <section class="warehouse-inbound-group is-${escapeHtml(groupKey)}" data-warehouse-inbound-group="${escapeHtml(groupKey)}" data-warehouse-outbound-group="${escapeHtml(groupKey)}">
         <div class="warehouse-inbound-group-head">
@@ -4298,6 +4359,8 @@
     const queueKey = normalizeQueueKey((payload.page && payload.page.key) || viewState.queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
     const viewName = worklistViewName(queueKey);
     const isInboundQueue = queueKey === INBOUND_QUEUE_KEY;
+    const isOutboundQueue = queueKey === OUTBOUND_QUEUE_KEY;
+    const isPremiumQueue = isInboundQueue || isOutboundQueue;
     const rowCount = groups.reduce((total, group) => total + (Array.isArray(group.rows) ? group.rows.length : 0), 0);
     const summaryChips = isInboundQueue
       ? [
@@ -4306,16 +4369,25 @@
           `${rowCount} ${rowCount === 1 ? "candidate" : "candidates"}`,
           payload.fetched_at ? `Fresh ${payload.fetched_at}` : "",
         ].filter(Boolean)
+      : isOutboundQueue
+        ? [
+            "Read-only",
+            "Customer-side picking review",
+            `${rowCount} ${rowCount === 1 ? "candidate" : "candidates"}`,
+            payload.fetched_at ? `Fresh ${payload.fetched_at}` : "",
+          ].filter(Boolean)
       : [];
     const $root = $(`
-      <div class="sales-console-shell warehouse-inbound-shell ${queueKey === OUTBOUND_QUEUE_KEY ? "warehouse-outbound-shell" : ""} ${isInboundQueue ? "warehouse-inbound-premium-shell" : ""}" data-erpw-workspace="warehouse" data-warehouse-view="${escapeHtml(viewName)}" data-warehouse-queue-key="${escapeHtml(queueKey)}" data-erpw-console-runtime="ready">
+      <div class="sales-console-shell warehouse-inbound-shell ${isOutboundQueue ? "warehouse-outbound-shell warehouse-outbound-premium-shell" : ""} ${isInboundQueue ? "warehouse-inbound-premium-shell" : ""}" data-erpw-workspace="warehouse" data-warehouse-view="${escapeHtml(viewName)}" data-warehouse-queue-key="${escapeHtml(queueKey)}" data-erpw-console-runtime="ready">
         <section class="warehouse-inbound-queue-header">
           <div class="warehouse-inbound-queue-head">
-            <div class="${isInboundQueue ? "warehouse-inbound-command" : ""}">
+            <div class="${isPremiumQueue ? "warehouse-inbound-command" : ""}">
               ${isInboundQueue ? '<div class="warehouse-inbound-queue-eyebrow">Read-only receiving queue</div>' : ""}
+              ${isOutboundQueue ? '<div class="warehouse-inbound-queue-eyebrow warehouse-outbound-queue-eyebrow">Read-only picking queue</div>' : ""}
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Inbound Receiving")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Expected supplier stock due into warehouse.")}</div>
               ${isInboundQueue ? `<div class="warehouse-inbound-chip-row">${summaryChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-inbound-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
+              ${isOutboundQueue ? `<div class="warehouse-inbound-chip-row warehouse-outbound-chip-row">${summaryChips.map((chip, index) => `<span class="warehouse-inbound-chip warehouse-outbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-outbound-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
             </div>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
           </div>
@@ -4327,11 +4399,12 @@
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-refresh>Refresh</button>
           </div>
           ${isInboundQueue ? '<div class="warehouse-inbound-queue-guardrail" data-warehouse-inbound-guardrail><strong>Review only</strong><span>No stock is posted and no Purchase Receipt is created from this queue. Use these filters and review links for planning before any separate receiving process.</span></div>' : ""}
+          ${isOutboundQueue ? '<div class="warehouse-inbound-queue-guardrail warehouse-outbound-queue-guardrail" data-warehouse-outbound-guardrail><strong>Review only</strong><span>No stock is reserved, picked, shipped, or delivered from this queue. Use these filters and review links for planning before any separate outbound process.</span></div>' : ""}
         </section>
         <div class="warehouse-inbound-groups">
           ${statePayload.kind === "restricted" || statePayload.kind === "error"
             ? `<section class="warehouse-inbound-group" data-warehouse-inbound-group="state" data-warehouse-outbound-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Warehouse worklist unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-inbound-empty data-warehouse-outbound-empty>${escapeHtml(statePayload.detail || "Warehouse work could not be loaded. Refresh or contact an administrator.")}</div></section>`
-            : groups.map(renderQueueGroup).join("")}
+            : groups.map((group) => renderQueueGroup(group, queueKey)).join("")}
         </div>
       </div>
     `);
