@@ -1205,6 +1205,49 @@ async function checkProcurementReportsIndex(page) {
   return { screenshot, quoteUrl: page.url(), cardGrid, nowrapCheck, poAnalysis, directPoAnalysis, demandCoverage, directDemandCoverage, itemHistory, directItemHistory };
 }
 
+async function ensurePurchaseOrderAnalysisRows(page) {
+  const snapshot = await page.locator(".erpw-report-shell").first().evaluate((shell) => {
+    const table = shell.querySelector(".erpw-report-table");
+    return {
+      tableCount: shell.querySelectorAll(".erpw-report-table").length,
+      rowCount: table ? table.querySelectorAll("tbody tr").length : 0,
+      text: (shell.innerText || "").replace(/\s+/g, " ").trim(),
+    };
+  });
+  if (snapshot.tableCount > 0 && snapshot.rowCount > 0) {
+    return { widened: false, before: snapshot, after: snapshot };
+  }
+  assert(/No purchase orders in view/i.test(snapshot.text), "PO Analysis table missing without the controlled empty state", snapshot);
+
+  const widenedWindow = { fromDate: "2026-04-01", toDate: "2026-06-05" };
+  await page.locator('[data-erpw-control-key="from_date"]').first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.locator('[data-erpw-control-key="to_date"]').first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.evaluate(({ fromDate, toDate }) => {
+    const setValue = (key, value) => {
+      const input = document.querySelector(`[data-erpw-control-key="${key}"]`);
+      if (!input) throw new Error(`Missing report control ${key}`);
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    setValue("from_date", fromDate);
+    setValue("to_date", toDate);
+  }, widenedWindow);
+  await page.locator(".erpw-report-control-button.primary").first().click();
+  await page.waitForFunction(() => document.querySelector(".erpw-report-shell") && document.querySelector(".erpw-report-shell").getAttribute("aria-busy") !== "true", null, { timeout: TIMEOUT });
+  await page.locator(".erpw-report-table").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const after = await page.locator(".erpw-report-shell").first().evaluate((shell) => {
+    const table = shell.querySelector(".erpw-report-table");
+    return {
+      tableCount: shell.querySelectorAll(".erpw-report-table").length,
+      rowCount: table ? table.querySelectorAll("tbody tr").length : 0,
+      text: (shell.innerText || "").replace(/\s+/g, " ").trim(),
+    };
+  });
+  assert(after.tableCount > 0 && after.rowCount > 0, "PO Analysis widened date window did not produce table rows", { before: snapshot, after, widenedWindow });
+  return { widened: true, before: snapshot, after, widenedWindow };
+}
+
 async function checkPurchaseOrderAnalysisReport(page, options = {}) {
   await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
   await page.waitForFunction(() => /Purchase Order Analysis/.test(document.body.innerText || ""), null, { timeout: TIMEOUT });
@@ -1304,6 +1347,8 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
   assert(filterActionLayout.controlsHeight <= 250, "PO Analysis filter panel still has oversized empty action area", filterActionLayout);
   assert(filterActionLayout.overflow <= 1, "PO Analysis filter action layout introduced horizontal overflow", filterActionLayout);
 
+  const rowWindow = await ensurePurchaseOrderAnalysisRows(page);
+
   const tableCheck = await page.locator(".erpw-report-table").first().evaluate((table) => {
     const headers = Array.from(table.querySelectorAll("thead th")).map((node) => node.textContent.trim());
     const rows = Array.from(table.querySelectorAll("tbody tr"));
@@ -1349,9 +1394,11 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
     await page.locator('[data-erpw-report-action-key="refresh"]').first().click();
     await page.waitForFunction(() => document.querySelector(".erpw-report-shell") && document.querySelector(".erpw-report-shell").getAttribute("aria-busy") !== "true", null, { timeout: TIMEOUT });
     assert(await page.evaluate(() => Boolean(window.__erpwProcurementReportMarker)), "PO Analysis Refresh reloaded the full page unexpectedly");
+    if (rowWindow.widened) await ensurePurchaseOrderAnalysisRows(page);
   }
   const drilldowns = {};
   if (options.exerciseDrilldowns && tableCheck.actionKeys.some((key) => /^po_analysis:po:/.test(key))) {
+    await ensurePurchaseOrderAnalysisRows(page);
     await page.locator('[data-erpw-report-action-key^="po_analysis:po:"]').first().click();
     await page.waitForURL((url) => /\/desk\/procurement-console-po-follow-up\//.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await assertSingleProcurementShell(page, "poDetail", "PO Analysis PO drilldown");
@@ -1360,6 +1407,7 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
     await assertSingleProcurementShell(page, "report", "PO Analysis after PO drilldown back");
   }
   if (options.exerciseDrilldowns && tableCheck.actionKeys.some((key) => /^po_analysis:supplier:/.test(key))) {
+    await ensurePurchaseOrderAnalysisRows(page);
     await page.locator('[data-erpw-report-action-key^="po_analysis:supplier:"]').first().click();
     await page.waitForURL((url) => /\/desk\/procurement-console-supplier\//.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await assertSingleProcurementShell(page, "supplierDetail", "PO Analysis Supplier drilldown");
@@ -1368,6 +1416,7 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
     await assertSingleProcurementShell(page, "report", "PO Analysis after Supplier drilldown back");
   }
   if (options.exerciseDrilldowns && tableCheck.actionKeys.some((key) => /^po_analysis:item:/.test(key))) {
+    await ensurePurchaseOrderAnalysisRows(page);
     await page.locator('[data-erpw-report-action-key^="po_analysis:item:"]').first().click();
     await page.waitForURL((url) => /\/desk\/procurement-console-item\//.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await assertSingleProcurementShell(page, "itemDetail", "PO Analysis Item drilldown");
@@ -1375,7 +1424,7 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
     await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await assertSingleProcurementShell(page, "report", "PO Analysis after Item drilldown back");
   }
-  return { screenshot, tableCheck, drilldowns };
+  return { screenshot, tableCheck, rowWindow, drilldowns };
 }
 
 

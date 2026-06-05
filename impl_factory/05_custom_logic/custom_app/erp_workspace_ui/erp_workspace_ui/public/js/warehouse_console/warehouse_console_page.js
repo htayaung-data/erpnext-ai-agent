@@ -1261,6 +1261,33 @@
         background: #fff6e8;
         color: #6a4417;
       }
+      .warehouse-receiving-line-status.is-ready {
+        border-color: rgba(52, 130, 91, 0.24);
+        background: #f4fbf7;
+        color: #24563d;
+      }
+      .warehouse-receiving-line-status.is-review {
+        border-color: rgba(86, 122, 147, 0.24);
+        background: #f4f8fb;
+        color: #254456;
+      }
+      .warehouse-receiving-line-status.is-unavailable {
+        border-color: rgba(148, 111, 83, 0.22);
+        background: #fbf6f2;
+        color: #604635;
+      }
+      .warehouse-picking-line.is-ready {
+        border-color: rgba(52, 130, 91, 0.2);
+        background: #f8fcfa;
+      }
+      .warehouse-picking-line.is-blocked {
+        border-color: rgba(191, 126, 32, 0.26);
+        background: #fffaf1;
+      }
+      .warehouse-picking-readiness-row.is-blocked {
+        border-color: rgba(191, 126, 32, 0.24);
+        background: #fffaf1;
+      }
       .warehouse-receiving-history-row {
         grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.6fr) minmax(0, 0.9fr);
       }
@@ -3438,14 +3465,81 @@
     const $parent = page && page.body ? $(page.body) : $(wrapper);
     const $host = $('<section class="warehouse-picking-route"></section>');
     $parent.empty().append($host);
-    const state = { page, $host, salesOrder: "" };
+    const state = {
+      page,
+      $host,
+      salesOrder: "",
+      requestSerial: 0,
+      loadingSignature: "",
+      loadingPromise: null,
+      loadedSignature: "",
+      lastPayload: null,
+    };
     wrapper.__erpwWarehousePickingReview = state;
     return state;
+  }
+
+  function pickingLoadSignature(salesOrder) {
+    return `${pickingRouteSignature()}::${String(salesOrder || "").trim()}`;
+  }
+
+  function hasRenderedPickingShell(viewState, salesOrder) {
+    const host = viewState && viewState.$host && viewState.$host.get ? viewState.$host.get(0) : null;
+    if (!host || !document.documentElement.contains(host)) return false;
+    const shell = host.querySelector('.warehouse-picking-shell[data-warehouse-view="picking-review"]');
+    if (!shell) return false;
+    return String(shell.getAttribute("data-warehouse-picking-order") || "") === String(salesOrder || "").trim();
   }
 
   function pickingSummaryText(header) {
     const parts = [header.sales_order, header.customer, header.target_warehouse].filter(Boolean);
     return parts.join(" · ");
+  }
+
+  function pickingLinePosture(line) {
+    const readiness = String(line.readiness || "").toLowerCase();
+    const availability = String(line.availability || "").toLowerCase();
+    if (readiness.includes("need") || readiness.includes("short") || availability.includes("short")) {
+      return { key: "needs_review", tone: "blocked", label: "Needs Review", note: "Stock posture needs review" };
+    }
+    if (readiness.includes("ready") || availability.includes("available")) {
+      return { key: "ready", tone: "ready", label: "Ready", note: "Available posture visible" };
+    }
+    if (readiness || availability) {
+      return { key: "review", tone: "review", label: "Review", note: "Posture visible" };
+    }
+    return { key: "unavailable", tone: "unavailable", label: "Unavailable", note: "Stock posture not visible" };
+  }
+
+  function pickingReadinessSummary(lines, unavailable) {
+    if (unavailable) {
+      return [
+        { key: "ready", label: "Ready Lines", value: "--", note: "Unavailable", tone: "unavailable" },
+        { key: "review", label: "Needs Review", value: "--", note: "Unavailable", tone: "unavailable" },
+        { key: "open", label: "Open Lines", value: "--", note: "Unavailable", tone: "unavailable" },
+        { key: "availability", label: "Availability", value: "--", note: "Unavailable", tone: "unavailable" },
+      ];
+    }
+    const total = lines.length;
+    const ready = lines.filter((line) => pickingLinePosture(line).tone === "ready").length;
+    const review = lines.filter((line) => pickingLinePosture(line).tone === "blocked").length;
+    const visible = lines.filter((line) => String(line.availability || "").trim()).length;
+    return [
+      { key: "ready", label: "Ready Lines", value: ready, note: "Visible as ready for review", tone: "ready" },
+      { key: "review", label: "Needs Review", value: review, note: "Line posture needs attention", tone: review ? "blocked" : "ready" },
+      { key: "open", label: "Open Lines", value: total, note: "Lines still visible for review", tone: total ? "review" : "unavailable" },
+      { key: "availability", label: "Availability", value: visible, note: "Lines with available posture", tone: visible ? "ready" : "unavailable" },
+    ];
+  }
+
+  function renderPickingReadinessCard(card) {
+    return `
+      <div class="warehouse-receiving-readiness-card is-${escapeHtml(card.tone || "review")}" data-warehouse-picking-readiness-card="${escapeHtml(card.key || "")}">
+        <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
+        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
+      </div>
+    `;
   }
 
   function renderPickingCard(card) {
@@ -3459,30 +3553,43 @@
   }
 
   function renderPickingLine(line) {
+    const posture = pickingLinePosture(line);
+    const uom = line.uom || line.stock_uom || "";
     return `
-      <div class="warehouse-receiving-line" data-warehouse-picking-line="${escapeHtml(line.item_code || "")}">
-        <div>
-          <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "")}</div>
-          <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || "")}</div>
+      <div class="warehouse-receiving-line warehouse-picking-line is-${escapeHtml(posture.tone)}" data-warehouse-picking-line="${escapeHtml(line.item_code || "")}" data-warehouse-picking-line-card>
+        <div class="warehouse-receiving-line-main">
+          <div>
+            <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "Item not visible")}</div>
+            <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || "Item name not visible")}</div>
+          </div>
+          <div class="warehouse-receiving-line-status is-${escapeHtml(posture.tone)}" data-warehouse-picking-line-status="${escapeHtml(posture.key)}">
+            <span>${escapeHtml(posture.label)}</span>
+            <strong>${escapeHtml(line.readiness || posture.note)}</strong>
+          </div>
         </div>
-        <div class="warehouse-receiving-meta">Ordered ${escapeHtml(line.ordered_qty || "0")} ${escapeHtml(line.uom || "")}</div>
-        <div class="warehouse-receiving-meta">Delivered ${escapeHtml(line.delivered_qty || "0")} ${escapeHtml(line.uom || "")}</div>
-        <div class="warehouse-receiving-meta">Pending ${escapeHtml(line.pending_qty || "0")} ${escapeHtml(line.uom || "")}</div>
-        <div class="warehouse-receiving-meta">${escapeHtml(line.readiness || "")} · ${escapeHtml(line.availability || "")}</div>
+        <div class="warehouse-receiving-line-facts warehouse-picking-line-facts">
+          <div class="warehouse-receiving-line-fact" data-warehouse-picking-line-fact="ordered"><span>Ordered</span><strong>${escapeHtml(line.ordered_qty || "0")} ${escapeHtml(uom)}</strong></div>
+          <div class="warehouse-receiving-line-fact" data-warehouse-picking-line-fact="delivered"><span>Delivered</span><strong>${escapeHtml(line.delivered_qty || "0")} ${escapeHtml(uom)}</strong></div>
+          <div class="warehouse-receiving-line-fact" data-warehouse-picking-line-fact="open"><span>Still open</span><strong>${escapeHtml(line.pending_qty || "0")} ${escapeHtml(uom)}</strong></div>
+          <div class="warehouse-receiving-line-fact" data-warehouse-picking-line-fact="warehouse"><span>Warehouse</span><strong>${escapeHtml(line.source_warehouse || "Not visible")}</strong></div>
+          <div class="warehouse-receiving-line-fact" data-warehouse-picking-line-fact="available"><span>Available posture</span><strong>${escapeHtml(line.availability || "Not visible")}</strong></div>
+        </div>
       </div>
     `;
   }
 
   function renderPickingReadinessRow(line) {
+    const posture = pickingLinePosture(line);
+    const uom = line.uom || line.stock_uom || "";
     return `
-      <div class="warehouse-receiving-history-row" data-warehouse-picking-readiness-row="${escapeHtml(line.item_code || "")}">
+      <div class="warehouse-receiving-history-row warehouse-picking-readiness-row is-${escapeHtml(posture.tone)}" data-warehouse-picking-readiness-row="${escapeHtml(line.item_code || "")}">
         <div>
           <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "")}</div>
           <div class="warehouse-receiving-meta">${escapeHtml(line.source_warehouse || "")}</div>
         </div>
-        <div class="warehouse-receiving-meta">${escapeHtml(line.pending_qty || "0")} ${escapeHtml(line.uom || "")} pending</div>
-        <div class="warehouse-receiving-meta">${escapeHtml(line.availability || "")}</div>
-        <div class="warehouse-receiving-meta">${escapeHtml(line.readiness || "")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.pending_qty || "0")} ${escapeHtml(uom)} open</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.availability || "Availability not visible")}</div>
+        <div class="warehouse-receiving-line-status is-${escapeHtml(posture.tone)}" data-warehouse-picking-readiness-status="${escapeHtml(posture.key)}"><span>${escapeHtml(posture.label)}</span><strong>${escapeHtml(line.readiness || posture.note)}</strong></div>
       </div>
     `;
   }
@@ -3505,32 +3612,62 @@
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     const statePayload = payload.state || {};
     const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const readinessCards = pickingReadinessSummary(lines, unavailable);
+    const shellOrder = header.sales_order || viewState.salesOrder || "";
     const $root = $(`
-      <div class="sales-console-shell warehouse-receiving-shell warehouse-picking-shell" data-erpw-workspace="warehouse" data-warehouse-view="picking-review" data-erpw-console-runtime="ready" data-warehouse-picking-order="${escapeHtml(header.sales_order || viewState.salesOrder || "")}">
-        <section class="warehouse-receiving-header">
+      <div class="sales-console-shell warehouse-receiving-shell warehouse-picking-shell" data-erpw-workspace="warehouse" data-warehouse-view="picking-review" data-erpw-console-runtime="ready" data-warehouse-picking-order="${escapeHtml(shellOrder)}">
+        <section class="warehouse-receiving-header warehouse-picking-header" data-warehouse-picking-command>
           <div class="warehouse-receiving-head">
-            <div>
+            <div class="warehouse-receiving-command">
+              <div class="warehouse-receiving-eyebrow">Read-only picking posture</div>
               <h1 class="warehouse-receiving-title">Picking Review</h1>
               <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Picking work could not be loaded. Refresh or contact an administrator." : pickingSummaryText(header))}</div>
+              <div class="warehouse-receiving-chip-row" data-warehouse-picking-identity-chips>
+                <span class="warehouse-receiving-chip" data-warehouse-picking-identity-chip>${escapeHtml(shellOrder || "Order not visible")}</span>
+                <span class="warehouse-receiving-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.customer || "Customer not visible")}</span>
+                <span class="warehouse-receiving-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.age_label || header.required_date || "Delivery date not visible")}</span>
+                <span class="warehouse-receiving-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.target_warehouse || "Warehouse not visible")}</span>
+                <span class="warehouse-receiving-chip is-read-only" data-warehouse-picking-identity-chip>Read-only</span>
+              </div>
             </div>
             <div class="warehouse-receiving-actions">
               <button type="button" class="warehouse-receiving-button" data-warehouse-picking-back>Back to outbound picking</button>
               <button type="button" class="warehouse-receiving-button" data-warehouse-picking-refresh>Refresh</button>
             </div>
           </div>
-          ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-picking-empty>${escapeHtml(statePayload.title || "Picking review unavailable")}</div>` : `
-            <div class="warehouse-receiving-note">${escapeHtml(header.age_label || "")} · ${escapeHtml(header.remaining_summary || "")}</div>
+          ${unavailable ? `<div class="warehouse-receiving-state-panel" data-warehouse-picking-empty><strong>${escapeHtml(statePayload.title || "Picking review unavailable")}</strong><span>${escapeHtml(statePayload.detail || "Picking work could not be loaded. Refresh or contact an administrator.")}</span></div>` : `
+            <div class="warehouse-receiving-command-grid warehouse-picking-command-grid">
+              <div class="warehouse-receiving-command-fact" data-warehouse-picking-command-fact="customer"><span>Customer</span><strong>${escapeHtml(header.customer || "Not visible")}</strong></div>
+              <div class="warehouse-receiving-command-fact" data-warehouse-picking-command-fact="warehouse"><span>Warehouse</span><strong>${escapeHtml(header.target_warehouse || "Not visible")}</strong></div>
+              <div class="warehouse-receiving-command-fact" data-warehouse-picking-command-fact="delivery"><span>Delivery timing</span><strong>${escapeHtml(header.required_date || header.age_label || "Not visible")}</strong></div>
+              <div class="warehouse-receiving-command-fact" data-warehouse-picking-command-fact="state"><span>Picking state</span><strong>${escapeHtml(header.state_label || header.status || "Review")}</strong></div>
+            </div>
+            <div class="warehouse-receiving-readiness warehouse-picking-readiness" data-warehouse-picking-readiness>
+              ${readinessCards.map(renderPickingReadinessCard).join("")}
+            </div>
+            <div class="warehouse-receiving-note">${escapeHtml(header.age_label || "Picking posture visible")} · ${escapeHtml(header.remaining_summary || "No open quantity summary visible")}</div>
             <div class="warehouse-receiving-cards">${cards.map(renderPickingCard).join("")}</div>
           `}
         </section>
-        <section class="warehouse-receiving-detail">
-          <div class="warehouse-receiving-tabs">
-            ${tabs.map((tab) => `<button type="button" class="warehouse-receiving-tab" data-warehouse-picking-tab="${escapeHtml(tab.key || "")}">${escapeHtml(tab.label || "")} ${escapeHtml(tab.count == null ? "" : `(${tab.count})`)}</button>`).join("")}
+        <section class="warehouse-receiving-guardrail warehouse-picking-guardrail" data-warehouse-picking-guardrail>
+          <strong>Review only</strong>
+          <span>No stock is reserved, picked, shipped, or delivered from this page. Use this page to understand picking posture before any separate outbound process.</span>
+        </section>
+        <section class="warehouse-receiving-detail warehouse-picking-detail" data-warehouse-picking-detail>
+          <div class="warehouse-receiving-detail-head" data-warehouse-picking-detail-head>
+            <div>
+              <h2 class="warehouse-receiving-section-title">Picking Lines</h2>
+              <div class="warehouse-receiving-meta">Ordered quantity, delivered quantity, open quantity, available posture, and warehouse are shown for review only.</div>
+            </div>
+            <div class="warehouse-receiving-tabs">
+              ${tabs.map((tab) => `<button type="button" class="warehouse-receiving-tab" data-warehouse-picking-tab="${escapeHtml(tab.key || "")}">${escapeHtml(tab.label || "")} ${escapeHtml(tab.count == null ? "" : `(${tab.count})`)}</button>`).join("")}
+            </div>
           </div>
           <div class="warehouse-receiving-panel is-active" data-warehouse-picking-panel="item_lines">
             ${lines.length ? lines.map(renderPickingLine).join("") : `<div class="warehouse-receiving-line" data-warehouse-picking-empty><span class="warehouse-receiving-meta">No item lines visible for this order.</span></div>`}
           </div>
           <div class="warehouse-receiving-panel" data-warehouse-picking-panel="stock_readiness">
+            <div class="warehouse-receiving-history-note">Line-level stock readiness is shown as bounded review posture. This panel does not open native stock pages.</div>
             ${lines.length ? lines.map(renderPickingReadinessRow).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-picking-empty><span class="warehouse-receiving-meta">No stock readiness visible for this order.</span></div>`}
           </div>
         </section>
@@ -3542,7 +3679,7 @@
     });
     $root.find("[data-warehouse-picking-refresh]").on("click", (event) => {
       event.preventDefault();
-      loadPickingReview(viewState, viewState.salesOrder);
+      loadPickingReview(viewState, viewState.salesOrder, { force: true });
     });
     $root.find("[data-warehouse-picking-tab]").on("click", function (event) {
       event.preventDefault();
@@ -3565,27 +3702,64 @@
     });
   }
 
-  function loadPickingReview(viewState, salesOrder) {
+  function loadPickingReview(viewState, salesOrder, options) {
+    const order = String(salesOrder || pickingSalesOrderFromRoute() || "").trim();
+    const force = Boolean(options && options.force);
+    const signature = pickingLoadSignature(order);
+    if (!force && viewState.loadingPromise && viewState.loadingSignature === signature) {
+      markWarehouseDiagnostic("pickingDuplicateLoadReused");
+      return viewState.loadingPromise;
+    }
+    if (!force && viewState.loadedSignature === signature && hasRenderedPickingShell(viewState, order)) {
+      markWarehouseDiagnostic("pickingDuplicateRenderSkipped");
+      return Promise.resolve(viewState.lastPayload || {});
+    }
+
     markWarehouseDiagnostic("pickingServiceCallAttempted");
-    viewState.salesOrder = salesOrder || pickingSalesOrderFromRoute();
+    viewState.salesOrder = order;
+    const requestToken = (viewState.requestSerial || 0) + 1;
+    viewState.requestSerial = requestToken;
+    viewState.loadingSignature = signature;
+    viewState.loadedSignature = "";
     renderPickingLoading(viewState);
-    return frappe.call({
+
+    const finishRequest = (payload) => {
+      const currentOrder = pickingSalesOrderFromRoute();
+      const shouldRender = (
+        viewState.requestSerial === requestToken
+        && viewState.loadingSignature === signature
+        && isActivePickingRoute()
+        && String(currentOrder || "").trim() === order
+      );
+      if (viewState.requestSerial === requestToken && viewState.loadingSignature === signature) {
+        viewState.loadingPromise = null;
+        viewState.loadingSignature = "";
+      }
+      if (!shouldRender) {
+        markWarehouseDiagnostic("pickingStaleResponseIgnored");
+        return payload;
+      }
+      viewState.loadedSignature = signature;
+      viewState.lastPayload = payload;
+      renderPickingReviewPayload(viewState, payload);
+      return payload;
+    };
+
+    const requestPromise = frappe.call({
       method: PICKING_METHOD,
       args: { sales_order: viewState.salesOrder },
-    }).then((response) => {
-      renderPickingReviewPayload(viewState, response && response.message ? response.message : {});
-    }).catch(() => {
-      renderPickingReviewPayload(viewState, {
-        state: { kind: "error", title: "Picking review unavailable", detail: "Picking work could not be loaded. Refresh or contact an administrator." },
-        header: { sales_order: viewState.salesOrder || "" },
-        summary_cards: [],
-        tabs: [
-          { key: "item_lines", label: "Item Lines", count: 0 },
-          { key: "stock_readiness", label: "Stock Readiness", count: 0 },
-        ],
-        lines: [],
-      });
-    });
+    }).then((response) => finishRequest(response && response.message ? response.message : {})).catch(() => finishRequest({
+      state: { kind: "error", title: "Picking review unavailable", detail: "Picking work could not be loaded. Refresh or contact an administrator." },
+      header: { sales_order: viewState.salesOrder || "" },
+      summary_cards: [],
+      tabs: [
+        { key: "item_lines", label: "Item Lines", count: 0 },
+        { key: "stock_readiness", label: "Stock Readiness", count: 0 },
+      ],
+      lines: [],
+    }));
+    viewState.loadingPromise = requestPromise;
+    return requestPromise;
   }
 
   function renderPickingReview(wrapper, salesOrder) {

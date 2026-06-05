@@ -3,12 +3,16 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W5B_TIMEOUT || process.env.ERPW_WAREHOUSE_W5A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W5B_ARTIFACT_DIR || path.join(
+const EXPECT_W12D = process.env.ERPW_WAREHOUSE_W12D_EXPECT_POLISH === "1"
+  || Boolean(process.env.ERPW_WAREHOUSE_W12D_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12D_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12D_TIMEOUT);
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W12D_TIMEOUT || process.env.ERPW_WAREHOUSE_W5B_TIMEOUT || process.env.ERPW_WAREHOUSE_W5A_TIMEOUT || 60000);
+const SMOKE_LABEL = EXPECT_W12D ? "w12d-picking-review-polish" : "w5b-picking";
+const SUMMARY_FILE = EXPECT_W12D ? "warehouse-w12d-picking-review-polish-summary.json" : "warehouse-w5b-picking-review-summary.json";
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W12D_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W5B_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w5b-picking-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `warehouse-${SMOKE_LABEL}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W5B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W5A_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W12D_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W5B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W5A_ASSET_ROOT || "";
 
 const AUTHORIZED_USERS = [
   {
@@ -30,6 +34,9 @@ const VIEWPORTS = [
   { key: "laptop-1240", width: 1240, height: 768 },
   { key: "desktop-1440", width: 1440, height: 900 },
 ];
+const ACTIVE_VIEWPORTS = EXPECT_W12D
+  ? [...VIEWPORTS, { key: "mobile-390", width: 390, height: 844 }]
+  : VIEWPORTS;
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Item Price|Default Supplier|Item Supplier)\b/i;
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
@@ -413,7 +420,16 @@ async function waitForPickingReady(page, diagnostics, label) {
         && shell.getAttribute("data-erpw-console-runtime") === "ready"
         && shell.querySelectorAll("[data-warehouse-picking-card]").length >= 4
         && shell.querySelectorAll("[data-warehouse-picking-line]").length >= 1
-        && shell.querySelectorAll("[data-warehouse-picking-tab]").length >= 2);
+        && shell.querySelectorAll("[data-warehouse-picking-tab]").length >= 2
+        && (!window.__erpwWarehouseExpectW12D || (
+          shell.querySelector("[data-warehouse-picking-command]")
+          && shell.querySelectorAll("[data-warehouse-picking-identity-chip]").length >= 5
+          && shell.querySelectorAll("[data-warehouse-picking-command-fact]").length >= 4
+          && shell.querySelectorAll("[data-warehouse-picking-readiness-card]").length >= 4
+          && shell.querySelector("[data-warehouse-picking-guardrail]")
+          && shell.querySelectorAll("[data-warehouse-picking-line-card]").length >= 1
+          && shell.querySelectorAll("[data-warehouse-picking-line-fact]").length >= 5
+        )));
     }, null, { timeout: TIMEOUT });
   } catch (error) {
     error.details = { ...(error.details || {}), snapshot: await diagnosticSnapshot(page, diagnostics, `${label}-picking-timeout`) };
@@ -436,6 +452,21 @@ async function openRoute(page, routeParts, expectedPath, diagnostics, label, vie
     if (ASSET_ROOT) await waitForOverrideHit(page, diagnostics, "warehouse-outbound-queue", label);
     await waitForOutboundReady(page, diagnostics, label);
   }
+}
+
+async function collapseBodySidebarForNarrowViewport(page) {
+  const viewport = page.viewportSize();
+  if (!viewport || viewport.width > 520) return;
+  await page.evaluate(() => {
+    const sidebar = document.querySelector(".body-sidebar-container.expanded");
+    if (!sidebar) return;
+    const controls = Array.from(sidebar.querySelectorAll("button, a, [role='button'], [tabindex]"));
+    const collapseControl = controls.find((node) => /\bCollapse\b/i.test((node.innerText || node.getAttribute("aria-label") || "").trim()));
+    if (collapseControl && typeof collapseControl.click === "function") {
+      collapseControl.click();
+    }
+  });
+  await page.waitForTimeout(250);
 }
 
 async function snapshot(page) {
@@ -465,9 +496,18 @@ async function snapshot(page) {
       pickingCardCount: Array.from(document.querySelectorAll("[data-warehouse-picking-card]")).filter(visible).length,
       pickingLineCount: Array.from(document.querySelectorAll("[data-warehouse-picking-line]")).filter(visible).length,
       pickingReadinessCount: Array.from(document.querySelectorAll("[data-warehouse-picking-readiness-row]")).filter(visible).length,
+      pickingCommandCount: Array.from(document.querySelectorAll("[data-warehouse-picking-command]")).filter(visible).length,
+      pickingIdentityChipCount: Array.from(document.querySelectorAll("[data-warehouse-picking-identity-chip]")).filter(visible).length,
+      pickingCommandFactCount: Array.from(document.querySelectorAll("[data-warehouse-picking-command-fact]")).filter(visible).length,
+      pickingReadinessCardCount: Array.from(document.querySelectorAll("[data-warehouse-picking-readiness-card]")).filter(visible).length,
+      pickingGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-picking-guardrail]")).filter(visible).length,
+      pickingLineCardCount: Array.from(document.querySelectorAll("[data-warehouse-picking-line-card]")).filter(visible).length,
+      pickingLineFactCount: Array.from(document.querySelectorAll("[data-warehouse-picking-line-fact]")).filter(visible).length,
+      pickingDetailHeadCount: Array.from(document.querySelectorAll("[data-warehouse-picking-detail-head]")).filter(visible).length,
       tabCount: Array.from(document.querySelectorAll("[data-warehouse-picking-tab]")).filter(visible).length,
       detailButtonCount: Array.from(document.querySelectorAll("[data-warehouse-row-open-picking-detail]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
+      pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       diagnostics: window.erpWorkspaceWarehouseConsole && window.erpWorkspaceWarehouseConsole.diagnostics ? { ...window.erpWorkspaceWarehouseConsole.diagnostics } : {},
       hasExportedPickingRenderer: Boolean(window.erpWorkspaceWarehouseConsole && typeof window.erpWorkspaceWarehouseConsole.renderPickingReview === "function"),
@@ -479,6 +519,7 @@ async function snapshot(page) {
 function assertCleanWarehouseUi(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
+  assert(!state.pageHeadCount || state.pageHeadCount <= 1, "Frappe page chrome must not duplicate", { context, state });
   assert(state.sidebarCount <= 1, "Warehouse sidebar count must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
   assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W5B", { context, state });
@@ -488,10 +529,30 @@ function assertCleanWarehouseUi(state, context) {
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Native route target is visible", { context, state });
 }
 
+function assertW12DPickingPolish(state, context, options = {}) {
+  if (!EXPECT_W12D) return;
+  const requireLineCards = options.requireLineCards !== false;
+  assert(state.pickingCommandCount === 1, "Picking command header did not render exactly once", { context, state });
+  assert(state.pickingIdentityChipCount >= 5, "Picking identity chips did not render", { context, state });
+  assert(state.pickingCommandFactCount >= 4, "Picking command facts did not render", { context, state });
+  assert(state.pickingReadinessCardCount >= 4, "Picking readiness cards did not render", { context, state });
+  assert(state.pickingGuardrailCount === 1, "Picking read-only guardrail did not render exactly once", { context, state });
+  if (requireLineCards) {
+    assert(state.pickingLineCardCount >= 1, "Picking item line cards did not render", { context, state });
+    assert(state.pickingLineFactCount >= 5, "Picking item line facts did not render", { context, state });
+  }
+  assert(state.pickingDetailHeadCount === 1, "Picking detail header did not render exactly once", { context, state });
+}
+
 async function exerciseUser(browser, user) {
   const diagnostics = makeDiagnostics(user.key);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await installSourceOverrides(context, diagnostics);
+  if (EXPECT_W12D) {
+    await context.addInitScript(() => {
+      window.__erpwWarehouseExpectW12D = true;
+    });
+  }
   const page = await context.newPage();
   attachDiagnostics(page, diagnostics);
   try {
@@ -514,6 +575,7 @@ async function exerciseUser(browser, user) {
     assert(directSalesOrder && directSalesOrder !== "warehouse-console-picking", "Picking review route did not expose a concrete Sales Order", { user: user.key, directSalesOrder });
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:row-drilldown`);
+    assertW12DPickingPolish(state, `${user.key}:row-drilldown`);
     assert(state.pickingCardCount >= 4, "Picking review cards did not render", { user: user.key, state });
     assert(state.pickingLineCount >= 1, "Picking review lines did not render", { user: user.key, state });
     assert(state.tabCount >= 2, "Picking review tabs did not render", { user: user.key, state });
@@ -523,29 +585,43 @@ async function exerciseUser(browser, user) {
     state = await snapshot(page);
     assert(state.pickingReadinessCount >= 1, "Picking readiness rows did not render", { user: user.key, state });
     assertCleanWarehouseUi(state, `${user.key}:stock-readiness-tab`);
+    assertW12DPickingPolish(state, `${user.key}:stock-readiness-tab`, { requireLineCards: false });
+    if (EXPECT_W12D) await capture(page, `${user.key}-picking-review-stock-readiness`);
+
+    await page.locator('[data-warehouse-picking-tab="item_lines"]').click();
+    state = await snapshot(page);
+    assert(state.pickingLineCardCount >= 1, "Picking item line cards did not render after returning to item lines", { user: user.key, state });
+    assertCleanWarehouseUi(state, `${user.key}:item-lines-tab`);
+    assertW12DPickingPolish(state, `${user.key}:item-lines-tab`);
 
     await page.locator("[data-warehouse-picking-refresh]").click();
     await waitForPickingReady(page, diagnostics, `${user.key}:refresh`);
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:refresh`);
+    assertW12DPickingPolish(state, `${user.key}:refresh`);
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForPickingReady(page, diagnostics, `${user.key}:refresh-page`);
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:refresh-page`);
+    assertW12DPickingPolish(state, `${user.key}:refresh-page`);
 
     await page.locator("[data-warehouse-picking-back]").click();
     await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-worklist\/outbound-picking$/.test(url.pathname), { timeout: TIMEOUT });
     await waitForOutboundReady(page, diagnostics, `${user.key}:back-to-queue`);
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:back-to-queue`);
+    if (EXPECT_W12D) await capture(page, `${user.key}-back-to-outbound-queue`);
 
-    for (const viewport of VIEWPORTS) {
+    for (const viewport of ACTIVE_VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await collapseBodySidebarForNarrowViewport(page);
       const directPickingPath = `/desk/warehouse-console-picking/${encodeURIComponent(directSalesOrder)}`;
       await openRoute(page, ["warehouse-console-picking", directSalesOrder], directPickingPath, diagnostics, `${user.key}:${viewport.key}:direct`, "picking");
+      await collapseBodySidebarForNarrowViewport(page);
       state = await snapshot(page);
       assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:direct`);
+      assertW12DPickingPolish(state, `${user.key}:${viewport.key}:direct`);
       assert(state.pickingShellCount === 1, "Picking review shell count must remain 1", { user: user.key, viewport, state });
       assert(state.pickingLineCount >= 1, "Picking review lines did not render", { user: user.key, viewport, state });
       await capture(page, `${user.key}-${viewport.key}-picking-review`);
@@ -577,22 +653,22 @@ async function exerciseUser(browser, user) {
 (async () => {
   assert(AUTHORIZED_USERS.length > 0, "No Warehouse W5B smoke credentials were provided. Set ERPW_WAREHOUSE_MANAGER_USERNAME/PASSWORD or ERPW_WAREHOUSE_USER_USERNAME/PASSWORD.");
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
-  const summary = { status: "pass", artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), authorizedUsers: AUTHORIZED_USERS.map((user) => user.key), authorized: [] };
+  const summary = { status: "pass", phase: EXPECT_W12D ? "W12D" : "W5B", artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), authorizedUsers: AUTHORIZED_USERS.map((user) => user.key), authorized: [] };
   try {
     for (const user of AUTHORIZED_USERS) {
       summary.authorized.push(await exerciseUser(browser, user));
     }
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w5b-picking-review-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
   } catch (error) {
     summary.status = "fail";
     summary.error = error && error.message ? error.message : String(error);
     summary.details = error && error.details ? error.details : {};
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w5b-picking-review-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
     throw error;
   } finally {
     await browser.close();
   }
-  console.log(`Warehouse W5B picking review smoke passed. Summary: ${path.join(ARTIFACT_DIR, "warehouse-w5b-picking-review-summary.json")}`);
+  console.log(`Warehouse ${EXPECT_W12D ? "W12D picking review polish" : "W5B picking review"} smoke passed. Summary: ${path.join(ARTIFACT_DIR, SUMMARY_FILE)}`);
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);
