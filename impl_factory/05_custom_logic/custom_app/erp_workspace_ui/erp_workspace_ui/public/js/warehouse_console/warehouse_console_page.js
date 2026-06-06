@@ -952,6 +952,22 @@
         background: #fff6e8;
         color: #6a4417;
       }
+      .warehouse-inbound-status-chip.is-inbound_cover_expected {
+        border-color: rgba(52, 130, 91, 0.24);
+        background: #f4fbf7;
+        color: #24563d;
+      }
+      .warehouse-inbound-status-chip.is-urgent_aging,
+      .warehouse-inbound-status-chip.is-needs_stock_review {
+        border-color: rgba(191, 126, 32, 0.28);
+        background: #fff6e8;
+        color: #6a4417;
+      }
+      .warehouse-inbound-status-chip.is-warehouse_posture_missing {
+        border-color: rgba(86, 122, 147, 0.24);
+        background: #f4f8fb;
+        color: #254456;
+      }
       .warehouse-inbound-badge {
         display: inline-flex;
         align-items: center;
@@ -1328,6 +1344,22 @@
         border-radius: 8px;
         background: #fbfdfc;
       }
+      .warehouse-stock-exception-row.is-premium {
+        padding: 14px;
+        background: #ffffff;
+        box-shadow: 0 10px 28px rgba(34, 56, 48, 0.04);
+      }
+      .warehouse-stock-exception-row-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: start;
+      }
+      .warehouse-stock-exception-row-identity {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
       .warehouse-stock-exception-row-main {
         display: grid;
         grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.9fr) minmax(0, 0.75fr) minmax(0, 0.95fr) auto;
@@ -1346,6 +1378,59 @@
         color: #51645c;
         font-size: 12px;
         line-height: 1.35;
+      }
+      .warehouse-stock-exception-fact {
+        min-width: 0;
+        padding: 10px 11px;
+        border: 1px solid rgba(224, 233, 229, 0.96);
+        border-radius: 8px;
+        background: #fbfdfc;
+      }
+      .warehouse-stock-exception-fact span {
+        display: block;
+        color: #667a71;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.05em;
+        line-height: 1.25;
+        text-transform: uppercase;
+      }
+      .warehouse-stock-exception-fact strong {
+        display: block;
+        margin-top: 5px;
+        color: #17231f;
+        font-size: 12.5px;
+        font-weight: 760;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+      }
+      .warehouse-stock-exception-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .warehouse-stock-exception-details {
+        display: none;
+        gap: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(224, 233, 229, 0.96);
+      }
+      .warehouse-stock-exception-row.is-expanded .warehouse-stock-exception-details {
+        display: grid;
+      }
+      .warehouse-stock-exception-detail {
+        min-width: 0;
+        padding: 10px 11px;
+        border: 1px solid rgba(228, 236, 232, 0.98);
+        border-radius: 8px;
+        background: #f8fbfa;
+        color: #51645c;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .warehouse-stock-exception-guardrail {
+        margin-top: 0;
       }
       .warehouse-stock-exception-review-shell {
         width: min(1180px, calc(100% - 24px));
@@ -1485,6 +1570,9 @@
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .warehouse-receiving-actions {
+          justify-content: flex-start;
+        }
+        .warehouse-stock-exception-actions {
           justify-content: flex-start;
         }
         .warehouse-console-section-note {
@@ -2651,14 +2739,24 @@
     `;
   }
 
+  function stockExceptionPostureKey(row) {
+    return String(row.exception_key || row.state_key || "review").replace(/[^a-z0-9_-]+/gi, "_").toLowerCase();
+  }
+
   function renderStockExceptionRow(row) {
     const targets = row.route_targets || {};
     const reviewTarget = targets.exception_review || {};
     const pickingTarget = targets.picking || {};
     const receivingTarget = targets.receiving || {};
+    const postureTarget = targets.stock_posture || targets.posture || {};
     const reviewToken = reviewTarget.context_token || row.context_token || "";
+    const postureToken = postureTarget.context_token || row.stock_posture_token || "";
+    const postureKey = stockExceptionPostureKey(row);
     const reviewButton = reviewToken
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-detail>Review exception</button>'
+      : "";
+    const postureButton = postureToken
+      ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-posture>Review stock posture</button>'
       : "";
     const pickingButton = pickingTarget.sales_order
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-picking>View picking review</button>'
@@ -2667,48 +2765,54 @@
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-receiving>View inbound review</button>'
       : "";
     return `
-      <article class="warehouse-stock-exception-row" data-warehouse-stock-exception-row="${escapeHtml(row.key || "")}" data-warehouse-stock-exception-token="${escapeHtml(reviewToken)}" data-warehouse-stock-exception-sales-order="${escapeHtml(row.sales_order || "")}" data-warehouse-stock-exception-receiving-order="${escapeHtml(row.expected_inbound_order || "")}">
-        <div class="warehouse-stock-exception-row-main">
-          <div>
-            <div class="warehouse-inbound-order">${escapeHtml(row.sales_order || "")}</div>
-            <div class="warehouse-inbound-meta">${escapeHtml(row.customer || "")}</div>
+      <article class="warehouse-stock-exception-row is-premium" data-warehouse-stock-exception-row="${escapeHtml(row.key || "")}" data-warehouse-stock-exception-token="${escapeHtml(reviewToken)}" data-warehouse-stock-exception-posture-token="${escapeHtml(postureToken)}" data-warehouse-stock-exception-sales-order="${escapeHtml(row.sales_order || "")}" data-warehouse-stock-exception-receiving-order="${escapeHtml(row.expected_inbound_order || "")}" data-warehouse-stock-exception-posture="${escapeHtml(postureKey)}">
+        <div class="warehouse-stock-exception-row-summary">
+          <div class="warehouse-stock-exception-row-identity">
+            <div class="warehouse-inbound-order">${escapeHtml(row.sales_order || "Demand not visible")}</div>
+            <div class="warehouse-inbound-meta">${escapeHtml(row.customer || "Customer not visible")} · ${escapeHtml(row.item_code || "Item not visible")} ${escapeHtml(row.item_name || "")}</div>
           </div>
-          <div>
-            <div class="warehouse-inbound-order">${escapeHtml(row.item_code || "")}</div>
-            <div class="warehouse-inbound-meta">${escapeHtml(row.item_name || "")}</div>
-          </div>
-          <div class="warehouse-inbound-meta">${escapeHtml(row.source_warehouse || "")}</div>
-          <div>
-            <span class="warehouse-inbound-badge">${escapeHtml(row.exception_label || "")}</span>
-            <div class="warehouse-inbound-meta">${escapeHtml(row.urgency_label || "")}</div>
-          </div>
-          <div class="warehouse-receiving-actions">
-            ${reviewButton}
-            ${pickingButton}
-            ${receivingButton}
-          </div>
+          <span class="warehouse-inbound-status-chip is-${escapeHtml(postureKey)}">${escapeHtml(row.exception_label || "Needs Review")}</span>
         </div>
-        <div class="warehouse-stock-exception-facts">
-          <div class="warehouse-stock-exception-fact">Pending ${escapeHtml(row.pending_qty || "0")} ${escapeHtml(row.uom || "")}</div>
-          <div class="warehouse-stock-exception-fact">Available ${escapeHtml(row.available_qty || "N/A")} ? Projected ${escapeHtml(row.projected_qty || "N/A")}</div>
-          <div class="warehouse-stock-exception-fact">Short ${escapeHtml(row.short_qty || "0")} ${escapeHtml(row.uom || "")}</div>
-          <div class="warehouse-stock-exception-fact">Inbound ${escapeHtml(row.expected_inbound_qty || "0")} ${escapeHtml(row.expected_inbound_date || "")}</div>
+        <div class="warehouse-stock-exception-facts" data-warehouse-stock-exception-row-facts>
+          <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="warehouse"><span>Warehouse</span><strong>${escapeHtml(row.source_warehouse || "Not visible")}</strong></div>
+          <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="timing"><span>Timing</span><strong>${escapeHtml(row.urgency_label || row.required_date || "Not visible")}</strong></div>
+          <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="open"><span>Open demand</span><strong>${escapeHtml(row.pending_qty || "0")} ${escapeHtml(row.uom || "")}</strong></div>
+          <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="available"><span>Available posture</span><strong>${escapeHtml(row.available_qty || "N/A")} available · ${escapeHtml(row.projected_qty || "N/A")} projected</strong></div>
+          <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="short"><span>Short posture</span><strong>${escapeHtml(row.short_qty || "0")} ${escapeHtml(row.uom || "")}</strong></div>
+          <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="inbound"><span>Inbound cover</span><strong>${escapeHtml(row.expected_inbound_qty || "0")} ${escapeHtml(row.expected_inbound_date || "")}</strong></div>
         </div>
-        <div class="warehouse-inbound-meta">${escapeHtml(row.explanation || "")}</div>
+        <div class="warehouse-stock-exception-actions" data-warehouse-stock-exception-actions>
+          ${reviewButton}
+          ${postureButton}
+          ${pickingButton}
+          ${receivingButton}
+          <button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-toggle>View details</button>
+        </div>
+        <div class="warehouse-stock-exception-details" data-warehouse-stock-exception-details>
+          <div class="warehouse-stock-exception-detail">${escapeHtml(row.explanation || "No exception explanation visible.")}</div>
+          <div class="warehouse-stock-exception-detail">Next review: open a custom Warehouse review route if one is visible for this row.</div>
+        </div>
       </article>
     `;
   }
 
   function renderStockExceptionGroup(group) {
     const rows = Array.isArray(group.rows) ? group.rows : [];
+    const groupKey = String(group.key || "");
+    const emptyText = {
+      needs_stock_review: "No shortage-risk rows match these filters.",
+      inbound_cover_expected: "No inbound-cover rows match these filters.",
+      urgent_aging: "No urgent or aging demand matches these filters.",
+      warehouse_posture_missing: "No missing warehouse posture matches these filters.",
+    }[groupKey] || "No stock exceptions match these filters.";
     return `
-      <section class="warehouse-inbound-group" data-warehouse-stock-exception-group="${escapeHtml(group.key || "")}">
+      <section class="warehouse-inbound-group" data-warehouse-stock-exception-group="${escapeHtml(groupKey)}">
         <div class="warehouse-inbound-group-head">
           <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
         </div>
         <div class="warehouse-console-card-grid">
-          ${rows.length ? rows.map(renderStockExceptionRow).join("") : `<div class="warehouse-stock-exception-row" data-warehouse-stock-exception-empty><span class="warehouse-inbound-meta">No stock exceptions match these filters.</span></div>`}
+          ${rows.length ? rows.map(renderStockExceptionRow).join("") : `<div class="warehouse-stock-exception-row" data-warehouse-stock-exception-empty><span class="warehouse-inbound-meta">${escapeHtml(emptyText)}</span></div>`}
         </div>
       </section>
     `;
@@ -2721,15 +2825,25 @@
     const cards = Array.isArray(payload.cards) ? payload.cards : [];
     const groups = Array.isArray(payload.groups) ? payload.groups : [];
     const statePayload = payload.state || {};
+    const rowCount = groups.reduce((total, group) => total + (Array.isArray(group.rows) ? group.rows.length : 0), 0);
+    const commandChips = [
+      "Read-only",
+      `${rowCount} ${rowCount === 1 ? "exception" : "exceptions"}`,
+      payload.fetched_at ? `Fresh ${payload.fetched_at}` : "",
+    ].filter(Boolean);
     const $root = $(`
       <div class="sales-console-shell warehouse-inbound-shell warehouse-stock-exception-shell" data-erpw-workspace="warehouse" data-warehouse-view="stock-exceptions" data-warehouse-queue-key="${STOCK_EXCEPTIONS_KEY}" data-warehouse-stock-exception-shell="true" data-erpw-console-runtime="ready">
-        <section class="warehouse-inbound-queue-header">
+        <section class="warehouse-inbound-queue-header" data-warehouse-stock-exception-command>
           <div class="warehouse-inbound-queue-head">
-            <div>
+            <div class="warehouse-inbound-command">
+              <div class="warehouse-inbound-queue-eyebrow">Read-only exception queue</div>
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Stock Exceptions")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Outbound blockers, inbound cover, and warehouse posture gaps.")}</div>
+              <div class="warehouse-inbound-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-stock-exception-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
             </div>
-            <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
+            <div class="warehouse-receiving-actions">
+              <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
+            </div>
           </div>
           <div class="warehouse-inbound-queue-cards">${cards.map(renderStockExceptionCard).join("")}</div>
           <div class="warehouse-inbound-controls">
@@ -2738,6 +2852,10 @@
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-refresh>Refresh</button>
           </div>
+          <section class="warehouse-receiving-guardrail warehouse-stock-exception-guardrail" data-warehouse-stock-exception-guardrail>
+            <strong>Review only</strong>
+            <span>No stock is reserved, reconciled, transferred, picked, received, shipped, posted, or adjusted from this queue. Use the custom review routes for planning before any separate stock process.</span>
+          </section>
         </section>
         <div class="warehouse-inbound-groups">
           ${statePayload.kind === "restricted" || statePayload.kind === "error"
@@ -2774,10 +2892,19 @@
       const token = String($(this).closest("[data-warehouse-stock-exception-token]").attr("data-warehouse-stock-exception-token") || "").trim();
       if (token) frappe.set_route(STOCK_EXCEPTION_PAGE_KEY, token);
     });
+    $root.find("[data-warehouse-stock-exception-route-posture]").on("click", function (event) {
+      event.preventDefault();
+      const token = String($(this).closest("[data-warehouse-stock-exception-posture-token]").attr("data-warehouse-stock-exception-posture-token") || "").trim();
+      if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
+    });
     $root.find("[data-warehouse-stock-exception-route-receiving]").on("click", function (event) {
       event.preventDefault();
       const purchaseOrder = String($(this).closest("[data-warehouse-stock-exception-receiving-order]").attr("data-warehouse-stock-exception-receiving-order") || "").trim();
       if (purchaseOrder) frappe.set_route(RECEIVING_PAGE_KEY, purchaseOrder);
+    });
+    $root.find("[data-warehouse-stock-exception-toggle]").on("click", function (event) {
+      event.preventDefault();
+      $(this).closest("[data-warehouse-stock-exception-row]").toggleClass("is-expanded");
     });
     replaceWarehouseRouteHost(viewState, $root);
   }

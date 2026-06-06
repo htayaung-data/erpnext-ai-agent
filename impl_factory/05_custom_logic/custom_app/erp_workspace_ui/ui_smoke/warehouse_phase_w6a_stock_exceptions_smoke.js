@@ -3,12 +3,16 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W6A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W6A_ARTIFACT_DIR || path.join(
+const EXPECT_W12E = process.env.ERPW_WAREHOUSE_W12E_EXPECT_POLISH === "1"
+  || Boolean(process.env.ERPW_WAREHOUSE_W12E_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12E_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12E_TIMEOUT);
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W12E_TIMEOUT || process.env.ERPW_WAREHOUSE_W6A_TIMEOUT || 60000);
+const SMOKE_LABEL = EXPECT_W12E ? "w12e-stock-exceptions-polish" : "w6a-stock-exceptions";
+const SUMMARY_FILE = EXPECT_W12E ? "warehouse-w12e-stock-exceptions-polish-summary.json" : "warehouse-w6a-stock-exceptions-summary.json";
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W12E_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W6A_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w6a-stock-exceptions-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `warehouse-${SMOKE_LABEL}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W6A_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W12E_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W6A_ASSET_ROOT || "";
 
 const AUTHORIZED_USERS = [
   {
@@ -28,6 +32,9 @@ const VIEWPORTS = [
   { key: "laptop-1240", width: 1240, height: 768 },
   { key: "desktop-1440", width: 1440, height: 900 },
 ];
+const ACTIVE_VIEWPORTS = EXPECT_W12E
+  ? [...VIEWPORTS, { key: "mobile-390", width: 390, height: 844 }]
+  : VIEWPORTS;
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Allocate|Item Price|Default Supplier|Item Supplier)\b/i;
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
@@ -184,7 +191,14 @@ function stockRows() {
       exception_label: "Inbound Cover Expected",
       urgency_label: "Due 2026-06-03",
       explanation: "Visible stock is short, with inbound cover expected soon.",
-      route_targets: { picking: { route: "warehouse-console-picking", sales_order: "SO-REVIEW" }, receiving: { route: "warehouse-console-receiving", purchase_order: "PO-SOON" } },
+      context_token: "eyJzb3VyY2UiOiJzbW9rZSIsImtleSI6IlNPLVJFVklFVyJ9",
+      stock_posture_token: "eyJpdGVtX2NvZGUiOiJJVEVNLTEwNSIsIndhcmVob3VzZSI6IlNob3J0IC0gTSJ9",
+      route_targets: {
+        exception_review: { route: "warehouse-console-stock-exception", context_token: "eyJzb3VyY2UiOiJzbW9rZSIsImtleSI6IlNPLVJFVklFVyJ9" },
+        stock_posture: { route: "warehouse-console-stock-posture", context_token: "eyJpdGVtX2NvZGUiOiJJVEVNLTEwNSIsIndhcmVob3VzZSI6IlNob3J0IC0gTSJ9" },
+        picking: { route: "warehouse-console-picking", sales_order: "SO-REVIEW" },
+        receiving: { route: "warehouse-console-receiving", purchase_order: "PO-SOON" },
+      },
     },
     {
       key: "SO-AGING:ITEM-220:Main - M",
@@ -207,7 +221,8 @@ function stockRows() {
       exception_label: "Urgent / Aging Demand",
       urgency_label: "Overdue 1d",
       explanation: "Demand is due now or past due and visible stock is short.",
-      route_targets: { picking: { route: "warehouse-console-picking", sales_order: "SO-AGING" } },
+      context_token: "eyJzb3VyY2UiOiJzbW9rZSIsImtleSI6IlNPLUFHSU5HIn0",
+      route_targets: { exception_review: { route: "warehouse-console-stock-exception", context_token: "eyJzb3VyY2UiOiJzbW9rZSIsImtleSI6IlNPLUFHSU5HIn0" }, picking: { route: "warehouse-console-picking", sales_order: "SO-AGING" } },
     },
   ];
 }
@@ -376,7 +391,13 @@ async function waitForStock(page) {
       && shell.getAttribute("data-erpw-console-runtime") === "ready"
       && shell.querySelectorAll("[data-warehouse-stock-exception-card]").length >= 4
       && shell.querySelectorAll("[data-warehouse-stock-exception-group]").length >= 4
-      && (shell.querySelectorAll("[data-warehouse-stock-exception-row]").length >= 1 || shell.querySelector("[data-warehouse-stock-exception-empty]")));
+      && (shell.querySelectorAll("[data-warehouse-stock-exception-row]").length >= 1 || shell.querySelector("[data-warehouse-stock-exception-empty]"))
+      && (!window.__erpwWarehouseExpectW12E || (
+        shell.querySelector("[data-warehouse-stock-exception-command]")
+        && shell.querySelectorAll("[data-warehouse-stock-exception-command-chip]").length >= 3
+        && shell.querySelector("[data-warehouse-stock-exception-guardrail]")
+        && (shell.querySelectorAll("[data-warehouse-stock-exception-row-fact]").length >= 4 || shell.querySelector("[data-warehouse-stock-exception-empty]"))
+      )));
   }, null, { timeout: TIMEOUT });
 }
 
@@ -431,9 +452,23 @@ async function snapshot(page) {
       stockRowCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-row]")).filter(visible).length,
       stockEmptyCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-empty]")).filter(visible).length,
       stockFilterCount: Array.from(document.querySelectorAll("[data-warehouse-filter-key]")).filter(visible).length,
+      stockBackOverviewCount: Array.from(document.querySelectorAll("[data-warehouse-back-overview]")).filter(visible).length,
+      stockApplyCount: Array.from(document.querySelectorAll("[data-warehouse-filter-apply]")).filter(visible).length,
+      stockResetCount: Array.from(document.querySelectorAll("[data-warehouse-filter-reset]")).filter(visible).length,
+      stockRefreshCount: Array.from(document.querySelectorAll("[data-warehouse-filter-refresh]")).filter(visible).length,
+      stockCommandCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-command]")).filter(visible).length,
+      stockCommandChipCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-command-chip]")).filter(visible).length,
+      stockGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-guardrail]")).filter(visible).length,
+      stockRowFactCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-row-fact]")).filter(visible).length,
+      stockRowActionCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-actions] button")).filter(visible).length,
+      stockDetailButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-toggle]")).filter(visible).length,
+      stockExpandedDetailCount: Array.from(document.querySelectorAll(".warehouse-stock-exception-row.is-expanded [data-warehouse-stock-exception-details]")).filter(visible).length,
+      stockReviewButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-route-detail]")).filter(visible).length,
+      stockPostureButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-route-posture]")).filter(visible).length,
       pickingRouteButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-route-picking]")).filter(visible).length,
       receivingRouteButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-route-receiving]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
+      pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       diagnostics: window.erpWorkspaceWarehouseConsole && window.erpWorkspaceWarehouseConsole.diagnostics ? { ...window.erpWorkspaceWarehouseConsole.diagnostics } : {},
       hasExportedStockRenderer: Boolean(window.erpWorkspaceWarehouseConsole && typeof window.erpWorkspaceWarehouseConsole.renderStockExceptions === "function"),
@@ -444,6 +479,7 @@ async function snapshot(page) {
 function assertClean(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
+  assert(!state.pageHeadCount || state.pageHeadCount <= 1, "Frappe page chrome must not duplicate", { context, state });
   assert(state.sidebarCount <= 1, "Warehouse sidebar count must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
   assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W6A", { context, state });
@@ -453,10 +489,34 @@ function assertClean(state, context) {
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Native route target is visible", { context, state });
 }
 
+function assertW12EStockPolish(state, context) {
+  if (!EXPECT_W12E) return;
+  assert(state.stockCommandCount === 1, "Stock Exceptions command header did not render exactly once", { context, state });
+  assert(state.stockBackOverviewCount === 1, "Stock Exceptions page link did not render exactly once", { context, state });
+  assert(state.stockApplyCount === 1, "Stock Exceptions Apply control did not render exactly once", { context, state });
+  assert(state.stockResetCount === 1, "Stock Exceptions Reset control did not render exactly once", { context, state });
+  assert(state.stockRefreshCount === 1, "Stock Exceptions Refresh control did not render exactly once", { context, state });
+  assert(state.stockCommandChipCount >= 3, "Stock Exceptions command chips did not render", { context, state });
+  assert(state.stockGuardrailCount === 1, "Stock Exceptions read-only guardrail did not render exactly once", { context, state });
+  assert(state.stockCardCount >= 4, "Stock Exceptions summary cards did not render", { context, state });
+  assert(state.stockGroupCount >= 4, "Stock Exceptions groups did not render", { context, state });
+  assert(state.stockRowCount >= 1 || state.stockEmptyCount >= 1, "Stock Exceptions rows or empty states did not render", { context, state });
+  if (state.stockRowCount >= 1) {
+    assert(state.stockRowFactCount >= 4, "Stock Exceptions row facts did not render", { context, state });
+    assert(state.stockRowActionCount >= 1, "Stock Exceptions row actions did not render", { context, state });
+    assert(state.stockDetailButtonCount >= 1, "Stock Exceptions detail expansion button did not render", { context, state });
+  }
+}
+
 async function exerciseUser(browser, user) {
   const diagnostics = makeDiagnostics(user.key);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await installSourceOverrides(context, diagnostics);
+  if (EXPECT_W12E) {
+    await context.addInitScript(() => {
+      window.__erpwWarehouseExpectW12E = true;
+    });
+  }
   const page = await context.newPage();
   attachDiagnostics(page, diagnostics);
   try {
@@ -471,6 +531,7 @@ async function exerciseUser(browser, user) {
     if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-stock-exceptions");
     state = await snapshot(page);
     assertClean(state, `${user.key}:stock`);
+    assertW12EStockPolish(state, `${user.key}:stock`);
     assert(state.stockShellCount === 1, "Stock Exceptions shell count must be 1", { user: user.key, state });
     assert(state.stockCardCount >= 4, "Stock exception summary cards did not render", { user: user.key, state });
     assert(state.stockGroupCount >= 4, "Stock exception groups did not render", { user: user.key, state });
@@ -478,6 +539,10 @@ async function exerciseUser(browser, user) {
     assert(hasStockRows || state.stockEmptyCount >= 1, "Stock exception rows or empty state did not render", { user: user.key, state });
     assert(state.stockFilterCount >= 3, "Stock exception filters did not render", { user: user.key, state });
     if (hasStockRows) {
+      if (EXPECT_W12E) {
+        assert(state.stockReviewButtonCount >= 1, "Stock exception review route button did not render", { user: user.key, state });
+        assert(state.stockPostureButtonCount >= 1, "Stock posture route button did not render", { user: user.key, state });
+      }
       assert(state.pickingRouteButtonCount >= 1, "Stock exception picking route button did not render", { user: user.key, state });
       assert(state.receivingRouteButtonCount >= 1, "Stock exception receiving route button did not render", { user: user.key, state });
     }
@@ -486,17 +551,31 @@ async function exerciseUser(browser, user) {
     await page.locator('[data-warehouse-filter-key="state"]').selectOption("inbound_cover_expected");
     await page.locator("[data-warehouse-filter-apply]").click();
     await waitForStock(page);
-    assertClean(await snapshot(page), `${user.key}:apply`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:apply`);
+    assertW12EStockPolish(state, `${user.key}:apply`);
 
     await page.locator("[data-warehouse-filter-reset]").click();
     await waitForStock(page);
-    assertClean(await snapshot(page), `${user.key}:reset`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:reset`);
+    assertW12EStockPolish(state, `${user.key}:reset`);
 
     await page.locator("[data-warehouse-filter-refresh]").click();
     await waitForStock(page);
-    assertClean(await snapshot(page), `${user.key}:refresh`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:refresh`);
+    assertW12EStockPolish(state, `${user.key}:refresh`);
 
     if (hasStockRows) {
+      if (EXPECT_W12E) {
+        await page.locator("[data-warehouse-stock-exception-toggle]").first().click();
+        state = await snapshot(page);
+        assertClean(state, `${user.key}:details`);
+        assertW12EStockPolish(state, `${user.key}:details`);
+        assert(state.stockExpandedDetailCount >= 1, "Stock exception details did not expand in page", { user: user.key, state });
+        await capture(page, `${user.key}-stock-exceptions-details`);
+      }
       await page.locator("[data-warehouse-stock-exception-route-picking]").first().click();
       await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
       await waitForPicking(page);
@@ -519,17 +598,22 @@ async function exerciseUser(browser, user) {
     }
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForStock(page);
-    assertClean(await snapshot(page), `${user.key}:reload`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:reload`);
+    assertW12EStockPolish(state, `${user.key}:reload`);
 
     await openRoute(page, ["warehouse-console-worklist", "stock-exceptions"], "/desk/warehouse-console-worklist/stock-exceptions", waitForStock);
     await openRoute(page, ["warehouse-console-worklist", "stock-exceptions"], "/desk/warehouse-console-worklist/stock-exceptions", waitForStock);
-    assertClean(await snapshot(page), `${user.key}:repeat`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:repeat`);
+    assertW12EStockPolish(state, `${user.key}:repeat`);
 
-    for (const viewport of VIEWPORTS) {
+    for (const viewport of ACTIVE_VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await openRoute(page, ["warehouse-console-worklist", "stock-exceptions"], "/desk/warehouse-console-worklist/stock-exceptions", waitForStock);
       state = await snapshot(page);
       assertClean(state, `${user.key}:${viewport.key}`);
+      assertW12EStockPolish(state, `${user.key}:${viewport.key}`);
       assert(state.stockShellCount === 1, "Stock Exceptions shell count must remain 1", { user: user.key, viewport, state });
       await capture(page, `${user.key}-${viewport.key}-stock-exceptions`);
     }
@@ -559,22 +643,22 @@ async function exerciseUser(browser, user) {
 (async () => {
   assert(AUTHORIZED_USERS.length > 0, "No Warehouse W6A smoke credentials were provided. Set ERPW_WAREHOUSE_MANAGER_USERNAME/PASSWORD or ERPW_WAREHOUSE_USER_USERNAME/PASSWORD.");
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
-  const summary = { status: "pass", artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), authorizedUsers: AUTHORIZED_USERS.map((user) => user.key), authorized: [] };
+  const summary = { status: "pass", phase: EXPECT_W12E ? "W12E" : "W6A", artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), authorizedUsers: AUTHORIZED_USERS.map((user) => user.key), authorized: [] };
   try {
     for (const user of AUTHORIZED_USERS) {
       summary.authorized.push(await exerciseUser(browser, user));
     }
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w6a-stock-exceptions-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
   } catch (error) {
     summary.status = "fail";
     summary.error = error && error.message ? error.message : String(error);
     summary.details = error && error.details ? error.details : {};
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w6a-stock-exceptions-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
     throw error;
   } finally {
     await browser.close();
   }
-  console.log(`Warehouse W6A stock exceptions smoke passed. Summary: ${path.join(ARTIFACT_DIR, "warehouse-w6a-stock-exceptions-summary.json")}`);
+  console.log(`Warehouse ${EXPECT_W12E ? "W12E stock exceptions polish" : "W6A stock exceptions"} smoke passed. Summary: ${path.join(ARTIFACT_DIR, SUMMARY_FILE)}`);
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);

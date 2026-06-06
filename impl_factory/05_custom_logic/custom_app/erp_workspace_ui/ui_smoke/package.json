@@ -90,7 +90,9 @@
     "test:warehouse-w12c-outbound-polish": "node warehouse_phase_w12c_outbound_polish_smoke.js",
     "test:warehouse-w12c-outbound-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12c-outbound-polish",
     "test:warehouse-w12d-picking-review-polish": "node warehouse_phase_w12d_picking_review_polish_smoke.js",
-    "test:warehouse-w12d-picking-review-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12d-picking-review-polish"
+    "test:warehouse-w12d-picking-review-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12d-picking-review-polish",
+    "test:warehouse-w12e-stock-exceptions-polish": "node warehouse_phase_w12e_stock_exceptions_polish_smoke.js",
+    "test:warehouse-w12e-stock-exceptions-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12e-stock-exceptions-polish"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"
