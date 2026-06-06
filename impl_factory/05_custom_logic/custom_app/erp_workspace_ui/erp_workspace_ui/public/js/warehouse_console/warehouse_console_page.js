@@ -1436,6 +1436,63 @@
         width: min(1180px, calc(100% - 24px));
         min-width: 0;
       }
+      .warehouse-stock-exception-review-header {
+        background:
+          radial-gradient(circle at 94% 12%, rgba(48, 112, 92, 0.08), transparent 28%),
+          linear-gradient(135deg, #ffffff 0%, #f7fbf9 58%, #eef7f2 100%);
+      }
+      .warehouse-stock-exception-review-command {
+        display: grid;
+        gap: 12px;
+      }
+      .warehouse-stock-exception-review-eyebrow {
+        color: #376455;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-stock-exception-review-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .warehouse-stock-exception-review-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        min-width: 0;
+        margin-top: 4px;
+      }
+      .warehouse-stock-exception-review-command-fact {
+        min-width: 0;
+        padding: 12px;
+        border: 1px solid rgba(220, 232, 226, 0.98);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+      .warehouse-stock-exception-review-command-fact span {
+        display: block;
+        color: #667a71;
+        font-size: 10.5px;
+        font-weight: 780;
+        letter-spacing: 0.05em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-stock-exception-review-command-fact strong {
+        display: block;
+        margin-top: 6px;
+        color: #17231f;
+        font-size: 13px;
+        font-weight: 760;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+      }
+      .warehouse-stock-exception-review-guardrail {
+        margin-top: 12px;
+      }
       .warehouse-stock-exception-review-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1447,10 +1504,11 @@
         display: grid;
         gap: 10px;
         min-width: 0;
-        padding: 14px;
+        padding: 16px;
         border: 1px solid rgba(228, 236, 232, 0.98);
         border-radius: 8px;
-        background: #fbfdfc;
+        background: #ffffff;
+        box-shadow: 0 10px 28px rgba(34, 56, 48, 0.04);
       }
       .warehouse-stock-exception-review-facts {
         display: grid;
@@ -1501,6 +1559,9 @@
         font-weight: 560;
         line-height: 1.35;
       }
+      .warehouse-stock-exception-review-related-panel {
+        margin-top: 12px;
+      }
       .warehouse-receiving-strong {
         color: #263530;
         font-size: 13px;
@@ -1530,7 +1591,8 @@
         .warehouse-receiving-cards,
         .warehouse-receiving-command-grid,
         .warehouse-receiving-readiness,
-        .warehouse-receiving-line-facts {
+        .warehouse-receiving-line-facts,
+        .warehouse-stock-exception-review-command-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .warehouse-cockpit-start-grid {
@@ -1561,6 +1623,7 @@
         .warehouse-cockpit-route-grid.is-two,
         .warehouse-cockpit-start-grid,
         .warehouse-stock-exception-review-grid,
+        .warehouse-stock-exception-review-command-grid,
         .warehouse-stock-exception-next-grid,
         .warehouse-stock-exception-row-main,
         .warehouse-stock-exception-facts {
@@ -3911,14 +3974,66 @@
     const $parent = page && page.body ? $(page.body) : $(wrapper);
     const $host = $('<section class="warehouse-stock-exception-route"></section>');
     $parent.empty().append($host);
-    const state = { page, $host, contextToken: "" };
+    const state = {
+      page,
+      $host,
+      contextToken: "",
+      requestSerial: 0,
+      loadingSignature: "",
+      loadingPromise: null,
+      loadedSignature: "",
+      lastPayload: null,
+    };
     wrapper.__erpwWarehouseStockExceptionReview = state;
     return state;
   }
 
+  function stockExceptionReviewLoadSignature(contextToken) {
+    return `${stockExceptionRouteSignature()}::${String(contextToken || "").trim()}`;
+  }
+
+  function hasRenderedStockExceptionReviewShell(viewState, contextToken) {
+    const host = viewState && viewState.$host && viewState.$host.get ? viewState.$host.get(0) : null;
+    if (!host || !document.documentElement.contains(host)) return false;
+    const shell = host.querySelector('.warehouse-stock-exception-review-shell[data-warehouse-view="stock-exception-review"]');
+    if (!shell) return false;
+    return String(shell.getAttribute("data-warehouse-stock-exception-token") || "") === String(contextToken || "").trim();
+  }
+
   function stockExceptionSummaryText(header) {
     const parts = [header.sales_order, header.item_code, header.source_warehouse].filter(Boolean);
-    return parts.join(" · ");
+    return parts.length ? parts.join(" · ") : "Demand risk, stock posture, and inbound cover review.";
+  }
+
+  function stockExceptionIdentityChips(header) {
+    return [
+      { key: "mode", label: "Read-only" },
+      { key: "exception", label: header.exception_label || header.title || "Stock exception" },
+      { key: "order", label: header.sales_order || "Demand not visible" },
+      { key: "item", label: header.item_code || "Item not visible" },
+      { key: "warehouse", label: header.source_warehouse || "Warehouse not visible" },
+      { key: "timing", label: header.urgency_label || header.required_date || "Review timing not visible" },
+    ].slice(0, 6);
+  }
+
+  function stockExceptionCommandFacts(header) {
+    return [
+      { key: "demand", label: "Demand at risk", value: header.sales_order || header.customer || "Visible demand" },
+      { key: "item", label: "Item", value: [header.item_code, header.item_name].filter(Boolean).join(" - ") || "Item posture" },
+      { key: "warehouse", label: "Warehouse posture", value: header.source_warehouse || "Warehouse not shown" },
+      { key: "timing", label: "Review timing", value: header.urgency_label || header.required_date || "Review timing not shown" },
+    ];
+  }
+
+  function stockExceptionReviewCards(cards, statePayload) {
+    if (cards.length) return cards;
+    const stateTitle = statePayload && statePayload.title ? statePayload.title : "Review unavailable";
+    return [
+      { key: "review_state", label: "Review State", value: stateTitle, note: "Visible details are limited for this review." },
+      { key: "demand_posture", label: "Demand Posture", value: "Not visible", note: "Demand context is not visible in this state." },
+      { key: "stock_posture", label: "Stock Posture", value: "Not visible", note: "Warehouse posture is not visible in this state." },
+      { key: "review_paths", label: "Review Paths", value: "Unavailable", note: "Custom review paths appear only when available." },
+    ];
   }
 
   function renderStockExceptionReviewCard(card) {
@@ -3933,21 +4048,27 @@
 
   function renderStockExceptionPanel(panel, panelKey) {
     const items = Array.isArray(panel.items) ? panel.items : [];
+    const visibleItems = items.length ? items : [
+      { label: "Review state", value: "Details not visible" },
+      { label: "Visible summary", value: panel.summary || "No details visible for this section." },
+      { label: "Workspace", value: "Warehouse Console" },
+      { label: "Posture", value: "Read-only" },
+    ];
     const target = panel.route_target || {};
     const postureToken = target.route === STOCK_POSTURE_PAGE_KEY ? String(target.context_token || "") : "";
     return `
-      <section class="warehouse-stock-exception-review-panel" data-warehouse-stock-exception-${escapeHtml(panelKey)}-panel>
+      <section class="warehouse-stock-exception-review-panel" data-warehouse-stock-exception-${escapeHtml(panelKey)}-panel data-warehouse-stock-exception-review-panel>
         <div class="warehouse-inbound-group-head">
           <h2 class="warehouse-inbound-group-title">${escapeHtml(panel.title || "")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(panel.summary || "")}</div>
         </div>
         <div class="warehouse-stock-exception-review-facts">
-          ${items.length ? items.map((item) => `
+          ${visibleItems.map((item) => `
             <div class="warehouse-stock-exception-review-fact" data-warehouse-stock-exception-review-fact>
               <span>${escapeHtml(item.label || "")}</span>
               <strong>${escapeHtml(item.value == null ? "" : item.value)}</strong>
             </div>
-          `).join("") : `<div class="warehouse-receiving-meta" data-warehouse-stock-exception-review-empty>No details visible for this section.</div>`}
+          `).join("")}
         </div>
         ${postureToken ? `<button type="button" class="warehouse-receiving-button" data-warehouse-stock-exception-open-posture data-warehouse-stock-exception-posture-token="${escapeHtml(postureToken)}">Review stock posture</button>` : ""}
       </section>
@@ -3957,7 +4078,7 @@
   function renderNextReviewPanel(panel) {
     const items = Array.isArray(panel.items) ? panel.items : [];
     return `
-      <section class="warehouse-stock-exception-review-panel" data-warehouse-stock-exception-next-panel>
+      <section class="warehouse-stock-exception-review-panel" data-warehouse-stock-exception-next-panel data-warehouse-stock-exception-review-panel>
         <div class="warehouse-inbound-group-head">
           <h2 class="warehouse-inbound-group-title">${escapeHtml(panel.title || "Recommended Review")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(panel.summary || "")}</div>
@@ -3967,12 +4088,21 @@
             const target = item.target || {};
             const targetKind = target.context_token && target.route === STOCK_POSTURE_PAGE_KEY ? "stock_posture" : target.purchase_order ? "receiving" : target.sales_order ? "picking" : "stock";
             return `
-              <button type="button" class="warehouse-stock-exception-next-card" data-warehouse-stock-exception-next-target="${escapeHtml(targetKind)}" data-warehouse-stock-exception-next-sales-order="${escapeHtml(target.sales_order || "")}" data-warehouse-stock-exception-next-purchase-order="${escapeHtml(target.purchase_order || "")}" data-warehouse-stock-exception-next-token="${escapeHtml(target.context_token || "")}">
+              <button type="button" class="warehouse-stock-exception-next-card" data-warehouse-stock-exception-next-card data-warehouse-stock-exception-next-target="${escapeHtml(targetKind)}" data-warehouse-stock-exception-next-sales-order="${escapeHtml(target.sales_order || "")}" data-warehouse-stock-exception-next-purchase-order="${escapeHtml(target.purchase_order || "")}" data-warehouse-stock-exception-next-token="${escapeHtml(target.context_token || "")}">
                 <span>${escapeHtml(item.label || "")}</span>
                 <strong>${escapeHtml(item.value || "")}</strong>
               </button>
             `;
-          }).join("") : `<div class="warehouse-receiving-meta" data-warehouse-stock-exception-review-empty>No review path visible.</div>`}
+          }).join("") : `
+            <div class="warehouse-stock-exception-next-card" data-warehouse-stock-exception-next-card data-warehouse-stock-exception-next-unavailable>
+              <span>Review path unavailable</span>
+              <strong>Custom Warehouse review paths appear here when visible for this exception.</strong>
+            </div>
+            <div class="warehouse-stock-exception-next-card" data-warehouse-stock-exception-next-card data-warehouse-stock-exception-next-unavailable>
+              <span>Stay in stock exceptions</span>
+              <strong>Use Back to stock exceptions or Refresh to review the latest visible posture.</strong>
+            </div>
+          `}
         </div>
       </section>
     `;
@@ -4016,13 +4146,20 @@
     const relatedRows = Array.isArray(payload.related_rows) ? payload.related_rows : [];
     const statePayload = payload.state || {};
     const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const identityChips = stockExceptionIdentityChips(header);
+    const commandFacts = stockExceptionCommandFacts(header);
+    const visibleCards = stockExceptionReviewCards(cards, statePayload);
     const $root = $(`
       <div class="sales-console-shell warehouse-receiving-shell warehouse-stock-exception-review-shell" data-erpw-workspace="warehouse" data-warehouse-view="stock-exception-review" data-erpw-console-runtime="ready" data-warehouse-stock-exception-review-shell="true" data-warehouse-stock-exception-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
-        <section class="warehouse-receiving-header">
+        <section class="warehouse-receiving-header warehouse-stock-exception-review-header" data-warehouse-stock-exception-review-command>
           <div class="warehouse-receiving-head">
-            <div>
+            <div class="warehouse-stock-exception-review-command">
+              <div class="warehouse-stock-exception-review-eyebrow">Read-only stock exception review</div>
               <h1 class="warehouse-receiving-title">Stock Exception Review</h1>
               <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Stock exception review could not be loaded. Refresh or contact an administrator." : stockExceptionSummaryText(header))}</div>
+              <div class="warehouse-stock-exception-review-chip-row">
+                ${identityChips.map((chip) => `<span class="warehouse-inbound-chip ${chip.key === "mode" ? "is-read-only" : ""}" data-warehouse-stock-exception-review-identity-chip="${escapeHtml(chip.key)}">${escapeHtml(chip.label)}</span>`).join("")}
+              </div>
             </div>
             <div class="warehouse-receiving-actions">
               <button type="button" class="warehouse-receiving-button" data-warehouse-stock-exception-back>Back to stock exceptions</button>
@@ -4031,8 +4168,20 @@
           </div>
           ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-stock-exception-review-empty>${escapeHtml(statePayload.title || "Stock exception review unavailable")}</div>` : `
             <div class="warehouse-receiving-note"><span class="warehouse-inbound-badge">${escapeHtml(header.exception_label || "")}</span> ${escapeHtml(header.urgency_label || "")} · ${escapeHtml(header.explanation || "")}</div>
-            <div class="warehouse-receiving-cards">${cards.map(renderStockExceptionReviewCard).join("")}</div>
           `}
+          <div class="warehouse-stock-exception-review-command-grid">
+            ${commandFacts.map((fact) => `
+              <div class="warehouse-stock-exception-review-command-fact" data-warehouse-stock-exception-review-command-fact="${escapeHtml(fact.key)}">
+                <span>${escapeHtml(fact.label)}</span>
+                <strong>${escapeHtml(fact.value)}</strong>
+              </div>
+            `).join("")}
+          </div>
+          <div class="warehouse-receiving-cards">${visibleCards.map(renderStockExceptionReviewCard).join("")}</div>
+        </section>
+        <section class="warehouse-inbound-queue-guardrail warehouse-stock-exception-review-guardrail" data-warehouse-stock-exception-review-guardrail>
+          <strong>Review only</strong>
+          <span>No stock is reserved, reconciled, transferred, picked, received, shipped, posted, or adjusted here. Use this page to understand demand risk, stock posture, and inbound cover before any separate warehouse process.</span>
         </section>
         <section class="warehouse-stock-exception-review-grid">
           ${renderStockExceptionPanel(panels.demand || {}, "demand")}
@@ -4040,13 +4189,13 @@
           ${renderStockExceptionPanel(panels.inbound || {}, "inbound")}
           ${renderNextReviewPanel(panels.next_reviews || {})}
         </section>
-        <section class="warehouse-receiving-detail" data-warehouse-stock-exception-related-panel>
+        <section class="warehouse-receiving-detail warehouse-stock-exception-review-related-panel" data-warehouse-stock-exception-related-panel>
           <div class="warehouse-inbound-group-head">
             <h2 class="warehouse-inbound-group-title">Related Reviews</h2>
             <div class="warehouse-inbound-group-note">Custom Warehouse review paths for this exception.</div>
           </div>
           <div class="warehouse-receiving-panel is-active">
-            ${relatedRows.length ? relatedRows.map(renderStockExceptionRelatedRow).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-stock-exception-review-empty><span class="warehouse-receiving-meta">No related review path visible.</span></div>`}
+            ${relatedRows.length ? relatedRows.map(renderStockExceptionRelatedRow).join("") : `<div class="warehouse-receiving-history-row" data-warehouse-stock-exception-related-row="unavailable" data-warehouse-stock-exception-review-empty><div><div class="warehouse-receiving-strong">Related review unavailable</div><div class="warehouse-receiving-meta">Custom Warehouse routes appear here when visible for this exception.</div></div><div class="warehouse-receiving-meta">Read-only</div></div>`}
           </div>
         </section>
       </div>
@@ -4057,7 +4206,7 @@
     });
     $root.find("[data-warehouse-stock-exception-refresh]").on("click", (event) => {
       event.preventDefault();
-      loadStockExceptionReview(viewState, viewState.contextToken);
+      loadStockExceptionReview(viewState, viewState.contextToken, { force: true });
     });
     $root.find("[data-warehouse-stock-exception-next-target]").on("click", function (event) {
       event.preventDefault();
@@ -4100,29 +4249,66 @@
     });
   }
 
-  function loadStockExceptionReview(viewState, contextToken) {
+  function loadStockExceptionReview(viewState, contextToken, options) {
+    const token = String(contextToken || stockExceptionTokenFromRoute() || "").trim();
+    const force = Boolean(options && options.force);
+    const signature = stockExceptionReviewLoadSignature(token);
+    if (!force && viewState.loadingPromise && viewState.loadingSignature === signature) {
+      markWarehouseDiagnostic("stockExceptionReviewDuplicateLoadReused");
+      return viewState.loadingPromise;
+    }
+    if (!force && viewState.loadedSignature === signature && hasRenderedStockExceptionReviewShell(viewState, token)) {
+      markWarehouseDiagnostic("stockExceptionReviewDuplicateRenderSkipped");
+      return Promise.resolve(viewState.lastPayload || {});
+    }
+
     markWarehouseDiagnostic("stockExceptionReviewServiceCallAttempted");
-    viewState.contextToken = contextToken || stockExceptionTokenFromRoute();
+    viewState.contextToken = token;
+    const requestToken = (viewState.requestSerial || 0) + 1;
+    viewState.requestSerial = requestToken;
+    viewState.loadingSignature = signature;
+    viewState.loadedSignature = "";
     renderStockExceptionReviewLoading(viewState);
-    return frappe.call({
+
+    const finishRequest = (payload) => {
+      const currentToken = stockExceptionTokenFromRoute();
+      const shouldRender = (
+        viewState.requestSerial === requestToken
+        && viewState.loadingSignature === signature
+        && isActiveStockExceptionRoute()
+        && String(currentToken || "").trim() === token
+      );
+      if (viewState.requestSerial === requestToken && viewState.loadingSignature === signature) {
+        viewState.loadingPromise = null;
+        viewState.loadingSignature = "";
+      }
+      if (!shouldRender) {
+        markWarehouseDiagnostic("stockExceptionReviewStaleResponseIgnored");
+        return payload;
+      }
+      viewState.loadedSignature = signature;
+      viewState.lastPayload = payload;
+      renderStockExceptionReviewPayload(viewState, payload);
+      return payload;
+    };
+
+    const requestPromise = frappe.call({
       method: STOCK_EXCEPTION_REVIEW_METHOD,
       args: { context_token: viewState.contextToken },
-    }).then((response) => {
-      renderStockExceptionReviewPayload(viewState, response && response.message ? response.message : {});
-    }).catch(() => {
-      renderStockExceptionReviewPayload(viewState, {
-        state: { kind: "error", title: "Stock exception review unavailable", detail: "Stock exception review could not be loaded. Refresh or contact an administrator." },
-        header: { context_token: viewState.contextToken || "" },
-        summary_cards: [],
-        panels: {
-          demand: { title: "Demand at Risk", items: [] },
-          stock: { title: "Stock Posture", items: [] },
-          inbound: { title: "Inbound Cover", items: [] },
-          next_reviews: { title: "Recommended Review", items: [] },
-        },
-        related_rows: [],
-      });
-    });
+    }).then((response) => finishRequest(response && response.message ? response.message : {})).catch(() => finishRequest({
+      state: { kind: "error", title: "Stock exception review unavailable", detail: "Stock exception review could not be loaded. Refresh or contact an administrator." },
+      header: { context_token: viewState.contextToken || "" },
+      summary_cards: [],
+      panels: {
+        demand: { title: "Demand at Risk", items: [] },
+        stock: { title: "Stock Posture", items: [] },
+        inbound: { title: "Inbound Cover", items: [] },
+        next_reviews: { title: "Recommended Review", items: [] },
+      },
+      related_rows: [],
+    }));
+    viewState.loadingPromise = requestPromise;
+    return requestPromise;
   }
 
   function renderStockExceptionReview(wrapper, contextToken) {

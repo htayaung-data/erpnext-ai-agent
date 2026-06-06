@@ -3,12 +3,16 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W6B_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W6B_ARTIFACT_DIR || path.join(
+const EXPECT_W12F = process.env.ERPW_WAREHOUSE_W12F_EXPECT_POLISH === "1"
+  || Boolean(process.env.ERPW_WAREHOUSE_W12F_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12F_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12F_TIMEOUT);
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W12F_TIMEOUT || process.env.ERPW_WAREHOUSE_W6B_TIMEOUT || 60000);
+const SMOKE_LABEL = EXPECT_W12F ? "w12f-stock-exception-review-polish" : "w6b-stock-exception-review";
+const SUMMARY_FILE = EXPECT_W12F ? "warehouse-w12f-stock-exception-review-polish-summary.json" : "warehouse-w6b-stock-exception-review-summary.json";
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W12F_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W6B_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w6b-stock-exception-review-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `warehouse-${SMOKE_LABEL}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W6B_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W12F_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W6B_ASSET_ROOT || "";
 const REVIEW_TOKEN = "7b226974656d5f636f6465223a224954454d2d313035222c2273616c65735f6f72646572223a22534f2d524556494557222c2277617265686f757365223a2253686f7274202d204d227d";
 const AGING_REVIEW_TOKEN = "7b226974656d5f636f6465223a224954454d2d323230222c2273616c65735f6f72646572223a22534f2d4147494e47222c2277617265686f757365223a224d61696e202d204d227d";
 
@@ -30,6 +34,9 @@ const VIEWPORTS = [
   { key: "laptop-1240", width: 1240, height: 768 },
   { key: "desktop-1440", width: 1440, height: 900 },
 ];
+const ACTIVE_VIEWPORTS = EXPECT_W12F
+  ? [...VIEWPORTS, { key: "mobile-390", width: 390, height: 844 }]
+  : VIEWPORTS;
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Allocate|Item Price|Default Supplier|Item Supplier)\b/i;
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
@@ -463,7 +470,14 @@ async function waitForStockExceptionReview(page) {
       && shell.querySelector("[data-warehouse-stock-exception-demand-panel]")
       && shell.querySelector("[data-warehouse-stock-exception-stock-panel]")
       && shell.querySelector("[data-warehouse-stock-exception-inbound-panel]")
-      && shell.querySelector("[data-warehouse-stock-exception-next-panel]"));
+      && shell.querySelector("[data-warehouse-stock-exception-next-panel]")
+      && (!window.__erpwWarehouseExpectW12F || (
+        shell.querySelector("[data-warehouse-stock-exception-review-command]")
+        && shell.querySelectorAll("[data-warehouse-stock-exception-review-identity-chip]").length >= 5
+        && shell.querySelectorAll("[data-warehouse-stock-exception-review-command-fact]").length >= 4
+        && shell.querySelectorAll("[data-warehouse-stock-exception-review-panel]").length >= 4
+        && shell.querySelector("[data-warehouse-stock-exception-review-guardrail]")
+      )));
   }, null, { timeout: TIMEOUT });
 }
 
@@ -510,10 +524,17 @@ async function snapshot(page) {
       receivingRouteButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-route-receiving]")).filter(visible).length,
       reviewRouteButtonCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-route-detail]")).filter(visible).length,
       stockReviewShellCount: Array.from(document.querySelectorAll('[data-warehouse-stock-exception-review-shell="true"][data-warehouse-view="stock-exception-review"]')).filter(visible).length,
+      stockReviewCommandCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-review-command]")).filter(visible).length,
+      stockReviewIdentityChipCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-review-identity-chip]")).filter(visible).length,
+      stockReviewCommandFactCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-review-command-fact]")).filter(visible).length,
+      stockReviewGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-review-guardrail]")).filter(visible).length,
       stockReviewCardCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-review-card]")).filter(visible).length,
-      stockReviewPanelCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-demand-panel], [data-warehouse-stock-exception-stock-panel], [data-warehouse-stock-exception-inbound-panel], [data-warehouse-stock-exception-next-panel]")).filter(visible).length,
+      stockReviewPanelCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-review-panel]")).filter(visible).length,
+      stockReviewFactCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-review-fact]")).filter(visible).length,
+      stockReviewNextCardCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-next-card]")).filter(visible).length,
       stockReviewRelatedCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-related-row]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
+      pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       diagnostics: window.erpWorkspaceWarehouseConsole && window.erpWorkspaceWarehouseConsole.diagnostics ? { ...window.erpWorkspaceWarehouseConsole.diagnostics } : {},
       hasExportedStockRenderer: Boolean(window.erpWorkspaceWarehouseConsole && typeof window.erpWorkspaceWarehouseConsole.renderStockExceptions === "function"),
@@ -525,6 +546,7 @@ async function snapshot(page) {
 function assertClean(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
+  assert(!state.pageHeadCount || state.pageHeadCount <= 1, "Frappe page chrome must not duplicate", { context, state });
   assert(state.sidebarCount <= 1, "Warehouse sidebar count must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
   assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W6B", { context, state });
@@ -534,10 +556,29 @@ function assertClean(state, context) {
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Native route target is visible", { context, state });
 }
 
+function assertW12FStockExceptionReviewPolish(state, context) {
+  if (!EXPECT_W12F) return;
+  assert(state.stockReviewShellCount === 1, "Stock Exception Review shell did not render exactly once", { context, state });
+  assert(state.stockReviewCommandCount === 1, "Stock Exception Review command header did not render exactly once", { context, state });
+  assert(state.stockReviewIdentityChipCount >= 5, "Stock Exception Review identity chips did not render", { context, state });
+  assert(state.stockReviewCommandFactCount >= 4, "Stock Exception Review command facts did not render", { context, state });
+  assert(state.stockReviewGuardrailCount === 1, "Stock Exception Review read-only guardrail did not render exactly once", { context, state });
+  assert(state.stockReviewCardCount >= 4, "Stock Exception Review summary cards did not render", { context, state });
+  assert(state.stockReviewPanelCount >= 4, "Stock Exception Review panels did not render", { context, state });
+  assert(state.stockReviewFactCount >= 10, "Stock Exception Review operational facts did not render", { context, state });
+  assert(state.stockReviewNextCardCount >= 2, "Stock Exception Review next-review cards did not render", { context, state });
+  assert(state.stockReviewRelatedCount >= 1, "Stock Exception Review related custom routes did not render", { context, state });
+}
+
 async function exerciseUser(browser, user) {
   const diagnostics = makeDiagnostics(user.key);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await installSourceOverrides(context, diagnostics);
+  if (EXPECT_W12F) {
+    await context.addInitScript(() => {
+      window.__erpwWarehouseExpectW12F = true;
+    });
+  }
   const page = await context.newPage();
   attachDiagnostics(page, diagnostics);
   try {
@@ -593,6 +634,7 @@ async function exerciseUser(browser, user) {
         || (state.diagnostics || {}).stockExceptionReviewServiceCallAttempted >= 1
         || diagnostics.overrideHits.some((hit) => hit.key === "warehouse-stock-exception-review");
       assertClean(state, `${user.key}:stock-exception-review`);
+      assertW12FStockExceptionReviewPolish(state, `${user.key}:stock-exception-review`);
       assert(state.stockReviewShellCount === 1, "Stock exception review shell count must be 1", { user: user.key, state });
       assert(state.stockReviewCardCount >= 4, "Stock exception review cards did not render", { user: user.key, state });
       assert(state.stockReviewPanelCount >= 4, "Stock exception review panels did not render", { user: user.key, state });
@@ -602,7 +644,9 @@ async function exerciseUser(browser, user) {
 
       await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
       await waitForStockExceptionReview(page);
-      assertClean(await snapshot(page), `${user.key}:stock-exception-review-reload`);
+      state = await snapshot(page);
+      assertClean(state, `${user.key}:stock-exception-review-reload`);
+      assertW12FStockExceptionReviewPolish(state, `${user.key}:stock-exception-review-reload`);
 
       await openRoute(page, ["warehouse-console-stock-exception", REVIEW_TOKEN], `/desk/warehouse-console-stock-exception/${REVIEW_TOKEN}`, waitForStockExceptionReview);
       await openRoute(page, ["warehouse-console-stock-exception", REVIEW_TOKEN], `/desk/warehouse-console-stock-exception/${REVIEW_TOKEN}`, waitForStockExceptionReview);
@@ -614,7 +658,22 @@ async function exerciseUser(browser, user) {
         || (state.diagnostics || {}).stockExceptionReviewServiceCallAttempted >= 1
         || diagnostics.overrideHits.some((hit) => hit.key === "warehouse-stock-exception-review");
       assertClean(state, `${user.key}:stock-exception-review-repeat`);
+      assertW12FStockExceptionReviewPolish(state, `${user.key}:stock-exception-review-repeat`);
       assert(state.stockReviewShellCount === 1, "Stock exception review shell count must remain 1", { user: user.key, state });
+
+      if (EXPECT_W12F) {
+        for (const viewport of ACTIVE_VIEWPORTS) {
+          await page.setViewportSize({ width: viewport.width, height: viewport.height });
+          await openRoute(page, ["warehouse-console-stock-exception", REVIEW_TOKEN], `/desk/warehouse-console-stock-exception/${REVIEW_TOKEN}`, waitForStockExceptionReview);
+          state = await snapshot(page);
+          assertClean(state, `${user.key}:${viewport.key}:stock-exception-review`);
+          assertW12FStockExceptionReviewPolish(state, `${user.key}:${viewport.key}:stock-exception-review`);
+          assert(state.stockReviewShellCount === 1, "Stock exception review shell count must remain 1", { user: user.key, viewport, state });
+          await capture(page, `${user.key}-${viewport.key}-stock-exception-review`);
+        }
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openRoute(page, ["warehouse-console-stock-exception", REVIEW_TOKEN], `/desk/warehouse-console-stock-exception/${REVIEW_TOKEN}`, waitForStockExceptionReview);
 
       await page.locator('[data-warehouse-stock-exception-next-target="picking"], [data-warehouse-stock-exception-related-target="picking"]').first().click();
       await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-picking\//.test(url.pathname), { timeout: TIMEOUT });
@@ -709,22 +768,22 @@ async function exerciseUser(browser, user) {
 (async () => {
   assert(AUTHORIZED_USERS.length > 0, "No Warehouse W6B smoke credentials were provided. Set ERPW_WAREHOUSE_MANAGER_USERNAME/PASSWORD or ERPW_WAREHOUSE_USER_USERNAME/PASSWORD.");
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
-  const summary = { status: "pass", artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), authorizedUsers: AUTHORIZED_USERS.map((user) => user.key), authorized: [] };
+  const summary = { status: "pass", phase: EXPECT_W12F ? "W12F" : "W6B", artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), authorizedUsers: AUTHORIZED_USERS.map((user) => user.key), authorized: [] };
   try {
     for (const user of AUTHORIZED_USERS) {
       summary.authorized.push(await exerciseUser(browser, user));
     }
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w6b-stock-exception-review-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
   } catch (error) {
     summary.status = "fail";
     summary.error = error && error.message ? error.message : String(error);
     summary.details = error && error.details ? error.details : {};
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w6b-stock-exception-review-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
     throw error;
   } finally {
     await browser.close();
   }
-  console.log(`Warehouse W6B stock exception review smoke passed. Summary: ${path.join(ARTIFACT_DIR, "warehouse-w6b-stock-exception-review-summary.json")}`);
+  console.log(`Warehouse ${EXPECT_W12F ? "W12F stock exception review polish" : "W6B stock exception review"} smoke passed. Summary: ${path.join(ARTIFACT_DIR, SUMMARY_FILE)}`);
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);
