@@ -42,6 +42,27 @@ from ai_assistant_ui.qwen_chat.runtime_metadata_contract import (
 	ROLE_POLICY_BOUNDARY,
 	build_runtime_metadata_envelope,
 )
+from ai_assistant_ui.qwen_chat.user_intent_boundary import (
+	ANSWER_MODE_CLARIFICATION,
+	ANSWER_MODE_CONTROL_BOUNDARY,
+	ANSWER_MODE_POLICY_BOUNDARY,
+	CATEGORY_CLARIFICATION_REQUIRED,
+	build_user_intent_boundary_contract,
+)
+from ai_assistant_ui.qwen_chat.intent_boundary_runtime_integration import (
+	USER_INTENT_BOUNDARY_CONTRACT_TYPE,
+	build_v1_ib_runtime_boundary,
+	merge_v1_ib_with_legacy_boundary,
+	v1_ib_runtime_contract_metadata,
+)
+from ai_assistant_ui.qwen_chat.intent_boundary_runtime_evidence import validator_owned_runtime_evidence
+from ai_assistant_ui.qwen_chat.intent_boundary_contract import (
+	ANSWER_MODE_GOVERNED_ERP,
+	AUTHORITY_DECISION_ALLOW_REPORT,
+	AUTHORITY_DECISION_BLOCK,
+	hash_text,
+	normalize_message,
+)
 from ai_assistant_ui.qwen_chat.boundary_support import (
 	append_artifact_boundary_observability as _append_artifact_boundary_observability_helper,
 	append_knowledge_boundary_observability as _append_knowledge_boundary_observability_helper,
@@ -704,7 +725,162 @@ def _fresh_query_should_skip_pre_frontdoor_reasoning(
 	return bool(fresh_governed_query_override_requested and not prior_offered_next_action_available)
 
 
-def _visible_context_followup_should_preempt_clarification(message: str) -> bool:
+def _user_intent_boundary_matches_current_message(
+	user_intent_boundary: Dict[str, Any] | None,
+	raw_message: str,
+) -> bool:
+	if not isinstance(user_intent_boundary, dict) or not user_intent_boundary:
+		return False
+	if str(user_intent_boundary.get("type") or "").strip() != USER_INTENT_BOUNDARY_CONTRACT_TYPE:
+		return False
+	raw_message = str(raw_message or "")
+	if not raw_message.strip():
+		return False
+	return (
+		str(user_intent_boundary.get("raw_message_hash") or "").strip() == hash_text(raw_message)
+		and str(user_intent_boundary.get("normalized_message_hash") or "").strip()
+		== hash_text(normalize_message(raw_message))
+	)
+
+
+def _user_intent_boundary_has_unsafe_or_ambiguous_intent(
+	user_intent_boundary: Dict[str, Any] | None,
+) -> bool:
+	if not isinstance(user_intent_boundary, dict):
+		return True
+	if any(
+		bool(user_intent_boundary.get(field))
+		for field in (
+			"decision_intent",
+			"advice_intent",
+			"business_action_intent",
+			"policy_boundary_intent",
+			"mixed_intent_detected",
+		)
+	):
+		return True
+	ambiguity_status = str(user_intent_boundary.get("ambiguity_status") or "").strip().lower()
+	return ambiguity_status not in {"", "none"}
+
+
+def _user_intent_boundary_context_reuse_allowed(
+	user_intent_boundary: Dict[str, Any] | None = None,
+	raw_message: str | None = None,
+) -> bool:
+	if not isinstance(user_intent_boundary, dict) or not user_intent_boundary:
+		return False
+	raw_message_text = str(raw_message or "")
+	if not raw_message_text.strip():
+		return False
+	if not _user_intent_boundary_matches_current_message(user_intent_boundary, raw_message_text):
+		return False
+	if str(user_intent_boundary.get("validator_status") or "").strip() != "valid":
+		return False
+	if str(user_intent_boundary.get("trace_redaction_status") or "").strip() != "safe":
+		return False
+	if not bool(user_intent_boundary.get("safe_followup_intent")):
+		return False
+	if _user_intent_boundary_has_unsafe_or_ambiguous_intent(user_intent_boundary):
+		return False
+	return bool(user_intent_boundary.get("context_reuse_allowed"))
+
+
+def _user_intent_boundary_report_routing_allowed(
+	user_intent_boundary: Dict[str, Any] | None = None,
+	raw_message: str | None = None,
+) -> bool:
+	if not isinstance(user_intent_boundary, dict) or not user_intent_boundary:
+		return False
+	raw_message_text = str(raw_message or "")
+	if not raw_message_text.strip():
+		return False
+	if not _user_intent_boundary_matches_current_message(user_intent_boundary, raw_message_text):
+		return False
+	if str(user_intent_boundary.get("validator_status") or "").strip() != "valid":
+		return False
+	if str(user_intent_boundary.get("trace_redaction_status") or "").strip() != "safe":
+		return False
+	if not bool(user_intent_boundary.get("report_routing_allowed")):
+		return False
+	if str(user_intent_boundary.get("required_answer_mode") or "").strip() != ANSWER_MODE_GOVERNED_ERP:
+		return False
+	if str(user_intent_boundary.get("authority_decision") or "").strip() != AUTHORITY_DECISION_ALLOW_REPORT:
+		return False
+	if str(user_intent_boundary.get("replayed_raw_message_safety_final_decision") or "").strip().lower() != "safe":
+		return False
+	if _user_intent_boundary_has_unsafe_or_ambiguous_intent(user_intent_boundary):
+		return False
+	return True
+
+
+def _user_intent_boundary_pre_routing_response_required(
+	user_intent_boundary: Dict[str, Any] | None = None,
+	*,
+	pending_clarification_signal: Dict[str, Any] | None = None,
+	raw_message: str | None = None,
+) -> bool:
+	if _user_intent_boundary_report_routing_allowed(user_intent_boundary, raw_message=raw_message):
+		return False
+	if (
+		isinstance(user_intent_boundary, dict)
+		and str(user_intent_boundary.get("category") or "").strip() == CATEGORY_CLARIFICATION_REQUIRED
+		and isinstance(pending_clarification_signal, dict)
+		and pending_clarification_signal
+	):
+		return False
+	return True
+
+
+def _user_intent_boundary_pre_routing_safe_metadata(
+	user_intent_boundary: Dict[str, Any] | None = None,
+	*,
+	raw_message: str | None = None,
+) -> Dict[str, Any]:
+	payload = dict(user_intent_boundary or {})
+	if not payload:
+		return payload
+	report_allowed = _user_intent_boundary_report_routing_allowed(payload, raw_message=raw_message)
+	context_allowed = _user_intent_boundary_context_reuse_allowed(payload, raw_message=raw_message)
+	if report_allowed or context_allowed:
+		return payload
+	has_stale_allow_surface = any(
+		bool(payload.get(field))
+		for field in (
+			"context_reuse_allowed",
+			"report_routing_allowed",
+			"model_reasoning_allowed",
+			"final_emission_allowed",
+		)
+	) or str(payload.get("required_answer_mode") or "").strip() == ANSWER_MODE_GOVERNED_ERP
+	if not has_stale_allow_surface:
+		return payload
+	payload.update(
+		{
+			"category": CATEGORY_CLARIFICATION_REQUIRED,
+			"required_answer_mode": ANSWER_MODE_CLARIFICATION,
+			"context_reuse_allowed": False,
+			"report_routing_allowed": False,
+			"model_reasoning_allowed": False,
+			"final_emission_allowed": False,
+			"authority_decision": AUTHORITY_DECISION_BLOCK,
+			"boundary_reason": "v1_ib_current_message_authority_mismatch",
+			"current_message_authority_status": "fail_closed",
+		}
+	)
+	return payload
+
+
+def _visible_context_followup_should_preempt_clarification(
+	message: str,
+	user_intent_boundary: Dict[str, Any] | None = None,
+	*,
+	raw_message: str | None = None,
+) -> bool:
+	if not _user_intent_boundary_context_reuse_allowed(
+		user_intent_boundary,
+		raw_message if raw_message is not None else message,
+	):
+		return False
 	return _visible_context_followup_requested(message)
 
 
@@ -713,38 +889,68 @@ def _artifact_boundary_should_yield_to_visible_context(
 	message: str,
 	entity_drilldown: Dict[str, Any] | None = None,
 	skip_artifact_boundary: bool = False,
+	user_intent_boundary: Dict[str, Any] | None = None,
+	raw_message: str | None = None,
 ) -> bool:
 	"""Visible table references must get final authority before generic artifact boundaries."""
 
 	return bool(
 		entity_drilldown is None
 		and not skip_artifact_boundary
-		and _visible_context_followup_should_preempt_clarification(message)
+		and _visible_context_followup_should_preempt_clarification(
+			message,
+			user_intent_boundary,
+			raw_message=raw_message,
+		)
 	)
 
 
-def _compiled_fresh_query_should_yield_to_visible_context(message: str) -> bool:
+def _compiled_fresh_query_should_yield_to_visible_context(
+	message: str,
+	user_intent_boundary: Dict[str, Any] | None = None,
+	*,
+	raw_message: str | None = None,
+) -> bool:
 	"""Compiled fresh-query execution must not steal explicit visible-table references."""
 
-	return _visible_context_followup_should_preempt_clarification(message)
+	return _visible_context_followup_should_preempt_clarification(
+		message,
+		user_intent_boundary,
+		raw_message=raw_message,
+	)
 
 
-def _runtime_gate_should_yield_to_visible_context(message: str) -> bool:
+def _runtime_gate_should_yield_to_visible_context(
+	message: str,
+	user_intent_boundary: Dict[str, Any] | None = None,
+	*,
+	raw_message: str | None = None,
+) -> bool:
 	"""Runtime and clarification gates must not bypass explicit visible-table references."""
 
-	return _visible_context_followup_should_preempt_clarification(message)
+	return _visible_context_followup_should_preempt_clarification(
+		message,
+		user_intent_boundary,
+		raw_message=raw_message,
+	)
 
 
 def _nbu_presentation_should_yield_to_local_or_visible_context(
 	*,
 	message: str,
 	artifact_local_projection_followup_requested: bool = False,
+	user_intent_boundary: Dict[str, Any] | None = None,
+	raw_message: str | None = None,
 ) -> bool:
 	"""Generic presentation must not outrank visible-table or local projection authority."""
 
 	return bool(
 		artifact_local_projection_followup_requested
-		or _visible_context_followup_should_preempt_clarification(message)
+		or _visible_context_followup_should_preempt_clarification(
+			message,
+			user_intent_boundary,
+			raw_message=raw_message,
+		)
 	)
 
 
@@ -1070,6 +1276,28 @@ def _service_tool_payload_values(values) -> List[Dict[str, Any]]:
 		if payload:
 			payloads.append(payload)
 	return payloads
+
+
+def _redact_blocked_turn_diagnostic_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+	redacted = dict(payload or {})
+	payload_type = str(redacted.get("type") or "").strip()
+	if payload_type not in {
+		"qwen_interaction_contract",
+		"qwen_natural_business_understanding_trace_contract",
+	}:
+		return redacted
+	raw_message = str(redacted.get("raw_message") or "")
+	if raw_message:
+		redacted["raw_message_hash"] = hash_text(raw_message)
+		redacted["normalized_message_hash"] = hash_text(normalize_message(raw_message))
+	redacted["raw_message"] = "[redacted_by_v1_ib]"
+	redacted["trace_redaction_status"] = "safe"
+	redacted["redaction_reason"] = "v1_ib_blocked_turn_diagnostic_redaction"
+	return redacted
+
+
+def _redact_blocked_turn_diagnostic_payloads(values) -> List[Dict[str, Any]]:
+	return [_redact_blocked_turn_diagnostic_payload(payload) for payload in _service_tool_payload_values(values)]
 
 
 def _safe_json_dumps(obj: Any) -> str:
@@ -3411,6 +3639,153 @@ def _emit_service_control_answer(
 	)
 
 
+def _user_intent_boundary_answer_text(user_intent_boundary: Dict[str, Any]) -> str:
+	answer_mode = str((user_intent_boundary or {}).get("required_answer_mode") or "").strip()
+	if answer_mode == ANSWER_MODE_CONTROL_BOUNDARY:
+		return (
+			"I can't create, change, hide, approve, submit, or remove ERP records from chat. "
+			"I can help you inspect the relevant ERP facts instead."
+		)
+	if answer_mode == ANSWER_MODE_POLICY_BOUNDARY:
+		return (
+			"I can help with factual ERP information, but I can't provide advice, predictions, "
+			"legal guidance, or decisions from this prompt. Please ask for the specific ERP facts "
+			"you want to review."
+		)
+	return (
+		"I need a bit more detail before I can answer safely. Please ask for a specific ERP fact, "
+		"report, customer, supplier, invoice, product, period, or metric."
+	)
+
+
+def _user_intent_boundary_policy_payload(
+	*,
+	request_id: str,
+	session_id: str,
+	user_intent_boundary: Dict[str, Any],
+) -> Dict[str, Any]:
+	payload = dict(user_intent_boundary or {})
+	category = str(payload.get("category") or "").strip()
+	answer_mode = str(payload.get("required_answer_mode") or "").strip()
+	reason = str(payload.get("boundary_reason") or "").strip()
+	payload.update(
+		{
+			"request_id": request_id,
+			"session_id": session_id,
+			"final_lane": "user_intent_boundary",
+			"knowledge_coverage_state": category or "user_intent_boundary",
+			"user_response_mode": answer_mode or "policy_boundary",
+			"safe_next_action": "respond_with_intent_boundary",
+			"boundary_status": reason or "user_intent_boundary_pre_routing_gate",
+		}
+	)
+	return payload
+
+
+def _emit_user_intent_boundary_pre_routing_response(
+	*,
+	session_doc,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	raw_message: str,
+	interaction_contract,
+	user_intent_boundary: Dict[str, Any],
+	additional_tool_payloads: List[Dict[str, Any]] | None = None,
+) -> Tuple[bool, Dict[str, Any]]:
+	user_intent_boundary = _user_intent_boundary_pre_routing_safe_metadata(
+		user_intent_boundary,
+		raw_message=raw_message,
+	)
+	answer_mode = str((user_intent_boundary or {}).get("required_answer_mode") or "").strip()
+	category = str((user_intent_boundary or {}).get("category") or "").strip()
+	reason = str((user_intent_boundary or {}).get("boundary_reason") or "").strip()
+	answer_text = _user_intent_boundary_answer_text(user_intent_boundary)
+	followup_resolution = build_followup_resolution_contract(
+		request_id=request_id,
+		mode=answer_mode or ANSWER_MODE_CLARIFICATION,
+		requested_modes=[],
+		target_dimension="",
+		target_limit=0,
+		sort_direction="",
+		target_metric="",
+		requested_columns=[],
+		requested_time_scope="",
+		target_capability_id="",
+		target_report="",
+		depends_on_grounded_turn=False,
+		self_contained=True,
+		latest_grounded_turn_available=False,
+		reason=reason or "User intent boundary blocked report/context routing before execution.",
+	)
+	execution_path = ExecutionPath(
+		request_id=request_id,
+		path="user_intent_boundary_pre_routing_gate",
+		reason=reason or "User intent boundary blocked report/context routing before execution.",
+		requires_runtime=False,
+		grounded_required=False,
+	)
+	_append_message(session_doc, "user", raw_message)
+	if answer_mode == ANSWER_MODE_POLICY_BOUNDARY:
+		boundary_payload = _user_intent_boundary_policy_payload(
+			request_id=request_id,
+			session_id=session_id,
+			user_intent_boundary=user_intent_boundary,
+		)
+		authorized_emission = _emit_service_policy_boundary_answer(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_id,
+			mode="user_intent_boundary_policy_boundary",
+			engine="user_intent_boundary_gate",
+			answer_text=answer_text,
+			boundary_payload=boundary_payload,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			latency_ms=0,
+		)
+	else:
+		control_answer_mode = (
+			"user_intent_boundary_control_boundary"
+			if answer_mode == ANSWER_MODE_CONTROL_BOUNDARY
+			else "user_intent_boundary_clarification"
+		)
+		authorized_emission = _emit_service_control_answer(
+			session_doc=session_doc,
+			answer_text=answer_text,
+			answer_mode=control_answer_mode,
+			reason=execution_path.reason,
+			pre_assistant_payload_values=_redact_blocked_turn_diagnostic_payloads(
+				[
+					interaction_contract,
+					user_intent_boundary,
+					execution_path,
+					*(additional_tool_payloads or []),
+				]
+			),
+			control_meta_authority={
+				"authority_source": "control_meta",
+				"answer_mode": control_answer_mode,
+				"reason": execution_path.reason,
+				"preflight_status": "passed",
+			},
+		)
+	_save_session(session_doc, ignore_permissions=False)
+	return True, {
+		"ok": bool(authorized_emission.emitted),
+		"request_id": request_id,
+		"mode": "user_intent_boundary",
+		"agent_meta": {
+			"engine": "user_intent_boundary_gate",
+			"intent_category": category,
+			"user_intent_boundary": dict(user_intent_boundary or {}),
+			"authorized_emission": authorized_emission.to_payload(),
+		},
+	}
+
+
 def _append_knowledge_boundary_observability(
 	session_doc,
 	*,
@@ -3773,12 +4148,29 @@ def _try_entity_detail_followup(
 	)
 
 
+def _build_v1_ib_runtime_boundary_for_service(raw_message: str) -> Dict[str, Any]:
+	builder = build_v1_ib_runtime_boundary
+	if getattr(builder, "__module__", "") != "ai_assistant_ui.qwen_chat.intent_boundary_runtime_integration":
+		return builder(raw_message)
+	with validator_owned_runtime_evidence(raw_message) as runtime_evidence:
+		return builder(raw_message, **dict(runtime_evidence or {}))
+
+
 def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> Tuple[bool, Dict[str, Any]]:
 	session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, session_name)
 	site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
 	request_id = uuid.uuid4().hex
 	msg = str(message or "").strip()
 	raw_msg = msg
+	# Legacy source-order marker retained for older contract tests:
+	# user_intent_boundary = build_user_intent_boundary_contract(raw_msg)
+	legacy_user_intent_boundary = build_user_intent_boundary_contract(raw_msg)
+	v1_ib_runtime_boundary = _build_v1_ib_runtime_boundary_for_service(raw_msg)
+	user_intent_boundary = merge_v1_ib_with_legacy_boundary(
+		v1_ib_runtime_boundary,
+		legacy_user_intent_boundary,
+	)
+	v1_ib_runtime_tool_payload = v1_ib_runtime_contract_metadata(user_intent_boundary)
 	recent_frontdoor_messages = _recent_messages(session_doc, limit=6)
 	conversation_state_snapshot = _build_conversation_state_snapshot(
 		request_id=request_id,
@@ -3859,30 +4251,34 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		conversation_state=conversation_state_snapshot,
 	)
 	nbu_shadow_tool_payloads = [nbu_shadow_trace_payload] if isinstance(nbu_shadow_trace_payload, dict) and nbu_shadow_trace_payload else []
-	trace_inspection_handled, trace_inspection_payload = _try_activate_visible_context_trace_inspection_response(
-		session_doc=session_doc,
-		request_id=request_id,
-		session_id=session_name,
-		user_id=user,
-		site_name=site_name,
-		raw_message=raw_msg,
-		user_message_already_appended=False,
-		append_message=_append_message,
-		append_tool_payload=_append_tool_payload,
-		assistant_text_payload=_assistant_text_payload,
-		save_session=_save_session,
-		additional_tool_payloads=[
-			payload
-			for payload in [
-				interaction_contract.to_payload() if hasattr(interaction_contract, "to_payload") else {},
-				conversation_control_evidence_contract.to_payload()
-				if conversation_control_evidence_contract is not None and hasattr(conversation_control_evidence_contract, "to_payload")
-				else {},
-				*nbu_shadow_tool_payloads,
-			]
-			if isinstance(payload, dict) and payload
-		],
-	)
+	trace_inspection_handled = False
+	trace_inspection_payload = None
+	if _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg):
+		trace_inspection_handled, trace_inspection_payload = _try_activate_visible_context_trace_inspection_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			user_message_already_appended=False,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			additional_tool_payloads=[
+				payload
+				for payload in [
+					interaction_contract.to_payload() if hasattr(interaction_contract, "to_payload") else {},
+					v1_ib_runtime_tool_payload,
+					conversation_control_evidence_contract.to_payload()
+					if conversation_control_evidence_contract is not None and hasattr(conversation_control_evidence_contract, "to_payload")
+					else {},
+					*nbu_shadow_tool_payloads,
+				]
+				if isinstance(payload, dict) and payload
+			],
+		)
 	if trace_inspection_handled and trace_inspection_payload is not None:
 		return True, trace_inspection_payload
 	compound_completion_answer = _compound_request_completion_answer_from_snapshot(
@@ -3994,6 +4390,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	if (
 		bool(reasoning_rollout.get("enabled"))
 		and latest_grounded_turn_available
+		and _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg)
+		and _user_intent_boundary_report_routing_allowed(user_intent_boundary, raw_message=raw_msg)
 		and (not pending_clarification_signal or prior_offered_next_action_available)
 		and not _fresh_query_should_skip_pre_frontdoor_reasoning(
 			fresh_governed_query_override_requested=fresh_governed_query_override_requested,
@@ -4125,6 +4523,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		artifact_local_refinement_has_grounded_evidence = bool(
 			latest_grounded_turn_available
+			and _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg)
 			and _artifact_local_refinement_has_grounded_evidence(
 				request_id=request_id,
 				message=msg,
@@ -4134,6 +4533,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		artifact_local_projection_followup_requested = bool(
 			latest_grounded_turn_available
+			and _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg)
 			and _artifact_local_projection_followup_requested(
 				message=msg,
 				latest_grounded_turn=latest_grounded_turn,
@@ -4364,6 +4764,22 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
+	if _user_intent_boundary_pre_routing_response_required(
+		user_intent_boundary,
+		pending_clarification_signal=pending_clarification_signal,
+		raw_message=raw_msg,
+	):
+		return _emit_user_intent_boundary_pre_routing_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			interaction_contract=interaction_contract,
+			user_intent_boundary=user_intent_boundary,
+			additional_tool_payloads=[v1_ib_runtime_tool_payload, *nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
+		)
 	if compound_runtime_message:
 		msg = compound_runtime_message
 	entity_drilldown = detect_entity_drilldown_request(
@@ -4384,6 +4800,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	)
 	if (
 		latest_grounded_turn_available
+		and _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg)
 		and latest_grounded_turn
 		and entity_drilldown is None
 		and (not latest_recovery_contract or recovery_allows_semantic_followup)
@@ -4454,11 +4871,16 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			raw_message=msg,
 			artifact_payload=latest_family_artifact,
 		)
-		if latest_grounded_turn_available and _message_has_grounded_context_anchor(msg)
+		if (
+			latest_grounded_turn_available
+			and _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg)
+			and _message_has_grounded_context_anchor(msg)
+		)
 		else {}
 	) or {}
 	artifact_local_context_preserve_requested = bool(
 		latest_grounded_turn_available
+		and _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg)
 		and (
 			_message_has_grounded_context_anchor(msg)
 			or artifact_local_projection_followup_requested
@@ -4482,6 +4904,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	context_isolation = build_scope_decision_input()
 	if (
 		latest_grounded_turn_available
+		and _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg)
 		and not artifact_local_context_preserve_requested
 		and not bool(getattr(frontdoor_contract, "handle_in_front_door", False))
 	):
@@ -4496,6 +4919,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 	artifact_level_reasoning_context_requested = bool(
 		latest_grounded_turn_available
+		and _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg)
 		and _artifact_level_visible_context_requested(msg)
 	)
 	if (
@@ -4517,22 +4941,25 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		latest_reasoning_contract=latest_reasoning_contract,
 	):
 		context_isolation = build_scope_decision_input()
-	if _current_artifact_evidence_should_preserve_context(
-		request_id=request_id,
-		message=msg,
-		context_isolation=context_isolation,
-		latest_grounded_turn_available=latest_grounded_turn_available,
-		latest_grounded_turn=latest_grounded_turn,
-		latest_family_artifact=latest_family_artifact,
-	) or (
-		bool(getattr(context_isolation, "force_new_query", False))
-		and latest_grounded_turn_available
-		and artifact_local_refinement_has_grounded_evidence
-		and (
-			_message_has_grounded_context_anchor(msg)
-			or not _message_looks_like_self_contained_governed_business_query(
-				message=msg,
-				language=interaction_contract.detected_language,
+	if _user_intent_boundary_context_reuse_allowed(user_intent_boundary, raw_msg) and (
+		_current_artifact_evidence_should_preserve_context(
+			request_id=request_id,
+			message=msg,
+			context_isolation=context_isolation,
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_family_artifact=latest_family_artifact,
+		)
+		or (
+			bool(getattr(context_isolation, "force_new_query", False))
+			and latest_grounded_turn_available
+			and artifact_local_refinement_has_grounded_evidence
+			and (
+				_message_has_grounded_context_anchor(msg)
+				or not _message_looks_like_self_contained_governed_business_query(
+					message=msg,
+					language=interaction_contract.detected_language,
+				)
 			)
 		)
 	):
@@ -4565,7 +4992,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	if prior_branch_direct_handled and prior_branch_direct_payload is not None:
 		return True, prior_branch_direct_payload
 	repair_recent_messages = _recent_messages(session_doc, limit=8)
-	visible_context_followup_has_authority = _visible_context_followup_should_preempt_clarification(raw_msg)
+	visible_context_followup_has_authority = _visible_context_followup_should_preempt_clarification(
+		raw_msg,
+		user_intent_boundary,
+		raw_message=raw_msg,
+	)
 	pending_clarification_response_preempts_runtime = bool(
 		pending_clarification_signal
 		and _pending_clarification_response_should_preempt_runtime(clarification_response_contract)
@@ -4634,7 +5065,12 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	context_anchored_message = bool(latest_grounded_turn_available and _message_has_grounded_context_anchor(msg))
 	compiled_fresh_query_breakout = bool(
 		bool(compiled_rollout.get("enabled"))
-		and not _compiled_fresh_query_should_yield_to_visible_context(raw_msg)
+		and _user_intent_boundary_report_routing_allowed(user_intent_boundary, raw_message=raw_msg)
+		and not _compiled_fresh_query_should_yield_to_visible_context(
+			raw_msg,
+			user_intent_boundary,
+			raw_message=raw_msg,
+		)
 		and not context_anchored_message
 		and not pending_clarification_response_preempts_runtime
 		and entity_drilldown is None
@@ -4732,6 +5168,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and not _nbu_presentation_should_yield_to_local_or_visible_context(
 			message=raw_msg,
 			artifact_local_projection_followup_requested=artifact_local_projection_followup_requested,
+			user_intent_boundary=user_intent_boundary,
+			raw_message=raw_msg,
 		)
 		and not _reasoning_activation_has_execution_authority(pre_frontdoor_reasoning_semantic_result)
 		and not (
@@ -5010,7 +5448,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			if str(mode or "").strip()
 		],
 	)
-	if _visible_context_followup_should_preempt_clarification(raw_msg):
+	if _visible_context_followup_should_preempt_clarification(
+		raw_msg,
+		user_intent_boundary,
+		raw_message=raw_msg,
+	):
 		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -5437,6 +5879,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and not _nbu_presentation_should_yield_to_local_or_visible_context(
 			message=raw_msg,
 			artifact_local_projection_followup_requested=artifact_local_projection_followup_requested,
+			user_intent_boundary=user_intent_boundary,
+			raw_message=raw_msg,
 		)
 		and _nbu_presentation_activation_allowed_for_followup(followup_resolution)
 	):
@@ -5525,6 +5969,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		message=raw_msg,
 		entity_drilldown=entity_drilldown,
 		skip_artifact_boundary=skip_artifact_boundary,
+		user_intent_boundary=user_intent_boundary,
+		raw_message=raw_msg,
 	):
 		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
 			session_doc=session_doc,
@@ -5681,7 +6127,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		_save_session(session_doc, ignore_permissions=False)
 		return local_transform
 
-	if _runtime_gate_should_yield_to_visible_context(raw_msg):
+	if _runtime_gate_should_yield_to_visible_context(
+		raw_msg,
+		user_intent_boundary,
+		raw_message=raw_msg,
+	):
 		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
 			session_doc=session_doc,
 			request_id=request_id,

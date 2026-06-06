@@ -105,7 +105,12 @@ class ServiceControlAuthorizedEmissionContractTests(unittest.TestCase):
 				self.assertEqual(emission["answer_type"], "control_meta_answer")
 				self.assertEqual(
 					_payload_types_before_first_assistant(session_doc),
-					["qwen_service_control_payload", "qwen_audit_envelope", AUTHORIZED_ASSISTANT_EMISSION_CONTRACT_TYPE],
+					[
+						"qwen_service_control_payload",
+						"qwen_audit_envelope",
+						"qwen_runtime_metadata_envelope_contract",
+						AUTHORIZED_ASSISTANT_EMISSION_CONTRACT_TYPE,
+					],
 				)
 
 	def test_missing_service_control_authority_blocks_without_payload_leak(self):

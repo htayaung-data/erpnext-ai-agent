@@ -27,6 +27,7 @@ from ai_assistant_ui.qwen_chat.authorized_emission import (
 	AUTHORIZED_ASSISTANT_EMISSION_CONTRACT_TYPE,
 	EMISSION_STATUS_BLOCKED,
 	EMISSION_STATUS_EMITTED,
+	USER_INTENT_FINAL_EMISSION_VETO_CONTRACT_TYPE,
 	emit_authorized_assistant_answer,
 )
 from ai_assistant_ui.qwen_chat.contracts import (
@@ -34,6 +35,15 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_followup_resolution_contract,
 	build_interaction_contract,
 )
+from ai_assistant_ui.qwen_chat.intent_boundary_contract import (
+	ANSWER_MODE_GOVERNED_ERP,
+	AUTHORITY_DECISION_ALLOW_REPORT,
+	AUTHORITY_DECISION_BLOCK,
+	TRACE_REDACTION_SAFE,
+	hash_text,
+	normalize_message,
+)
+from ai_assistant_ui.qwen_chat.intent_boundary_runtime_integration import USER_INTENT_BOUNDARY_CONTRACT_TYPE
 
 
 class FakeSessionDoc:
@@ -54,13 +64,13 @@ def _assistant_text_payload(text):
 
 
 class AuthorizedEmissionContractTests(unittest.TestCase):
-	def _interaction(self):
+	def _interaction(self, raw_message="Who is second in the above table?"):
 		return build_interaction_contract(
 			request_id="req-ec4",
 			session_id="session-ec4",
 			user_id="user@example.com",
 			site_name="erpai_prj1",
-			raw_message="Who is second in the above table?",
+			raw_message=raw_message,
 		)
 
 	def _followup(self, mode="visible_context_answer", *, grounded=True):
@@ -172,11 +182,39 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 			"preflight_status": "passed",
 		}
 
+	def _v1_ib_boundary(self, raw_message: str, *, allow_report=False, allow_context=False):
+		normalized_message = normalize_message(raw_message)
+		allowed = bool(allow_report or allow_context)
+		return {
+			"type": USER_INTENT_BOUNDARY_CONTRACT_TYPE,
+			"contract_version": "test-v1-ib",
+			"raw_message_hash": hash_text(raw_message),
+			"normalized_message_hash": hash_text(normalized_message),
+			"clause_count": 1,
+			"category": "factual_erp_query" if allow_report else "true_visible_context_followup",
+			"required_answer_mode": ANSWER_MODE_GOVERNED_ERP if allowed else "clarification",
+			"context_reuse_allowed": bool(allow_context),
+			"report_routing_allowed": bool(allow_report),
+			"model_reasoning_allowed": bool(allow_report),
+			"final_emission_allowed": allowed,
+			"authority_decision": AUTHORITY_DECISION_ALLOW_REPORT if allowed else AUTHORITY_DECISION_BLOCK,
+			"boundary_reason": "validated_safe_factual_intent" if allowed else "v1_ib_contract_blocked_runtime_authority",
+			"validator_status": "valid" if allowed else "invalid",
+			"trace_redaction_status": TRACE_REDACTION_SAFE,
+			"replayed_raw_message_safety_final_decision": "safe" if allowed else "blocked",
+		}
+
+	def _assert_v1_veto_without_selected_answer_leak(self, session_doc, selected_text: str):
+		serialized = str(session_doc.messages)
+		self.assertNotIn(selected_text, serialized)
+		self.assertIn(USER_INTENT_FINAL_EMISSION_VETO_CONTRACT_TYPE, serialized)
+
 	def test_missing_business_authority_blocks_without_assistant_append(self):
 		session_doc = FakeSessionDoc()
+		selected_text = "Unsupported business answer."
 		result = emit_authorized_assistant_answer(
 			session_doc=session_doc,
-			answer_text="Unsupported business answer.",
+			answer_text=selected_text,
 			answer_type=ANSWER_TYPE_GOVERNED_REPORT,
 			append_message=_append_message,
 			append_tool_payload=_append_tool_payload,
@@ -186,11 +224,10 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 			execution_path=self._execution_path(path="compiled_first_turn", requires_runtime=True, grounded_required=True),
 		)
 
-		self.assertTrue(result.blocked)
-		self.assertFalse(result.emitted)
-		self.assertEqual(result.block_reason, "final_answer_authority_incomplete")
-		self.assertEqual([message["role"] for message in session_doc.messages], ["tool"])
-		self.assertEqual(session_doc.messages[0]["content"]["emission_status"], EMISSION_STATUS_BLOCKED)
+		self.assertFalse(result.blocked)
+		self.assertTrue(result.emitted)
+		self.assertEqual(result.answer_type, ANSWER_TYPE_CONTROL)
+		self._assert_v1_veto_without_selected_answer_leak(session_doc, selected_text)
 
 	def test_complete_visible_context_authority_allows_emission(self):
 		session_doc = FakeSessionDoc()
@@ -206,7 +243,13 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 			followup_resolution=self._followup(),
 			execution_path=self._execution_path(),
 			runtime_trace_payload={"agent_meta": {"engine": "visible_context_followup"}, "visible_context_trace": trace},
-			authority_context={"visible_context_trace": trace},
+			authority_context={
+				"visible_context_trace": trace,
+				"user_intent_boundary": self._v1_ib_boundary(
+					"Who is second in the above table?",
+					allow_context=True,
+				),
+			},
 		)
 
 		self.assertTrue(result.emitted)
@@ -219,6 +262,7 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 
 	def test_complete_governed_report_authority_allows_emission(self):
 		session_doc = FakeSessionDoc()
+		raw_message = "Show EC7H-ITEM-A item sales"
 		result = emit_authorized_assistant_answer(
 			session_doc=session_doc,
 			answer_text="Accounts Receivable Aging as of 2026-05-12.",
@@ -226,12 +270,15 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 			append_message=_append_message,
 			append_tool_payload=_append_tool_payload,
 			assistant_text_payload=_assistant_text_payload,
-			interaction_contract=self._interaction(),
+			interaction_contract=self._interaction(raw_message),
 			followup_resolution=self._followup(mode="compiled_first_turn", grounded=True),
 			execution_path=self._execution_path(path="compiled_first_turn", requires_runtime=True, grounded_required=True),
 			runtime_trace_payload={"agent_meta": {"engine": "qwen"}, "tool_trace": []},
 			grounded_turn_context=self._grounded_turn(),
-			authority_context={"normalized_family_artifact": self._normalized_artifact()},
+			authority_context={
+				"normalized_family_artifact": self._normalized_artifact(),
+				"user_intent_boundary": self._v1_ib_boundary(raw_message, allow_report=True),
+			},
 		)
 
 		self.assertTrue(result.emitted)
@@ -241,6 +288,7 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 
 	def test_pre_assistant_tool_payloads_append_only_after_authority_passes(self):
 		session_doc = FakeSessionDoc()
+		raw_message = "Show EC7H-ITEM-A item sales"
 		result = emit_authorized_assistant_answer(
 			session_doc=session_doc,
 			answer_text="Accounts Receivable Aging as of 2026-05-12.",
@@ -248,12 +296,15 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 			append_message=_append_message,
 			append_tool_payload=_append_tool_payload,
 			assistant_text_payload=_assistant_text_payload,
-			interaction_contract=self._interaction(),
+			interaction_contract=self._interaction(raw_message),
 			followup_resolution=self._followup(mode="compiled_first_turn", grounded=True),
 			execution_path=self._execution_path(path="compiled_first_turn", requires_runtime=True, grounded_required=True),
 			runtime_trace_payload={"agent_meta": {"engine": "qwen"}, "tool_trace": []},
 			grounded_turn_context=self._grounded_turn(),
-			authority_context={"normalized_family_artifact": self._normalized_artifact()},
+			authority_context={
+				"normalized_family_artifact": self._normalized_artifact(),
+				"user_intent_boundary": self._v1_ib_boundary(raw_message, allow_report=True),
+			},
 			pre_assistant_tool_payloads=[{"type": "qwen_pre_authorized_payload", "value": "safe after authority"}],
 		)
 
@@ -265,9 +316,10 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 
 	def test_blocked_business_authority_does_not_append_pre_assistant_tool_payloads(self):
 		session_doc = FakeSessionDoc()
+		selected_text = "This business text must not leak."
 		result = emit_authorized_assistant_answer(
 			session_doc=session_doc,
-			answer_text="This business text must not leak.",
+			answer_text=selected_text,
 			answer_type=ANSWER_TYPE_GOVERNED_REPORT,
 			append_message=_append_message,
 			append_tool_payload=_append_tool_payload,
@@ -280,10 +332,61 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 			],
 		)
 
-		self.assertTrue(result.blocked)
-		self.assertEqual([message["role"] for message in session_doc.messages], ["tool"])
-		self.assertEqual(session_doc.messages[0]["content"]["type"], AUTHORIZED_ASSISTANT_EMISSION_CONTRACT_TYPE)
-		self.assertNotIn("This business text must not leak.", str(session_doc.messages))
+		self.assertFalse(result.blocked)
+		self.assertTrue(result.emitted)
+		self.assertEqual(result.answer_type, ANSWER_TYPE_CONTROL)
+		self._assert_v1_veto_without_selected_answer_leak(session_doc, selected_text)
+		self.assertNotIn("qwen_pre_authorized_payload", str(session_doc.messages))
+
+	def test_final_answer_authority_without_v1_ib_contract_vetoes_governed_report(self):
+		session_doc = FakeSessionDoc()
+		selected_text = "FINAL_AUTHORITY_ONLY_SELECTED_ANSWER_SHOULD_NOT_LEAK"
+		result = emit_authorized_assistant_answer(
+			session_doc=session_doc,
+			answer_text=selected_text,
+			answer_type=ANSWER_TYPE_GOVERNED_REPORT,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			interaction_contract=self._interaction("Show EC7H-ITEM-A item sales"),
+			followup_resolution=self._followup(mode="compiled_first_turn", grounded=True),
+			execution_path=self._execution_path(path="compiled_first_turn", requires_runtime=True, grounded_required=True),
+			runtime_trace_payload={"agent_meta": {"engine": "qwen"}, "tool_trace": []},
+			grounded_turn_context=self._grounded_turn(),
+			authority_context={"normalized_family_artifact": self._normalized_artifact()},
+		)
+
+		self.assertFalse(result.blocked)
+		self.assertTrue(result.emitted)
+		self.assertEqual(result.answer_type, ANSWER_TYPE_CONTROL)
+		self._assert_v1_veto_without_selected_answer_leak(session_doc, selected_text)
+
+	def test_stale_v1_ib_contract_vetoes_legacy_style_governed_report(self):
+		session_doc = FakeSessionDoc()
+		current_message = "Show EC7H-ITEM-A item sales and tell me whether to discount it"
+		selected_text = "STALE_V1_CONTRACT_SELECTED_ANSWER_SHOULD_NOT_LEAK"
+		result = emit_authorized_assistant_answer(
+			session_doc=session_doc,
+			answer_text=selected_text,
+			answer_type=ANSWER_TYPE_GOVERNED_REPORT,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			interaction_contract=self._interaction(current_message),
+			followup_resolution=self._followup(mode="compiled_first_turn", grounded=True),
+			execution_path=self._execution_path(path="compiled_first_turn", requires_runtime=True, grounded_required=True),
+			runtime_trace_payload={"agent_meta": {"engine": "qwen"}, "tool_trace": []},
+			grounded_turn_context=self._grounded_turn(),
+			authority_context={
+				"normalized_family_artifact": self._normalized_artifact(),
+				"user_intent_boundary": self._v1_ib_boundary("Show EC7H-ITEM-A item sales", allow_report=True),
+			},
+		)
+
+		self.assertFalse(result.blocked)
+		self.assertTrue(result.emitted)
+		self.assertEqual(result.answer_type, ANSWER_TYPE_CONTROL)
+		self._assert_v1_veto_without_selected_answer_leak(session_doc, selected_text)
 
 	def test_bounded_policy_refusal_allows_only_with_boundary_metadata(self):
 		session_doc = FakeSessionDoc()
@@ -356,10 +459,13 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 			append_message=_append_message,
 			append_tool_payload=_append_tool_payload,
 			assistant_text_payload=_assistant_text_payload,
-			interaction_contract=self._interaction(),
+			interaction_contract=self._interaction("Show EC7H-CUST-A customer details"),
 			followup_resolution=self._followup(mode="prediction", grounded=False),
 			execution_path=self._execution_path(path="prediction"),
-			authority_context={"knowledge_boundary": self._policy_boundary()},
+			authority_context={
+				"knowledge_boundary": self._policy_boundary(),
+				"user_intent_boundary": self._v1_ib_boundary("Show EC7H-CUST-A customer details", allow_report=True),
+			},
 		)
 
 		self.assertTrue(result.blocked)
@@ -376,10 +482,13 @@ class AuthorizedEmissionContractTests(unittest.TestCase):
 			append_message=_append_message,
 			append_tool_payload=_append_tool_payload,
 			assistant_text_payload=_assistant_text_payload,
-			interaction_contract=self._interaction(),
+			interaction_contract=self._interaction("Show EC7H-CUST-A customer details"),
 			followup_resolution=self._followup(mode="reasoning_boundary", grounded=False),
 			execution_path=self._execution_path(path="reasoning_boundary"),
-			authority_context={"knowledge_boundary": self._policy_boundary()},
+			authority_context={
+				"knowledge_boundary": self._policy_boundary(),
+				"user_intent_boundary": self._v1_ib_boundary("Show EC7H-CUST-A customer details", allow_report=True),
+			},
 		)
 
 		self.assertTrue(result.blocked)
