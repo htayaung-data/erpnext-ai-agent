@@ -55,6 +55,7 @@ from ai_assistant_ui.qwen_chat.intent_boundary_runtime_integration import (
 	merge_v1_ib_with_legacy_boundary,
 	v1_ib_runtime_contract_metadata,
 )
+from ai_assistant_ui.qwen_chat.intent_boundary_runtime_evidence import validator_owned_runtime_evidence
 from ai_assistant_ui.qwen_chat.intent_boundary_contract import (
 	ANSWER_MODE_GOVERNED_ERP,
 	AUTHORITY_DECISION_ALLOW_REPORT,
@@ -4147,6 +4148,14 @@ def _try_entity_detail_followup(
 	)
 
 
+def _build_v1_ib_runtime_boundary_for_service(raw_message: str) -> Dict[str, Any]:
+	builder = build_v1_ib_runtime_boundary
+	if getattr(builder, "__module__", "") != "ai_assistant_ui.qwen_chat.intent_boundary_runtime_integration":
+		return builder(raw_message)
+	with validator_owned_runtime_evidence(raw_message) as runtime_evidence:
+		return builder(raw_message, **dict(runtime_evidence or {}))
+
+
 def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> Tuple[bool, Dict[str, Any]]:
 	session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, session_name)
 	site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
@@ -4156,7 +4165,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	# Legacy source-order marker retained for older contract tests:
 	# user_intent_boundary = build_user_intent_boundary_contract(raw_msg)
 	legacy_user_intent_boundary = build_user_intent_boundary_contract(raw_msg)
-	v1_ib_runtime_boundary = build_v1_ib_runtime_boundary(raw_msg)
+	v1_ib_runtime_boundary = _build_v1_ib_runtime_boundary_for_service(raw_msg)
 	user_intent_boundary = merge_v1_ib_with_legacy_boundary(
 		v1_ib_runtime_boundary,
 		legacy_user_intent_boundary,
