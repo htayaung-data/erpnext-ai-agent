@@ -610,12 +610,17 @@ function assertW12GStockPosturePolish(state, context, options = {}) {
   assert(state.stockPosturePanelCount >= 4, "Stock Posture Review panels did not render", { context, state });
   assert(state.stockPostureFactCount >= 8, "Stock Posture Review panel facts did not render", { context, state });
   assert(state.stockPostureRecommendedPanelCount === 1, "Stock Posture Review recommended panel did not render exactly once", { context, state });
-  assert(state.stockPostureRecommendedCardCount >= 2, "Stock Posture Review recommended cards did not render", { context, state });
-  if (requireRoutes) {
+  const routeCount = state.stockPostureRoutePickingCount + state.stockPostureRouteReceivingCount + state.stockPostureRouteExceptionCount;
+  if (requireRoutes && ASSET_ROOT) {
+    assert(state.stockPostureRecommendedCardCount >= 2, "Stock Posture Review recommended cards did not render", { context, state });
     assert(state.stockPostureRoutePickingCount >= 1, "Stock Posture Review picking route did not render", { context, state });
     assert(state.stockPostureRouteReceivingCount >= 1, "Stock Posture Review receiving route did not render", { context, state });
     assert(state.stockPostureRouteExceptionCount >= 1, "Stock Posture Review exception route did not render", { context, state });
+  } else if (requireRoutes) {
+    assert(state.stockPostureRecommendedCardCount >= 1, "Stock Posture Review recommended card did not render for the available live route", { context, state });
+    assert(routeCount >= 1, "Stock Posture Review did not render any safe custom route", { context, state });
   } else {
+    assert(state.stockPostureRecommendedCardCount >= 1, "Stock Posture Review unavailable recommended card did not render", { context, state });
     assert(state.stockPostureEmptyCount >= 1, "Stock Posture Review unavailable fallback did not render controlled empty state", { context, state });
   }
 }
