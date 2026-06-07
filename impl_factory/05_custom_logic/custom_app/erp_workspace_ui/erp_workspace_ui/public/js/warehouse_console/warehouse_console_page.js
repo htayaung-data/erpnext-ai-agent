@@ -1647,6 +1647,88 @@
         font-weight: 560;
         line-height: 1.35;
       }
+      .warehouse-movement-command-header {
+        background:
+          radial-gradient(circle at 94% 10%, rgba(41, 120, 95, 0.08), transparent 28%),
+          linear-gradient(135deg, #ffffff 0%, #f8fbfa 60%, #eef7f2 100%);
+      }
+      .warehouse-movement-command {
+        display: grid;
+        gap: 12px;
+      }
+      .warehouse-movement-eyebrow {
+        color: #376455;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-movement-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .warehouse-movement-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        min-width: 0;
+      }
+      .warehouse-movement-command-fact,
+      .warehouse-movement-row-fact {
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid rgba(220, 232, 226, 0.98);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+      .warehouse-movement-command-fact span,
+      .warehouse-movement-row-fact span {
+        display: block;
+        color: #667a71;
+        font-size: 10.5px;
+        font-weight: 780;
+        letter-spacing: 0.05em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-movement-command-fact strong,
+      .warehouse-movement-row-fact strong {
+        display: block;
+        margin-top: 6px;
+        color: #17231f;
+        font-size: 13px;
+        font-weight: 760;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+      }
+      .warehouse-movement-row {
+        background: #ffffff;
+        box-shadow: 0 10px 28px rgba(34, 56, 48, 0.04);
+      }
+      .warehouse-movement-row-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.75fr) minmax(0, 1.1fr) minmax(0, 0.75fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+      .warehouse-movement-row-facts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(224, 233, 229, 0.96);
+      }
+      .warehouse-movement-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .warehouse-movement-guardrail {
+        margin-top: 12px;
+      }
       .warehouse-receiving-strong {
         color: #263530;
         font-size: 13px;
@@ -1679,7 +1761,9 @@
         .warehouse-receiving-line-facts,
         .warehouse-stock-exception-review-command-grid,
         .warehouse-stock-posture-command-grid,
-        .warehouse-stock-posture-recommended-grid {
+        .warehouse-stock-posture-recommended-grid,
+        .warehouse-movement-command-grid,
+        .warehouse-movement-row-facts {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .warehouse-cockpit-start-grid {
@@ -1714,6 +1798,9 @@
         .warehouse-stock-posture-command-grid,
         .warehouse-stock-exception-next-grid,
         .warehouse-stock-posture-recommended-grid,
+        .warehouse-movement-command-grid,
+        .warehouse-movement-row-main,
+        .warehouse-movement-row-facts,
         .warehouse-stock-exception-row-main,
         .warehouse-stock-exception-facts {
           grid-template-columns: minmax(0, 1fr);
@@ -1738,6 +1825,7 @@
         .warehouse-inbound-controls,
         .warehouse-inbound-line,
         .warehouse-inbound-row-facts,
+        .warehouse-movement-row-facts,
         .warehouse-receiving-command-grid,
         .warehouse-receiving-readiness,
         .warehouse-receiving-line-facts {
@@ -3061,6 +3149,41 @@
     replaceWarehouseRouteHost(viewState, $root);
   }
 
+  function movementCardByKey(cards, keys) {
+    const wanted = Array.isArray(keys) ? keys : [keys];
+    return (Array.isArray(cards) ? cards : []).find((card) => wanted.includes(String(card && card.key || ""))) || {};
+  }
+
+  function movementCardDisplay(cards, keys, fallback) {
+    const card = movementCardByKey(cards, keys);
+    const value = card && Object.prototype.hasOwnProperty.call(card, "value") ? cardValue(card) : "";
+    return value ? value : fallback;
+  }
+
+  function movementCommandChips(payload) {
+    const summary = payload && payload.summary ? payload.summary : {};
+    const chips = Array.isArray(summary.chips) ? summary.chips.map((chip) => chip && chip.label ? chip.label : chip).filter(Boolean) : [];
+    return ["Read-only", "Warehouse movement", freshnessText(payload), ...chips.filter((chip) => !/^read-only$/i.test(String(chip)))].slice(0, 5);
+  }
+
+  function movementCommandFacts(payload, cards) {
+    return [
+      { key: "recent", label: "Recent movement", value: movementCardDisplay(cards, ["total_movements", "recent_movements"], "Not visible") },
+      { key: "direct", label: "Direct posture", value: movementCardDisplay(cards, ["internal_transfers", "direct_transfers"], "Not visible") },
+      { key: "receipts", label: "Inbound posture", value: movementCardDisplay(cards, ["receipts"], "Not visible") },
+      { key: "needs_review", label: "Needs review", value: movementCardDisplay(cards, ["needs_review"], "0") },
+    ];
+  }
+
+  function renderMovementCommandFact(fact) {
+    return `
+      <div class="warehouse-movement-command-fact" data-warehouse-movement-command-fact="${escapeHtml(fact.key || "")}">
+        <span>${escapeHtml(fact.label || "")}</span>
+        <strong>${escapeHtml(fact.value || "Not visible")}</strong>
+      </div>
+    `;
+  }
+
   function renderMovementCard(card) {
     return `
       <div class="warehouse-inbound-queue-card" data-warehouse-movement-card="${escapeHtml(card.key || "")}">
@@ -3097,7 +3220,7 @@
       : "";
     return `
       <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-movement-row" data-warehouse-movement-row="${escapeHtml(row.movement_id || row.key || "")}">
-        <div class="warehouse-stock-exception-row-main">
+        <div class="warehouse-movement-row-main" data-warehouse-movement-row-main>
           <div>
             <div class="warehouse-inbound-order">${escapeHtml(row.movement_id || "")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(row.posting_date || "")} ${escapeHtml(row.posting_time || "")}</div>
@@ -3111,10 +3234,16 @@
             <div class="warehouse-inbound-order">${escapeHtml(row.quantity_summary || "")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(row.item_count == null ? "0" : row.item_count)} items</div>
           </div>
-          <div class="warehouse-receiving-actions">
+          <div class="warehouse-movement-actions">
             ${reviewButton}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
+        </div>
+        <div class="warehouse-movement-row-facts" data-warehouse-movement-row-facts>
+          <div class="warehouse-movement-row-fact" data-warehouse-movement-row-fact="posted"><span>Posted</span><strong>${escapeHtml(row.posting_date || "Date not visible")}</strong></div>
+          <div class="warehouse-movement-row-fact" data-warehouse-movement-row-fact="purpose"><span>Purpose</span><strong>${escapeHtml(row.purpose || row.movement_type || "Movement posture")}</strong></div>
+          <div class="warehouse-movement-row-fact" data-warehouse-movement-row-fact="direction"><span>Direction</span><strong>${escapeHtml(row.direction_label || "Warehouse posture needs review")}</strong></div>
+          <div class="warehouse-movement-row-fact" data-warehouse-movement-row-fact="items"><span>Items</span><strong>${escapeHtml(row.item_count == null ? "0" : row.item_count)} shown</strong></div>
         </div>
         <div class="warehouse-inbound-lines">
           ${items.length ? items.map(renderMovementSampleItem).join("") : `<div class="warehouse-inbound-line" data-warehouse-movement-empty><span>No item summary available.</span></div>`}
@@ -3145,17 +3274,26 @@
     const cards = Array.isArray(payload.cards) ? payload.cards : [];
     const groups = Array.isArray(payload.groups) ? payload.groups : [];
     const statePayload = payload.state || {};
+    const commandChips = movementCommandChips(payload);
+    const commandFacts = movementCommandFacts(payload, cards);
     const $root = $(`
       <div class="sales-console-shell warehouse-inbound-shell warehouse-movement-shell" data-erpw-workspace="warehouse" data-warehouse-view="movement-visibility" data-warehouse-queue-key="${MOVEMENT_VISIBILITY_KEY}" data-warehouse-movement-shell="true" data-erpw-console-runtime="ready">
-        <section class="warehouse-inbound-queue-header">
+        <section class="warehouse-inbound-queue-header warehouse-movement-command-header" data-warehouse-movement-command>
           <div class="warehouse-inbound-queue-head">
-            <div>
+            <div class="warehouse-movement-command">
+              <div class="warehouse-movement-eyebrow">Movement Visibility</div>
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Movement Visibility")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Recorded stock movement posture across warehouses.")}</div>
+              <div class="warehouse-movement-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-movement-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
             </div>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
           </div>
+          <div class="warehouse-movement-command-grid" data-warehouse-movement-command-grid>${commandFacts.map(renderMovementCommandFact).join("")}</div>
           <div class="warehouse-inbound-queue-cards">${cards.map(renderMovementCard).join("")}</div>
+          <section class="warehouse-receiving-guardrail warehouse-movement-guardrail" data-warehouse-movement-guardrail>
+            <strong>Read-only movement review</strong>
+            <span>This board explains recorded warehouse movement. No stock is changed from this page.</span>
+          </section>
           <div class="warehouse-inbound-controls">
             ${fields.map(controlField).join("")}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>

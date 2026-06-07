@@ -3,18 +3,25 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W8A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W8A_ARTIFACT_DIR || path.join(
+const EXPECT_W12H = process.env.ERPW_WAREHOUSE_W8A_EXPECT_W12H === "1" || Boolean(process.env.ERPW_WAREHOUSE_W12H_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12H_ARTIFACT_DIR);
+const TIMEOUT = Number((EXPECT_W12H && process.env.ERPW_WAREHOUSE_W12H_TIMEOUT) || process.env.ERPW_WAREHOUSE_W8A_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W8A_ARTIFACT_DIR || (EXPECT_W12H ? process.env.ERPW_WAREHOUSE_W12H_ARTIFACT_DIR : "") || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w8a-movement-visibility-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `${EXPECT_W12H ? "warehouse-w12h-movement-visibility-polish" : "warehouse-w8a-movement-visibility"}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W8A_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W8A_ASSET_ROOT || (EXPECT_W12H ? process.env.ERPW_WAREHOUSE_W12H_ASSET_ROOT : "") || "";
+const SUMMARY_FILE = process.env.ERPW_WAREHOUSE_W8A_SUMMARY_NAME || (EXPECT_W12H ? "warehouse-w12h-movement-visibility-polish-summary.json" : "warehouse-w8a-movement-visibility-summary.json");
+const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W8A_PHASE_LABEL || (EXPECT_W12H ? "Warehouse W12H movement visibility polish" : "Warehouse W8A movement visibility");
 const STOCK_POSTURE_TOKEN = Buffer.from(JSON.stringify({
   item_code: "ITEM-103",
   purchase_order: "",
   sales_order: "",
   stock_exception_token: "",
   warehouse: "Main - M",
+})).toString("hex");
+const MOVEMENT_REVIEW_TOKEN = Buffer.from(JSON.stringify({
+  movement_id: "MAT-MOV-0001",
+  return_route: "/desk/warehouse-console-worklist/movement-visibility",
 })).toString("hex");
 
 const AUTHORIZED_USERS = [
@@ -34,6 +41,14 @@ const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|R
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|incoming_rate|outgoing_rate|basic_rate|\brate\b|\bamount\b|base_amount|transfer_price|profit|margin|\bcost\b|\bgl\b|accounting|billing|payment|tax|item price|stock_queue/i;
+const VIEWPORTS = [
+  { key: "laptop-1136", width: 1136, height: 768 },
+  { key: "laptop-1240", width: 1240, height: 768 },
+  { key: "desktop-1440", width: 1440, height: 900 },
+];
+const ACTIVE_VIEWPORTS = EXPECT_W12H
+  ? [...VIEWPORTS, { key: "mobile-390", width: 390, height: 844 }]
+  : VIEWPORTS;
 
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
@@ -120,6 +135,7 @@ function workspacePayload() {
       picking: "warehouse-console-picking",
       stockException: "warehouse-console-stock-exception",
       stockPosture: "warehouse-console-stock-posture",
+      movement: "warehouse-console-movement",
     },
     methods: {
       overview: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview",
@@ -180,7 +196,7 @@ function movementRows() {
       quantity_summary: "7 Nos",
       group_key: "internal_transfers",
       group_label: "Internal Transfers",
-      route_targets: { stock_posture: { route: "warehouse-console-stock-posture", context_token: STOCK_POSTURE_TOKEN } },
+      route_targets: { movement_review: { route: "warehouse-console-movement", context_token: MOVEMENT_REVIEW_TOKEN }, stock_posture: { route: "warehouse-console-stock-posture", context_token: STOCK_POSTURE_TOKEN } },
       sample_items: [
         { item_code: "ITEM-103", item_name: "Bluetooth Speaker", qty: "5", uom: "Nos", source_warehouse: "Stores - M", target_warehouse: "Main - M", route_target: { route: "warehouse-console-stock-posture", context_token: STOCK_POSTURE_TOKEN } },
         { item_code: "ITEM-104", item_name: "Cable Pack", qty: "2", uom: "Nos", source_warehouse: "Stores - M", target_warehouse: "Main - M", route_target: { route: "warehouse-console-stock-posture", context_token: STOCK_POSTURE_TOKEN } },
@@ -200,7 +216,7 @@ function movementRows() {
       quantity_summary: "10 Nos",
       group_key: "receipts",
       group_label: "Receipts",
-      route_targets: { stock_posture: { route: "warehouse-console-stock-posture", context_token: STOCK_POSTURE_TOKEN } },
+      route_targets: { movement_review: { route: "warehouse-console-movement", context_token: MOVEMENT_REVIEW_TOKEN }, stock_posture: { route: "warehouse-console-stock-posture", context_token: STOCK_POSTURE_TOKEN } },
       sample_items: [
         { item_code: "ITEM-105", item_name: "Power Bank", qty: "10", uom: "Nos", source_warehouse: "", target_warehouse: "Receiving - M", route_target: { route: "warehouse-console-stock-posture", context_token: STOCK_POSTURE_TOKEN } },
       ],
@@ -358,6 +374,24 @@ async function waitForStockPosture(page) {
   await page.waitForFunction(() => Boolean(document.querySelector('[data-warehouse-stock-posture-shell="true"][data-warehouse-view="stock-posture-review"] [data-warehouse-stock-posture-panel="stock"]')), null, { timeout: TIMEOUT });
 }
 
+async function collapseBodySidebarForNarrowViewport(page) {
+  const viewport = page.viewportSize();
+  if (!viewport || viewport.width > 520) return false;
+  const collapsed = await page.evaluate(() => {
+    const sidebar = document.querySelector(".body-sidebar-container.expanded");
+    if (!sidebar) return false;
+    const controls = Array.from(sidebar.querySelectorAll("button, a, [role='button'], [tabindex]"));
+    const collapseControl = controls.find((node) => /\bCollapse\b/i.test((node.innerText || node.getAttribute("aria-label") || "").trim()));
+    if (collapseControl && typeof collapseControl.click === "function") {
+      collapseControl.click();
+      return true;
+    }
+    return false;
+  });
+  if (collapsed) await page.waitForTimeout(250);
+  return collapsed;
+}
+
 async function openRoute(page, parts, pathName, wait) {
   const canRoute = await page.evaluate(() => Boolean(window.frappe && typeof frappe.set_route === "function")).catch(() => false);
   if (canRoute) {
@@ -390,12 +424,24 @@ async function snapshot(page) {
       shellCount: Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace="warehouse"]')).filter(visible).length,
       headerCount: Array.from(document.querySelectorAll(".warehouse-console-header, .warehouse-inbound-queue-header, .warehouse-receiving-header")).filter(visible).length,
       movementShellCount: Array.from(document.querySelectorAll('[data-warehouse-movement-shell="true"][data-warehouse-view="movement-visibility"]')).filter(visible).length,
+      movementCommandCount: Array.from(document.querySelectorAll("[data-warehouse-movement-command]")).filter(visible).length,
+      movementCommandChipCount: Array.from(document.querySelectorAll("[data-warehouse-movement-command-chip]")).filter(visible).length,
+      movementCommandFactCount: Array.from(document.querySelectorAll("[data-warehouse-movement-command-fact]")).filter(visible).length,
+      movementGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-movement-guardrail]")).filter(visible).length,
       movementCardCount: Array.from(document.querySelectorAll("[data-warehouse-movement-card]")).filter(visible).length,
       movementGroupCount: Array.from(document.querySelectorAll("[data-warehouse-movement-group]")).filter(visible).length,
       movementRowCount: Array.from(document.querySelectorAll("[data-warehouse-movement-row]")).filter(visible).length,
+      movementRowFactCount: Array.from(document.querySelectorAll("[data-warehouse-movement-row-fact]")).filter(visible).length,
       movementEmptyCount: Array.from(document.querySelectorAll("[data-warehouse-movement-empty]")).filter(visible).length,
-      movementRouteStockPostureCount: Array.from(document.querySelectorAll("[data-warehouse-movement-route-stock-posture]")).filter(visible).length,
+      movementRouteStockPostureCount: Array.from((shell || document).querySelectorAll("[data-warehouse-movement-route-stock-posture]")).filter(visible).length,
+      movementRouteReviewCount: Array.from((shell || document).querySelectorAll("[data-warehouse-movement-route-review]")).filter(visible).length,
+      movementOpenWarehouseCount: Array.from((shell || document).querySelectorAll("[data-warehouse-back-overview]")).filter(visible).length,
+      movementApplyCount: Array.from((shell || document).querySelectorAll("[data-warehouse-filter-apply]")).filter(visible).length,
+      movementResetCount: Array.from((shell || document).querySelectorAll("[data-warehouse-filter-reset]")).filter(visible).length,
+      movementRefreshCount: Array.from((shell || document).querySelectorAll("[data-warehouse-filter-refresh]")).filter(visible).length,
+      movementDetailToggleCount: Array.from((shell || document).querySelectorAll("[data-warehouse-row-toggle]")).filter(visible).length,
       stockPostureShellCount: Array.from(document.querySelectorAll('[data-warehouse-stock-posture-shell="true"][data-warehouse-view="stock-posture-review"]')).filter(visible).length,
+      frappePageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       diagnostics: window.erpWorkspaceWarehouseConsole && window.erpWorkspaceWarehouseConsole.diagnostics ? { ...window.erpWorkspaceWarehouseConsole.diagnostics } : {},
@@ -404,9 +450,28 @@ async function snapshot(page) {
   });
 }
 
+function assertW12HPolish(state, context) {
+  assert(state.movementCommandCount === 1, "Movement command header did not render once", { context, state });
+  assert(state.movementCommandChipCount >= 3, "Movement command identity chips did not render", { context, state });
+  assert(state.movementCommandFactCount >= 4, "Movement command facts did not render", { context, state });
+  assert(state.movementGuardrailCount === 1, "Movement read-only guardrail did not render once", { context, state });
+  assert(state.movementCardCount >= 4, "Movement summary cards did not render", { context, state });
+  assert(state.movementGroupCount >= 5, "Movement groups did not render", { context, state });
+  assert(state.movementRowFactCount >= 4 || state.movementEmptyCount >= 1, "Movement row facts or empty state did not render", { context, state });
+  assert(state.movementOpenWarehouseCount === 1, "Movement overview navigation should render once", { context, state });
+  assert(state.movementApplyCount === 1, "Movement Apply control should render once", { context, state });
+  assert(state.movementResetCount === 1, "Movement Reset control should render once", { context, state });
+  assert(state.movementRefreshCount === 1, "Movement Refresh control should render once", { context, state });
+  assert(state.movementDetailToggleCount >= 1 || state.movementEmptyCount >= 1, "Movement row expansion or empty state did not render", { context, state });
+  if (ASSET_ROOT) {
+    assert(state.movementRouteReviewCount >= 1, "Source movement review route target did not render", { context, state });
+  }
+}
+
 function assertClean(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
+  assert(!state.frappePageHeadCount || state.frappePageHeadCount <= 1, "Frappe page chrome must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
   assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W8A", { context, state });
   assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Forbidden stock action control is visible", { context, state });
@@ -435,14 +500,37 @@ async function exerciseUser(browser, user) {
     assert(state.movementCardCount >= 4, "Movement summary cards did not render", { user: user.key, state });
     assert(state.movementGroupCount >= 5, "Movement groups did not render", { user: user.key, state });
     assert(state.movementRowCount >= 1 || state.movementEmptyCount >= 1, "Movement rows or empty state did not render", { user: user.key, state });
+    if (EXPECT_W12H) assertW12HPolish(state, `${user.key}:movement`);
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForMovement(page);
-    assertClean(await snapshot(page), `${user.key}:movement-reload`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:movement-reload`);
+    if (EXPECT_W12H) assertW12HPolish(state, `${user.key}:movement-reload`);
 
     await openRoute(page, ["warehouse-console-worklist", "movement-visibility"], "/desk/warehouse-console-worklist/movement-visibility", waitForMovement);
     await openRoute(page, ["warehouse-console-worklist", "movement-visibility"], "/desk/warehouse-console-worklist/movement-visibility", waitForMovement);
-    assertClean(await snapshot(page), `${user.key}:movement-repeat`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:movement-repeat`);
+    if (EXPECT_W12H) assertW12HPolish(state, `${user.key}:movement-repeat`);
+
+    if (EXPECT_W12H) {
+      for (const viewport of ACTIVE_VIEWPORTS) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        const sidebarCollapsed = await collapseBodySidebarForNarrowViewport(page);
+        await openRoute(page, ["warehouse-console-worklist", "movement-visibility"], "/desk/warehouse-console-worklist/movement-visibility", waitForMovement);
+        await collapseBodySidebarForNarrowViewport(page);
+        state = await snapshot(page);
+        assertClean(state, `${user.key}:${viewport.key}:movement`);
+        assertW12HPolish(state, `${user.key}:${viewport.key}:movement`);
+        if (viewport.width <= 520) {
+          diagnostics.snapshots.push({ name: `${user.key}:${viewport.key}:sidebar`, sidebarCollapsed });
+        }
+        diagnostics.snapshots.push({ name: `${user.key}:${viewport.key}:movement`, state, screenshot: await capture(page, `${user.key}-${viewport.key}-movement`) });
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openRoute(page, ["warehouse-console-worklist", "movement-visibility"], "/desk/warehouse-console-worklist/movement-visibility", waitForMovement);
+    }
 
     const filterCount = await page.locator("[data-warehouse-filter-key]").count();
     if (filterCount >= 1) {
@@ -452,7 +540,9 @@ async function exerciseUser(browser, user) {
       await waitForMovement(page);
       await page.locator("[data-warehouse-filter-refresh]").click();
       await waitForMovement(page);
-      assertClean(await snapshot(page), `${user.key}:movement-filters`);
+      state = await snapshot(page);
+      assertClean(state, `${user.key}:movement-filters`);
+      if (EXPECT_W12H) assertW12HPolish(state, `${user.key}:movement-filters`);
     }
 
     const lineToggleCount = await page.locator("[data-warehouse-row-toggle]").count();
@@ -511,12 +601,12 @@ async function main() {
     throw error;
   } finally {
     await browser.close();
-    const summaryPath = path.join(ARTIFACT_DIR, "warehouse-w8a-movement-visibility-summary.json");
+    const summaryPath = path.join(ARTIFACT_DIR, SUMMARY_FILE);
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
     if (summary.ok) {
-      console.log(`Warehouse W8A movement visibility smoke passed. Summary: ${summaryPath}`);
+      console.log(`${PHASE_LABEL} smoke passed. Summary: ${summaryPath}`);
     } else {
-      console.error(`Warehouse W8A movement visibility smoke failed. Summary: ${summaryPath}`);
+      console.error(`${PHASE_LABEL} smoke failed. Summary: ${summaryPath}`);
     }
   }
 }
