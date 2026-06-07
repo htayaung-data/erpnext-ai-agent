@@ -287,6 +287,7 @@ def execute_governed_report(
 	user: str,
 	mode: str = "compiled_read_query",
 	target_limit: int = 0,
+	request_message: str | None = None,
 ) -> Dict[str, Any]:
 	report = str(report_name or "").strip()
 	clean_filters = dict(filters or {})
@@ -298,6 +299,9 @@ def execute_governed_report(
 		"format": "json",
 		"grounding_mode": grounding_mode,
 	}
+	# Compatibility metadata only. The runtime executor must not treat raw message
+	# text as report-routing authority or expose it through tool traces.
+	_ = request_message
 	max_attempts = 2
 	attempts = []
 	final_attempt: Dict[str, Any] = {}

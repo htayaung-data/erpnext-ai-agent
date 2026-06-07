@@ -102,6 +102,40 @@ class V1IBBrowserSendPersistenceSnapshotDefaultsTests(unittest.TestCase):
         self.assertEqual(result.get("fresh_query_interpretation", {}).get("status"), "no_match")
         self.assertNotIn("report_routing_allowed", result.get("front_door_contract", {}))
 
+    def test_governed_report_executor_accepts_request_message_without_trace_leak(self):
+        from ai_assistant_ui.qwen_chat import governed_report_executor as executor
+
+        def fake_execute_once(**_kwargs):
+            return {
+                "output_obj": {"result": {"columns": [], "result": []}},
+                "success": True,
+                "error": "",
+                "duration_ms": 0,
+                "row_count": 0,
+            }
+
+        with patch.object(executor, "get_report_spec", return_value={"grounding_mode": "report"}), patch.object(
+            executor,
+            "_execute_once",
+            side_effect=fake_execute_once,
+        ):
+            payload = executor.execute_governed_report(
+                report_name="Synthetic Item Sales",
+                filters={"item_code": "EC7H-ITEM-A"},
+                user="Administrator",
+                mode="compiled_read_query",
+                request_message="Show EC7H-ITEM-A item sales",
+            )
+
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(
+            payload.get("agent_meta", {}).get("engine"),
+            "deterministic_governed_report_executor",
+        )
+        trace_blob = repr(payload.get("tool_trace"))
+        self.assertNotIn("Show EC7H-ITEM-A item sales", trace_blob)
+        self.assertNotIn("request_message", trace_blob)
+
 
 if __name__ == "__main__":
     unittest.main()
