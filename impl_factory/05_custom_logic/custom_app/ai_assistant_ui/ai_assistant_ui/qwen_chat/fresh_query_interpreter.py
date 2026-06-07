@@ -1091,6 +1091,7 @@ def compile_from_fresh_query_message(
 	message: str,
 	recent_messages: List[Dict[str, str]] | None = None,
 	clarification_resolution: Dict[str, Any] | None = None,
+	front_door_contract: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	request_id = uuid.uuid4().hex
 	interaction_contract = build_interaction_contract(
@@ -1169,6 +1170,8 @@ def compile_from_fresh_query_message(
 	}
 	if isinstance(clarification_resolution, dict) and clarification_resolution:
 		out["clarification_resolution"] = dict(clarification_resolution)
+	if isinstance(front_door_contract, dict) and front_door_contract:
+		out["front_door_contract"] = dict(front_door_contract)
 	if semantic_result.interpretation is None:
 		out["phase4_latency_breakdown"] = {
 			"proposal_generation_latency_ms": proposal_generation_latency_ms,
@@ -2692,6 +2695,7 @@ def execute_compiled_fresh_query_message(
 	message: str,
 	recent_messages: List[Dict[str, str]] | None = None,
 	clarification_resolution: Dict[str, Any] | None = None,
+	front_door_contract: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	total_started = time.perf_counter()
 	pipeline = compile_from_fresh_query_message(
@@ -2701,6 +2705,7 @@ def execute_compiled_fresh_query_message(
 		message=message,
 		recent_messages=list(recent_messages or []),
 		clarification_resolution=clarification_resolution,
+		front_door_contract=front_door_contract,
 	)
 	latency_breakdown = (
 		dict(pipeline.get("phase4_latency_breakdown"))
