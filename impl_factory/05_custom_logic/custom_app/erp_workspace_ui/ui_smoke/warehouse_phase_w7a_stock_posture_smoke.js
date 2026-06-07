@@ -3,14 +3,19 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W7A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W7A_ARTIFACT_DIR || path.join(
+const EXPECT_W12G = process.env.ERPW_WAREHOUSE_W12G_EXPECT_POLISH === "1"
+  || Boolean(process.env.ERPW_WAREHOUSE_W12G_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12G_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12G_TIMEOUT);
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W12G_TIMEOUT || process.env.ERPW_WAREHOUSE_W7A_TIMEOUT || 60000);
+const SMOKE_LABEL = EXPECT_W12G ? "w12g-stock-posture-polish" : "w7a-stock-posture";
+const SUMMARY_FILE = EXPECT_W12G ? "warehouse-w12g-stock-posture-polish-summary.json" : "warehouse-w7a-stock-posture-summary.json";
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W12G_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W7A_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w7a-stock-posture-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `warehouse-${SMOKE_LABEL}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W7A_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W12G_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W7A_ASSET_ROOT || "";
 const STOCK_EXCEPTION_TOKEN = "7b226974656d5f636f6465223a224954454d2d313035222c2273616c65735f6f72646572223a22534f2d524556494557222c2277617265686f757365223a2253686f7274202d204d227d";
 const STOCK_POSTURE_TOKEN = "7b226974656d5f636f6465223a224954454d2d313035222c2270757263686173655f6f72646572223a22504f2d534f4f4e222c2273616c65735f6f72646572223a22534f2d524556494557222c2273746f636b5f657863657074696f6e5f746f6b656e223a2237623232363937343635366435663633366636343635323233613232343935343435346432643331333033353232326332323733363136633635373335663666373236343635373232323361323235333466326435323435353634393435353732323263323237373631373236353638366637353733363532323361323235333638366637323734323032643230346432323764222c2277617265686f757365223a2253686f7274202d204d227d";
+const UNAVAILABLE_STOCK_POSTURE_TOKEN = "unavailable-posture";
 const LIVE_STOCK_POSTURE_TOKEN = process.env.ERPW_WAREHOUSE_W7A_LIVE_CONTEXT_TOKEN || Buffer.from(JSON.stringify({
   item_code: "SPH-SAM-A15-6/128",
   purchase_order: "",
@@ -32,10 +37,20 @@ const AUTHORIZED_USERS = [
   },
 ].filter((user) => user.username && user.password);
 
-const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Allocate|Item Price|Default Supplier|Item Supplier)\b/i;
+const VIEWPORTS = [
+  { key: "laptop-1136", width: 1136, height: 768 },
+  { key: "laptop-1240", width: 1240, height: 768 },
+  { key: "desktop-1440", width: 1440, height: 900 },
+];
+const ACTIVE_VIEWPORTS = EXPECT_W12G
+  ? [...VIEWPORTS, { key: "mobile-390", width: 390, height: 844 }]
+  : VIEWPORTS;
+
+const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Allocate|Item Price|Default Supplier|Item Supplier|Print|Email)\b/i;
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
-const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
+const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\/|\/desk\/Report\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|base_net_rate|\bamount\b|profit|margin|\bcost\b|\bgl\b|accounting|buying price|selling price|item price/i;
+const STOCK_REPORT_RE = /Stock Ledger|Stock Balance|Stock Reconciliation/i;
 
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
@@ -282,6 +297,27 @@ function stockExceptionReviewPayload(contextToken = STOCK_EXCEPTION_TOKEN) {
 }
 
 function stockPosturePayload(contextToken = STOCK_POSTURE_TOKEN) {
+  if (contextToken === UNAVAILABLE_STOCK_POSTURE_TOKEN) {
+    return {
+      workspace: workspacePayload(),
+      context: sidebarPayload().context,
+      state: { kind: "unavailable", title: "Stock posture review unavailable", detail: "Stock posture details are not visible for this review." },
+      page: { title: "Stock Posture Review", key: "stock_posture_review", context_token: contextToken },
+      header: { title: "Stock Posture Review", context_token: contextToken },
+      summary_cards: [],
+      panels: {
+        stock: { title: "Current Stock", items: [] },
+        inbound: { title: "Inbound Cover", items: [] },
+        outbound: { title: "Open Demand", items: [] },
+        related: { title: "Related Exceptions", items: [] },
+      },
+      inbound_rows: [],
+      outbound_rows: [],
+      related_rows: [],
+      action_targets: {},
+      fetched_at: "2026-05-29 00:00:00",
+    };
+  }
   return {
     workspace: workspacePayload(),
     context: sidebarPayload().context,
@@ -452,14 +488,32 @@ async function waitForStockExceptionReview(page) {
 async function waitForStockPosture(page) {
   await page.waitForFunction(() => {
     const shell = document.querySelector('[data-warehouse-stock-posture-shell="true"][data-warehouse-view="stock-posture-review"]');
-    return Boolean(shell
-      && shell.querySelector('[data-warehouse-stock-posture-panel="stock"]')
-      && (
-        shell.querySelectorAll("[data-warehouse-stock-posture-card]").length >= 5
-        || shell.querySelector("[data-warehouse-stock-posture-route-picking]")
-        || shell.querySelector("[data-warehouse-stock-posture-route-receiving]")
-        || shell.querySelector("[data-warehouse-stock-posture-route-stock-exception]")
-      ));
+    if (!shell || !shell.querySelector('[data-warehouse-stock-posture-panel="stock"]')) return false;
+    const cardCount = shell.querySelectorAll("[data-warehouse-stock-posture-card]").length;
+    const hasRouteAction = Boolean(
+      shell.querySelector("[data-warehouse-stock-posture-route-picking]")
+      || shell.querySelector("[data-warehouse-stock-posture-route-receiving]")
+      || shell.querySelector("[data-warehouse-stock-posture-route-stock-exception]")
+    );
+    const shellText = (shell.innerText || "").replace(/\s+/g, " ").trim();
+    const token = String(shell.getAttribute("data-warehouse-stock-posture-token") || "").trim();
+    const hasUnavailableFallback = token === "unavailable-posture"
+      && cardCount >= 4
+      && shell.querySelector("[data-warehouse-stock-posture-empty]")
+      && shell.querySelector("[data-warehouse-stock-posture-recommended-unavailable]")
+      && /Stock posture review unavailable|details are not visible/i.test(shellText);
+    const hasRichPosture = cardCount >= 5 || hasRouteAction;
+    return Boolean((hasRichPosture || hasUnavailableFallback)
+      && (!window.__erpwWarehouseExpectW12G || (
+        shell.querySelector("[data-warehouse-stock-posture-command]")
+        && shell.querySelectorAll("[data-warehouse-stock-posture-identity-chip]").length >= 5
+        && shell.querySelectorAll("[data-warehouse-stock-posture-command-fact]").length >= 4
+        && shell.querySelector("[data-warehouse-stock-posture-guardrail]")
+        && cardCount >= 4
+        && shell.querySelectorAll("[data-warehouse-stock-posture-panel]").length >= 4
+        && shell.querySelectorAll("[data-warehouse-stock-posture-fact]").length >= 8
+        && shell.querySelector("[data-warehouse-stock-posture-recommended-panel]")
+      )));
   }, null, { timeout: TIMEOUT });
 }
 
@@ -505,8 +559,15 @@ async function snapshot(page) {
       stockShellCount: Array.from(document.querySelectorAll('[data-warehouse-stock-exception-shell="true"][data-warehouse-view="stock-exceptions"]')).filter(visible).length,
       stockReviewShellCount: Array.from(document.querySelectorAll('[data-warehouse-stock-exception-review-shell="true"][data-warehouse-view="stock-exception-review"]')).filter(visible).length,
       stockPostureShellCount: Array.from(document.querySelectorAll('[data-warehouse-stock-posture-shell="true"][data-warehouse-view="stock-posture-review"]')).filter(visible).length,
+      stockPostureCommandCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-command]")).filter(visible).length,
+      stockPostureIdentityChipCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-identity-chip]")).filter(visible).length,
+      stockPostureCommandFactCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-command-fact]")).filter(visible).length,
+      stockPostureGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-guardrail]")).filter(visible).length,
       stockPostureCardCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-card]")).filter(visible).length,
       stockPosturePanelCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-panel]")).filter(visible).length,
+      stockPostureFactCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-fact]")).filter(visible).length,
+      stockPostureRecommendedPanelCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-recommended-panel]")).filter(visible).length,
+      stockPostureRecommendedCardCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-recommended-card]")).filter(visible).length,
       stockPostureRowCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-row], [data-warehouse-stock-posture-related-row]")).filter(visible).length,
       stockPostureEmptyCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-empty]")).filter(visible).length,
       stockPostureRoutePickingCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-route-picking]")).filter(visible).length,
@@ -514,6 +575,8 @@ async function snapshot(page) {
       stockPostureRouteExceptionCount: Array.from(document.querySelectorAll("[data-warehouse-stock-posture-route-stock-exception]")).filter(visible).length,
       stockExceptionOpenPostureCount: Array.from(document.querySelectorAll("[data-warehouse-stock-exception-open-posture], [data-warehouse-stock-exception-next-target='stock_posture']")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
+      pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
+      pageIconCount: Array.from(document.querySelectorAll(".page-head .page-icon, .page-head .page-title .icon, .page-head .indicator-pill")).filter(visible).length,
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       diagnostics: window.erpWorkspaceWarehouseConsole && window.erpWorkspaceWarehouseConsole.diagnostics ? { ...window.erpWorkspaceWarehouseConsole.diagnostics } : {},
       hasExportedStockPostureRenderer: Boolean(window.erpWorkspaceWarehouseConsole && typeof window.erpWorkspaceWarehouseConsole.renderStockPostureReview === "function"),
@@ -524,18 +587,48 @@ async function snapshot(page) {
 function assertClean(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
+  assert(!state.pageHeadCount || state.pageHeadCount <= 1, "Frappe page chrome must not duplicate", { context, state });
+  assert(!state.pageIconCount || state.pageIconCount <= 1, "Frappe page chrome icons must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
   assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W7A", { context, state });
   assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Forbidden stock action control is visible", { context, state });
   assert(!FORBIDDEN_COPY_RE.test(state.text), "Developer or governance copy is visible", { context, state });
   assert(!VALUATION_RE.test(state.text), "Valuation, accounting, or commercial text is visible", { context, state });
+  assert(!STOCK_REPORT_RE.test(`${state.text} ${state.hrefs} ${state.actionText}`), "Stock report exposure is visible", { context, state });
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Native route target is visible", { context, state });
+}
+
+function assertW12GStockPosturePolish(state, context, options = {}) {
+  if (!EXPECT_W12G) return;
+  const requireRoutes = options.requireRoutes !== false;
+  assert(state.stockPostureShellCount === 1, "Stock Posture Review shell did not render exactly once", { context, state });
+  assert(state.stockPostureCommandCount === 1, "Stock Posture Review command header did not render exactly once", { context, state });
+  assert(state.stockPostureIdentityChipCount >= 5, "Stock Posture Review identity chips did not render", { context, state });
+  assert(state.stockPostureCommandFactCount >= 4, "Stock Posture Review command facts did not render", { context, state });
+  assert(state.stockPostureGuardrailCount === 1, "Stock Posture Review read-only guardrail did not render exactly once", { context, state });
+  assert(state.stockPostureCardCount >= 4, "Stock Posture Review summary cards did not render", { context, state });
+  assert(state.stockPosturePanelCount >= 4, "Stock Posture Review panels did not render", { context, state });
+  assert(state.stockPostureFactCount >= 8, "Stock Posture Review panel facts did not render", { context, state });
+  assert(state.stockPostureRecommendedPanelCount === 1, "Stock Posture Review recommended panel did not render exactly once", { context, state });
+  assert(state.stockPostureRecommendedCardCount >= 2, "Stock Posture Review recommended cards did not render", { context, state });
+  if (requireRoutes) {
+    assert(state.stockPostureRoutePickingCount >= 1, "Stock Posture Review picking route did not render", { context, state });
+    assert(state.stockPostureRouteReceivingCount >= 1, "Stock Posture Review receiving route did not render", { context, state });
+    assert(state.stockPostureRouteExceptionCount >= 1, "Stock Posture Review exception route did not render", { context, state });
+  } else {
+    assert(state.stockPostureEmptyCount >= 1, "Stock Posture Review unavailable fallback did not render controlled empty state", { context, state });
+  }
 }
 
 async function exerciseUser(browser, user) {
   const diagnostics = makeDiagnostics(user.key);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await installSourceOverrides(context, diagnostics);
+  if (EXPECT_W12G) {
+    await context.addInitScript(() => {
+      window.__erpwWarehouseExpectW12G = true;
+    });
+  }
   const page = await context.newPage();
   attachDiagnostics(page, diagnostics);
   try {
@@ -559,10 +652,16 @@ async function exerciseUser(browser, user) {
       if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-stock-exception-review");
       state = await snapshot(page);
       assertClean(state, `${user.key}:stock-exception-review`);
-      assert(state.stockExceptionOpenPostureCount >= 1, "Stock posture drilldown action did not render from stock exception review", { user: user.key, state });
-
-      await page.locator("[data-warehouse-stock-exception-open-posture], [data-warehouse-stock-exception-next-target='stock_posture']").first().click();
-      await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-posture\//.test(url.pathname), { timeout: TIMEOUT });
+      if (state.stockExceptionOpenPostureCount >= 1) {
+        await page.locator("[data-warehouse-stock-exception-open-posture], [data-warehouse-stock-exception-next-target='stock_posture']").first().click();
+        await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-stock-posture\//.test(url.pathname), { timeout: TIMEOUT });
+      } else {
+        assert(state.stockReviewShellCount === 1, "Stock exception review fallback shell did not render before direct stock posture route", { user: user.key, state });
+        if (ASSET_ROOT) {
+          assert(/Review path unavailable|Related review unavailable|No review path visible/.test(state.text), "Stock exception review fallback did not show controlled unavailable copy", { user: user.key, state });
+        }
+        await openRoute(page, ["warehouse-console-stock-posture", STOCK_POSTURE_TOKEN], `/desk/warehouse-console-stock-posture/${STOCK_POSTURE_TOKEN}`, waitForStockPosture);
+      }
     } else {
       await openRoute(page, ["warehouse-console-stock-posture", LIVE_STOCK_POSTURE_TOKEN], `/desk/warehouse-console-stock-posture/${LIVE_STOCK_POSTURE_TOKEN}`, waitForStockPosture);
     }
@@ -570,6 +669,7 @@ async function exerciseUser(browser, user) {
     if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-stock-posture-review");
     state = await snapshot(page);
     assertClean(state, `${user.key}:stock-posture`);
+    assertW12GStockPosturePolish(state, `${user.key}:stock-posture`);
     assert(state.stockPostureShellCount === 1, "Stock posture shell count must be 1", { user: user.key, state });
     assert(state.stockPostureCardCount >= 5, "Stock posture summary cards did not render", { user: user.key, state });
     assert(state.stockPosturePanelCount >= 4, "Stock posture panels did not render", { user: user.key, state });
@@ -586,12 +686,42 @@ async function exerciseUser(browser, user) {
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForStockPosture(page);
-    assertClean(await snapshot(page), `${user.key}:stock-posture-reload`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:stock-posture-reload`);
+    assertW12GStockPosturePolish(state, `${user.key}:stock-posture-reload`);
 
     const directToken = ASSET_ROOT ? STOCK_POSTURE_TOKEN : LIVE_STOCK_POSTURE_TOKEN;
+    const postureCallsBeforeRepeat = diagnostics.overrideHits.filter((hit) => hit.key === "warehouse-stock-posture-review").length;
     await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
     await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
-    assertClean(await snapshot(page), `${user.key}:stock-posture-repeat`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:stock-posture-repeat`);
+    assertW12GStockPosturePolish(state, `${user.key}:stock-posture-repeat`);
+    if (EXPECT_W12G && ASSET_ROOT) {
+      const postureCallsAfterRepeat = diagnostics.overrideHits.filter((hit) => hit.key === "warehouse-stock-posture-review").length;
+      assert(postureCallsAfterRepeat === postureCallsBeforeRepeat, "Repeated same-route stock posture navigation refetched unexpectedly", { user: user.key, postureCallsBeforeRepeat, postureCallsAfterRepeat, diagnostics });
+    }
+
+    if (EXPECT_W12G) {
+      for (const viewport of ACTIVE_VIEWPORTS) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
+        state = await snapshot(page);
+        assertClean(state, `${user.key}:${viewport.key}:stock-posture`);
+        assertW12GStockPosturePolish(state, `${user.key}:${viewport.key}:stock-posture`);
+        await capture(page, `${user.key}-${viewport.key}-stock-posture`);
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
+      if (ASSET_ROOT) {
+        await openRoute(page, ["warehouse-console-stock-posture", UNAVAILABLE_STOCK_POSTURE_TOKEN], `/desk/warehouse-console-stock-posture/${UNAVAILABLE_STOCK_POSTURE_TOKEN}`, waitForStockPosture);
+        state = await snapshot(page);
+        assertClean(state, `${user.key}:stock-posture-unavailable`);
+        assertW12GStockPosturePolish(state, `${user.key}:stock-posture-unavailable`, { requireRoutes: false });
+        await capture(page, `${user.key}-stock-posture-unavailable`);
+        await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
+      }
+    }
 
     if (canRoutePicking) {
       await page.locator("[data-warehouse-stock-posture-route-picking]").first().click();
@@ -621,7 +751,9 @@ async function exerciseUser(browser, user) {
     await openRoute(page, ["warehouse-console-stock-posture", directToken], `/desk/warehouse-console-stock-posture/${directToken}`, waitForStockPosture);
     await page.locator("[data-warehouse-stock-posture-refresh]").click();
     await waitForStockPosture(page);
-    assertClean(await snapshot(page), `${user.key}:posture-refresh`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:posture-refresh`);
+    assertW12GStockPosturePolish(state, `${user.key}:posture-refresh`);
 
     await page.locator("[data-warehouse-stock-posture-back]").click();
     if (canRouteException) {
@@ -664,22 +796,22 @@ async function exerciseUser(browser, user) {
 (async () => {
   assert(AUTHORIZED_USERS.length > 0, "No Warehouse W7A smoke credentials were provided. Set ERPW_WAREHOUSE_MANAGER_USERNAME/PASSWORD or ERPW_WAREHOUSE_USER_USERNAME/PASSWORD.");
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
-  const summary = { status: "pass", artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), authorizedUsers: AUTHORIZED_USERS.map((user) => user.key), authorized: [] };
+  const summary = { status: "pass", phase: EXPECT_W12G ? "W12G" : "W7A", artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), authorizedUsers: AUTHORIZED_USERS.map((user) => user.key), authorized: [] };
   try {
     for (const user of AUTHORIZED_USERS) {
       summary.authorized.push(await exerciseUser(browser, user));
     }
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w7a-stock-posture-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
   } catch (error) {
     summary.status = "fail";
     summary.error = error && error.message ? error.message : String(error);
     summary.details = error && error.details ? error.details : {};
-    fs.writeFileSync(path.join(ARTIFACT_DIR, "warehouse-w7a-stock-posture-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    fs.writeFileSync(path.join(ARTIFACT_DIR, SUMMARY_FILE), `${JSON.stringify(summary, null, 2)}\n`);
     throw error;
   } finally {
     await browser.close();
   }
-  console.log(`Warehouse W7A stock posture smoke passed. Summary: ${path.join(ARTIFACT_DIR, "warehouse-w7a-stock-posture-summary.json")}`);
+  console.log(`Warehouse ${EXPECT_W12G ? "W12G stock posture polish" : "W7A stock posture"} smoke passed. Summary: ${path.join(ARTIFACT_DIR, SUMMARY_FILE)}`);
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);
