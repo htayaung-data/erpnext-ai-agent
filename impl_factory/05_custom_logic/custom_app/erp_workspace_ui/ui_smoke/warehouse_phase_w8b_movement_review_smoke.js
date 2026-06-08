@@ -3,12 +3,15 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W8B_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W8B_ARTIFACT_DIR || path.join(
+const EXPECT_W12I = process.env.ERPW_WAREHOUSE_W8B_EXPECT_W12I === "1" || Boolean(process.env.ERPW_WAREHOUSE_W12I_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12I_ARTIFACT_DIR);
+const TIMEOUT = Number((EXPECT_W12I && process.env.ERPW_WAREHOUSE_W12I_TIMEOUT) || process.env.ERPW_WAREHOUSE_W8B_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W8B_ARTIFACT_DIR || (EXPECT_W12I ? process.env.ERPW_WAREHOUSE_W12I_ARTIFACT_DIR : "") || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w8b-movement-review-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `${EXPECT_W12I ? "warehouse-w12i-movement-review-polish" : "warehouse-w8b-movement-review"}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W8B_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W8B_ASSET_ROOT || (EXPECT_W12I ? process.env.ERPW_WAREHOUSE_W12I_ASSET_ROOT : "") || "";
+const SUMMARY_FILE = process.env.ERPW_WAREHOUSE_W8B_SUMMARY_NAME || (EXPECT_W12I ? "warehouse-w12i-movement-review-polish-summary.json" : "warehouse-w8b-movement-review-summary.json");
+const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W8B_PHASE_LABEL || (EXPECT_W12I ? "Warehouse W12I movement review polish" : "Warehouse W8B movement review");
 const STOCK_POSTURE_TOKEN = Buffer.from(JSON.stringify({
   item_code: "ITEM-103",
   purchase_order: "",
@@ -20,6 +23,7 @@ const MOVEMENT_REVIEW_TOKEN = Buffer.from(JSON.stringify({
   movement_id: "MAT-MOV-0001",
   return_route: { route: "warehouse-console-worklist", queue_key: "movement_visibility" },
 })).toString("hex");
+const UNAVAILABLE_MOVEMENT_REVIEW_TOKEN = "unavailable-movement-review";
 
 const AUTHORIZED_USERS = [
   {
@@ -340,6 +344,33 @@ function movementReviewPayload(contextToken = MOVEMENT_REVIEW_TOKEN) {
   };
 }
 
+function unavailableMovementReviewPayload(contextToken = UNAVAILABLE_MOVEMENT_REVIEW_TOKEN) {
+  return {
+    workspace: workspacePayload(),
+    context: sidebarPayload().context,
+    state: { kind: "unavailable", title: "Movement review unavailable", detail: "Movement details are not visible for this reference. Refresh or return to Movement Visibility." },
+    page: { title: "Movement Review", key: "movement_review", context_token: contextToken, movement_id: "Not visible" },
+    header: {
+      context_token: contextToken,
+      movement_id: "Not visible",
+      docstatus_label: "Unavailable",
+      direction_label: "Details not visible",
+      item_count: 0,
+      quantity_summary: "Not visible",
+    },
+    summary_cards: [],
+    panels: {
+      direction: { key: "direction", title: "Direction", summary: "Movement direction is not visible for this reference.", items: [] },
+      related: { key: "related", title: "Related Reviews", summary: "No related review is visible for this reference.", items: [] },
+    },
+    line_groups: [],
+    related_routes: [],
+    allowed_actions: [{ key: "refresh", label: "Refresh", kind: "read_only" }, { key: "back", label: "Back", kind: "navigation" }],
+    action_targets: { back: { route: "warehouse-console-worklist", queue_key: "movement_visibility" } },
+    fetched_at: "2026-05-29 00:00:00",
+  };
+}
+
 function stockPosturePayload(contextToken = STOCK_POSTURE_TOKEN) {
   return {
     workspace: workspacePayload(),
@@ -409,7 +440,10 @@ async function installSourceOverrides(context, diagnostics) {
     ["get_warehouse_console_overview", "warehouse-overview", () => overviewPayload()],
     ["get_warehouse_console_sidebar_context", "warehouse-sidebar", () => sidebarPayload()],
     ["get_warehouse_movement_visibility_queue", "warehouse-movement-visibility", () => movementPayload()],
-    ["get_warehouse_movement_review", "warehouse-movement-review", (body) => movementReviewPayload(body.context || body.context_token)],
+    ["get_warehouse_movement_review", "warehouse-movement-review", (body) => {
+      const contextToken = body.context || body.context_token;
+      return contextToken === UNAVAILABLE_MOVEMENT_REVIEW_TOKEN ? unavailableMovementReviewPayload(contextToken) : movementReviewPayload(contextToken);
+    }],
     ["get_warehouse_stock_posture_review", "warehouse-stock-posture-review", (body) => stockPosturePayload(body.context_token)],
   ];
   for (const [method, key, payload] of methodPayloads) {
@@ -459,12 +493,29 @@ async function waitForMovement(page) {
 async function waitForMovementReview(page) {
   await page.waitForFunction(() => {
     const shell = document.querySelector('[data-warehouse-movement-review-shell="true"][data-warehouse-view="movement-review"]');
-    return Boolean(shell && shell.querySelector("[data-warehouse-movement-review-card]") && (shell.querySelector("[data-warehouse-movement-review-line]") || shell.querySelector("[data-warehouse-movement-review-empty]")));
+    const state = shell ? String(shell.getAttribute("data-warehouse-movement-review-state") || "") : "";
+    return Boolean(shell && state !== "loading" && shell.querySelector("[data-warehouse-movement-review-card]") && (shell.querySelector("[data-warehouse-movement-review-line]") || shell.querySelector("[data-warehouse-movement-review-empty]")));
   }, null, { timeout: TIMEOUT });
 }
 
 async function waitForStockPosture(page) {
   await page.waitForFunction(() => Boolean(document.querySelector('[data-warehouse-stock-posture-shell="true"][data-warehouse-view="stock-posture-review"] [data-warehouse-stock-posture-panel="stock"]')), null, { timeout: TIMEOUT });
+}
+
+async function collapseBodySidebarForNarrowViewport(page) {
+  const viewport = page.viewportSize();
+  if (!viewport || viewport.width > 520) return true;
+  const collapsed = await page.evaluate(() => {
+    const expandedSidebar = document.querySelector(".body-sidebar-container.expanded");
+    if (!expandedSidebar) return true;
+    const controls = Array.from(expandedSidebar.querySelectorAll("button, a, [role='button'], [tabindex]"));
+    const collapseControl = controls.find((node) => /\bCollapse\b/i.test((node.innerText || node.getAttribute("aria-label") || "").trim()));
+    if (collapseControl && typeof collapseControl.click === "function") collapseControl.click();
+    return false;
+  });
+  if (collapsed) return true;
+  await page.waitForTimeout(250);
+  return page.evaluate(() => !document.querySelector(".body-sidebar-container.expanded"));
 }
 
 async function openRoute(page, parts, pathName, wait) {
@@ -506,13 +557,24 @@ async function snapshot(page) {
       movementRouteReviewCount: Array.from(document.querySelectorAll("[data-warehouse-movement-route-review]")).filter(visible).length,
       movementRouteStockPostureCount: Array.from(document.querySelectorAll("[data-warehouse-movement-route-stock-posture]")).filter(visible).length,
       movementReviewShellCount: Array.from(document.querySelectorAll('[data-warehouse-movement-review-shell="true"][data-warehouse-view="movement-review"]')).filter(visible).length,
+      movementReviewState: document.querySelector('[data-warehouse-movement-review-shell="true"][data-warehouse-view="movement-review"]') ? document.querySelector('[data-warehouse-movement-review-shell="true"][data-warehouse-view="movement-review"]').getAttribute("data-warehouse-movement-review-state") || "" : "",
+      movementReviewCommandCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-command]")).filter(visible).length,
+      movementReviewIdentityChipCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-identity-chip]")).filter(visible).length,
+      movementReviewCommandFactCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-command-fact]")).filter(visible).length,
+      movementReviewGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-guardrail]")).filter(visible).length,
       movementReviewCardCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-card]")).filter(visible).length,
+      movementReviewSummaryCardCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-summary-card]")).filter(visible).length,
       movementReviewPanelCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-panel], [data-warehouse-movement-review-related-panel]")).filter(visible).length,
+      movementReviewFactCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-fact]")).filter(visible).length,
       movementReviewLineGroupCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-line-group]")).filter(visible).length,
       movementReviewLineCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-line]")).filter(visible).length,
+      movementReviewLineFactCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-line-fact]")).filter(visible).length,
       movementReviewEmptyCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-empty]")).filter(visible).length,
       movementReviewRouteStockPostureCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-route-stock-posture], [data-warehouse-movement-review-related-row]")).filter(visible).length,
+      movementReviewBackCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-back]")).filter(visible).length,
+      movementReviewRefreshCount: Array.from(document.querySelectorAll("[data-warehouse-movement-review-refresh]")).filter(visible).length,
       stockPostureShellCount: Array.from(document.querySelectorAll('[data-warehouse-stock-posture-shell="true"][data-warehouse-view="stock-posture-review"]')).filter(visible).length,
+      frappePageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       diagnostics: window.erpWorkspaceWarehouseConsole && window.erpWorkspaceWarehouseConsole.diagnostics ? { ...window.erpWorkspaceWarehouseConsole.diagnostics } : {},
@@ -531,6 +593,31 @@ function assertClean(state, context) {
   assert(!FORBIDDEN_COPY_RE.test(state.text), "Developer or governance copy is visible", { context, state });
   assert(!VALUATION_RE.test(state.text), "Valuation, accounting, or commercial text is visible", { context, state });
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Native route target is visible", { context, state });
+}
+
+function movementReviewServiceCallCount(state) {
+  const diagnostics = (state && state.diagnostics) || {};
+  const value = Number(diagnostics.movementReviewServiceCallAttempted || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function assertW12IPolish(state, context, options = {}) {
+  const requireStockPostureRoute = options.requireStockPostureRoute !== false;
+  assert(state.movementReviewShellCount === 1, "Movement Review shell count must be 1", { context, state });
+  assert(state.movementReviewState !== "loading", "Movement Review still shows loading state", { context, state });
+  assert(state.movementReviewCommandCount === 1, "Movement Review command header did not render once", { context, state });
+  assert(state.movementReviewIdentityChipCount >= 3, "Movement Review identity chips did not render", { context, state });
+  assert(state.movementReviewCommandFactCount >= 4, "Movement Review command facts did not render", { context, state });
+  assert(state.movementReviewGuardrailCount === 1, "Movement Review read-only guardrail did not render once", { context, state });
+  assert(state.movementReviewSummaryCardCount >= 4, "Movement Review summary cards did not render", { context, state });
+  assert(state.movementReviewPanelCount >= 2, "Movement Review panels did not render", { context, state });
+  assert(state.movementReviewFactCount >= 1 || state.movementReviewEmptyCount >= 1, "Movement Review facts or controlled fallback did not render", { context, state });
+  assert(state.movementReviewLineGroupCount >= 1, "Movement Review line group did not render", { context, state });
+  assert(state.movementReviewLineFactCount >= 4 || state.movementReviewEmptyCount >= 1, "Movement Review line facts or controlled fallback did not render", { context, state });
+  assert(state.movementReviewBackCount === 1, "Movement Review Back control should render once", { context, state });
+  assert(state.movementReviewRefreshCount === 1, "Movement Review Refresh control should render once", { context, state });
+  assert(state.frappePageHeadCount <= 1, "Frappe page chrome duplicated on Movement Review", { context, state });
+  if (ASSET_ROOT && requireStockPostureRoute) assert(state.movementReviewRouteStockPostureCount >= 1, "Source Movement Review stock posture route did not render", { context, state });
 }
 
 async function exerciseUser(browser, user) {
@@ -579,20 +666,52 @@ async function exerciseUser(browser, user) {
       assert(state.movementReviewPanelCount >= 2, "Movement review panels did not render", { user: user.key, state });
       assert(state.movementReviewLineGroupCount >= 1, "Movement review line groups did not render", { user: user.key, state });
       assert(state.movementReviewLineCount >= 1 || state.movementReviewEmptyCount >= 1, "Movement review lines or empty state did not render", { user: user.key, state });
+      if (EXPECT_W12I) assertW12IPolish(state, `${user.key}:movement-review-from-row`);
     }
 
     await openRoute(page, directMovementReviewParts, directMovementReviewPath, waitForMovementReview);
     state = await snapshot(page);
     assertClean(state, `${user.key}:movement-review-direct`);
     assert(state.movementReviewShellCount === 1, "Direct movement review shell count must be 1", { user: user.key, state });
+    if (EXPECT_W12I) {
+      assertW12IPolish(state, `${user.key}:movement-review-direct`);
+      diagnostics.snapshots.push({ name: `${user.key}:movement-review-desktop`, state, screenshot: await capture(page, `${user.key}-movement-review-desktop`) });
+
+      await page.setViewportSize({ width: 1240, height: 768 });
+      await waitForMovementReview(page);
+      state = await snapshot(page);
+      assertClean(state, `${user.key}:movement-review-laptop`);
+      assertW12IPolish(state, `${user.key}:movement-review-laptop`);
+      diagnostics.snapshots.push({ name: `${user.key}:movement-review-laptop`, state, screenshot: await capture(page, `${user.key}-movement-review-laptop`) });
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      const sidebarCollapsed = await collapseBodySidebarForNarrowViewport(page);
+      await waitForMovementReview(page);
+      state = await snapshot(page);
+      assert(sidebarCollapsed, "Mobile body sidebar was not collapsed for Movement Review evidence", { user: user.key, state });
+      assertClean(state, `${user.key}:movement-review-mobile`);
+      assertW12IPolish(state, `${user.key}:movement-review-mobile`);
+      diagnostics.snapshots.push({ name: `${user.key}:movement-review-mobile-collapsed-sidebar`, sidebarCollapsed, state, screenshot: await capture(page, `${user.key}-movement-review-mobile-collapsed-sidebar`) });
+
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await waitForMovementReview(page);
+    }
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForMovementReview(page);
-    assertClean(await snapshot(page), `${user.key}:movement-review-reload`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:movement-review-reload`);
+    if (EXPECT_W12I) assertW12IPolish(state, `${user.key}:movement-review-reload`);
 
+    const callsBeforeRepeat = movementReviewServiceCallCount(state);
     await openRoute(page, directMovementReviewParts, directMovementReviewPath, waitForMovementReview);
     await openRoute(page, directMovementReviewParts, directMovementReviewPath, waitForMovementReview);
-    assertClean(await snapshot(page), `${user.key}:movement-review-repeat`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:movement-review-repeat`);
+    if (EXPECT_W12I) {
+      assertW12IPolish(state, `${user.key}:movement-review-repeat`);
+      assert(movementReviewServiceCallCount(state) === callsBeforeRepeat, "Repeated same-token Movement Review route caused another service call", { user: user.key, before: callsBeforeRepeat, state });
+    }
 
     if (await page.locator("[data-warehouse-movement-review-route-stock-posture]").count()) {
       await page.locator("[data-warehouse-movement-review-route-stock-posture]").first().click();
@@ -604,9 +723,24 @@ async function exerciseUser(browser, user) {
       await waitForMovementReview(page);
     }
 
+    const callsBeforeRefresh = movementReviewServiceCallCount(await snapshot(page));
     await page.locator("[data-warehouse-movement-review-refresh]").click();
     await waitForMovementReview(page);
-    assertClean(await snapshot(page), `${user.key}:movement-review-refresh`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:movement-review-refresh`);
+    if (EXPECT_W12I) {
+      assertW12IPolish(state, `${user.key}:movement-review-refresh`);
+      assert(movementReviewServiceCallCount(state) > callsBeforeRefresh, "Movement Review Refresh did not force a service reload", { user: user.key, before: callsBeforeRefresh, state });
+
+      await openRoute(page, ["warehouse-console-movement", UNAVAILABLE_MOVEMENT_REVIEW_TOKEN], `/desk/warehouse-console-movement/${UNAVAILABLE_MOVEMENT_REVIEW_TOKEN}`, waitForMovementReview);
+      state = await snapshot(page);
+      assertClean(state, `${user.key}:movement-review-unavailable`);
+      assertW12IPolish(state, `${user.key}:movement-review-unavailable`, { requireStockPostureRoute: false });
+      assert(state.movementReviewState === "unavailable", "Unavailable Movement Review did not expose unavailable final state", { user: user.key, state });
+      assert(state.movementReviewEmptyCount >= 1, "Unavailable Movement Review did not show controlled fallback content", { user: user.key, state });
+      assert(state.movementReviewRouteStockPostureCount === 0, "Unavailable Movement Review should not expose stock posture drilldowns", { user: user.key, state });
+      diagnostics.snapshots.push({ name: `${user.key}:movement-review-unavailable`, state, screenshot: await capture(page, `${user.key}-movement-review-unavailable`) });
+    }
 
     await page.locator("[data-warehouse-movement-review-back]").click();
     await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-worklist\/movement-visibility/.test(url.pathname), { timeout: TIMEOUT });
@@ -659,7 +793,7 @@ async function main() {
     ],
   });
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
-  const summary = { ok: false, artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), users: [], diagnostics: [] };
+  const summary = { ok: false, artifactDir: ARTIFACT_DIR, phase: PHASE_LABEL, sourceOverride: Boolean(ASSET_ROOT), users: [], diagnostics: [] };
   try {
     for (const user of AUTHORIZED_USERS) {
       const diagnostics = await exerciseUser(browser, user);
@@ -681,12 +815,12 @@ async function main() {
     throw error;
   } finally {
     await browser.close();
-    const summaryPath = path.join(ARTIFACT_DIR, "warehouse-w8b-movement-review-summary.json");
+    const summaryPath = path.join(ARTIFACT_DIR, SUMMARY_FILE);
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
     if (summary.ok) {
-      console.log(`Warehouse W8B movement review smoke passed. Summary: ${summaryPath}`);
+      console.log(`${PHASE_LABEL} smoke passed. Summary: ${summaryPath}`);
     } else {
-      console.error(`Warehouse W8B movement review smoke failed. Summary: ${summaryPath}`);
+      console.error(`${PHASE_LABEL} smoke failed. Summary: ${summaryPath}`);
     }
   }
 }

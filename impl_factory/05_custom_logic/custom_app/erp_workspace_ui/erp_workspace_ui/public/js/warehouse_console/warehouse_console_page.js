@@ -1729,6 +1729,88 @@
       .warehouse-movement-guardrail {
         margin-top: 12px;
       }
+      .warehouse-movement-review-header {
+        background:
+          radial-gradient(circle at 92% 12%, rgba(41, 120, 95, 0.08), transparent 28%),
+          linear-gradient(135deg, #ffffff 0%, #f8fbfa 60%, #eef7f2 100%);
+      }
+      .warehouse-movement-review-command {
+        display: grid;
+        gap: 12px;
+        min-width: 0;
+      }
+      .warehouse-movement-review-eyebrow {
+        color: #376455;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-movement-review-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .warehouse-movement-review-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        min-width: 0;
+      }
+      .warehouse-movement-review-command-fact,
+      .warehouse-movement-review-line-fact {
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid rgba(220, 232, 226, 0.98);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+      .warehouse-movement-review-command-fact span,
+      .warehouse-movement-review-line-fact span {
+        display: block;
+        color: #667a71;
+        font-size: 10.5px;
+        font-weight: 780;
+        letter-spacing: 0.05em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-movement-review-command-fact strong,
+      .warehouse-movement-review-line-fact strong {
+        display: block;
+        margin-top: 6px;
+        color: #17231f;
+        font-size: 13px;
+        font-weight: 760;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+      }
+      .warehouse-movement-review-guardrail {
+        margin-top: 12px;
+      }
+      .warehouse-movement-review-line-card {
+        display: grid;
+        gap: 10px;
+        padding: 13px;
+        border: 1px solid rgba(228, 236, 232, 0.98);
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 10px 28px rgba(34, 56, 48, 0.04);
+      }
+      .warehouse-movement-review-line-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.65fr) minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+      .warehouse-movement-review-line-facts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(224, 233, 229, 0.96);
+      }
       .warehouse-receiving-strong {
         color: #263530;
         font-size: 13px;
@@ -1763,7 +1845,9 @@
         .warehouse-stock-posture-command-grid,
         .warehouse-stock-posture-recommended-grid,
         .warehouse-movement-command-grid,
-        .warehouse-movement-row-facts {
+        .warehouse-movement-row-facts,
+        .warehouse-movement-review-command-grid,
+        .warehouse-movement-review-line-facts {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .warehouse-cockpit-start-grid {
@@ -1801,6 +1885,9 @@
         .warehouse-movement-command-grid,
         .warehouse-movement-row-main,
         .warehouse-movement-row-facts,
+        .warehouse-movement-review-command-grid,
+        .warehouse-movement-review-line-main,
+        .warehouse-movement-review-line-facts,
         .warehouse-stock-exception-row-main,
         .warehouse-stock-exception-facts {
           grid-template-columns: minmax(0, 1fr);
@@ -1826,6 +1913,7 @@
         .warehouse-inbound-line,
         .warehouse-inbound-row-facts,
         .warehouse-movement-row-facts,
+        .warehouse-movement-review-line-facts,
         .warehouse-receiving-command-grid,
         .warehouse-receiving-readiness,
         .warehouse-receiving-line-facts {
@@ -5010,11 +5098,58 @@
     return parts.join(" - ");
   }
 
+  function movementReviewIdentityChips(header, payload, statePayload) {
+    return [
+      { key: "mode", label: "Read-only" },
+      { key: "movement", label: header.movement_id || "Movement not visible" },
+      { key: "posture", label: header.docstatus_label || statePayload.title || "Review posture" },
+      { key: "freshness", label: freshnessText(payload) },
+    ];
+  }
+
+  function movementReviewCardValue(card) {
+    if (!card || card.value == null || card.value === "") return "Not visible";
+    return String(card.value);
+  }
+
+  function movementReviewFallbackCards(header, cards, unavailable) {
+    if (Array.isArray(cards) && cards.length) return cards;
+    return [
+      { key: "movement", label: "Movement", value: header.movement_id || "Not visible", note: unavailable ? "Details not visible" : "Movement identity" },
+      { key: "posture", label: "Posture", value: header.docstatus_label || "Review", note: header.purpose || header.movement_type || "Movement posture" },
+      { key: "timing", label: "Posted", value: [header.posting_date, header.posting_time].filter(Boolean).join(" ") || "Not visible", note: "Posted movement timing" },
+      { key: "quantity", label: "Quantity", value: header.quantity_summary || "Not visible", note: `${header.item_count == null ? "0" : header.item_count} items shown` },
+    ];
+  }
+
+  function movementReviewCommandFacts(header, cards, unavailable) {
+    const safeCards = movementReviewFallbackCards(header, cards, unavailable);
+    const byKey = (keys) => {
+      const wanted = Array.isArray(keys) ? keys : [keys];
+      return safeCards.find((card) => wanted.includes(String(card && card.key || ""))) || {};
+    };
+    return [
+      { key: "reference", label: "Movement", value: header.movement_id || movementReviewCardValue(byKey("movement")) },
+      { key: "type", label: "Movement type", value: header.purpose || header.movement_type || movementReviewCardValue(byKey("posture")) },
+      { key: "posted", label: "Posted", value: [header.posting_date, header.posting_time].filter(Boolean).join(" ") || movementReviewCardValue(byKey("timing")) },
+      { key: "direction", label: "Direction", value: header.direction_label || "Details not visible" },
+    ];
+  }
+
+  function renderMovementReviewCommandFact(fact) {
+    return `
+      <div class="warehouse-movement-review-command-fact" data-warehouse-movement-review-command-fact="${escapeHtml(fact.key || "")}">
+        <span>${escapeHtml(fact.label || "")}</span>
+        <strong>${escapeHtml(fact.value || "Not visible")}</strong>
+      </div>
+    `;
+  }
+
   function renderMovementReviewCard(card) {
     return `
-      <div class="warehouse-receiving-card" data-warehouse-movement-review-card="${escapeHtml(card.key || "")}">
+      <div class="warehouse-receiving-card" data-warehouse-movement-review-card="${escapeHtml(card.key || "")}" data-warehouse-movement-review-summary-card>
         <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
-        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-value">${escapeHtml(movementReviewCardValue(card))}</div>
         <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
       </div>
     `;
@@ -5028,11 +5163,11 @@
         <div class="warehouse-inbound-meta">${escapeHtml(panel.summary || "")}</div>
         <div class="warehouse-stock-exception-panel-items">
           ${items.length ? items.map((item) => `
-            <div class="warehouse-stock-exception-panel-item">
+            <div class="warehouse-stock-exception-panel-item" data-warehouse-movement-review-fact="${escapeHtml(panelKey || "")}">
               <span>${escapeHtml(item.label || "")}</span>
               <strong>${escapeHtml(item.value || "")}</strong>
             </div>
-          `).join("") : `<div class="warehouse-inbound-meta" data-warehouse-movement-review-empty>No related posture visible.</div>`}
+          `).join("") : `<div class="warehouse-inbound-meta" data-warehouse-movement-review-empty>Details not visible for this section.</div>`}
         </div>
       </section>
     `;
@@ -5045,15 +5180,22 @@
       ? `<button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-route-stock-posture data-warehouse-stock-posture-token="${escapeHtml(token)}">Review stock posture</button>`
       : "";
     return `
-      <div class="warehouse-receiving-line" data-warehouse-movement-review-line="${escapeHtml(line.item_code || "")}">
-        <div>
-          <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "")}</div>
-          <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || "")}</div>
+      <div class="warehouse-receiving-line warehouse-movement-review-line-card" data-warehouse-movement-review-line="${escapeHtml(line.item_code || "")}">
+        <div class="warehouse-movement-review-line-main">
+          <div>
+            <div class="warehouse-receiving-strong">${escapeHtml(line.item_code || "Item not visible")}</div>
+            <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || "Item name not visible")}</div>
+          </div>
+          <div class="warehouse-receiving-meta">${escapeHtml(line.quantity || "0")} ${escapeHtml(line.stock_uom || "")}</div>
+          <div class="warehouse-receiving-meta">${escapeHtml(line.direction_label || "Warehouse direction not visible")}</div>
+          <div class="warehouse-receiving-actions">${postureButton}</div>
         </div>
-        <div class="warehouse-receiving-meta">${escapeHtml(line.quantity || "0")} ${escapeHtml(line.stock_uom || "")}</div>
-        <div class="warehouse-receiving-meta">${escapeHtml(line.direction_label || "")}</div>
-        <div class="warehouse-receiving-meta">${escapeHtml(line.line_note || "")}</div>
-        <div class="warehouse-receiving-actions">${postureButton}</div>
+        <div class="warehouse-movement-review-line-facts" data-warehouse-movement-review-line-facts>
+          <div class="warehouse-movement-review-line-fact" data-warehouse-movement-review-line-fact="source"><span>Source</span><strong>${escapeHtml(line.source_warehouse || "Not visible")}</strong></div>
+          <div class="warehouse-movement-review-line-fact" data-warehouse-movement-review-line-fact="target"><span>Target</span><strong>${escapeHtml(line.target_warehouse || "Not visible")}</strong></div>
+          <div class="warehouse-movement-review-line-fact" data-warehouse-movement-review-line-fact="quantity"><span>Quantity</span><strong>${escapeHtml(line.quantity || "0")} ${escapeHtml(line.stock_uom || "")}</strong></div>
+          <div class="warehouse-movement-review-line-fact" data-warehouse-movement-review-line-fact="state"><span>Review state</span><strong>${escapeHtml(line.line_note || "Details not visible")}</strong></div>
+        </div>
       </div>
     `;
   }
@@ -5114,23 +5256,32 @@
     const backQueueKey = normalizeQueueKey(backTarget.queue_key || "");
     const backLabel = backQueueKey === TRANSFER_VISIBILITY_KEY ? "Back to transfer visibility" : "Back to movement visibility";
     const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const safeCards = movementReviewFallbackCards(header, cards, unavailable);
+    const identityChips = movementReviewIdentityChips(header, payload, statePayload);
+    const commandFacts = movementReviewCommandFacts(header, safeCards, unavailable);
     const $root = $(`
-      <div class="sales-console-shell warehouse-receiving-shell warehouse-movement-review-shell" data-erpw-workspace="warehouse" data-warehouse-view="movement-review" data-erpw-console-runtime="ready" data-warehouse-movement-review-shell="true" data-warehouse-movement-review-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
-        <section class="warehouse-receiving-header">
+      <div class="sales-console-shell warehouse-receiving-shell warehouse-movement-review-shell" data-erpw-workspace="warehouse" data-warehouse-view="movement-review" data-erpw-console-runtime="ready" data-warehouse-movement-review-shell="true" data-warehouse-movement-review-state="${escapeHtml(statePayload.kind || "ready")}" data-warehouse-movement-review-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
+        <section class="warehouse-receiving-header warehouse-movement-review-header" data-warehouse-movement-review-command>
           <div class="warehouse-receiving-head">
-            <div>
+            <div class="warehouse-movement-review-command">
+              <div class="warehouse-movement-review-eyebrow">Movement Review</div>
               <h1 class="warehouse-receiving-title">Movement Review</h1>
-              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Movement review could not be loaded. Refresh or contact an administrator." : movementSummaryText(header))}</div>
+              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Movement review could not be loaded. Refresh or contact an administrator." : movementSummaryText(header) || "Read-only posted movement context.")}</div>
+              <div class="warehouse-movement-review-chip-row">${identityChips.map((chip) => `<span class="warehouse-inbound-chip ${chip.key === "mode" ? "is-read-only" : ""}" data-warehouse-movement-review-identity-chip="${escapeHtml(chip.key)}">${escapeHtml(chip.label)}</span>`).join("")}</div>
             </div>
             <div class="warehouse-receiving-actions">
               <button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-back data-warehouse-movement-review-back-route="${escapeHtml(backTarget.route || "")}" data-warehouse-movement-review-back-queue="${escapeHtml(backTarget.queue_key || "")}">${escapeHtml(backLabel)}</button>
               <button type="button" class="warehouse-receiving-button" data-warehouse-movement-review-refresh>Refresh</button>
             </div>
           </div>
-          ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-movement-review-empty>${escapeHtml(statePayload.title || "Movement review unavailable")}</div>` : `
-            <div class="warehouse-receiving-note"><span class="warehouse-inbound-badge">${escapeHtml(header.docstatus_label || "Posted")}</span> ${escapeHtml(header.direction_label || "")}</div>
-            <div class="warehouse-receiving-cards">${cards.map(renderMovementReviewCard).join("")}</div>
-          `}
+          <div class="warehouse-movement-review-command-grid" data-warehouse-movement-review-command-grid>${commandFacts.map(renderMovementReviewCommandFact).join("")}</div>
+          <div class="warehouse-receiving-note"><span class="warehouse-inbound-badge">${escapeHtml(header.docstatus_label || statePayload.title || "Review")}</span> ${escapeHtml(header.direction_label || (unavailable ? "Details not visible" : ""))}</div>
+          <div class="warehouse-receiving-cards" data-warehouse-movement-review-summary>${safeCards.map(renderMovementReviewCard).join("")}</div>
+          <section class="warehouse-receiving-guardrail warehouse-movement-review-guardrail" data-warehouse-movement-review-guardrail>
+            <strong>Read-only movement review</strong>
+            <span>No stock is transferred, reconciled, adjusted, posted, reserved, picked, received, shipped, or delivered from this page.</span>
+          </section>
+          ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-movement-review-empty>${escapeHtml(statePayload.title || "Movement review unavailable")}</div>` : ""}
         </section>
         <section class="warehouse-stock-exception-review-grid">
           ${renderMovementReviewPanel(panels.direction || {}, "direction")}
@@ -5160,7 +5311,7 @@
     });
     $root.find("[data-warehouse-movement-review-refresh]").on("click", (event) => {
       event.preventDefault();
-      loadMovementReview(viewState, viewState.contextToken);
+      loadMovementReview(viewState, viewState.contextToken, { force: true });
     });
     $root.find("[data-warehouse-movement-review-route-stock-posture], [data-warehouse-movement-review-related-row]").on("click", function (event) {
       event.preventDefault();
@@ -5184,17 +5335,65 @@
     });
   }
 
-  function loadMovementReview(viewState, contextToken) {
+  function movementReviewLoadSignature(contextToken) {
+    return `movement-review:${String(contextToken || "").trim()}`;
+  }
+
+  function hasRenderedMovementReviewShell(viewState, contextToken) {
+    if (!viewState || !viewState.$host || !viewState.$host.length) return false;
+    const shell = viewState.$host.find('[data-warehouse-movement-review-shell="true"][data-warehouse-view="movement-review"]').get(0);
+    if (!shell) return false;
+    const token = String(contextToken || "").trim();
+    return !token || String(shell.getAttribute("data-warehouse-movement-review-token") || "").trim() === token;
+  }
+
+  function loadMovementReview(viewState, contextToken, options) {
+    const token = String(contextToken || movementTokenFromRoute() || "").trim();
+    const force = Boolean(options && options.force);
+    const signature = movementReviewLoadSignature(token);
+    if (!force && viewState.loadingPromise && viewState.loadingSignature === signature) {
+      markWarehouseDiagnostic("movementReviewDuplicateLoadReused");
+      return viewState.loadingPromise;
+    }
+    if (!force && viewState.loadedSignature === signature && hasRenderedMovementReviewShell(viewState, token)) {
+      markWarehouseDiagnostic("movementReviewDuplicateRenderSkipped");
+      return Promise.resolve(viewState.lastPayload || {});
+    }
+
     markWarehouseDiagnostic("movementReviewServiceCallAttempted");
-    viewState.contextToken = contextToken || movementTokenFromRoute();
+    viewState.contextToken = token;
+    const requestToken = (viewState.requestSerial || 0) + 1;
+    viewState.requestSerial = requestToken;
+    viewState.loadingSignature = signature;
+    viewState.loadedSignature = "";
     renderMovementReviewLoading(viewState);
-    return frappe.call({
+
+    const finishRequest = (payload) => {
+      const currentToken = movementTokenFromRoute();
+      const shouldRender = (
+        viewState.requestSerial === requestToken
+        && viewState.loadingSignature === signature
+        && isActiveMovementRoute()
+        && String(currentToken || "").trim() === token
+      );
+      if (viewState.requestSerial === requestToken && viewState.loadingSignature === signature) {
+        viewState.loadingPromise = null;
+        viewState.loadingSignature = "";
+      }
+      if (!shouldRender) {
+        markWarehouseDiagnostic("movementReviewStaleResponseIgnored");
+        return payload;
+      }
+      viewState.loadedSignature = signature;
+      viewState.lastPayload = payload;
+      renderMovementReviewPayload(viewState, payload);
+      return payload;
+    };
+
+    const requestPromise = frappe.call({
       method: MOVEMENT_REVIEW_METHOD,
       args: { context: viewState.contextToken },
-    }).then((response) => {
-      renderMovementReviewPayload(viewState, response && response.message ? response.message : {});
-    }).catch(() => {
-      renderMovementReviewPayload(viewState, {
+    }).then((response) => finishRequest(response && response.message ? response.message : {})).catch(() => finishRequest({
         state: { kind: "error", title: "Movement review unavailable", detail: "Movement review could not be loaded. Refresh or contact an administrator." },
         header: { context_token: viewState.contextToken || "" },
         summary_cards: [],
@@ -5204,17 +5403,23 @@
         },
         line_groups: [],
         related_routes: [],
-      });
-    });
+      }));
+    viewState.loadingPromise = requestPromise;
+    return requestPromise;
   }
 
   function renderMovementReview(wrapper, contextToken) {
     markWarehouseDiagnostic("renderMovementReviewEntered");
+    const token = String(contextToken || movementTokenFromRoute() || "").trim();
+    if (isActiveMovementRoute() && hasReadyMovementReviewShell()) {
+      markWarehouseDiagnostic("movementReviewDuplicateRenderSkipped");
+      return;
+    }
     const viewState = makeMovementPage(wrapper);
     if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
       window.erpWorkspaceConsoleSidebar.refresh();
     }
-    loadMovementReview(viewState, contextToken || movementTokenFromRoute());
+    loadMovementReview(viewState, token);
   }
 
   function makeInboundPage(wrapper) {

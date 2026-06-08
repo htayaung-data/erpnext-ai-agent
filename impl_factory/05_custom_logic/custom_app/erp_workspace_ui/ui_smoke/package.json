@@ -98,7 +98,9 @@
     "test:warehouse-w12g-stock-posture-polish": "node warehouse_phase_w12g_stock_posture_polish_smoke.js",
     "test:warehouse-w12g-stock-posture-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12g-stock-posture-polish",
     "test:warehouse-w12h-movement-visibility-polish": "node warehouse_phase_w12h_movement_visibility_polish_smoke.js",
-    "test:warehouse-w12h-movement-visibility-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12h-movement-visibility-polish"
+    "test:warehouse-w12h-movement-visibility-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12h-movement-visibility-polish",
+    "test:warehouse-w12i-movement-review-polish": "node warehouse_phase_w12i_movement_review_polish_smoke.js",
+    "test:warehouse-w12i-movement-review-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12i-movement-review-polish"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"
