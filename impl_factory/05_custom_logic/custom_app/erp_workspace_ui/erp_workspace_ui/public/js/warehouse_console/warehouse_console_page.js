@@ -1811,6 +1811,89 @@
         padding-top: 8px;
         border-top: 1px solid rgba(224, 233, 229, 0.96);
       }
+      .warehouse-transfer-command-header {
+        background:
+          radial-gradient(circle at 94% 10%, rgba(41, 120, 95, 0.08), transparent 28%),
+          linear-gradient(135deg, #ffffff 0%, #f8fbfa 60%, #eef7f2 100%);
+      }
+      .warehouse-transfer-command {
+        display: grid;
+        gap: 12px;
+        min-width: 0;
+      }
+      .warehouse-transfer-eyebrow {
+        color: #376455;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-transfer-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .warehouse-transfer-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        min-width: 0;
+      }
+      .warehouse-transfer-command-fact,
+      .warehouse-transfer-row-fact {
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid rgba(220, 232, 226, 0.98);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+      .warehouse-transfer-command-fact span,
+      .warehouse-transfer-row-fact span {
+        display: block;
+        color: #667a71;
+        font-size: 10.5px;
+        font-weight: 780;
+        letter-spacing: 0.05em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .warehouse-transfer-command-fact strong,
+      .warehouse-transfer-row-fact strong {
+        display: block;
+        margin-top: 6px;
+        color: #17231f;
+        font-size: 13px;
+        font-weight: 760;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+      }
+      .warehouse-transfer-row {
+        background: #ffffff;
+        box-shadow: 0 10px 28px rgba(34, 56, 48, 0.04);
+      }
+      .warehouse-transfer-row-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.75fr) minmax(0, 1.1fr) minmax(0, 0.75fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+      .warehouse-transfer-row-facts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(224, 233, 229, 0.96);
+      }
+      .warehouse-transfer-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .warehouse-transfer-guardrail {
+        margin-top: 12px;
+      }
       .warehouse-receiving-strong {
         color: #263530;
         font-size: 13px;
@@ -1847,7 +1930,9 @@
         .warehouse-movement-command-grid,
         .warehouse-movement-row-facts,
         .warehouse-movement-review-command-grid,
-        .warehouse-movement-review-line-facts {
+        .warehouse-movement-review-line-facts,
+        .warehouse-transfer-command-grid,
+        .warehouse-transfer-row-facts {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .warehouse-cockpit-start-grid {
@@ -1888,6 +1973,9 @@
         .warehouse-movement-review-command-grid,
         .warehouse-movement-review-line-main,
         .warehouse-movement-review-line-facts,
+        .warehouse-transfer-command-grid,
+        .warehouse-transfer-row-main,
+        .warehouse-transfer-row-facts,
         .warehouse-stock-exception-row-main,
         .warehouse-stock-exception-facts {
           grid-template-columns: minmax(0, 1fr);
@@ -1914,6 +2002,7 @@
         .warehouse-inbound-row-facts,
         .warehouse-movement-row-facts,
         .warehouse-movement-review-line-facts,
+        .warehouse-transfer-row-facts,
         .warehouse-receiving-command-grid,
         .warehouse-receiving-readiness,
         .warehouse-receiving-line-facts {
@@ -3431,9 +3520,55 @@
     replaceWarehouseRouteHost(viewState, $root);
   }
 
+  function transferCardByKey(cards, keys) {
+    const wanted = Array.isArray(keys) ? keys : [keys];
+    return (Array.isArray(cards) ? cards : []).find((card) => wanted.includes(String(card && card.key || ""))) || {};
+  }
+
+  function transferCardDisplay(cards, keys, fallback) {
+    const card = transferCardByKey(cards, keys);
+    const value = card && Object.prototype.hasOwnProperty.call(card, "value") ? cardValue(card) : "";
+    return value ? value : fallback;
+  }
+
+  function transferCommandChips(payload) {
+    const summary = payload && payload.summary ? payload.summary : {};
+    const chips = Array.isArray(summary.chips) ? summary.chips.map((chip) => chip && chip.label ? chip.label : chip).filter(Boolean) : [];
+    return ["Read-only", "Transfer posture", freshnessText(payload), ...chips.filter((chip) => !/^read-only$/i.test(String(chip)))].slice(0, 5);
+  }
+
+  function transferFallbackCards(cards, statePayload, rows) {
+    if (Array.isArray(cards) && cards.length) return cards;
+    const rowCount = Array.isArray(rows) ? rows.length : 0;
+    return [
+      { key: "needs_review", label: "Needs Review", value: statePayload && statePayload.kind === "loading" ? "Checking" : "0", note: "Missing or mixed warehouse posture." },
+      { key: "direct_transfers", label: "Direct Transfers", value: rowCount ? rowCount : "Not visible", note: "Clear source and target warehouse posture." },
+      { key: "recently_posted", label: "Recently Posted", value: rowCount, note: "Submitted transfer records in this window." },
+      { key: "transfer_quantity", label: "Transfer Quantity", value: "Not visible", note: "Operational quantity summary." },
+    ];
+  }
+
+  function transferCommandFacts(payload, cards, rows) {
+    return [
+      { key: "needs_review", label: "Needs review", value: transferCardDisplay(cards, ["needs_review"], "0") },
+      { key: "direct", label: "Direct transfers", value: transferCardDisplay(cards, ["direct_transfers"], "Not visible") },
+      { key: "transit", label: "Transit related", value: transferCardDisplay(cards, ["transit_related"], "Not visible") },
+      { key: "posted", label: "Recently posted", value: transferCardDisplay(cards, ["recently_posted", "total_transfers"], Array.isArray(rows) ? String(rows.length) : "Not visible") },
+    ];
+  }
+
+  function renderTransferCommandFact(fact) {
+    return `
+      <div class="warehouse-transfer-command-fact" data-warehouse-transfer-command-fact="${escapeHtml(fact.key || "")}">
+        <span>${escapeHtml(fact.label || "")}</span>
+        <strong>${escapeHtml(fact.value || "Not visible")}</strong>
+      </div>
+    `;
+  }
+
   function renderTransferCard(card) {
     return `
-      <div class="warehouse-inbound-queue-card" data-warehouse-transfer-card="${escapeHtml(card.key || "")}">
+      <div class="warehouse-inbound-queue-card" data-warehouse-transfer-card="${escapeHtml(card.key || "")}" data-warehouse-transfer-summary-card>
         <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
         <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
         <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
@@ -3498,7 +3633,7 @@
       : "";
     return `
       <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-transfer-row" data-warehouse-transfer-row="${escapeHtml(row.transfer_id || row.key || "")}">
-        <div class="warehouse-stock-exception-row-main">
+        <div class="warehouse-transfer-row-main" data-warehouse-transfer-row-main>
           <div>
             <div class="warehouse-inbound-order">${escapeHtml(row.transfer_id || "")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(row.posting_date || "")} ${escapeHtml(row.posting_time || "")}</div>
@@ -3512,11 +3647,17 @@
             <div class="warehouse-inbound-order">${escapeHtml(row.quantity_summary || "")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(transferItemCountLabel(row.item_count))}</div>
           </div>
-          <div class="warehouse-receiving-actions">
+          <div class="warehouse-transfer-actions" data-warehouse-transfer-actions>
             ${reviewButton}
             ${postureButton}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
+        </div>
+        <div class="warehouse-transfer-row-facts" data-warehouse-transfer-row-facts>
+          <div class="warehouse-transfer-row-fact" data-warehouse-transfer-row-fact="source"><span>Source</span><strong>${escapeHtml(row.source_warehouse || "Not visible")}</strong></div>
+          <div class="warehouse-transfer-row-fact" data-warehouse-transfer-row-fact="target"><span>Target</span><strong>${escapeHtml(row.target_warehouse || "Not visible")}</strong></div>
+          <div class="warehouse-transfer-row-fact" data-warehouse-transfer-row-fact="quantity"><span>Quantity</span><strong>${escapeHtml(row.quantity_summary || "Not visible")}</strong></div>
+          <div class="warehouse-transfer-row-fact" data-warehouse-transfer-row-fact="state"><span>Review state</span><strong>${escapeHtml(row.posture || row.group_label || "Transfer posture")}</strong></div>
         </div>
         <div class="warehouse-inbound-lines">
           ${items.length ? items.map(renderTransferSampleItem).join("") : `<div class="warehouse-inbound-line" data-warehouse-transfer-empty><span>No item summary visible for this transfer record.</span></div>`}
@@ -3546,19 +3687,30 @@
     const fields = Array.isArray(controls.fields) ? controls.fields : [];
     const cards = Array.isArray(payload.cards) ? payload.cards : [];
     const groups = Array.isArray(payload.groups) ? payload.groups : [];
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
     const statePayload = payload.state || {};
     const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
+    const safeCards = transferFallbackCards(cards, statePayload, rows);
+    const commandChips = transferCommandChips(payload);
+    const commandFacts = transferCommandFacts(payload, safeCards, rows);
     const $root = $(`
-      <div class="sales-console-shell warehouse-inbound-shell warehouse-transfer-shell" data-erpw-workspace="warehouse" data-warehouse-view="transfer-visibility" data-warehouse-queue-key="${TRANSFER_VISIBILITY_KEY}" data-warehouse-transfer-shell="true" data-erpw-console-runtime="ready">
-        <section class="warehouse-inbound-queue-header">
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-transfer-shell" data-erpw-workspace="warehouse" data-warehouse-view="transfer-visibility" data-warehouse-queue-key="${TRANSFER_VISIBILITY_KEY}" data-warehouse-transfer-shell="true" data-warehouse-transfer-state="${escapeHtml(statePayload.kind || "ready")}" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header warehouse-transfer-command-header" data-warehouse-transfer-command>
           <div class="warehouse-inbound-queue-head">
-            <div>
+            <div class="warehouse-transfer-command">
+              <div class="warehouse-transfer-eyebrow">Transfer Visibility</div>
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Transfer Visibility")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Read-only warehouse-to-warehouse transfer posture.")}</div>
+              <div class="warehouse-transfer-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-transfer-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
             </div>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
           </div>
-          <div class="warehouse-inbound-queue-cards">${cards.map(renderTransferCard).join("")}</div>
+          <div class="warehouse-transfer-command-grid" data-warehouse-transfer-command-grid>${commandFacts.map(renderTransferCommandFact).join("")}</div>
+          <div class="warehouse-inbound-queue-cards">${safeCards.map(renderTransferCard).join("")}</div>
+          <section class="warehouse-receiving-guardrail warehouse-transfer-guardrail" data-warehouse-transfer-guardrail>
+            <strong>Read-only transfer visibility</strong>
+            <span>No stock is transferred, reconciled, adjusted, posted, reserved, picked, received, shipped, or delivered from this queue.</span>
+          </section>
           <div class="warehouse-inbound-controls">
             ${fields.map(controlField).join("")}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>

@@ -3,12 +3,15 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W8C_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W8C_ARTIFACT_DIR || path.join(
+const EXPECT_W12J = process.env.ERPW_WAREHOUSE_W8C_EXPECT_W12J === "1" || Boolean(process.env.ERPW_WAREHOUSE_W12J_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12J_ARTIFACT_DIR);
+const TIMEOUT = Number((EXPECT_W12J && process.env.ERPW_WAREHOUSE_W12J_TIMEOUT) || process.env.ERPW_WAREHOUSE_W8C_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W8C_ARTIFACT_DIR || (EXPECT_W12J ? process.env.ERPW_WAREHOUSE_W12J_ARTIFACT_DIR : "") || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w8c-transfer-visibility-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `${EXPECT_W12J ? "warehouse-w12j-transfer-visibility-polish" : "warehouse-w8c-transfer-visibility"}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W8C_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W8C_ASSET_ROOT || (EXPECT_W12J ? process.env.ERPW_WAREHOUSE_W12J_ASSET_ROOT : "") || "";
+const SUMMARY_FILE = process.env.ERPW_WAREHOUSE_W8C_SUMMARY_NAME || (EXPECT_W12J ? "warehouse-w12j-transfer-visibility-polish-summary.json" : "warehouse-w8c-transfer-visibility-summary.json");
+const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W8C_PHASE_LABEL || (EXPECT_W12J ? "Warehouse W12J transfer visibility polish" : "Warehouse W8C transfer visibility");
 const MOVEMENT_TOKEN = Buffer.from(JSON.stringify({ movement_id: "MAT-MOV-0001", return_route: { route: "warehouse-console-worklist", queue_key: "transfer_visibility" } })).toString("hex");
 const STOCK_POSTURE_TOKEN = Buffer.from(JSON.stringify({
   item_code: "ITEM-103",
@@ -19,6 +22,7 @@ const STOCK_POSTURE_TOKEN = Buffer.from(JSON.stringify({
 })).toString("hex");
 const RESPONSIVE_VIEWPORTS = [
   { key: "desktop-1440", width: 1440, height: 900 },
+  { key: "laptop-1240", width: 1240, height: 768 },
   { key: "laptop-1136", width: 1136, height: 768 },
   { key: "mobile-390", width: 390, height: 844 },
 ];
@@ -374,7 +378,8 @@ async function waitForOverview(page) {
 async function waitForTransfer(page) {
   await page.waitForFunction(() => {
     const shell = document.querySelector('[data-warehouse-transfer-shell="true"][data-warehouse-view="transfer-visibility"]');
-    return Boolean(shell && shell.querySelector("[data-warehouse-transfer-card]") && (shell.querySelector("[data-warehouse-transfer-row]") || shell.querySelector("[data-warehouse-transfer-empty]")));
+    const state = shell ? String(shell.getAttribute("data-warehouse-transfer-state") || "") : "";
+    return Boolean(shell && state !== "loading" && shell.querySelector("[data-warehouse-transfer-card]") && (shell.querySelector("[data-warehouse-transfer-row]") || shell.querySelector("[data-warehouse-transfer-empty]")));
   }, null, { timeout: TIMEOUT });
 }
 
@@ -384,6 +389,22 @@ async function waitForMovementReview(page) {
 
 async function waitForStockPosture(page) {
   await page.waitForFunction(() => Boolean(document.querySelector('[data-warehouse-stock-posture-shell="true"][data-warehouse-view="stock-posture-review"] [data-warehouse-stock-posture-panel="stock"]')), null, { timeout: TIMEOUT });
+}
+
+async function collapseBodySidebarForNarrowViewport(page) {
+  const viewport = page.viewportSize();
+  if (!viewport || viewport.width > 520) return true;
+  const collapsed = await page.evaluate(() => {
+    const expandedSidebar = document.querySelector(".body-sidebar-container.expanded");
+    if (!expandedSidebar) return true;
+    const controls = Array.from(expandedSidebar.querySelectorAll("button, a, [role='button'], [tabindex]"));
+    const collapseControl = controls.find((node) => /\bCollapse\b/i.test((node.innerText || node.getAttribute("aria-label") || "").trim()));
+    if (collapseControl && typeof collapseControl.click === "function") collapseControl.click();
+    return false;
+  });
+  if (collapsed) return true;
+  await page.waitForTimeout(250);
+  return page.evaluate(() => !document.querySelector(".body-sidebar-container.expanded"));
 }
 
 async function openRoute(page, parts, pathName, wait) {
@@ -419,12 +440,24 @@ async function snapshot(page) {
       pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       headerCount: Array.from(document.querySelectorAll(".warehouse-console-header, .warehouse-inbound-queue-header, .warehouse-receiving-header")).filter(visible).length,
       transferShellCount: Array.from(document.querySelectorAll('[data-warehouse-transfer-shell="true"][data-warehouse-view="transfer-visibility"]')).filter(visible).length,
+      transferState: document.querySelector('[data-warehouse-transfer-shell="true"][data-warehouse-view="transfer-visibility"]') ? document.querySelector('[data-warehouse-transfer-shell="true"][data-warehouse-view="transfer-visibility"]').getAttribute("data-warehouse-transfer-state") || "" : "",
+      transferCommandCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-command]")).filter(visible).length,
+      transferCommandChipCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-command-chip]")).filter(visible).length,
+      transferCommandFactCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-command-fact]")).filter(visible).length,
+      transferGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-guardrail]")).filter(visible).length,
       transferCardCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-card]")).filter(visible).length,
+      transferSummaryCardCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-summary-card]")).filter(visible).length,
       transferGroupCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-group]")).filter(visible).length,
       transferRowCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-row]")).filter(visible).length,
+      transferRowFactCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-row-fact]")).filter(visible).length,
       transferEmptyCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-empty]")).filter(visible).length,
       transferRouteStockPostureCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-route-stock-posture]")).filter(visible).length,
       transferRouteMovementCount: Array.from(document.querySelectorAll("[data-warehouse-transfer-route-movement]")).filter(visible).length,
+      transferOpenWarehouseCount: Array.from(document.querySelectorAll("[data-warehouse-back-overview]")).filter(visible).length,
+      transferApplyCount: Array.from(document.querySelectorAll("[data-warehouse-filter-apply]")).filter(visible).length,
+      transferResetCount: Array.from(document.querySelectorAll("[data-warehouse-filter-reset]")).filter(visible).length,
+      transferRefreshCount: Array.from(document.querySelectorAll("[data-warehouse-filter-refresh]")).filter(visible).length,
+      transferDetailToggleCount: Array.from(document.querySelectorAll("[data-warehouse-row-toggle]")).filter(visible).length,
       stockPostureShellCount: Array.from(document.querySelectorAll('[data-warehouse-stock-posture-shell="true"][data-warehouse-view="stock-posture-review"]')).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
@@ -444,6 +477,27 @@ function assertClean(state, context) {
   assert(!FORBIDDEN_COPY_RE.test(state.text), "Developer or governance copy is visible", { context, state });
   assert(!VALUATION_RE.test(state.text), "Valuation, accounting, or commercial text is visible", { context, state });
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Native route target is visible", { context, state });
+}
+
+function assertW12JPolish(state, context) {
+  assert(state.transferShellCount === 1, "Transfer shell count must be 1", { context, state });
+  assert(state.transferState !== "loading", "Transfer Visibility still shows loading state", { context, state });
+  assert(state.transferCommandCount === 1, "Transfer command header did not render once", { context, state });
+  assert(state.transferCommandChipCount >= 3, "Transfer command chips did not render", { context, state });
+  assert(state.transferCommandFactCount >= 4, "Transfer command facts did not render", { context, state });
+  assert(state.transferGuardrailCount === 1, "Transfer read-only guardrail did not render once", { context, state });
+  assert(state.transferSummaryCardCount >= 4, "Transfer summary cards did not render", { context, state });
+  assert(state.transferGroupCount >= 4, "Transfer groups did not render", { context, state });
+  assert(state.transferRowFactCount >= 4 || state.transferEmptyCount >= 1, "Transfer row facts or controlled empty state did not render", { context, state });
+  assert(state.transferOpenWarehouseCount === 1, "Open Warehouse page control should render once", { context, state });
+  assert(state.transferApplyCount === 1, "Transfer Apply control should render once", { context, state });
+  assert(state.transferResetCount === 1, "Transfer Reset control should render once", { context, state });
+  assert(state.transferRefreshCount === 1, "Transfer Refresh control should render once", { context, state });
+  assert(state.transferDetailToggleCount >= 1 || state.transferEmptyCount >= 1, "Transfer row expansion or empty state did not render", { context, state });
+  if (ASSET_ROOT) {
+    assert(state.transferRouteMovementCount >= 1, "Source transfer movement route did not render", { context, state });
+    assert(state.transferRouteStockPostureCount >= 1, "Source transfer stock posture route did not render", { context, state });
+  }
 }
 
 async function exerciseUser(browser, user) {
@@ -478,43 +532,57 @@ async function exerciseUser(browser, user) {
     assert(state.transferCardCount >= 4, "Transfer summary cards did not render", { user: user.key, state });
     assert(state.transferGroupCount >= 4, "Transfer groups did not render", { user: user.key, state });
     assert(state.transferRowCount >= 1 || state.transferEmptyCount >= 1, "Transfer rows or empty state did not render", { user: user.key, state });
+    if (EXPECT_W12J) assertW12JPolish(state, `${user.key}:transfer`);
     diagnostics.snapshots.push({ name: `${user.key}:transfer-initial-1440`, state, screenshot: await capture(page, `${user.key}-transfer-initial-1440`) });
 
     for (const viewport of RESPONSIVE_VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      const sidebarCollapsed = await collapseBodySidebarForNarrowViewport(page);
       await waitForTransfer(page);
       const responsiveState = await snapshot(page);
+      if (viewport.width <= 520) assert(sidebarCollapsed, "Mobile body sidebar was not collapsed for Transfer Visibility evidence", { user: user.key, viewport, state: responsiveState });
       assertClean(responsiveState, `${user.key}:transfer-${viewport.key}`);
-      diagnostics.snapshots.push({ name: `${user.key}:transfer-${viewport.key}`, state: responsiveState, screenshot: await capture(page, `${user.key}-transfer-${viewport.key}`) });
+      if (EXPECT_W12J) assertW12JPolish(responsiveState, `${user.key}:transfer-${viewport.key}`);
+      diagnostics.snapshots.push({ name: `${user.key}:transfer-${viewport.key}`, sidebarCollapsed, state: responsiveState, screenshot: await capture(page, `${user.key}-transfer-${viewport.key}`) });
     }
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForTransfer(page);
-    assertClean(await snapshot(page), `${user.key}:transfer-reload`);
+    state = await snapshot(page);
+    assertClean(state, `${user.key}:transfer-reload`);
+    if (EXPECT_W12J) assertW12JPolish(state, `${user.key}:transfer-reload`);
 
     const repeatBaseline = overrideHitCount(diagnostics, "warehouse-transfer-visibility");
     await openRoute(page, ["warehouse-console-worklist", "transfer-visibility"], "/desk/warehouse-console-worklist/transfer-visibility", waitForTransfer);
     await openRoute(page, ["warehouse-console-worklist", "transfer-visibility"], "/desk/warehouse-console-worklist/transfer-visibility", waitForTransfer);
     state = await snapshot(page);
     assertClean(state, `${user.key}:transfer-repeat`);
+    if (EXPECT_W12J) assertW12JPolish(state, `${user.key}:transfer-repeat`);
     if (ASSET_ROOT) assert(overrideHitCount(diagnostics, "warehouse-transfer-visibility") === repeatBaseline, "Repeated transfer route navigation made an unnecessary service call", { user: user.key, before: repeatBaseline, after: overrideHitCount(diagnostics, "warehouse-transfer-visibility"), state });
 
     const filterCount = await page.locator("[data-warehouse-filter-key]").count();
     if (filterCount >= 1) {
+      const forcedBaseline = overrideHitCount(diagnostics, "warehouse-transfer-visibility");
       await page.locator("[data-warehouse-filter-apply]").click();
       await waitForTransfer(page);
       await page.locator("[data-warehouse-filter-reset]").click();
       await waitForTransfer(page);
       await page.locator("[data-warehouse-filter-refresh]").click();
       await waitForTransfer(page);
-      assertClean(await snapshot(page), `${user.key}:transfer-filters`);
+      state = await snapshot(page);
+      assertClean(state, `${user.key}:transfer-filters`);
+      if (EXPECT_W12J) {
+        assertW12JPolish(state, `${user.key}:transfer-filters`);
+        if (ASSET_ROOT) assert(overrideHitCount(diagnostics, "warehouse-transfer-visibility") > forcedBaseline, "Apply/Reset/Refresh did not force transfer visibility reload", { user: user.key, before: forcedBaseline, after: overrideHitCount(diagnostics, "warehouse-transfer-visibility"), state });
+      }
     }
 
     const lineToggleCount = await page.locator("[data-warehouse-row-toggle]").count();
     if (lineToggleCount >= 1) {
       await page.locator("[data-warehouse-row-toggle]").first().click();
       state = await snapshot(page);
+      if (EXPECT_W12J) assertW12JPolish(state, `${user.key}:transfer-expanded`);
       if (ASSET_ROOT) assert(state.transferRouteMovementCount >= 1, "Source transfer movement route did not render", { user: user.key, state });
       if (state.transferRouteMovementCount >= 1) {
         await page.locator("[data-warehouse-transfer-route-movement]").first().click();
@@ -560,7 +628,7 @@ async function main() {
     ],
   });
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
-  const summary = { ok: false, artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), users: [], diagnostics: [] };
+  const summary = { ok: false, artifactDir: ARTIFACT_DIR, phase: PHASE_LABEL, sourceOverride: Boolean(ASSET_ROOT), users: [], diagnostics: [] };
   try {
     for (const user of AUTHORIZED_USERS) {
       const diagnostics = await exerciseUser(browser, user);
@@ -582,12 +650,12 @@ async function main() {
     throw error;
   } finally {
     await browser.close();
-    const summaryPath = path.join(ARTIFACT_DIR, "warehouse-w8c-transfer-visibility-summary.json");
+    const summaryPath = path.join(ARTIFACT_DIR, SUMMARY_FILE);
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
     if (summary.ok) {
-      console.log(`Warehouse W8C transfer visibility smoke passed. Summary: ${summaryPath}`);
+      console.log(`${PHASE_LABEL} smoke passed. Summary: ${summaryPath}`);
     } else {
-      console.error(`Warehouse W8C transfer visibility smoke failed. Summary: ${summaryPath}`);
+      console.error(`${PHASE_LABEL} smoke failed. Summary: ${summaryPath}`);
     }
   }
 }
