@@ -102,7 +102,9 @@
     "test:warehouse-w12i-movement-review-polish": "node warehouse_phase_w12i_movement_review_polish_smoke.js",
     "test:warehouse-w12i-movement-review-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12i-movement-review-polish",
     "test:warehouse-w12j-transfer-visibility-polish": "node warehouse_phase_w12j_transfer_visibility_polish_smoke.js",
-    "test:warehouse-w12j-transfer-visibility-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12j-transfer-visibility-polish"
+    "test:warehouse-w12j-transfer-visibility-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12j-transfer-visibility-polish",
+    "test:warehouse-w12k-cockpit-polish": "node warehouse_phase_w12k_cockpit_polish_smoke.js",
+    "test:warehouse-w12k-cockpit-polish:docker": "bash ./run_playwright_docker.sh npm run test:warehouse-w12k-cockpit-polish"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

@@ -373,6 +373,15 @@
         gap: 16px;
         align-items: start;
       }
+      .warehouse-cockpit-command-eyebrow {
+        margin-bottom: 6px;
+        color: #376455;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
       .warehouse-cockpit-chip-row {
         display: flex;
         flex-wrap: wrap;
@@ -496,6 +505,12 @@
         font-size: 12px;
         font-weight: 730;
       }
+      .warehouse-cockpit-card-action:focus,
+      .warehouse-console-refresh:focus,
+      .warehouse-console-inbound-open:focus {
+        outline: 2px solid rgba(34, 129, 102, 0.24);
+        outline-offset: 2px;
+      }
       .warehouse-cockpit-work-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -506,6 +521,12 @@
         font-size: 12.5px;
         line-height: 1.5;
         background: #f8fbfa;
+      }
+      .warehouse-cockpit-guardrail strong {
+        display: block;
+        margin-bottom: 3px;
+        color: #20332d;
+        font-size: 13px;
       }
       .warehouse-console-kpi-grid {
         display: grid;
@@ -2199,7 +2220,7 @@
   }
 
   function renderCockpitChip(label) {
-    return `<span class="warehouse-cockpit-chip">${escapeHtml(label)}</span>`;
+    return `<span class="warehouse-cockpit-chip" data-warehouse-cockpit-command-chip>${escapeHtml(label)}</span>`;
   }
 
   function renderPulseCard(metric) {
@@ -2214,7 +2235,7 @@
 
   function renderCockpitStartCard(card) {
     return `
-      <article class="warehouse-cockpit-start-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-start-card="${escapeHtml(card.key || "")}">
+      <article class="warehouse-cockpit-start-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-start-card="${escapeHtml(card.key || "")}" data-warehouse-cockpit-route-target="${escapeHtml(card.target || "")}">
         <div class="warehouse-cockpit-card-kicker">${escapeHtml(card.kicker || "")}</div>
         <div class="warehouse-cockpit-card-title">${escapeHtml(card.title || "")}</div>
         <div class="warehouse-cockpit-card-note">${escapeHtml(card.note || "")}</div>
@@ -2225,7 +2246,7 @@
 
   function renderCockpitRouteCard(card) {
     return `
-      <article class="warehouse-cockpit-route-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-route-card="${escapeHtml(card.key || "")}">
+      <article class="warehouse-cockpit-route-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-route-card="${escapeHtml(card.key || "")}" data-warehouse-cockpit-route-target="${escapeHtml(card.target || "")}">
         <div class="warehouse-cockpit-card-kicker">${escapeHtml(card.kicker || "")}</div>
         <div class="warehouse-cockpit-card-title">${escapeHtml(card.title || "")}</div>
         <div class="warehouse-cockpit-card-note">${escapeHtml(card.note || "")}</div>
@@ -2250,6 +2271,7 @@
         note: "Expected supplier stock and partial receiving posture.",
         action: "Open inbound receiving",
         actionAttr: "data-warehouse-open-inbound",
+        target: "warehouse-console-worklist/inbound-receiving",
       },
       {
         key: "outbound_risk",
@@ -2258,6 +2280,7 @@
         note: "Customer demand, pending quantity, and warehouse readiness.",
         action: "Open outbound picking",
         actionAttr: "data-warehouse-open-outbound",
+        target: "warehouse-console-worklist/outbound-picking",
       },
       {
         key: "stock_exceptions",
@@ -2267,6 +2290,7 @@
         action: "Open stock exceptions",
         actionAttr: "data-warehouse-open-stock-exceptions",
         variant: "is-risk",
+        target: "warehouse-console-worklist/stock-exceptions",
       },
       {
         key: "movement_visibility",
@@ -2276,6 +2300,17 @@
         action: "Open movement visibility",
         actionAttr: "data-warehouse-open-movement",
         variant: "is-movement",
+        target: "warehouse-console-worklist/movement-visibility",
+      },
+      {
+        key: "transfer_visibility",
+        kicker: "Transfer posture",
+        title: "Review transfer visibility",
+        note: "Warehouse-to-warehouse movement posture from posted transfer records.",
+        action: "Open transfer visibility",
+        actionAttr: "data-warehouse-open-transfer",
+        variant: "is-movement",
+        target: "warehouse-console-worklist/transfer-visibility",
       },
     ];
     return `
@@ -2299,6 +2334,7 @@
         action: "Open stock exceptions",
         actionAttr: "data-warehouse-open-stock-exceptions",
         variant: "is-risk",
+        target: "warehouse-console-worklist/stock-exceptions",
       },
       {
         key: "stock_posture_context",
@@ -2329,6 +2365,7 @@
         action: "Open movement visibility",
         actionAttr: "data-warehouse-open-movement",
         variant: "is-movement",
+        target: "warehouse-console-worklist/movement-visibility",
       },
       {
         key: "transfer_visibility",
@@ -2338,6 +2375,7 @@
         action: "Open transfer visibility",
         actionAttr: "data-warehouse-open-transfer",
         variant: "is-movement",
+        target: "warehouse-console-worklist/transfer-visibility",
       },
       {
         key: "movement_review_context",
@@ -2522,8 +2560,9 @@
         <section class="warehouse-console-header" data-warehouse-cockpit-command>
           <div class="warehouse-cockpit-command-row">
             <div>
+              <div class="warehouse-cockpit-command-eyebrow">Warehouse cockpit</div>
               <h1 class="warehouse-console-title">Warehouse Console</h1>
-              <div class="warehouse-console-note">Protected read-only workspace for inbound receiving, outbound picking, stock exceptions, and posted movement visibility.</div>
+              <div class="warehouse-console-note">Read-only review and planning workspace for inbound receiving, outbound picking, stock exceptions, posted movements, and transfer visibility.</div>
               <div class="warehouse-cockpit-chip-row">${chips.map(renderCockpitChip).join("")}</div>
             </div>
             <button class="warehouse-console-refresh" type="button" data-warehouse-refresh>Refresh</button>
@@ -2547,7 +2586,8 @@
         ${renderCockpitRiskSection()}
         ${renderCockpitMovementSection()}
         <section class="warehouse-cockpit-guardrail" data-warehouse-cockpit-guardrail>
-          Warehouse Console is read-only in this phase. Stock updates stay in controlled ERP operations.
+          <strong>Read-only guardrail</strong>
+          No stock is received, picked, transferred, reconciled, adjusted, posted, reserved, shipped, delivered, or changed from this cockpit.
         </section>
       </div>
     `);

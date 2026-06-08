@@ -3,12 +3,15 @@ const fs = require("fs");
 const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W9A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W9A_ARTIFACT_DIR || path.join(
+const EXPECT_W12K = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W12K === "1";
+const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL || (EXPECT_W12K ? "Warehouse W12K cockpit polish" : "Warehouse W9A cockpit");
+const SUMMARY_NAME = process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME || (EXPECT_W12K ? "warehouse-w12k-cockpit-polish-summary.json" : "warehouse-w9a-cockpit-summary.json");
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W12K_TIMEOUT || process.env.ERPW_WAREHOUSE_W9A_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W12K_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W9A_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `warehouse-w9a-cockpit-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `${EXPECT_W12K ? "warehouse-w12k-cockpit-polish" : "warehouse-w9a-cockpit"}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W12K_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT || "";
 
 const AUTHORIZED_USERS = [
   {
@@ -25,11 +28,12 @@ const AUTHORIZED_USERS = [
 
 const VIEWPORTS = [
   { key: "desktop-1440", width: 1440, height: 900 },
+  { key: "laptop-1240", width: 1240, height: 768 },
   { key: "laptop-1136", width: 1136, height: 768 },
   { key: "mobile-390", width: 390, height: 844 },
 ];
 
-const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Allocate|Create|Save|Transfer|Print|Email)\b/i;
+const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Allocate|Create|Save|Transfer(?! Visibility)|Print|Email)\b/i;
 const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|incoming_rate|outgoing_rate|basic_rate|\brate\b|\bamount\b|base_amount|transfer_price|profit|margin|\bcost\b|\bgl\b|accounting|billing|payment|tax|item price|stock_queue/i;
@@ -84,6 +88,10 @@ function recordOverrideHit(diagnostics, key, request, extra = {}) {
   remember(diagnostics.overrideHits, { key, url: request.url(), method: request.method(), ...extra }, 180);
 }
 
+function overrideHitCount(diagnostics, key) {
+  return diagnostics.overrideHits.filter((hit) => hit.key === key).length;
+}
+
 function attachDiagnostics(page, diagnostics) {
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) {
@@ -106,6 +114,7 @@ function sidebarItems() {
     { key: "outbound_picking", label: "Outbound Picking", icon: "order", target: { kind: "worklist", queue_key: "outbound_picking" } },
     { key: "stock_exceptions", label: "Stock Exceptions", icon: "report", target: { kind: "worklist", queue_key: "stock_exceptions" } },
     { key: "movement_visibility", label: "Movement Visibility", icon: "stock", target: { kind: "worklist", queue_key: "movement_visibility" } },
+    { key: "transfer_visibility", label: "Transfer Visibility", icon: "branch", target: { kind: "worklist", queue_key: "transfer_visibility" } },
   ];
 }
 
@@ -129,6 +138,7 @@ function workspacePayload() {
       outboundQueue: "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue",
       stockExceptions: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
       movementVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
+      transferVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
     },
     search: { enabled: false },
   };
@@ -222,6 +232,46 @@ function movementPayload() {
   };
 }
 
+function transferPayload() {
+  const rows = [
+    {
+      key: "MAT-TR-W12K-1",
+      movement_id: "MAT-TR-W12K-1",
+      movement_type: "Material Transfer",
+      purpose: "Material Transfer",
+      posting_date: "2026-05-30",
+      posting_time: "10:05:00",
+      source_warehouse: "Stores - M",
+      target_warehouse: "Main - M",
+      direction_label: "Stores - M to Main - M",
+      item_count: 2,
+      quantity_summary: "9 Nos",
+      group_key: "direct_transfers",
+      group_label: "Direct Transfers",
+      sample_items: [
+        { item_code: "ITEM-W12K-A", item_name: "Transfer Item A", quantity: "5", stock_uom: "Nos", source_warehouse: "Stores - M", target_warehouse: "Main - M" },
+        { item_code: "ITEM-W12K-B", item_name: "Transfer Item B", quantity: "4", stock_uom: "Nos", source_warehouse: "Stores - M", target_warehouse: "Main - M" },
+      ],
+      route_targets: {
+        movement: { token: "eyJtb3ZlbWVudF9pZCI6Ik1BVC1UUi1XMTJLLTEifQ" },
+        stock_posture: { token: "eyJpdGVtX2NvZGUiOiJJVEVNLVcxMkstQSIsIndhcmVob3VzZSI6Ik1haW4gLSBNIn0" },
+      },
+    },
+  ];
+  return {
+    workspace: workspacePayload(),
+    context: sidebarPayload().context,
+    state: { kind: "ready", title: "Transfer visibility ready", detail: "Transfer visibility is available." },
+    page: { title: "Transfer Visibility", key: "transfer_visibility" },
+    summary: { title: "Transfer Visibility", subtitle: "Posted warehouse-to-warehouse transfer posture.", chips: [{ label: "Read-only" }] },
+    controls: queueControls(),
+    cards: summaryCards("transfer", [["direct", "Direct Transfers", 1, "Warehouse-to-warehouse posture."], ["transit", "Transit Related", 0, "Transit posture needing review."], ["review", "Needs Review", 0, "Rows needing posture review."], ["recent", "Recently Posted", 1, "Latest posted transfer movement."]]),
+    groups: [{ key: "direct_transfers", title: "Direct Transfers", summary: "Posted warehouse-to-warehouse movement records.", rows }],
+    rows,
+    fetched_at: "2026-05-30 09:00:00",
+  };
+}
+
 function overviewPayload() {
   return {
     workspace: workspacePayload(),
@@ -283,6 +333,7 @@ async function installSourceOverrides(context, diagnostics) {
     ["get_warehouse_outbound_picking_queue", "warehouse-outbound", () => outboundPayload()],
     ["get_warehouse_stock_exceptions", "warehouse-stock-exceptions", () => stockExceptionsPayload()],
     ["get_warehouse_movement_visibility_queue", "warehouse-movement-visibility", () => movementPayload()],
+    ["get_warehouse_transfer_visibility_queue", "warehouse-transfer-visibility", () => transferPayload()],
   ];
   for (const [method, key, payload] of methodPayloads) {
     await context.route(`**/api/method/erp_workspace_ui.warehouse_console.service.${method}**`, async (route) => {
@@ -312,7 +363,7 @@ async function waitForCockpit(page) {
 async function waitForWorklist(page, viewName) {
   await page.waitForFunction((expectedView) => {
     const shell = document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${expectedView}"]`);
-    return Boolean(shell && (shell.querySelector("[data-warehouse-inbound-queue-card], [data-warehouse-movement-card], [data-warehouse-stock-exception-card]") || shell.querySelector("[data-warehouse-movement-empty], [data-warehouse-stock-exception-empty]")));
+    return Boolean(shell && (shell.querySelector("[data-warehouse-inbound-queue-card], [data-warehouse-movement-card], [data-warehouse-stock-exception-card], [data-warehouse-transfer-card]") || shell.querySelector("[data-warehouse-movement-empty], [data-warehouse-stock-exception-empty], [data-warehouse-transfer-empty]")));
   }, viewName, { timeout: TIMEOUT });
 }
 
@@ -323,6 +374,22 @@ async function waitForOverrideHit(diagnostics, key) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`Expected source override was not used: ${key}`);
+}
+
+async function collapseBodySidebarForNarrowViewport(page) {
+  const viewport = page.viewportSize();
+  if (!viewport || viewport.width > 520) return true;
+  const collapsed = await page.evaluate(() => {
+    const expandedSidebar = document.querySelector(".body-sidebar-container.expanded");
+    if (!expandedSidebar) return true;
+    const controls = Array.from(expandedSidebar.querySelectorAll("button, a, [role='button'], [tabindex]"));
+    const collapseControl = controls.find((node) => /\bCollapse\b/i.test((node.innerText || node.getAttribute("aria-label") || "").trim()));
+    if (collapseControl && typeof collapseControl.click === "function") collapseControl.click();
+    return false;
+  });
+  if (collapsed) return true;
+  await page.waitForTimeout(250);
+  return page.evaluate(() => !document.querySelector(".body-sidebar-container.expanded"));
 }
 
 async function openRoute(page, routeParts, pathName, wait) {
@@ -348,21 +415,38 @@ async function snapshot(page) {
     const text = ((shell && shell.innerText) || "").replace(/\s+/g, " ").trim();
     const actionText = Array.from((shell || document).querySelectorAll("button, a, [role=button]")).filter(visible).map((node) => (node.innerText || node.getAttribute("aria-label") || node.getAttribute("href") || "").replace(/\s+/g, " ").trim()).filter(Boolean).join(" ");
     const hrefs = Array.from((shell || document).querySelectorAll("a[href]")).map((node) => node.getAttribute("href") || "").join(" ");
+    const routeTargets = Array.from((shell || document).querySelectorAll("[data-warehouse-cockpit-route-target]")).map((node) => node.getAttribute("data-warehouse-cockpit-route-target") || "").filter(Boolean);
+    const sidebarLabels = Array.from(document.querySelectorAll('[data-erpw-sidebar-workspace="warehouse"] [data-erpw-sidebar-index]')).filter(visible).map((node) => (node.innerText || node.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+    const sidebarDuplicates = sidebarLabels.filter((label, index) => sidebarLabels.indexOf(label) !== index);
+    const pageHeadText = Array.from(document.querySelectorAll(".page-head, .page-head-content, .title-area")).filter(visible).map((node) => (node.innerText || "").replace(/\s+/g, " ").trim()).filter((value) => /Warehouse Console|Warehouse Cockpit/i.test(value));
     return {
       url: location.href,
       route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : null,
       text,
       actionText,
       hrefs,
+      routeTargets,
+      sidebarLabels,
+      sidebarDuplicates,
+      warehousePageHeadCount: pageHeadText.length,
+      allPageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       shellCount: Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace="warehouse"]')).filter(visible).length,
       headerCount: Array.from(document.querySelectorAll(".warehouse-console-header, .warehouse-inbound-queue-header, .warehouse-receiving-header")).filter(visible).length,
       cockpitCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit='ready']")).filter(visible).length,
+      commandCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-command]")).filter(visible).length,
+      commandChipCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-command-chip]")).filter(visible).length,
       pulseCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-pulse-card]")).filter(visible).length,
       startCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-start-card]")).filter(visible).length,
       workCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-work] .warehouse-console-inbound-panel")).filter(visible).length,
       riskCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-risk] [data-warehouse-cockpit-route-card]")).filter(visible).length,
       movementCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-movement] [data-warehouse-cockpit-route-card]")).filter(visible).length,
       guardrailCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-guardrail]")).filter(visible).length,
+      inboundActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-inbound]")).filter(visible).length,
+      outboundActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-outbound]")).filter(visible).length,
+      stockExceptionActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-stock-exceptions]")).filter(visible).length,
+      movementActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-movement]")).filter(visible).length,
+      transferActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-transfer]")).filter(visible).length,
+      refreshActionCount: Array.from(document.querySelectorAll("[data-warehouse-refresh]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     };
@@ -377,7 +461,33 @@ function assertClean(state, context) {
   assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Forbidden stock action control is visible", { context, state });
   assert(!FORBIDDEN_COPY_RE.test(state.text), "Developer or search copy is visible", { context, state });
   assert(!VALUATION_RE.test(state.text), "Valuation, accounting, or commercial text is visible", { context, state });
-  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Native route target is visible", { context, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Native route target is visible", { context, state });
+}
+
+function assertW12KCockpit(state, contextLabel) {
+  assert(state.commandCount === 1, "Cockpit command area must render once", { context: contextLabel, state });
+  assert(state.commandChipCount >= 3, "Cockpit command chips did not render", { context: contextLabel, state });
+  assert(state.refreshActionCount === 1, "Cockpit refresh control must render once", { context: contextLabel, state });
+  assert(state.inboundActionCount >= 2, "Inbound receiving navigation is missing", { context: contextLabel, state });
+  assert(state.outboundActionCount >= 2, "Outbound picking navigation is missing", { context: contextLabel, state });
+  assert(state.stockExceptionActionCount >= 2, "Stock exceptions navigation is missing", { context: contextLabel, state });
+  assert(state.movementActionCount >= 2, "Movement visibility navigation is missing", { context: contextLabel, state });
+  assert(state.transferActionCount >= 2, "Transfer visibility navigation is missing", { context: contextLabel, state });
+  const targets = state.routeTargets || [];
+  [
+    "warehouse-console-worklist/inbound-receiving",
+    "warehouse-console-worklist/outbound-picking",
+    "warehouse-console-worklist/stock-exceptions",
+    "warehouse-console-worklist/movement-visibility",
+    "warehouse-console-worklist/transfer-visibility",
+  ].forEach((target) => {
+    assert(targets.includes(target), `Cockpit route target missing: ${target}`, { context: contextLabel, state });
+  });
+  assert((state.text || "").includes("Transfer Visibility"), "Transfer Visibility card text is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Read-only guardrail"), "Read-only guardrail label is missing", { context: contextLabel, state });
+  assert(state.warehousePageHeadCount <= 1, "Duplicate Warehouse page head chrome is visible", { context: contextLabel, state });
+  assert(state.allPageHeadCount === 0, "Frappe page-head chrome is visible in Warehouse cockpit", { context: contextLabel, state });
+  assert((state.sidebarDuplicates || []).length === 0, "Duplicate Warehouse sidebar items are visible", { context: contextLabel, state });
 }
 
 async function assertCockpit(page, contextLabel) {
@@ -391,6 +501,7 @@ async function assertCockpit(page, contextLabel) {
   assert(state.riskCount >= 2, "Risks To Resolve cards did not render", { context: contextLabel, state });
   assert(state.movementCount >= 2, "Movement To Understand cards did not render", { context: contextLabel, state });
   assert(state.guardrailCount === 1, "Read-only guardrail did not render", { context: contextLabel, state });
+  if (EXPECT_W12K) assertW12KCockpit(state, contextLabel);
   return state;
 }
 
@@ -411,14 +522,27 @@ async function exerciseUser(browser, user, viewport) {
     await login(page, user);
     await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
     if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-overview");
+    const sidebarCollapsed = await collapseBodySidebarForNarrowViewport(page);
+    if (viewport.width <= 520) assert(sidebarCollapsed, "Mobile body sidebar was not collapsed for Warehouse cockpit evidence", { user: user.key, viewport });
     await assertCockpit(page, `${user.key}:${viewport.key}:cockpit`);
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await collapseBodySidebarForNarrowViewport(page);
     await assertCockpit(page, `${user.key}:${viewport.key}:reload`);
 
+    const repeatBaseline = overrideHitCount(diagnostics, "warehouse-overview");
     await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
     await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
     await assertCockpit(page, `${user.key}:${viewport.key}:repeat`);
+    if (EXPECT_W12K && ASSET_ROOT) assert(overrideHitCount(diagnostics, "warehouse-overview") === repeatBaseline, "Repeated cockpit route navigation made an unnecessary overview service call", { user: user.key, viewport: viewport.key, before: repeatBaseline, after: overrideHitCount(diagnostics, "warehouse-overview") });
+
+    if (EXPECT_W12K) {
+      const refreshBaseline = overrideHitCount(diagnostics, "warehouse-overview");
+      await page.locator("[data-warehouse-refresh]").click();
+      await waitForCockpit(page);
+      await assertCockpit(page, `${user.key}:${viewport.key}:refresh`);
+      if (ASSET_ROOT) assert(overrideHitCount(diagnostics, "warehouse-overview") > refreshBaseline, "Cockpit Refresh did not force overview reload", { user: user.key, viewport: viewport.key, before: refreshBaseline, after: overrideHitCount(diagnostics, "warehouse-overview") });
+    }
 
     if (viewport.key === "desktop-1440") {
       await exerciseRouteAction(page, "[data-warehouse-open-inbound]", "/desk/warehouse-console-worklist/inbound-receiving", "inbound-receiving", `${user.key}:inbound`);
@@ -435,9 +559,14 @@ async function exerciseUser(browser, user, viewport) {
 
       await exerciseRouteAction(page, "[data-warehouse-open-movement]", "/desk/warehouse-console-worklist/movement-visibility", "movement-visibility", `${user.key}:movement`);
       if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-movement-visibility");
+      await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
+
+      await exerciseRouteAction(page, "[data-warehouse-open-transfer]", "/desk/warehouse-console-worklist/transfer-visibility", "transfer-visibility", `${user.key}:transfer`);
+      if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-transfer-visibility");
+      await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
     }
 
-    diagnostics.snapshots.push({ name: `${user.key}-${viewport.key}:final`, state: await snapshot(page), screenshot: await capture(page, `${user.key}-${viewport.key}-cockpit`) });
+    diagnostics.snapshots.push({ name: `${user.key}-${viewport.key}:final`, sidebarCollapsed: viewport.width <= 520 ? await collapseBodySidebarForNarrowViewport(page) : true, state: await snapshot(page), screenshot: await capture(page, `${user.key}-${viewport.key}-cockpit`) });
   } finally {
     await context.close();
   }
@@ -452,7 +581,7 @@ async function main() {
     ],
   });
   const browser = await chromium.launch({ headless: process.env.ERPW_HEADLESS !== "0" });
-  const summary = { ok: false, artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), users: [], diagnostics: [] };
+  const summary = { ok: false, phase: PHASE_LABEL, artifactDir: ARTIFACT_DIR, sourceOverride: Boolean(ASSET_ROOT), users: [], diagnostics: [] };
   try {
     for (const user of AUTHORIZED_USERS) {
       for (const viewport of VIEWPORTS) {
@@ -472,12 +601,12 @@ async function main() {
     throw error;
   } finally {
     await browser.close();
-    const summaryPath = path.join(ARTIFACT_DIR, "warehouse-w9a-cockpit-summary.json");
+    const summaryPath = path.join(ARTIFACT_DIR, SUMMARY_NAME);
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
     if (summary.ok) {
-      console.log(`Warehouse W9A cockpit smoke passed. Summary: ${summaryPath}`);
+      console.log(`${PHASE_LABEL} smoke passed. Summary: ${summaryPath}`);
     } else {
-      console.error(`Warehouse W9A cockpit smoke failed. Summary: ${summaryPath}`);
+      console.error(`${PHASE_LABEL} smoke failed. Summary: ${summaryPath}`);
     }
   }
 }
