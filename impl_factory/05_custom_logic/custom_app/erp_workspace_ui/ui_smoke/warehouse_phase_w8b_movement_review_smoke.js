@@ -645,7 +645,8 @@ async function exerciseUser(browser, user) {
     let directMovementReviewParts = ["warehouse-console-movement", MOVEMENT_REVIEW_TOKEN];
     let directMovementReviewPath = `/desk/warehouse-console-movement/${MOVEMENT_REVIEW_TOKEN}`;
     const movementReviewRouteCount = await page.locator("[data-warehouse-movement-route-review]").count();
-    assert(movementReviewRouteCount >= 1, "Movement review route did not render", { user: user.key, state });
+    if (ASSET_ROOT) assert(movementReviewRouteCount >= 1, "Source movement review route did not render", { user: user.key, state });
+    // Live data can legitimately have an empty movement board; direct-open the review route below to validate the controlled shell.
     if (movementReviewRouteCount) {
       await page.locator("[data-warehouse-movement-route-review]").first().click();
       await page.waitForURL((url) => /\/(?:desk|app)\/warehouse-console-movement\//.test(url.pathname), { timeout: TIMEOUT });
