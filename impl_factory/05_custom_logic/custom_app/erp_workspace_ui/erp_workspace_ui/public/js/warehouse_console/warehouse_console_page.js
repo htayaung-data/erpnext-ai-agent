@@ -450,6 +450,12 @@
         background: var(--warehouse-surface);
         box-shadow: var(--warehouse-shadow-soft);
       }
+      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-row-list {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--warehouse-space-2);
+        min-width: 0;
+      }
       .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-row-header {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -463,6 +469,9 @@
         gap: var(--warehouse-space-2);
         align-items: center;
         justify-content: flex-end;
+      }
+      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-filter-strip {
+        min-width: 0;
       }
       .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-tab-strip {
         display: flex;
@@ -2329,8 +2338,8 @@
     ensureStyle();
     const payloadState = state || {};
     const $root = $(`
-      <div class="sales-console-shell warehouse-console-shell" data-erpw-workspace="warehouse" data-warehouse-console-state="${escapeHtml(payloadState.kind || "unavailable")}">
-        <section class="warehouse-console-state">
+      <div class="sales-console-shell warehouse-console-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-warehouse-console-state="${escapeHtml(payloadState.kind || "unavailable")}" data-warehouse-visual-foundation="w13c1">
+        <section class="warehouse-console-state warehouse-visual-fallback">
           <h1 class="warehouse-console-state-title">${escapeHtml(payloadState.title || "Warehouse Console unavailable")}</h1>
           <div class="warehouse-console-state-detail">${escapeHtml(payloadState.detail || "Warehouse information could not be loaded. Refresh or try again.")}</div>
         </section>
@@ -2344,8 +2353,8 @@
     if (!isActiveWarehouseRoute()) return;
     ensureStyle();
     const $root = $(`
-      <div class="sales-console-shell warehouse-console-shell" data-erpw-workspace="warehouse" data-erpw-console-runtime="loading" data-erpw-console-bootstrap="loading" data-erpw-overview-route-signature="${escapeHtml(overviewRouteSignature())}">
-        <section class="warehouse-console-header">
+      <div class="sales-console-shell warehouse-console-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-erpw-console-runtime="loading" data-erpw-console-bootstrap="loading" data-warehouse-visual-foundation="w13c1" data-erpw-overview-route-signature="${escapeHtml(overviewRouteSignature())}">
+        <section class="warehouse-console-header warehouse-visual-command">
           <div class="warehouse-console-header-row">
             <div>
               <h1 class="warehouse-console-title">Warehouse Console</h1>
@@ -2513,7 +2522,7 @@
 
   function renderPulseCard(metric) {
     return `
-      <div class="warehouse-console-kpi-card warehouse-cockpit-pulse-card" data-warehouse-kpi="${escapeHtml(metric.key || "")}" data-warehouse-cockpit-pulse-card="${escapeHtml(metric.key || "")}">
+      <div class="warehouse-console-kpi-card warehouse-cockpit-pulse-card warehouse-visual-summary-card" data-warehouse-kpi="${escapeHtml(metric.key || "")}" data-warehouse-cockpit-pulse-card="${escapeHtml(metric.key || "")}">
         <div class="warehouse-console-kpi-label">${escapeHtml(metric.label || "")}</div>
         <div class="warehouse-console-kpi-value">${escapeHtml(metricText(metric))}</div>
         <div class="warehouse-console-kpi-meta">${escapeHtml(metricNote(metric))}</div>
@@ -2523,7 +2532,7 @@
 
   function renderCockpitStartCard(card) {
     return `
-      <article class="warehouse-cockpit-start-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-start-card="${escapeHtml(card.key || "")}" data-warehouse-cockpit-route-target="${escapeHtml(card.target || "")}">
+      <article class="warehouse-cockpit-start-card warehouse-visual-related-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-start-card="${escapeHtml(card.key || "")}" data-warehouse-cockpit-route-target="${escapeHtml(card.target || "")}">
         <div class="warehouse-cockpit-card-kicker">${escapeHtml(card.kicker || "")}</div>
         <div class="warehouse-cockpit-card-title">${escapeHtml(card.title || "")}</div>
         <div class="warehouse-cockpit-card-note">${escapeHtml(card.note || "")}</div>
@@ -2534,7 +2543,7 @@
 
   function renderCockpitRouteCard(card) {
     return `
-      <article class="warehouse-cockpit-route-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-route-card="${escapeHtml(card.key || "")}" data-warehouse-cockpit-route-target="${escapeHtml(card.target || "")}">
+      <article class="warehouse-cockpit-route-card warehouse-visual-related-card ${escapeHtml(card.variant || "")}" data-warehouse-cockpit-route-card="${escapeHtml(card.key || "")}" data-warehouse-cockpit-route-target="${escapeHtml(card.target || "")}">
         <div class="warehouse-cockpit-card-kicker">${escapeHtml(card.kicker || "")}</div>
         <div class="warehouse-cockpit-card-title">${escapeHtml(card.title || "")}</div>
         <div class="warehouse-cockpit-card-note">${escapeHtml(card.note || "")}</div>
@@ -2607,7 +2616,7 @@
           <h2 class="warehouse-cockpit-section-title">Start Here</h2>
           <div class="warehouse-cockpit-section-note">Prioritized read-only starts using protected Warehouse routes.</div>
         </div>
-        <div class="warehouse-cockpit-start-grid">${cards.map(renderCockpitStartCard).join("")}</div>
+        <div class="warehouse-cockpit-start-grid warehouse-visual-related-grid">${cards.map(renderCockpitStartCard).join("")}</div>
       </section>
     `;
   }
@@ -2638,7 +2647,7 @@
           <h2 class="warehouse-cockpit-section-title">Risks To Resolve</h2>
           <div class="warehouse-cockpit-section-note">Understand blockers before warehouse work stalls.</div>
         </div>
-        <div class="warehouse-cockpit-route-grid is-two">${cards.map(renderCockpitRouteCard).join("")}</div>
+        <div class="warehouse-cockpit-route-grid warehouse-visual-related-grid is-two">${cards.map(renderCockpitRouteCard).join("")}</div>
       </section>
     `;
   }
@@ -2679,7 +2688,7 @@
           <h2 class="warehouse-cockpit-section-title">Movement To Understand</h2>
           <div class="warehouse-cockpit-section-note">Review what already changed without leaving this read-only workspace.</div>
         </div>
-        <div class="warehouse-cockpit-route-grid">${cards.map(renderCockpitRouteCard).join("")}</div>
+        <div class="warehouse-cockpit-route-grid warehouse-visual-related-grid">${cards.map(renderCockpitRouteCard).join("")}</div>
       </section>
     `;
   }
@@ -2692,7 +2701,7 @@
 
   function renderInboundCard(card) {
     return `
-      <div class="warehouse-console-inbound-card" data-warehouse-inbound-card="${escapeHtml(card.key || "")}">
+      <div class="warehouse-console-inbound-card warehouse-visual-summary-card" data-warehouse-inbound-card="${escapeHtml(card.key || "")}">
         <div class="warehouse-console-inbound-card-label">${escapeHtml(card.label || card.title || "")}</div>
         <div class="warehouse-console-inbound-card-value">${escapeHtml(cardValue(card))}</div>
         <div class="warehouse-console-inbound-card-note">${escapeHtml(card.note || "")}</div>
@@ -2716,7 +2725,7 @@
 
   function renderOutboundCard(card) {
     return `
-      <div class="warehouse-console-inbound-card" data-warehouse-outbound-card="${escapeHtml(card.key || "")}">
+      <div class="warehouse-console-inbound-card warehouse-visual-summary-card" data-warehouse-outbound-card="${escapeHtml(card.key || "")}">
         <div class="warehouse-console-inbound-card-label">${escapeHtml(card.label || card.title || "")}</div>
         <div class="warehouse-console-inbound-card-value">${escapeHtml(cardValue(card))}</div>
         <div class="warehouse-console-inbound-card-note">${escapeHtml(card.note || "")}</div>
@@ -2752,7 +2761,7 @@
           </div>
           <button class="warehouse-console-inbound-open" type="button" data-warehouse-open-inbound>Open inbound receiving</button>
         </div>
-        <div class="warehouse-console-inbound-cards">${cards.map(renderInboundCard).join("")}</div>
+        <div class="warehouse-console-inbound-cards warehouse-visual-summary-grid">${cards.map(renderInboundCard).join("")}</div>
         <div class="warehouse-console-inbound-preview">
           ${rows.length ? rows.map(renderInboundPreviewRow).join("") : `<div class="warehouse-console-inbound-row"><span>${escapeHtml(emptyMessage)}</span></div>`}
         </div>
@@ -2774,7 +2783,7 @@
           </div>
           <button class="warehouse-console-inbound-open" type="button" data-warehouse-open-outbound>Open outbound picking</button>
         </div>
-        <div class="warehouse-console-inbound-cards">${cards.map(renderOutboundCard).join("")}</div>
+        <div class="warehouse-console-inbound-cards warehouse-visual-summary-grid">${cards.map(renderOutboundCard).join("")}</div>
         <div class="warehouse-console-inbound-preview">
           ${rows.length ? rows.map(renderOutboundPreviewRow).join("") : `<div class="warehouse-console-inbound-row"><span>${escapeHtml(emptyMessage)}</span></div>`}
         </div>
@@ -2801,7 +2810,7 @@
           </div>
           <button class="warehouse-console-inbound-open" type="button" data-warehouse-open-stock-exceptions>Open stock exceptions</button>
         </div>
-        <div class="warehouse-console-inbound-cards">${cards.map(renderStockExceptionCard).join("")}</div>
+        <div class="warehouse-console-inbound-cards warehouse-visual-summary-grid">${cards.map(renderStockExceptionCard).join("")}</div>
         <div class="warehouse-console-inbound-preview">
           <div class="warehouse-console-inbound-row"><span>${escapeHtml(emptyMessage)}</span></div>
         </div>
@@ -2844,7 +2853,7 @@
     const pulseCards = cockpitPulseCards(payload, kpis);
     const chips = ["Read-only", "Warehouse workspace", freshnessText(payload)];
     const $root = $(`
-      <div class="sales-console-shell warehouse-console-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="ready" data-warehouse-cockpit="ready" data-warehouse-visual-foundation="w13b">
+      <div class="sales-console-shell warehouse-console-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="ready" data-warehouse-cockpit="ready" data-warehouse-visual-foundation="w13c1">
         <section class="warehouse-console-header warehouse-visual-command" data-warehouse-cockpit-command>
           <div class="warehouse-cockpit-command-row">
             <div class="warehouse-visual-command-title">
@@ -2858,7 +2867,7 @@
         </section>
         <section class="warehouse-cockpit-pulse" data-warehouse-cockpit-pulse>
           <div class="warehouse-cockpit-label">Warehouse Pulse</div>
-          <div class="warehouse-console-kpi-grid warehouse-cockpit-pulse-grid">${pulseCards.map(renderPulseCard).join("")}</div>
+          <div class="warehouse-console-kpi-grid warehouse-cockpit-pulse-grid warehouse-visual-summary-grid">${pulseCards.map(renderPulseCard).join("")}</div>
         </section>
         ${renderCockpitStart(payload, kpis)}
         <section class="warehouse-cockpit-route-section" data-warehouse-cockpit-work>
@@ -3340,7 +3349,7 @@
 
   function renderQueueCard(card) {
     return `
-      <div class="warehouse-inbound-queue-card" data-warehouse-inbound-queue-card="${escapeHtml(card.key || "")}" data-warehouse-outbound-queue-card="${escapeHtml(card.key || "")}">
+      <div class="warehouse-inbound-queue-card warehouse-visual-summary-card" data-warehouse-inbound-queue-card="${escapeHtml(card.key || "")}" data-warehouse-outbound-queue-card="${escapeHtml(card.key || "")}">
         <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
         <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
         <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
@@ -3356,21 +3365,21 @@
     if (row.purchase_order) {
       const postureKey = String(row.state_key || "review").replace(/[^a-z0-9_-]+/gi, "_").toLowerCase();
       return `
-        <article class="warehouse-inbound-row is-receiving" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}" data-warehouse-inbound-posture="${escapeHtml(postureKey)}">
-          <div class="warehouse-inbound-row-summary">
+        <article class="warehouse-inbound-row warehouse-visual-row-card is-receiving" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}" data-warehouse-inbound-posture="${escapeHtml(postureKey)}">
+          <div class="warehouse-inbound-row-summary warehouse-visual-row-header">
             <div class="warehouse-inbound-row-identity">
               <div class="warehouse-inbound-order">${escapeHtml(rowKey)}</div>
               <div class="warehouse-inbound-meta">${escapeHtml(partner || "Supplier not visible")}</div>
             </div>
             <span class="warehouse-inbound-status-chip is-${escapeHtml(postureKey)}">${escapeHtml(row.state_label || row.status || "Review")}</span>
           </div>
-          <div class="warehouse-inbound-row-facts">
+          <div class="warehouse-inbound-row-facts warehouse-visual-row-facts">
             <div class="warehouse-inbound-row-fact" data-warehouse-inbound-row-fact="supplier"><span>Supplier</span><strong>${escapeHtml(partner || "Not visible")}</strong></div>
             <div class="warehouse-inbound-row-fact" data-warehouse-inbound-row-fact="warehouse"><span>Target warehouse</span><strong>${escapeHtml(row.target_warehouse || "Not visible")}</strong></div>
             <div class="warehouse-inbound-row-fact" data-warehouse-inbound-row-fact="expected"><span>Expected</span><strong>${escapeHtml(row.age_label || row.required_date || "Not visible")}</strong></div>
             <div class="warehouse-inbound-row-fact" data-warehouse-inbound-row-fact="open"><span>Open posture</span><strong>${escapeHtml(row.remaining_summary || "No open quantity summary")} · ${escapeHtml(progress)}</strong></div>
           </div>
-          <div class="warehouse-inbound-row-actions">
+          <div class="warehouse-inbound-row-actions warehouse-visual-action-strip">
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>Open receiving review</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
@@ -3389,21 +3398,21 @@
     if (row.sales_order) {
       const postureKey = String(row.state_key || "review").replace(/[^a-z0-9_-]+/gi, "_").toLowerCase();
       return `
-        <article class="warehouse-inbound-row warehouse-outbound-row is-picking" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-posture="${escapeHtml(postureKey)}">
-          <div class="warehouse-inbound-row-summary warehouse-outbound-row-summary">
+        <article class="warehouse-inbound-row warehouse-outbound-row warehouse-visual-row-card is-picking" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-posture="${escapeHtml(postureKey)}">
+          <div class="warehouse-inbound-row-summary warehouse-outbound-row-summary warehouse-visual-row-header">
             <div class="warehouse-inbound-row-identity">
               <div class="warehouse-inbound-order">${escapeHtml(rowKey)}</div>
               <div class="warehouse-inbound-meta">${escapeHtml(partner || "Customer not visible")}</div>
             </div>
             <span class="warehouse-inbound-status-chip warehouse-outbound-status-chip is-${escapeHtml(postureKey)}">${escapeHtml(row.state_label || row.status || "Review")}</span>
           </div>
-          <div class="warehouse-inbound-row-facts warehouse-outbound-row-facts">
+          <div class="warehouse-inbound-row-facts warehouse-outbound-row-facts warehouse-visual-row-facts">
             <div class="warehouse-inbound-row-fact" data-warehouse-outbound-row-fact="customer"><span>Customer</span><strong>${escapeHtml(partner || "Not visible")}</strong></div>
             <div class="warehouse-inbound-row-fact" data-warehouse-outbound-row-fact="warehouse"><span>Warehouse</span><strong>${escapeHtml(row.target_warehouse || "Not visible")}</strong></div>
             <div class="warehouse-inbound-row-fact" data-warehouse-outbound-row-fact="due"><span>Delivery timing</span><strong>${escapeHtml(row.age_label || row.required_date || "Not visible")}</strong></div>
             <div class="warehouse-inbound-row-fact" data-warehouse-outbound-row-fact="open"><span>Picking posture</span><strong>${escapeHtml(row.remaining_summary || "No open quantity summary")} · ${escapeHtml(progress)}</strong></div>
           </div>
-          <div class="warehouse-inbound-row-actions warehouse-outbound-row-actions">
+          <div class="warehouse-inbound-row-actions warehouse-outbound-row-actions warehouse-visual-action-strip">
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-picking-detail>Open picking review</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
@@ -3425,8 +3434,8 @@
         ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-picking-detail>View details</button>'
         : "";
     return `
-      <article class="warehouse-inbound-row" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}">
-        <div class="warehouse-inbound-row-main">
+      <article class="warehouse-inbound-row warehouse-visual-row-card" data-warehouse-inbound-row="${escapeHtml(rowKey)}" data-warehouse-outbound-row="${escapeHtml(rowKey)}">
+        <div class="warehouse-inbound-row-main warehouse-visual-row-header">
           <div>
             <div class="warehouse-inbound-order">${escapeHtml(rowKey)}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(partner)}</div>
@@ -3434,7 +3443,7 @@
           <div class="warehouse-inbound-meta">${escapeHtml(row.target_warehouse || "")}</div>
           <div class="warehouse-inbound-meta">${escapeHtml(row.age_label || row.required_date || "")}</div>
           <div class="warehouse-inbound-meta">${escapeHtml(row.remaining_summary || "")} · ${escapeHtml(progress)}</div>
-          <div class="warehouse-receiving-actions">
+          <div class="warehouse-receiving-actions warehouse-visual-action-strip">
             ${detailButton}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
@@ -3467,8 +3476,8 @@
           <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
         </div>
-        <div class="warehouse-console-card-grid">
-          ${rows.length ? rows.map(renderQueueRow).join("") : `<div class="warehouse-inbound-row" data-warehouse-inbound-empty data-warehouse-outbound-empty><span class="warehouse-inbound-meta">${escapeHtml(emptyText)}</span></div>`}
+        <div class="warehouse-console-card-grid warehouse-visual-row-list">
+          ${rows.length ? rows.map(renderQueueRow).join("") : `<div class="warehouse-inbound-row warehouse-visual-fallback" data-warehouse-inbound-empty data-warehouse-outbound-empty><span class="warehouse-inbound-meta">${escapeHtml(emptyText)}</span></div>`}
         </div>
       </section>
     `;
@@ -3476,7 +3485,7 @@
 
   function renderStockExceptionCard(card) {
     return `
-      <div class="warehouse-inbound-queue-card" data-warehouse-stock-exception-card="${escapeHtml(card.key || "")}">
+      <div class="warehouse-inbound-queue-card warehouse-visual-summary-card" data-warehouse-stock-exception-card="${escapeHtml(card.key || "")}">
         <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
         <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
         <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
@@ -3510,15 +3519,15 @@
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-receiving>View inbound review</button>'
       : "";
     return `
-      <article class="warehouse-stock-exception-row is-premium" data-warehouse-stock-exception-row="${escapeHtml(row.key || "")}" data-warehouse-stock-exception-token="${escapeHtml(reviewToken)}" data-warehouse-stock-exception-posture-token="${escapeHtml(postureToken)}" data-warehouse-stock-exception-sales-order="${escapeHtml(row.sales_order || "")}" data-warehouse-stock-exception-receiving-order="${escapeHtml(row.expected_inbound_order || "")}" data-warehouse-stock-exception-posture="${escapeHtml(postureKey)}">
-        <div class="warehouse-stock-exception-row-summary">
+      <article class="warehouse-stock-exception-row warehouse-visual-row-card is-premium" data-warehouse-stock-exception-row="${escapeHtml(row.key || "")}" data-warehouse-stock-exception-token="${escapeHtml(reviewToken)}" data-warehouse-stock-exception-posture-token="${escapeHtml(postureToken)}" data-warehouse-stock-exception-sales-order="${escapeHtml(row.sales_order || "")}" data-warehouse-stock-exception-receiving-order="${escapeHtml(row.expected_inbound_order || "")}" data-warehouse-stock-exception-posture="${escapeHtml(postureKey)}">
+        <div class="warehouse-stock-exception-row-summary warehouse-visual-row-header">
           <div class="warehouse-stock-exception-row-identity">
             <div class="warehouse-inbound-order">${escapeHtml(row.sales_order || "Demand not visible")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(row.customer || "Customer not visible")} · ${escapeHtml(row.item_code || "Item not visible")} ${escapeHtml(row.item_name || "")}</div>
           </div>
           <span class="warehouse-inbound-status-chip is-${escapeHtml(postureKey)}">${escapeHtml(row.exception_label || "Needs Review")}</span>
         </div>
-        <div class="warehouse-stock-exception-facts" data-warehouse-stock-exception-row-facts>
+        <div class="warehouse-stock-exception-facts warehouse-visual-row-facts" data-warehouse-stock-exception-row-facts>
           <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="warehouse"><span>Warehouse</span><strong>${escapeHtml(row.source_warehouse || "Not visible")}</strong></div>
           <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="timing"><span>Timing</span><strong>${escapeHtml(row.urgency_label || row.required_date || "Not visible")}</strong></div>
           <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="open"><span>Open demand</span><strong>${escapeHtml(row.pending_qty || "0")} ${escapeHtml(row.uom || "")}</strong></div>
@@ -3526,7 +3535,7 @@
           <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="short"><span>Short posture</span><strong>${escapeHtml(row.short_qty || "0")} ${escapeHtml(row.uom || "")}</strong></div>
           <div class="warehouse-stock-exception-fact" data-warehouse-stock-exception-row-fact="inbound"><span>Inbound cover</span><strong>${escapeHtml(row.expected_inbound_qty || "0")} ${escapeHtml(row.expected_inbound_date || "")}</strong></div>
         </div>
-        <div class="warehouse-stock-exception-actions" data-warehouse-stock-exception-actions>
+        <div class="warehouse-stock-exception-actions warehouse-visual-action-strip" data-warehouse-stock-exception-actions>
           ${reviewButton}
           ${postureButton}
           ${pickingButton}
@@ -3556,8 +3565,8 @@
           <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
         </div>
-        <div class="warehouse-console-card-grid">
-          ${rows.length ? rows.map(renderStockExceptionRow).join("") : `<div class="warehouse-stock-exception-row" data-warehouse-stock-exception-empty><span class="warehouse-inbound-meta">${escapeHtml(emptyText)}</span></div>`}
+        <div class="warehouse-console-card-grid warehouse-visual-row-list">
+          ${rows.length ? rows.map(renderStockExceptionRow).join("") : `<div class="warehouse-stock-exception-row warehouse-visual-fallback" data-warehouse-stock-exception-empty><span class="warehouse-inbound-meta">${escapeHtml(emptyText)}</span></div>`}
         </div>
       </section>
     `;
@@ -3577,34 +3586,34 @@
       payload.fetched_at ? `Fresh ${payload.fetched_at}` : "",
     ].filter(Boolean);
     const $root = $(`
-      <div class="sales-console-shell warehouse-inbound-shell warehouse-stock-exception-shell" data-erpw-workspace="warehouse" data-warehouse-view="stock-exceptions" data-warehouse-queue-key="${STOCK_EXCEPTIONS_KEY}" data-warehouse-stock-exception-shell="true" data-erpw-console-runtime="ready">
-        <section class="warehouse-inbound-queue-header" data-warehouse-stock-exception-command>
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-stock-exception-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-warehouse-view="stock-exceptions" data-warehouse-queue-key="${STOCK_EXCEPTIONS_KEY}" data-warehouse-stock-exception-shell="true" data-warehouse-visual-foundation="w13c1" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header warehouse-visual-command" data-warehouse-stock-exception-command>
           <div class="warehouse-inbound-queue-head">
             <div class="warehouse-inbound-command">
               <div class="warehouse-inbound-queue-eyebrow">Read-only exception queue</div>
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Stock Exceptions")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Outbound blockers, inbound cover, and warehouse posture gaps.")}</div>
-              <div class="warehouse-inbound-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-stock-exception-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
+              <div class="warehouse-inbound-chip-row warehouse-visual-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip warehouse-visual-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-stock-exception-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
             </div>
-            <div class="warehouse-receiving-actions">
+            <div class="warehouse-receiving-actions warehouse-visual-action-strip">
               <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
             </div>
           </div>
-          <div class="warehouse-inbound-queue-cards">${cards.map(renderStockExceptionCard).join("")}</div>
-          <div class="warehouse-inbound-controls">
+          <div class="warehouse-inbound-queue-cards warehouse-visual-summary-grid">${cards.map(renderStockExceptionCard).join("")}</div>
+          <div class="warehouse-inbound-controls warehouse-visual-filter-strip">
             ${fields.map(controlField).join("")}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-refresh>Refresh</button>
           </div>
-          <section class="warehouse-receiving-guardrail warehouse-stock-exception-guardrail" data-warehouse-stock-exception-guardrail>
+          <section class="warehouse-receiving-guardrail warehouse-stock-exception-guardrail warehouse-visual-guardrail" data-warehouse-stock-exception-guardrail>
             <strong>Review only</strong>
             <span>No stock is reserved, reconciled, transferred, picked, received, shipped, posted, or adjusted from this queue. Use the custom review routes for planning before any separate stock process.</span>
           </section>
         </section>
         <div class="warehouse-inbound-groups">
           ${statePayload.kind === "restricted" || statePayload.kind === "error"
-            ? `<section class="warehouse-inbound-group" data-warehouse-stock-exception-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Stock exceptions unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-stock-exception-empty>${escapeHtml(statePayload.detail || "Stock exceptions could not be loaded. Refresh or contact an administrator.")}</div></section>`
+            ? `<section class="warehouse-inbound-group warehouse-visual-fallback" data-warehouse-stock-exception-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Stock exceptions unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-stock-exception-empty>${escapeHtml(statePayload.detail || "Stock exceptions could not be loaded. Refresh or contact an administrator.")}</div></section>`
             : groups.map(renderStockExceptionGroup).join("")}
         </div>
       </div>
@@ -3682,7 +3691,7 @@
 
   function renderMovementCommandFact(fact) {
     return `
-      <div class="warehouse-movement-command-fact" data-warehouse-movement-command-fact="${escapeHtml(fact.key || "")}">
+      <div class="warehouse-movement-command-fact warehouse-visual-fact" data-warehouse-movement-command-fact="${escapeHtml(fact.key || "")}">
         <span>${escapeHtml(fact.label || "")}</span>
         <strong>${escapeHtml(fact.value || "Not visible")}</strong>
       </div>
@@ -3691,7 +3700,7 @@
 
   function renderMovementCard(card) {
     return `
-      <div class="warehouse-inbound-queue-card" data-warehouse-movement-card="${escapeHtml(card.key || "")}">
+      <div class="warehouse-inbound-queue-card warehouse-visual-summary-card" data-warehouse-movement-card="${escapeHtml(card.key || "")}">
         <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
         <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
         <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
@@ -3724,8 +3733,8 @@
       ? `<button type="button" class="warehouse-inbound-queue-button" data-warehouse-movement-route-review data-warehouse-movement-review-token="${escapeHtml(reviewToken)}">Review movement</button>`
       : "";
     return `
-      <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-movement-row" data-warehouse-movement-row="${escapeHtml(row.movement_id || row.key || "")}">
-        <div class="warehouse-movement-row-main" data-warehouse-movement-row-main>
+      <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-movement-row warehouse-visual-row-card" data-warehouse-movement-row="${escapeHtml(row.movement_id || row.key || "")}">
+        <div class="warehouse-movement-row-main warehouse-visual-row-header" data-warehouse-movement-row-main>
           <div>
             <div class="warehouse-inbound-order">${escapeHtml(row.movement_id || "")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(row.posting_date || "")} ${escapeHtml(row.posting_time || "")}</div>
@@ -3739,12 +3748,12 @@
             <div class="warehouse-inbound-order">${escapeHtml(row.quantity_summary || "")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(row.item_count == null ? "0" : row.item_count)} items</div>
           </div>
-          <div class="warehouse-movement-actions">
+          <div class="warehouse-movement-actions warehouse-visual-action-strip">
             ${reviewButton}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
         </div>
-        <div class="warehouse-movement-row-facts" data-warehouse-movement-row-facts>
+        <div class="warehouse-movement-row-facts warehouse-visual-row-facts" data-warehouse-movement-row-facts>
           <div class="warehouse-movement-row-fact" data-warehouse-movement-row-fact="posted"><span>Posted</span><strong>${escapeHtml(row.posting_date || "Date not visible")}</strong></div>
           <div class="warehouse-movement-row-fact" data-warehouse-movement-row-fact="purpose"><span>Purpose</span><strong>${escapeHtml(row.purpose || row.movement_type || "Movement posture")}</strong></div>
           <div class="warehouse-movement-row-fact" data-warehouse-movement-row-fact="direction"><span>Direction</span><strong>${escapeHtml(row.direction_label || "Warehouse posture needs review")}</strong></div>
@@ -3765,8 +3774,8 @@
           <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
         </div>
-        <div class="warehouse-console-card-grid">
-          ${rows.length ? rows.map(renderMovementRow).join("") : `<div class="warehouse-stock-exception-row" data-warehouse-movement-empty><span class="warehouse-inbound-meta">No movement records match these filters.</span></div>`}
+        <div class="warehouse-console-card-grid warehouse-visual-row-list">
+          ${rows.length ? rows.map(renderMovementRow).join("") : `<div class="warehouse-stock-exception-row warehouse-visual-fallback" data-warehouse-movement-empty><span class="warehouse-inbound-meta">No movement records match these filters.</span></div>`}
         </div>
       </section>
     `;
@@ -3782,24 +3791,24 @@
     const commandChips = movementCommandChips(payload);
     const commandFacts = movementCommandFacts(payload, cards);
     const $root = $(`
-      <div class="sales-console-shell warehouse-inbound-shell warehouse-movement-shell" data-erpw-workspace="warehouse" data-warehouse-view="movement-visibility" data-warehouse-queue-key="${MOVEMENT_VISIBILITY_KEY}" data-warehouse-movement-shell="true" data-erpw-console-runtime="ready">
-        <section class="warehouse-inbound-queue-header warehouse-movement-command-header" data-warehouse-movement-command>
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-movement-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-warehouse-view="movement-visibility" data-warehouse-queue-key="${MOVEMENT_VISIBILITY_KEY}" data-warehouse-movement-shell="true" data-warehouse-visual-foundation="w13c1" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header warehouse-movement-command-header warehouse-visual-command" data-warehouse-movement-command>
           <div class="warehouse-inbound-queue-head">
             <div class="warehouse-movement-command">
               <div class="warehouse-movement-eyebrow">Movement Visibility</div>
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Movement Visibility")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Recorded stock movement posture across warehouses.")}</div>
-              <div class="warehouse-movement-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-movement-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
+              <div class="warehouse-movement-chip-row warehouse-visual-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip warehouse-visual-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-movement-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
             </div>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
           </div>
-          <div class="warehouse-movement-command-grid" data-warehouse-movement-command-grid>${commandFacts.map(renderMovementCommandFact).join("")}</div>
-          <div class="warehouse-inbound-queue-cards">${cards.map(renderMovementCard).join("")}</div>
-          <section class="warehouse-receiving-guardrail warehouse-movement-guardrail" data-warehouse-movement-guardrail>
+          <div class="warehouse-movement-command-grid warehouse-visual-fact-strip" data-warehouse-movement-command-grid>${commandFacts.map(renderMovementCommandFact).join("")}</div>
+          <div class="warehouse-inbound-queue-cards warehouse-visual-summary-grid">${cards.map(renderMovementCard).join("")}</div>
+          <section class="warehouse-receiving-guardrail warehouse-movement-guardrail warehouse-visual-guardrail" data-warehouse-movement-guardrail>
             <strong>Read-only movement review</strong>
             <span>This board explains recorded warehouse movement. No stock is changed from this page.</span>
           </section>
-          <div class="warehouse-inbound-controls">
+          <div class="warehouse-inbound-controls warehouse-visual-filter-strip">
             ${fields.map(controlField).join("")}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
@@ -3808,7 +3817,7 @@
         </section>
         <div class="warehouse-inbound-groups">
           ${statePayload.kind === "restricted" || statePayload.kind === "error"
-            ? `<section class="warehouse-inbound-group" data-warehouse-movement-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Movement visibility unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-movement-empty>${escapeHtml(statePayload.detail || "Movement visibility could not be loaded. Refresh or contact an administrator.")}</div></section>`
+            ? `<section class="warehouse-inbound-group warehouse-visual-fallback" data-warehouse-movement-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Movement visibility unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-movement-empty>${escapeHtml(statePayload.detail || "Movement visibility could not be loaded. Refresh or contact an administrator.")}</div></section>`
             : groups.map(renderMovementGroup).join("")}
         </div>
       </div>
@@ -3887,7 +3896,7 @@
 
   function renderTransferCommandFact(fact) {
     return `
-      <div class="warehouse-transfer-command-fact" data-warehouse-transfer-command-fact="${escapeHtml(fact.key || "")}">
+      <div class="warehouse-transfer-command-fact warehouse-visual-fact" data-warehouse-transfer-command-fact="${escapeHtml(fact.key || "")}">
         <span>${escapeHtml(fact.label || "")}</span>
         <strong>${escapeHtml(fact.value || "Not visible")}</strong>
       </div>
@@ -3896,7 +3905,7 @@
 
   function renderTransferCard(card) {
     return `
-      <div class="warehouse-inbound-queue-card" data-warehouse-transfer-card="${escapeHtml(card.key || "")}" data-warehouse-transfer-summary-card>
+      <div class="warehouse-inbound-queue-card warehouse-visual-summary-card" data-warehouse-transfer-card="${escapeHtml(card.key || "")}" data-warehouse-transfer-summary-card>
         <div class="warehouse-inbound-queue-card-label">${escapeHtml(card.label || card.title || "")}</div>
         <div class="warehouse-inbound-queue-card-value">${escapeHtml(cardValue(card))}</div>
         <div class="warehouse-inbound-queue-card-note">${escapeHtml(card.note || "")}</div>
@@ -3960,8 +3969,8 @@
       ? `<button type="button" class="warehouse-inbound-queue-button" data-warehouse-transfer-route-stock-posture data-warehouse-stock-posture-token="${escapeHtml(postureToken)}">Review stock posture</button>`
       : "";
     return `
-      <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-transfer-row" data-warehouse-transfer-row="${escapeHtml(row.transfer_id || row.key || "")}">
-        <div class="warehouse-transfer-row-main" data-warehouse-transfer-row-main>
+      <article class="warehouse-inbound-row warehouse-stock-exception-row warehouse-transfer-row warehouse-visual-row-card" data-warehouse-transfer-row="${escapeHtml(row.transfer_id || row.key || "")}">
+        <div class="warehouse-transfer-row-main warehouse-visual-row-header" data-warehouse-transfer-row-main>
           <div>
             <div class="warehouse-inbound-order">${escapeHtml(row.transfer_id || "")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(row.posting_date || "")} ${escapeHtml(row.posting_time || "")}</div>
@@ -3975,13 +3984,13 @@
             <div class="warehouse-inbound-order">${escapeHtml(row.quantity_summary || "")}</div>
             <div class="warehouse-inbound-meta">${escapeHtml(transferItemCountLabel(row.item_count))}</div>
           </div>
-          <div class="warehouse-transfer-actions" data-warehouse-transfer-actions>
+          <div class="warehouse-transfer-actions warehouse-visual-action-strip" data-warehouse-transfer-actions>
             ${reviewButton}
             ${postureButton}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-toggle>View lines</button>
           </div>
         </div>
-        <div class="warehouse-transfer-row-facts" data-warehouse-transfer-row-facts>
+        <div class="warehouse-transfer-row-facts warehouse-visual-row-facts" data-warehouse-transfer-row-facts>
           <div class="warehouse-transfer-row-fact" data-warehouse-transfer-row-fact="source"><span>Source</span><strong>${escapeHtml(row.source_warehouse || "Not visible")}</strong></div>
           <div class="warehouse-transfer-row-fact" data-warehouse-transfer-row-fact="target"><span>Target</span><strong>${escapeHtml(row.target_warehouse || "Not visible")}</strong></div>
           <div class="warehouse-transfer-row-fact" data-warehouse-transfer-row-fact="quantity"><span>Quantity</span><strong>${escapeHtml(row.quantity_summary || "Not visible")}</strong></div>
@@ -4002,8 +4011,8 @@
           <h2 class="warehouse-inbound-group-title">${escapeHtml(group.title || "")}</h2>
           <div class="warehouse-inbound-group-note">${escapeHtml(rows.length ? `${rows.length} shown` : group.summary || "")}</div>
         </div>
-        <div class="warehouse-console-card-grid">
-          ${rows.length ? rows.map(renderTransferRow).join("") : `<div class="warehouse-stock-exception-row" data-warehouse-transfer-empty><span class="warehouse-inbound-meta">${escapeHtml(transferGroupEmptyText(group))}</span></div>`}
+        <div class="warehouse-console-card-grid warehouse-visual-row-list">
+          ${rows.length ? rows.map(renderTransferRow).join("") : `<div class="warehouse-stock-exception-row warehouse-visual-fallback" data-warehouse-transfer-empty><span class="warehouse-inbound-meta">${escapeHtml(transferGroupEmptyText(group))}</span></div>`}
         </div>
       </section>
     `;
@@ -4022,24 +4031,24 @@
     const commandChips = transferCommandChips(payload);
     const commandFacts = transferCommandFacts(payload, safeCards, rows);
     const $root = $(`
-      <div class="sales-console-shell warehouse-inbound-shell warehouse-transfer-shell" data-erpw-workspace="warehouse" data-warehouse-view="transfer-visibility" data-warehouse-queue-key="${TRANSFER_VISIBILITY_KEY}" data-warehouse-transfer-shell="true" data-warehouse-transfer-state="${escapeHtml(statePayload.kind || "ready")}" data-erpw-console-runtime="ready">
-        <section class="warehouse-inbound-queue-header warehouse-transfer-command-header" data-warehouse-transfer-command>
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-transfer-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-warehouse-view="transfer-visibility" data-warehouse-queue-key="${TRANSFER_VISIBILITY_KEY}" data-warehouse-transfer-shell="true" data-warehouse-transfer-state="${escapeHtml(statePayload.kind || "ready")}" data-warehouse-visual-foundation="w13c1" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header warehouse-transfer-command-header warehouse-visual-command" data-warehouse-transfer-command>
           <div class="warehouse-inbound-queue-head">
             <div class="warehouse-transfer-command">
               <div class="warehouse-transfer-eyebrow">Transfer Visibility</div>
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Transfer Visibility")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Read-only warehouse-to-warehouse transfer posture.")}</div>
-              <div class="warehouse-transfer-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-transfer-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
+              <div class="warehouse-transfer-chip-row warehouse-visual-chip-row">${commandChips.map((chip, index) => `<span class="warehouse-inbound-chip warehouse-visual-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-transfer-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>
             </div>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
           </div>
-          <div class="warehouse-transfer-command-grid" data-warehouse-transfer-command-grid>${commandFacts.map(renderTransferCommandFact).join("")}</div>
-          <div class="warehouse-inbound-queue-cards">${safeCards.map(renderTransferCard).join("")}</div>
-          <section class="warehouse-receiving-guardrail warehouse-transfer-guardrail" data-warehouse-transfer-guardrail>
+          <div class="warehouse-transfer-command-grid warehouse-visual-fact-strip" data-warehouse-transfer-command-grid>${commandFacts.map(renderTransferCommandFact).join("")}</div>
+          <div class="warehouse-inbound-queue-cards warehouse-visual-summary-grid">${safeCards.map(renderTransferCard).join("")}</div>
+          <section class="warehouse-receiving-guardrail warehouse-transfer-guardrail warehouse-visual-guardrail" data-warehouse-transfer-guardrail>
             <strong>Read-only transfer visibility</strong>
             <span>No stock is transferred, reconciled, adjusted, posted, reserved, picked, received, shipped, or delivered from this queue.</span>
           </section>
-          <div class="warehouse-inbound-controls">
+          <div class="warehouse-inbound-controls warehouse-visual-filter-strip">
             ${fields.map(controlField).join("")}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
@@ -4048,7 +4057,7 @@
         </section>
         <div class="warehouse-inbound-groups">
           ${unavailable
-            ? `<section class="warehouse-inbound-group" data-warehouse-transfer-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Transfer visibility unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-transfer-empty>${escapeHtml(statePayload.detail || "Transfer visibility could not be loaded. Refresh or contact an administrator.")}</div></section>`
+            ? `<section class="warehouse-inbound-group warehouse-visual-fallback" data-warehouse-transfer-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Transfer visibility unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-transfer-empty>${escapeHtml(statePayload.detail || "Transfer visibility could not be loaded. Refresh or contact an administrator.")}</div></section>`
             : groups.map(renderTransferGroup).join("")}
         </div>
       </div>
@@ -5958,32 +5967,32 @@
           ].filter(Boolean)
       : [];
     const $root = $(`
-      <div class="sales-console-shell warehouse-inbound-shell ${isOutboundQueue ? "warehouse-outbound-shell warehouse-outbound-premium-shell" : ""} ${isInboundQueue ? "warehouse-inbound-premium-shell" : ""}" data-erpw-workspace="warehouse" data-warehouse-view="${escapeHtml(viewName)}" data-warehouse-queue-key="${escapeHtml(queueKey)}" data-erpw-console-runtime="ready">
-        <section class="warehouse-inbound-queue-header">
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-visual-foundation ${isOutboundQueue ? "warehouse-outbound-shell warehouse-outbound-premium-shell" : ""} ${isInboundQueue ? "warehouse-inbound-premium-shell" : ""}" data-erpw-workspace="warehouse" data-warehouse-view="${escapeHtml(viewName)}" data-warehouse-queue-key="${escapeHtml(queueKey)}" data-warehouse-visual-foundation="w13c1" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header warehouse-visual-command">
           <div class="warehouse-inbound-queue-head">
             <div class="${isPremiumQueue ? "warehouse-inbound-command" : ""}">
               ${isInboundQueue ? '<div class="warehouse-inbound-queue-eyebrow">Read-only receiving queue</div>' : ""}
               ${isOutboundQueue ? '<div class="warehouse-inbound-queue-eyebrow warehouse-outbound-queue-eyebrow">Read-only picking queue</div>' : ""}
               <h1 class="warehouse-inbound-queue-title">${escapeHtml(payload.summary && payload.summary.title || "Inbound Receiving")}</h1>
               <div class="warehouse-inbound-queue-note">${escapeHtml(payload.summary && payload.summary.subtitle || "Expected supplier stock due into warehouse.")}</div>
-              ${isInboundQueue ? `<div class="warehouse-inbound-chip-row">${summaryChips.map((chip, index) => `<span class="warehouse-inbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-inbound-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
-              ${isOutboundQueue ? `<div class="warehouse-inbound-chip-row warehouse-outbound-chip-row">${summaryChips.map((chip, index) => `<span class="warehouse-inbound-chip warehouse-outbound-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-outbound-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
+              ${isInboundQueue ? `<div class="warehouse-inbound-chip-row warehouse-visual-chip-row">${summaryChips.map((chip, index) => `<span class="warehouse-inbound-chip warehouse-visual-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-inbound-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
+              ${isOutboundQueue ? `<div class="warehouse-inbound-chip-row warehouse-outbound-chip-row warehouse-visual-chip-row">${summaryChips.map((chip, index) => `<span class="warehouse-inbound-chip warehouse-outbound-chip warehouse-visual-chip ${index === 0 ? "is-read-only" : ""}" data-warehouse-outbound-command-chip>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
             </div>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-back-overview>Open Warehouse page</button>
           </div>
-          <div class="warehouse-inbound-queue-cards">${cards.map(renderQueueCard).join("")}</div>
-          <div class="warehouse-inbound-controls">
+          <div class="warehouse-inbound-queue-cards warehouse-visual-summary-grid">${cards.map(renderQueueCard).join("")}</div>
+          <div class="warehouse-inbound-controls warehouse-visual-filter-strip">
             ${fields.map(controlField).join("")}
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-apply>Apply</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-reset>Reset</button>
             <button type="button" class="warehouse-inbound-queue-button" data-warehouse-filter-refresh>Refresh</button>
           </div>
-          ${isInboundQueue ? '<div class="warehouse-inbound-queue-guardrail" data-warehouse-inbound-guardrail><strong>Review only</strong><span>No stock is posted and no Purchase Receipt is created from this queue. Use these filters and review links for planning before any separate receiving process.</span></div>' : ""}
-          ${isOutboundQueue ? '<div class="warehouse-inbound-queue-guardrail warehouse-outbound-queue-guardrail" data-warehouse-outbound-guardrail><strong>Review only</strong><span>No stock is reserved, picked, shipped, or delivered from this queue. Use these filters and review links for planning before any separate outbound process.</span></div>' : ""}
+          ${isInboundQueue ? '<div class="warehouse-inbound-queue-guardrail warehouse-visual-guardrail" data-warehouse-inbound-guardrail><strong>Review only</strong><span>No stock is posted and no Purchase Receipt is created from this queue. Use these filters and review links for planning before any separate receiving process.</span></div>' : ""}
+          ${isOutboundQueue ? '<div class="warehouse-inbound-queue-guardrail warehouse-outbound-queue-guardrail warehouse-visual-guardrail" data-warehouse-outbound-guardrail><strong>Review only</strong><span>No stock is reserved, picked, shipped, or delivered from this queue. Use these filters and review links for planning before any separate outbound process.</span></div>' : ""}
         </section>
         <div class="warehouse-inbound-groups">
           ${statePayload.kind === "restricted" || statePayload.kind === "error"
-            ? `<section class="warehouse-inbound-group" data-warehouse-inbound-group="state" data-warehouse-outbound-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Warehouse worklist unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-inbound-empty data-warehouse-outbound-empty>${escapeHtml(statePayload.detail || "Warehouse work could not be loaded. Refresh or contact an administrator.")}</div></section>`
+            ? `<section class="warehouse-inbound-group warehouse-visual-fallback" data-warehouse-inbound-group="state" data-warehouse-outbound-group="state"><h2 class="warehouse-inbound-group-title">${escapeHtml(statePayload.title || "Warehouse worklist unavailable")}</h2><div class="warehouse-inbound-meta" data-warehouse-inbound-empty data-warehouse-outbound-empty>${escapeHtml(statePayload.detail || "Warehouse work could not be loaded. Refresh or contact an administrator.")}</div></section>`
             : groups.map((group) => renderQueueGroup(group, queueKey)).join("")}
         </div>
       </div>
