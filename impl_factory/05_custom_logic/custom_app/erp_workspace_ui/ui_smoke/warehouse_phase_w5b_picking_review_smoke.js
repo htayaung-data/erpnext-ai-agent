@@ -414,14 +414,14 @@ async function waitForOutboundReady(page, diagnostics, label) {
 
 async function waitForPickingReady(page, diagnostics, label) {
   try {
-    await page.waitForFunction(() => {
+    await page.waitForFunction((expectW12D) => {
       const shell = document.querySelector('.warehouse-picking-shell[data-erpw-workspace="warehouse"][data-warehouse-view="picking-review"]');
       return Boolean(shell
         && shell.getAttribute("data-erpw-console-runtime") === "ready"
         && shell.querySelectorAll("[data-warehouse-picking-card]").length >= 4
         && shell.querySelectorAll("[data-warehouse-picking-line]").length >= 1
         && shell.querySelectorAll("[data-warehouse-picking-tab]").length >= 2
-        && (!window.__erpwWarehouseExpectW12D || (
+        && (!expectW12D || (
           shell.querySelector("[data-warehouse-picking-command]")
           && shell.querySelectorAll("[data-warehouse-picking-identity-chip]").length >= 5
           && shell.querySelectorAll("[data-warehouse-picking-command-fact]").length >= 4
@@ -430,7 +430,7 @@ async function waitForPickingReady(page, diagnostics, label) {
           && shell.querySelectorAll("[data-warehouse-picking-line-card]").length >= 1
           && shell.querySelectorAll("[data-warehouse-picking-line-fact]").length >= 5
         )));
-    }, null, { timeout: TIMEOUT });
+    }, EXPECT_W12D, { timeout: TIMEOUT });
   } catch (error) {
     error.details = { ...(error.details || {}), snapshot: await diagnosticSnapshot(page, diagnostics, `${label}-picking-timeout`) };
     throw error;
