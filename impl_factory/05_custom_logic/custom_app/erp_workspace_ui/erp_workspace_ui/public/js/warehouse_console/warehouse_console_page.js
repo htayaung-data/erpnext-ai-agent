@@ -2134,6 +2134,369 @@
         font-size: 13px;
         line-height: 1.55;
       }
+
+      /* W13B2 premium cockpit and board layer. */
+      .sales-console-shell[data-erpw-workspace='warehouse'] {
+        --warehouse-bg-page: #f3f8f5;
+        --warehouse-bg-soft: #f7fbf8;
+        --warehouse-bg-muted: #e8f4ee;
+        --warehouse-surface: #ffffff;
+        --warehouse-surface-quiet: #fbfdfb;
+        --warehouse-surface-elevated: rgba(255, 255, 255, 0.96);
+        --warehouse-border-soft: rgba(205, 222, 214, 0.88);
+        --warehouse-border-strong: rgba(159, 195, 179, 0.7);
+        --warehouse-text-strong: #14241f;
+        --warehouse-text: #21372f;
+        --warehouse-text-muted: #5e7068;
+        --warehouse-text-soft: #72837b;
+        --warehouse-accent: #167258;
+        --warehouse-accent-dark: #0e3d32;
+        --warehouse-accent-2: #2d7187;
+        --warehouse-accent-soft: rgba(22, 114, 88, 0.12);
+        --warehouse-amber: #b7791f;
+        --warehouse-amber-soft: rgba(183, 121, 31, 0.14);
+        --warehouse-board-accent: #167258;
+        --warehouse-board-accent-soft: rgba(22, 114, 88, 0.11);
+        --warehouse-shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.86) inset, 0 14px 32px rgba(25, 50, 42, 0.07);
+        --warehouse-shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 24px 60px rgba(20, 47, 39, 0.11);
+        --warehouse-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.94) inset, 0 18px 42px rgba(21, 48, 40, 0.08);
+        --warehouse-radius-sm: 10px;
+        --warehouse-radius-md: 14px;
+        --warehouse-radius-lg: 20px;
+        color: var(--warehouse-text);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-console-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-inbound-premium-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-outbound-premium-shell {
+        position: relative;
+        display: grid;
+        gap: 18px;
+        width: min(1220px, calc(100% - 24px));
+        padding: 18px;
+        border: 1px solid rgba(191, 215, 204, 0.82);
+        border-radius: 22px;
+        background:
+          linear-gradient(135deg, rgba(255,255,255,0.92), rgba(245,250,247,0.88)),
+          repeating-linear-gradient(90deg, rgba(23, 81, 65, 0.035) 0, rgba(23, 81, 65, 0.035) 1px, transparent 1px, transparent 44px),
+          #f3f8f5;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset, 0 28px 72px rgba(21, 49, 41, 0.12);
+        overflow: hidden;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-console-shell::before,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-inbound-premium-shell::before,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-outbound-premium-shell::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.42), transparent 28%),
+          repeating-linear-gradient(0deg, rgba(22, 114, 88, 0.026) 0, rgba(22, 114, 88, 0.026) 1px, transparent 1px, transparent 38px);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-outbound-premium-shell {
+        --warehouse-board-accent: #2d7187;
+        --warehouse-board-accent-soft: rgba(45, 113, 135, 0.12);
+      }
+      .warehouse-console-shell > *,
+      .warehouse-inbound-premium-shell > *,
+      .warehouse-outbound-premium-shell > * {
+        position: relative;
+        z-index: 1;
+      }
+      .warehouse-console-shell .warehouse-console-header,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-header,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header {
+        position: relative;
+        border: 1px solid rgba(113, 159, 140, 0.34);
+        border-radius: 20px;
+        background:
+          linear-gradient(135deg, rgba(12, 42, 35, 0.97) 0%, rgba(19, 83, 65, 0.96) 48%, rgba(232, 245, 238, 0.94) 100%);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 26px 64px rgba(14, 45, 37, 0.2);
+        color: #f5fbf8;
+      }
+      .warehouse-console-shell .warehouse-console-header::after,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-header::after,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        background:
+          repeating-linear-gradient(90deg, rgba(255,255,255,0.055) 0, rgba(255,255,255,0.055) 1px, transparent 1px, transparent 34px),
+          linear-gradient(180deg, rgba(255,255,255,0.1), transparent 46%);
+        mix-blend-mode: screen;
+      }
+      .warehouse-console-shell .warehouse-console-title,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-title,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-title {
+        color: #ffffff;
+        font-size: clamp(28px, 3.4vw, 42px);
+        font-weight: 840;
+        letter-spacing: 0;
+        text-shadow: 0 1px 0 rgba(0,0,0,0.18);
+      }
+      .warehouse-console-shell .warehouse-console-note,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-note,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-note {
+        max-width: 780px;
+        color: rgba(239, 249, 244, 0.86);
+        font-size: 13.5px;
+      }
+      .warehouse-console-shell .warehouse-cockpit-command-eyebrow,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-eyebrow,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-eyebrow {
+        color: #a9e5cf;
+        letter-spacing: 0.12em;
+      }
+      .warehouse-console-shell .warehouse-visual-chip,
+      .warehouse-inbound-premium-shell .warehouse-visual-chip,
+      .warehouse-outbound-premium-shell .warehouse-visual-chip {
+        min-height: 27px;
+        border-color: rgba(255,255,255,0.24);
+        background: rgba(255,255,255,0.13);
+        color: rgba(246, 252, 249, 0.94);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.16) inset;
+        backdrop-filter: blur(8px);
+      }
+      .warehouse-console-shell .warehouse-console-refresh,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-button,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-button,
+      .warehouse-console-shell .warehouse-cockpit-card-action,
+      .warehouse-console-shell .warehouse-console-inbound-open {
+        min-height: 38px;
+        border: 1px solid rgba(27, 113, 88, 0.24);
+        border-radius: 11px;
+        background: linear-gradient(180deg, #ffffff 0%, #f4faf7 100%);
+        color: #163f33;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.94) inset, 0 10px 22px rgba(31, 72, 59, 0.08);
+        transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+      }
+      .warehouse-console-shell .warehouse-console-refresh,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-head > .warehouse-inbound-queue-button,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-head > .warehouse-inbound-queue-button {
+        background: rgba(255,255,255,0.92);
+        color: #12382d;
+      }
+      .warehouse-console-shell button:hover,
+      .warehouse-inbound-premium-shell button:hover,
+      .warehouse-outbound-premium-shell button:hover {
+        border-color: rgba(22, 114, 88, 0.42);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.96) inset, 0 14px 28px rgba(31, 72, 59, 0.12);
+        transform: translateY(-1px);
+      }
+      .warehouse-console-shell .warehouse-cockpit-pulse,
+      .warehouse-console-shell .warehouse-cockpit-start,
+      .warehouse-console-shell .warehouse-cockpit-route-section,
+      .warehouse-console-shell .warehouse-cockpit-guardrail,
+      .warehouse-inbound-premium-shell .warehouse-inbound-group,
+      .warehouse-outbound-premium-shell .warehouse-inbound-group {
+        border: 1px solid rgba(198, 219, 209, 0.88);
+        border-radius: 18px;
+        background: rgba(255,255,255,0.86);
+        box-shadow: var(--warehouse-shadow-panel);
+        backdrop-filter: blur(10px);
+      }
+      .warehouse-console-shell .warehouse-cockpit-pulse {
+        padding: 18px;
+      }
+      .warehouse-console-shell .warehouse-cockpit-label,
+      .warehouse-console-shell .warehouse-cockpit-section-title,
+      .warehouse-inbound-premium-shell .warehouse-inbound-group-title,
+      .warehouse-outbound-premium-shell .warehouse-inbound-group-title {
+        color: #172822;
+      }
+      .warehouse-console-shell .warehouse-cockpit-section-title,
+      .warehouse-inbound-premium-shell .warehouse-inbound-group-title,
+      .warehouse-outbound-premium-shell .warehouse-inbound-group-title {
+        font-size: 17px;
+        font-weight: 840;
+      }
+      .warehouse-console-shell .warehouse-console-kpi-card,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-card,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-card,
+      .warehouse-console-shell .warehouse-console-inbound-card {
+        position: relative;
+        min-height: 128px;
+        padding: 17px;
+        border: 1px solid rgba(193, 216, 205, 0.86);
+        border-radius: 16px;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,252,250,0.94));
+        box-shadow: var(--warehouse-shadow-card);
+        overflow: hidden;
+      }
+      .warehouse-console-shell .warehouse-console-kpi-card::before,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-card::before,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-card::before,
+      .warehouse-console-shell .warehouse-console-inbound-card::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 5px;
+        height: 100%;
+        background: linear-gradient(180deg, var(--warehouse-board-accent), rgba(22,114,88,0.16));
+      }
+      .warehouse-console-shell .warehouse-console-kpi-value,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-card-value,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-card-value,
+      .warehouse-console-shell .warehouse-console-inbound-card-value {
+        font-size: clamp(26px, 3vw, 38px);
+        font-weight: 860;
+        color: #12251f;
+      }
+      .warehouse-console-shell .warehouse-console-kpi-label,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-card-label,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-card-label,
+      .warehouse-console-shell .warehouse-console-inbound-card-label {
+        color: #506961;
+        letter-spacing: 0.08em;
+      }
+      .warehouse-console-shell .warehouse-cockpit-start-card,
+      .warehouse-console-shell .warehouse-cockpit-route-card {
+        position: relative;
+        min-height: 168px;
+        padding: 18px;
+        border: 1px solid rgba(192, 216, 205, 0.9);
+        border-radius: 17px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,252,249,0.95));
+        box-shadow: var(--warehouse-shadow-card);
+        overflow: hidden;
+      }
+      .warehouse-console-shell .warehouse-cockpit-start-card::before,
+      .warehouse-console-shell .warehouse-cockpit-route-card::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 6px;
+        background: linear-gradient(180deg, var(--warehouse-board-accent), rgba(22,114,88,0.14));
+      }
+      .warehouse-console-shell .warehouse-cockpit-start-card.is-risk::before,
+      .warehouse-console-shell .warehouse-cockpit-route-card.is-risk::before {
+        background: linear-gradient(180deg, var(--warehouse-amber), rgba(183,121,31,0.16));
+      }
+      .warehouse-console-shell .warehouse-cockpit-start-card.is-movement::before,
+      .warehouse-console-shell .warehouse-cockpit-route-card.is-movement::before {
+        background: linear-gradient(180deg, var(--warehouse-accent-2), rgba(45,113,135,0.16));
+      }
+      .warehouse-console-shell .warehouse-cockpit-card-title {
+        color: #152620;
+        font-size: 15px;
+        font-weight: 840;
+      }
+      .warehouse-console-shell .warehouse-cockpit-card-kicker {
+        color: #5b7167;
+        letter-spacing: 0.09em;
+      }
+      .warehouse-console-shell .warehouse-console-inbound-panel {
+        border-radius: 18px;
+        border-color: rgba(193, 216, 205, 0.88);
+        background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,252,250,0.82));
+        box-shadow: var(--warehouse-shadow-soft);
+      }
+      .warehouse-console-shell .warehouse-console-outbound-panel {
+        --warehouse-board-accent: #2d7187;
+      }
+      .warehouse-console-shell .warehouse-console-inbound-row {
+        position: relative;
+        border-radius: 13px;
+        border-color: rgba(207, 225, 216, 0.9);
+        background: rgba(255,255,255,0.92);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.92) inset;
+      }
+      .warehouse-console-shell .warehouse-cockpit-guardrail,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-guardrail,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-guardrail {
+        border-radius: 16px;
+        border-color: rgba(183, 121, 31, 0.24);
+        background: linear-gradient(135deg, rgba(255,250,241,0.96), rgba(246,251,248,0.9));
+        box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset, 0 12px 28px rgba(113, 82, 35, 0.08);
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-controls,
+      .warehouse-outbound-premium-shell .warehouse-inbound-controls {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto auto;
+        gap: 10px;
+        padding: 15px;
+        border: 1px solid rgba(189, 214, 202, 0.92);
+        border-radius: 16px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(246,251,248,0.86));
+        box-shadow: var(--warehouse-shadow-soft);
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-field,
+      .warehouse-outbound-premium-shell .warehouse-inbound-field {
+        gap: 7px;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-field input,
+      .warehouse-inbound-premium-shell .warehouse-inbound-field select,
+      .warehouse-outbound-premium-shell .warehouse-inbound-field input,
+      .warehouse-outbound-premium-shell .warehouse-inbound-field select {
+        height: 40px;
+        border-radius: 11px;
+        border-color: rgba(182, 207, 195, 0.95);
+        background: #fbfefc;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.92) inset;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-row,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row {
+        position: relative;
+        padding: 16px 16px 16px 18px;
+        border: 1px solid rgba(200, 220, 211, 0.9);
+        border-radius: 17px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,252,250,0.94));
+        box-shadow: var(--warehouse-shadow-card);
+        overflow: hidden;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-row::before,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 6px;
+        background: linear-gradient(180deg, var(--warehouse-board-accent), rgba(22,114,88,0.16));
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-group-head,
+      .warehouse-outbound-premium-shell .warehouse-inbound-group-head {
+        padding-bottom: 11px;
+        border-bottom: 1px solid rgba(213, 228, 221, 0.9);
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-status-chip,
+      .warehouse-outbound-premium-shell .warehouse-inbound-status-chip {
+        min-height: 28px;
+        padding: 0 11px;
+        border-radius: 999px;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.78) inset;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-row-fact,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row-fact {
+        border-color: rgba(213, 228, 221, 0.92);
+        border-radius: 13px;
+        background: linear-gradient(180deg, #ffffff, #f8fcfa);
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-lines,
+      .warehouse-outbound-premium-shell .warehouse-inbound-lines {
+        margin-top: 3px;
+        padding: 12px;
+        border: 1px solid rgba(213, 228, 221, 0.9);
+        border-radius: 13px;
+        background: rgba(248, 252, 250, 0.84);
+      }
+ @media (max-width: 900px) {
+ .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-console-shell,
+ .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-inbound-premium-shell,
+ .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-outbound-premium-shell {
+ width: min(100%, calc(100% - 16px));
+ padding: 12px;
+ border-radius: 18px;
+ }
+ .warehouse-console-shell .warehouse-console-header,
+ .warehouse-inbound-premium-shell .warehouse-inbound-queue-header,
+ .warehouse-outbound-premium-shell .warehouse-inbound-queue-header {
+ border-radius: 16px;
+ }
+ }
       @media (max-width: 1240px) {
         .warehouse-console-kpi-grid {
           grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2250,6 +2613,357 @@
         .warehouse-receiving-actions .warehouse-inbound-queue-button,
         .warehouse-receiving-actions .warehouse-receiving-button {
           width: 100%;
+        }
+      }
+      /* W13C1R visual acceptance repair: stronger contrast, hierarchy, and phone-card readability. */
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-console-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-inbound-premium-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-outbound-premium-shell {
+        background:
+          linear-gradient(145deg, rgba(247, 252, 249, 0.96), rgba(232, 243, 237, 0.92)),
+          repeating-linear-gradient(90deg, rgba(13, 63, 50, 0.045) 0, rgba(13, 63, 50, 0.045) 1px, transparent 1px, transparent 40px),
+          repeating-linear-gradient(0deg, rgba(13, 63, 50, 0.032) 0, rgba(13, 63, 50, 0.032) 1px, transparent 1px, transparent 40px),
+          #eef7f2;
+        border-color: rgba(140, 176, 160, 0.62);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.92) inset, 0 34px 86px rgba(11, 39, 32, 0.18);
+      }
+      .warehouse-console-shell .warehouse-console-header,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-header,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header {
+        border-color: rgba(13, 54, 45, 0.72);
+        background:
+          linear-gradient(135deg, #092821 0%, #0f3a31 40%, #125943 72%, #1b765e 100%),
+          repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0, rgba(255, 255, 255, 0.07) 1px, transparent 1px, transparent 32px);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 30px 72px rgba(5, 32, 26, 0.36);
+        color: #f8fffb;
+      }
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header {
+        background:
+          linear-gradient(135deg, #08252c 0%, #123d4a 42%, #1c6275 76%, #267f8f 100%),
+          repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0, rgba(255, 255, 255, 0.07) 1px, transparent 1px, transparent 32px);
+      }
+      .warehouse-console-shell .warehouse-console-header::after,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-header::after,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header::after {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.15), transparent 52%),
+          repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.055) 0, rgba(255, 255, 255, 0.055) 1px, transparent 1px, transparent 30px);
+        mix-blend-mode: normal;
+      }
+      .warehouse-console-shell .warehouse-console-title,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-title,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-title {
+        color: #ffffff;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.32);
+      }
+      .warehouse-console-shell .warehouse-console-note,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-note,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-note {
+        color: rgba(241, 252, 247, 0.92);
+        font-size: 14px;
+        line-height: 1.55;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      }
+      .warehouse-console-shell .warehouse-cockpit-command-eyebrow,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-eyebrow,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-eyebrow {
+        color: #baf4dc;
+        font-weight: 800;
+      }
+      .warehouse-console-shell .warehouse-visual-chip,
+      .warehouse-inbound-premium-shell .warehouse-visual-chip,
+      .warehouse-outbound-premium-shell .warehouse-visual-chip {
+        border-color: rgba(219, 250, 238, 0.38);
+        background: rgba(236, 255, 247, 0.16);
+        color: #f7fffb;
+      }
+      .warehouse-console-shell .warehouse-console-refresh,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-head > .warehouse-inbound-queue-button,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-head > .warehouse-inbound-queue-button {
+        border-color: rgba(255, 255, 255, 0.32);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(229, 246, 238, 0.96));
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 14px 32px rgba(0, 0, 0, 0.2);
+      }
+      .warehouse-console-shell .warehouse-cockpit-pulse,
+      .warehouse-console-shell .warehouse-cockpit-start,
+      .warehouse-console-shell .warehouse-cockpit-route-section,
+      .warehouse-inbound-premium-shell .warehouse-inbound-group,
+      .warehouse-outbound-premium-shell .warehouse-inbound-group {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 250, 247, 0.94));
+        border-color: rgba(167, 197, 183, 0.86);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.96) inset, 0 22px 54px rgba(20, 51, 42, 0.14);
+      }
+      .warehouse-console-shell .warehouse-console-kpi-card,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-card,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-card,
+      .warehouse-console-shell .warehouse-console-inbound-card,
+      .warehouse-console-shell .warehouse-cockpit-start-card,
+      .warehouse-console-shell .warehouse-cockpit-route-card {
+        border-color: rgba(156, 190, 174, 0.88);
+        background:
+          linear-gradient(180deg, #ffffff 0%, #f8fcfa 58%, #eef8f3 100%);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.96) inset, 0 22px 50px rgba(20, 52, 43, 0.13);
+      }
+      .warehouse-console-shell .warehouse-console-kpi-card {
+        min-width: 0;
+      }
+      .warehouse-console-shell .warehouse-console-kpi-label,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-card-label,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-card-label,
+      .warehouse-console-shell .warehouse-console-inbound-card-label {
+        color: #466157;
+        font-weight: 800;
+        letter-spacing: 0.045em;
+        line-height: 1.25;
+        word-break: normal;
+        overflow-wrap: normal;
+        hyphens: none;
+      }
+      .warehouse-console-shell .warehouse-console-kpi-value,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-card-value,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-card-value,
+      .warehouse-console-shell .warehouse-console-inbound-card-value {
+        color: #0f261f;
+        line-height: 1;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-controls,
+      .warehouse-outbound-premium-shell .warehouse-inbound-controls {
+        border-color: rgba(156, 190, 174, 0.9);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(239, 248, 243, 0.95));
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.96) inset, 0 18px 44px rgba(21, 52, 43, 0.12);
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-field label,
+      .warehouse-outbound-premium-shell .warehouse-inbound-field label {
+        color: #334e44;
+        font-weight: 760;
+        letter-spacing: 0.04em;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-row,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row {
+        border-color: rgba(158, 193, 176, 0.88);
+        background:
+          linear-gradient(180deg, #ffffff 0%, #f9fdfb 48%, #f1f9f5 100%);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.96) inset, 0 20px 46px rgba(18, 49, 40, 0.12);
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-row:hover,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row:hover,
+      .warehouse-console-shell .warehouse-cockpit-start-card:hover,
+      .warehouse-console-shell .warehouse-cockpit-route-card:hover {
+        border-color: rgba(82, 143, 116, 0.7);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.96) inset, 0 26px 58px rgba(18, 49, 40, 0.16);
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-row-title,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row-title,
+      .warehouse-console-shell .warehouse-cockpit-card-title {
+        color: #10251f;
+        font-weight: 860;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-row-fact,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row-fact {
+        border-color: rgba(188, 213, 201, 0.94);
+        background: linear-gradient(180deg, #ffffff, #f3faf6);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.94) inset;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-lines,
+      .warehouse-outbound-premium-shell .warehouse-inbound-lines {
+        border-color: rgba(183, 209, 197, 0.92);
+        background: linear-gradient(180deg, rgba(245, 251, 248, 0.96), rgba(235, 246, 240, 0.92));
+      }
+      @media (max-width: 520px) {
+        .warehouse-console-kpi-grid,
+        .warehouse-console-inbound-cards,
+        .warehouse-inbound-queue-cards,
+        .warehouse-cockpit-start-grid,
+        .warehouse-cockpit-route-grid,
+        .warehouse-cockpit-route-grid.is-two {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .warehouse-console-shell .warehouse-console-kpi-card,
+        .warehouse-inbound-premium-shell .warehouse-inbound-queue-card,
+        .warehouse-outbound-premium-shell .warehouse-inbound-queue-card,
+        .warehouse-console-shell .warehouse-console-inbound-card {
+          min-height: 104px;
+          padding: 15px 16px 15px 18px;
+        }
+        .warehouse-console-shell .warehouse-console-title,
+        .warehouse-inbound-premium-shell .warehouse-inbound-queue-title,
+        .warehouse-outbound-premium-shell .warehouse-inbound-queue-title {
+          font-size: 28px;
+          line-height: 1.08;
+        }
+        .warehouse-console-shell .warehouse-console-kpi-label,
+        .warehouse-inbound-premium-shell .warehouse-inbound-queue-card-label,
+        .warehouse-outbound-premium-shell .warehouse-inbound-queue-card-label,
+        .warehouse-console-shell .warehouse-console-inbound-card-label {
+          letter-spacing: 0.03em;
+          white-space: normal;
+        }
+      }
+      /* W13B2 final visual correction: unambiguous dark command surfaces and readable phone grids. */
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-console-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-inbound-premium-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-outbound-premium-shell {
+        background-color: #eaf5ef !important;
+        background-image:
+          linear-gradient(145deg, rgba(243, 250, 246, 0.98), rgba(224, 239, 231, 0.96)),
+          repeating-linear-gradient(90deg, rgba(9, 58, 45, 0.05) 0, rgba(9, 58, 45, 0.05) 1px, transparent 1px, transparent 36px),
+          repeating-linear-gradient(0deg, rgba(9, 58, 45, 0.035) 0, rgba(9, 58, 45, 0.035) 1px, transparent 1px, transparent 36px) !important;
+        border-color: rgba(119, 158, 140, 0.72) !important;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.96) inset, 0 38px 92px rgba(8, 39, 31, 0.2) !important;
+      }
+      .warehouse-console-shell .warehouse-console-header,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-header,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header {
+        isolation: isolate;
+        overflow: hidden;
+        border-color: rgba(5, 35, 29, 0.9) !important;
+        background-color: #08241e !important;
+        background-image:
+          linear-gradient(135deg, #061d18 0%, #082b23 36%, #0d4838 68%, #126349 100%),
+          repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0, rgba(255, 255, 255, 0.08) 1px, transparent 1px, transparent 30px) !important;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 32px 76px rgba(4, 28, 22, 0.42) !important;
+      }
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header {
+        background-color: #08242b !important;
+        background-image:
+          linear-gradient(135deg, #061c22 0%, #0a3039 38%, #14566a 70%, #1d7285 100%),
+          repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0, rgba(255, 255, 255, 0.08) 1px, transparent 1px, transparent 30px) !important;
+      }
+      .warehouse-console-shell .warehouse-console-header > *,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-header > *,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header > * {
+        position: relative;
+        z-index: 2;
+      }
+      .warehouse-console-shell .warehouse-console-header::after,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-header::after,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-header::after {
+        z-index: 1;
+        opacity: 0.52;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent 48%),
+          repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0, rgba(255, 255, 255, 0.05) 1px, transparent 1px, transparent 28px) !important;
+      }
+      .warehouse-console-shell .warehouse-console-title,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-title,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-title {
+        color: #ffffff !important;
+        font-weight: 880 !important;
+        text-shadow: none !important;
+      }
+      .warehouse-console-shell .warehouse-console-note,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-note,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-note {
+        color: #e8fbf2 !important;
+        text-shadow: none !important;
+      }
+      .warehouse-console-shell .warehouse-cockpit-command-eyebrow,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-eyebrow,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-eyebrow {
+        color: #9df0cb !important;
+      }
+      .warehouse-console-shell .warehouse-cockpit-pulse,
+      .warehouse-console-shell .warehouse-cockpit-start,
+      .warehouse-console-shell .warehouse-cockpit-route-section,
+      .warehouse-inbound-premium-shell .warehouse-inbound-group,
+      .warehouse-outbound-premium-shell .warehouse-inbound-group {
+        border-color: rgba(126, 171, 151, 0.9) !important;
+        background:
+          linear-gradient(180deg, #ffffff 0%, #f3faf6 100%) !important;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.96) inset, 0 26px 64px rgba(11, 44, 35, 0.17) !important;
+      }
+      .warehouse-console-shell .warehouse-cockpit-pulse {
+        border-top: 4px solid rgba(18, 99, 73, 0.86) !important;
+      }
+      .warehouse-console-shell .warehouse-cockpit-start {
+        border-top: 4px solid rgba(17, 117, 82, 0.78) !important;
+      }
+      .warehouse-console-shell .warehouse-cockpit-route-section[data-warehouse-cockpit-risk] {
+        border-top: 4px solid rgba(183, 121, 31, 0.82) !important;
+      }
+      .warehouse-console-shell .warehouse-cockpit-route-section[data-warehouse-cockpit-movement] {
+        border-top: 4px solid rgba(45, 113, 135, 0.84) !important;
+      }
+      .warehouse-console-shell .warehouse-console-kpi-card,
+      .warehouse-inbound-premium-shell .warehouse-inbound-queue-card,
+      .warehouse-outbound-premium-shell .warehouse-inbound-queue-card,
+      .warehouse-console-shell .warehouse-console-inbound-card,
+      .warehouse-console-shell .warehouse-cockpit-start-card,
+      .warehouse-console-shell .warehouse-cockpit-route-card,
+      .warehouse-inbound-premium-shell .warehouse-inbound-row,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row {
+        border-color: rgba(128, 170, 151, 0.92) !important;
+        background:
+          linear-gradient(180deg, #ffffff 0%, #f7fcf9 55%, #edf7f1 100%) !important;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 24px 58px rgba(12, 44, 35, 0.15) !important;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-controls,
+      .warehouse-outbound-premium-shell .warehouse-inbound-controls {
+        border-color: rgba(118, 162, 143, 0.92) !important;
+        background:
+          linear-gradient(180deg, #ffffff 0%, #eef8f3 100%) !important;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 22px 52px rgba(12, 44, 35, 0.15) !important;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-group-head,
+      .warehouse-outbound-premium-shell .warehouse-inbound-group-head {
+        border-bottom-color: rgba(150, 188, 171, 0.94) !important;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-group-title,
+      .warehouse-outbound-premium-shell .warehouse-inbound-group-title,
+      .warehouse-console-shell .warehouse-cockpit-section-title {
+        color: #102820 !important;
+        font-weight: 880 !important;
+      }
+      .warehouse-inbound-premium-shell .warehouse-inbound-row-title,
+      .warehouse-outbound-premium-shell .warehouse-inbound-row-title,
+      .warehouse-console-shell .warehouse-cockpit-card-title {
+        color: #0d241d !important;
+        font-weight: 880 !important;
+      }
+      @media (max-width: 640px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-console-shell,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-inbound-premium-shell,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-shell.warehouse-outbound-premium-shell {
+          width: min(100%, calc(100% - 12px)) !important;
+          padding: 10px !important;
+        }
+        .warehouse-console-shell .warehouse-console-header,
+        .warehouse-inbound-premium-shell .warehouse-inbound-queue-header,
+        .warehouse-outbound-premium-shell .warehouse-inbound-queue-header {
+          padding: 18px !important;
+        }
+        .warehouse-console-shell .warehouse-console-kpi-grid,
+        .warehouse-console-shell .warehouse-console-inbound-cards,
+        .warehouse-console-shell .warehouse-cockpit-start-grid,
+        .warehouse-console-shell .warehouse-cockpit-route-grid,
+        .warehouse-console-shell .warehouse-cockpit-route-grid.is-two,
+        .warehouse-inbound-premium-shell .warehouse-inbound-queue-cards,
+        .warehouse-outbound-premium-shell .warehouse-inbound-queue-cards,
+        .warehouse-inbound-premium-shell .warehouse-inbound-controls,
+        .warehouse-outbound-premium-shell .warehouse-inbound-controls,
+        .warehouse-inbound-premium-shell .warehouse-inbound-row-facts,
+        .warehouse-outbound-premium-shell .warehouse-inbound-row-facts {
+          grid-template-columns: minmax(0, 1fr) !important;
+        }
+        .warehouse-console-shell .warehouse-console-kpi-card,
+        .warehouse-inbound-premium-shell .warehouse-inbound-queue-card,
+        .warehouse-outbound-premium-shell .warehouse-inbound-queue-card,
+        .warehouse-console-shell .warehouse-console-inbound-card,
+        .warehouse-console-shell .warehouse-cockpit-start-card,
+        .warehouse-console-shell .warehouse-cockpit-route-card {
+          width: 100% !important;
+          min-width: 0 !important;
+        }
+        .warehouse-console-shell .warehouse-console-kpi-label,
+        .warehouse-inbound-premium-shell .warehouse-inbound-queue-card-label,
+        .warehouse-outbound-premium-shell .warehouse-inbound-queue-card-label,
+        .warehouse-console-shell .warehouse-console-inbound-card-label {
+          letter-spacing: 0.015em !important;
+          line-height: 1.25 !important;
+          word-break: keep-all !important;
+          overflow-wrap: break-word !important;
         }
       }
     `;
