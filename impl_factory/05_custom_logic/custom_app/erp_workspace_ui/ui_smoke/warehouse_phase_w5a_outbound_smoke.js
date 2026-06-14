@@ -586,10 +586,12 @@ async function waitForWarehouseOverviewReady(page, diagnostics, label) {
       const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="warehouse"]');
       if (!shell || shell.classList.contains("warehouse-inbound-shell")) return false;
       const ready = shell.getAttribute("data-erpw-console-bootstrap") === "ready" || shell.getAttribute("data-erpw-console-runtime") === "ready";
+      const text = (shell.innerText || "").replace(/\s+/g, " ");
+      const hasCurrentOverview = document.querySelectorAll(".warehouse-console-kpi-card").length >= 3
+        && /Outbound Picking/.test(text)
+        && (document.querySelector("[data-warehouse-open-outbound]") || /Customer demand/.test(text));
       return ready
-        && document.querySelectorAll(".warehouse-console-kpi-card").length >= 6
-        && document.querySelectorAll("[data-warehouse-outbound-card]").length >= 4
-        && (document.querySelectorAll("[data-warehouse-outbound-preview-row]").length >= 1 || !ASSET_ROOT);
+        && hasCurrentOverview;
     }, null, { timeout: TIMEOUT });
   } catch (error) {
     error.details = { ...(error.details || {}), snapshot: await diagnosticSnapshot(page, diagnostics, `${label}-overview-timeout`) };
@@ -609,9 +611,7 @@ async function waitForWarehouseOutboundReady(page, diagnostics, label) {
       const hasRowsOrEmpty = shell.querySelectorAll("[data-warehouse-outbound-row]").length >= (expectRows ? 1 : 0) || shell.querySelector("[data-warehouse-outbound-empty]");
       const expectW12C = Boolean(window.__erpwWarehouseExpectW12C);
       const hasPolish = !expectW12C || (
-        shell.querySelectorAll("[data-warehouse-outbound-command-chip]").length >= 3
-        && shell.querySelector("[data-warehouse-outbound-guardrail]")
-        && shell.querySelectorAll("[data-warehouse-outbound-row-fact]").length >= (expectRows ? 4 : 0)
+        shell.querySelectorAll("[data-warehouse-outbound-row-fact]").length >= (expectRows ? 4 : 0)
       );
       return ready && hasCards && hasFilters && hasGroups && hasRowsOrEmpty && hasPolish;
     }, Boolean(ASSET_ROOT), { timeout: TIMEOUT });
@@ -761,9 +761,8 @@ async function exerciseUser(browser, user) {
     await waitForWarehouseOverviewReady(page, diagnostics, `${user.key}:desk-landing`);
     let state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:desk-landing`);
-    assert(state.kpiCount >= 6, "Overview KPI cards did not render", { user: user.key, state });
-    assert(state.outboundCardCount >= 4, "Overview outbound cards did not render", { user: user.key, state });
-    if (ASSET_ROOT) assert(state.outboundPreviewCount >= 1, "Overview outbound preview did not render", { user: user.key, state });
+    assert(state.kpiCount >= 3, "Overview pulse cards did not render", { user: user.key, state });
+    assert(/Outbound Picking/.test(state.text), "Overview outbound picking entry did not render", { user: user.key, state });
     await capture(page, `${user.key}-overview-landing`);
 
     for (const viewport of ACTIVE_VIEWPORTS) {
@@ -781,8 +780,8 @@ async function exerciseUser(browser, user) {
       assert(state.filterCount >= 4, "Outbound filters did not render", { user: user.key, viewport, state });
       assert(state.detailButtonCount >= 1, "Outbound rows must expose picking review navigation", { user: user.key, viewport, state });
       if (EXPECT_W12C) {
-        assert(state.queueCommandChipCount >= 3, "Outbound command chips did not render", { user: user.key, viewport, state });
-        assert(state.queueGuardrailCount === 1, "Outbound read-only guardrail did not render exactly once", { user: user.key, viewport, state });
+        assert(state.queueCommandChipCount === 0, "Outbound queue should not render noisy command chips in the confirmed premium layout", { user: user.key, viewport, state });
+        assert(state.queueGuardrailCount === 0, "Outbound queue should not render the removed guardrail block in the confirmed premium layout", { user: user.key, viewport, state });
         if (ASSET_ROOT) assert(state.queueRowFactCount >= 4, "Outbound fact cards did not render", { user: user.key, viewport, state });
       }
 

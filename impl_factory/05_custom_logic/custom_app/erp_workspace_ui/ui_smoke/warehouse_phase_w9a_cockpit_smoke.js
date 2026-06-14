@@ -466,7 +466,7 @@ function assertClean(state, context) {
 
 function assertW12KCockpit(state, contextLabel) {
   assert(state.commandCount === 1, "Cockpit command area must render once", { context: contextLabel, state });
-  assert(state.commandChipCount >= 3, "Cockpit command chips did not render", { context: contextLabel, state });
+  assert(state.commandChipCount === 0, "Cockpit command chips should not duplicate read-only/freshness status in the hero", { context: contextLabel, state });
   assert(state.refreshActionCount === 1, "Cockpit refresh control must render once", { context: contextLabel, state });
   assert(state.inboundActionCount >= 2, "Inbound receiving navigation is missing", { context: contextLabel, state });
   assert(state.outboundActionCount >= 2, "Outbound picking navigation is missing", { context: contextLabel, state });
@@ -484,7 +484,7 @@ function assertW12KCockpit(state, contextLabel) {
     assert(targets.includes(target), `Cockpit route target missing: ${target}`, { context: contextLabel, state });
   });
   assert((state.text || "").includes("Transfer Visibility"), "Transfer Visibility card text is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Read-only guardrail"), "Read-only guardrail label is missing", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Read-only guardrail"), "Overview should not render the bottom read-only guardrail label", { context: contextLabel, state });
   assert(state.warehousePageHeadCount <= 1, "Duplicate Warehouse page head chrome is visible", { context: contextLabel, state });
   assert(state.allPageHeadCount === 0, "Frappe page-head chrome is visible in Warehouse cockpit", { context: contextLabel, state });
   assert((state.sidebarDuplicates || []).length === 0, "Duplicate Warehouse sidebar items are visible", { context: contextLabel, state });
@@ -500,7 +500,7 @@ async function assertCockpit(page, contextLabel) {
   assert(state.workCount >= 2, "Work To Do paired cards did not render", { context: contextLabel, state });
   assert(state.riskCount >= 2, "Risks To Resolve cards did not render", { context: contextLabel, state });
   assert(state.movementCount >= 2, "Movement To Understand cards did not render", { context: contextLabel, state });
-  assert(state.guardrailCount === 1, "Read-only guardrail did not render", { context: contextLabel, state });
+  assert(state.guardrailCount === 0, "Overview should not render the bottom read-only guardrail panel", { context: contextLabel, state });
   if (EXPECT_W12K) assertW12KCockpit(state, contextLabel);
   return state;
 }

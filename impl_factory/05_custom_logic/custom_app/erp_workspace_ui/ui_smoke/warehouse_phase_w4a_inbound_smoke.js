@@ -524,10 +524,13 @@ async function waitForWarehouseOverviewReady(page, diagnostics, label) {
       const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="warehouse"]');
       if (!shell || shell.classList.contains("warehouse-inbound-shell")) return false;
       const ready = shell.getAttribute("data-erpw-console-bootstrap") === "ready" || shell.getAttribute("data-erpw-console-runtime") === "ready";
+      const text = String(shell.innerText || "").replace(/\s+/g, " ");
       return ready
-        && document.querySelectorAll(".warehouse-console-kpi-card").length >= 6
-        && document.querySelectorAll("[data-warehouse-inbound-card]").length >= 4
-        && document.querySelectorAll("[data-warehouse-inbound-preview-row]").length >= 1;
+        && text.includes("Warehouse Console")
+        && text.includes("Warehouse Pulse")
+        && text.includes("Start Warehouse Work")
+        && text.includes("Inbound Receiving")
+        && text.includes("Outbound Picking");
     }, null, { timeout: TIMEOUT });
   } catch (error) {
     error.details = { ...(error.details || {}), snapshot: await diagnosticSnapshot(page, diagnostics, `${label}-overview-timeout`) };
@@ -560,8 +563,7 @@ async function waitForWarehouseInboundReady(page, diagnostics, label) {
       const emptyCount = shell.querySelectorAll("[data-warehouse-inbound-empty]").length;
       const hasRowsOrEmpty = rowCount >= 1 || emptyCount >= 1;
       const hasW12BPolish = !window.__erpwWarehouseExpectW12B || (
-        shell.querySelectorAll("[data-warehouse-inbound-command-chip]").length >= 3
-        && shell.querySelector("[data-warehouse-inbound-guardrail]")
+        shell.querySelectorAll("[data-warehouse-inbound-command-chip]").length === 0
         && (
           shell.querySelectorAll("[data-warehouse-inbound-row-fact]").length >= 4
           || (rowCount === 0 && emptyCount >= 1)
@@ -691,9 +693,9 @@ async function exerciseUser(browser, user) {
     await waitForWarehouseOverviewReady(page, diagnostics, `${user.key}:desk-landing`);
     let state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:desk-landing`);
-    assert(state.kpiCount >= 6, "Overview KPI cards did not render", { user: user.key, state });
-    assert(state.inboundCardCount >= 4, "Overview inbound cards did not render", { user: user.key, state });
-    assert(state.inboundPreviewCount >= 1, "Overview inbound preview did not render", { user: user.key, state });
+    assert(state.text.includes("Warehouse Pulse"), "Overview pulse section did not render", { user: user.key, state });
+    assert(state.text.includes("Start Warehouse Work"), "Overview start section did not render", { user: user.key, state });
+    assert(state.text.includes("Inbound Receiving") && state.text.includes("Outbound Picking"), "Overview route cards did not render", { user: user.key, state });
     await capture(page, `${user.key}-overview-landing`);
 
     for (const viewport of ACTIVE_VIEWPORTS) {
@@ -714,8 +716,8 @@ async function exerciseUser(browser, user) {
       }
       assert(state.filterCount >= 4, "Inbound filters did not render", { user: user.key, viewport, state });
       if (EXPECT_W12B) {
-        assert(state.queueCommandChipCount >= 3, "Inbound command chips did not render", { user: user.key, viewport, state });
-        assert(state.queueGuardrailCount === 1, "Inbound read-only guardrail did not render once", { user: user.key, viewport, state });
+        assert(state.queueCommandChipCount === 0, "Inbound header should not render noisy command chips", { user: user.key, viewport, state });
+        assert(state.queueGuardrailCount === 0, "Inbound queue should not render the heavy read-only guardrail", { user: user.key, viewport, state });
         if (state.queueRowCount >= 1) {
           assert(state.queueRowFactCount >= 4, "Inbound premium row facts did not render", { user: user.key, viewport, state });
           assert(state.queueReviewButtonCount >= 1, "Inbound custom receiving review action did not render", { user: user.key, viewport, state });
@@ -755,8 +757,8 @@ async function exerciseUser(browser, user) {
       state = await snapshot(page);
       assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:repeat-route`);
       if (EXPECT_W12B) {
-        assert(state.queueCommandChipCount >= 3, "Inbound command chips did not survive repeated route navigation", { user: user.key, viewport, state });
-        assert(state.queueGuardrailCount === 1, "Inbound guardrail must remain single after repeated route navigation", { user: user.key, viewport, state });
+        assert(state.queueCommandChipCount === 0, "Inbound header command chips should stay hidden after repeated route navigation", { user: user.key, viewport, state });
+        assert(state.queueGuardrailCount === 0, "Inbound queue should not render the heavy read-only guardrail after repeated route navigation", { user: user.key, viewport, state });
       }
     }
 
