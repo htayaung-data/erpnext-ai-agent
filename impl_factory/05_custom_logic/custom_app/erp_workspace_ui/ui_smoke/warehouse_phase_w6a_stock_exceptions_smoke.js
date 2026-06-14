@@ -394,8 +394,6 @@ async function waitForStock(page) {
       && (shell.querySelectorAll("[data-warehouse-stock-exception-row]").length >= 1 || shell.querySelector("[data-warehouse-stock-exception-empty]"))
       && (!window.__erpwWarehouseExpectW12E || (
         shell.querySelector("[data-warehouse-stock-exception-command]")
-        && shell.querySelectorAll("[data-warehouse-stock-exception-command-chip]").length >= 3
-        && shell.querySelector("[data-warehouse-stock-exception-guardrail]")
         && (shell.querySelectorAll("[data-warehouse-stock-exception-row-fact]").length >= 4 || shell.querySelector("[data-warehouse-stock-exception-empty]"))
       )));
   }, null, { timeout: TIMEOUT });
@@ -492,12 +490,12 @@ function assertClean(state, context) {
 function assertW12EStockPolish(state, context) {
   if (!EXPECT_W12E) return;
   assert(state.stockCommandCount === 1, "Stock Exceptions command header did not render exactly once", { context, state });
-  assert(state.stockBackOverviewCount === 1, "Stock Exceptions page link did not render exactly once", { context, state });
+  assert(state.stockBackOverviewCount === 0, "Stock Exceptions should not render the removed Open Warehouse page link", { context, state });
   assert(state.stockApplyCount === 1, "Stock Exceptions Apply control did not render exactly once", { context, state });
   assert(state.stockResetCount === 1, "Stock Exceptions Reset control did not render exactly once", { context, state });
   assert(state.stockRefreshCount === 1, "Stock Exceptions Refresh control did not render exactly once", { context, state });
-  assert(state.stockCommandChipCount >= 3, "Stock Exceptions command chips did not render", { context, state });
-  assert(state.stockGuardrailCount === 1, "Stock Exceptions read-only guardrail did not render exactly once", { context, state });
+  assert(state.stockCommandChipCount === 0, "Stock Exceptions should not render noisy command chips in the confirmed premium layout", { context, state });
+  assert(state.stockGuardrailCount === 0, "Stock Exceptions should not render the removed guardrail block in the confirmed premium layout", { context, state });
   assert(state.stockCardCount >= 4, "Stock Exceptions summary cards did not render", { context, state });
   assert(state.stockGroupCount >= 4, "Stock Exceptions groups did not render", { context, state });
   assert(state.stockRowCount >= 1 || state.stockEmptyCount >= 1, "Stock Exceptions rows or empty states did not render", { context, state });
