@@ -483,13 +483,13 @@ function assertW12JPolish(state, context) {
   assert(state.transferShellCount === 1, "Transfer shell count must be 1", { context, state });
   assert(state.transferState !== "loading", "Transfer Visibility still shows loading state", { context, state });
   assert(state.transferCommandCount === 1, "Transfer command header did not render once", { context, state });
-  assert(state.transferCommandChipCount >= 3, "Transfer command chips did not render", { context, state });
-  assert(state.transferCommandFactCount >= 4, "Transfer command facts did not render", { context, state });
-  assert(state.transferGuardrailCount === 1, "Transfer read-only guardrail did not render once", { context, state });
+  assert(state.transferCommandChipCount === 0, "Transfer top badges should not render in premium queue layout", { context, state });
+  assert(state.transferCommandFactCount === 0, "Transfer command fact strip should not render in premium queue layout", { context, state });
+  assert(state.transferGuardrailCount === 0, "Transfer guardrail block should not render in premium queue layout", { context, state });
   assert(state.transferSummaryCardCount >= 4, "Transfer summary cards did not render", { context, state });
   assert(state.transferGroupCount >= 4, "Transfer groups did not render", { context, state });
   assert(state.transferRowFactCount >= 4 || state.transferEmptyCount >= 1, "Transfer row facts or controlled empty state did not render", { context, state });
-  assert(state.transferOpenWarehouseCount === 1, "Open Warehouse page control should render once", { context, state });
+  assert(state.transferOpenWarehouseCount === 0, "Open Warehouse page control should not render in premium queue layout", { context, state });
   assert(state.transferApplyCount === 1, "Transfer Apply control should render once", { context, state });
   assert(state.transferResetCount === 1, "Transfer Reset control should render once", { context, state });
   assert(state.transferRefreshCount === 1, "Transfer Refresh control should render once", { context, state });
