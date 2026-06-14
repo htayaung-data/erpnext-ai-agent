@@ -452,13 +452,13 @@ async function snapshot(page) {
 
 function assertW12HPolish(state, context) {
   assert(state.movementCommandCount === 1, "Movement command header did not render once", { context, state });
-  assert(state.movementCommandChipCount >= 3, "Movement command identity chips did not render", { context, state });
-  assert(state.movementCommandFactCount >= 4, "Movement command facts did not render", { context, state });
-  assert(state.movementGuardrailCount === 1, "Movement read-only guardrail did not render once", { context, state });
+  assert(state.movementCommandChipCount === 0, "Movement top badges should not render in premium queue layout", { context, state });
+  assert(state.movementCommandFactCount === 0, "Movement command fact strip should not render in premium queue layout", { context, state });
+  assert(state.movementGuardrailCount === 0, "Movement guardrail block should not render in premium queue layout", { context, state });
   assert(state.movementCardCount >= 4, "Movement summary cards did not render", { context, state });
   assert(state.movementGroupCount >= 5, "Movement groups did not render", { context, state });
   assert(state.movementRowFactCount >= 4 || state.movementEmptyCount >= 1, "Movement row facts or empty state did not render", { context, state });
-  assert(state.movementOpenWarehouseCount === 1, "Movement overview navigation should render once", { context, state });
+  assert(state.movementOpenWarehouseCount === 0, "Movement overview navigation should not render in premium queue layout", { context, state });
   assert(state.movementApplyCount === 1, "Movement Apply control should render once", { context, state });
   assert(state.movementResetCount === 1, "Movement Reset control should render once", { context, state });
   assert(state.movementRefreshCount === 1, "Movement Refresh control should render once", { context, state });
