@@ -4714,6 +4714,1721 @@
           width: 100%;
         }
       }
+      /* W13 top-level typography normalization: keep Warehouse close to Sales/Procurement scale. */
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-premium-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-outbound-premium-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-premium-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-premium-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-transfer-premium-shell {
+        font-family: inherit;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-console-title,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-premium-shell .warehouse-inbound-queue-title,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-outbound-premium-shell .warehouse-inbound-queue-title,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-premium-shell .warehouse-inbound-queue-title,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-premium-shell .warehouse-inbound-queue-title,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-transfer-premium-shell .warehouse-inbound-queue-title {
+        font-size: clamp(24px, 1.9vw, 26px);
+        line-height: 1.12;
+        font-weight: 700;
+        letter-spacing: -0.018em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-console-kpi-value,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-console-inbound-card-value {
+        font-size: 22px;
+        line-height: 1.12;
+        font-weight: 690;
+        letter-spacing: -0.012em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-premium-shell .warehouse-inbound-queue-card-value,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-outbound-premium-shell .warehouse-inbound-queue-card-value,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-premium-shell .warehouse-inbound-queue-card-value,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-premium-shell .warehouse-inbound-queue-card-value,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-transfer-premium-shell .warehouse-inbound-queue-card-value {
+        font-size: 19px;
+        line-height: 1.14;
+        font-weight: 680;
+        letter-spacing: -0.01em;
+      }
+      @media (max-width: 640px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-console-title,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-premium-shell .warehouse-inbound-queue-title,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-outbound-premium-shell .warehouse-inbound-queue-title,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-premium-shell .warehouse-inbound-queue-title,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-premium-shell .warehouse-inbound-queue-title,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-transfer-premium-shell .warehouse-inbound-queue-title {
+          font-size: 24px;
+          letter-spacing: -0.012em;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-console-kpi-value,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-console-inbound-card-value,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-inbound-premium-shell .warehouse-inbound-queue-card-value,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-outbound-premium-shell .warehouse-inbound-queue-card-value,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-premium-shell .warehouse-inbound-queue-card-value,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-premium-shell .warehouse-inbound-queue-card-value,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-transfer-premium-shell .warehouse-inbound-queue-card-value {
+          font-size: 20px;
+        }
+      }
+      /* Receiving Review premium alignment with confirmed Warehouse queue style. */
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] {
+        width: min(1120px, calc(100% - 24px));
+        padding: 20px 0 30px;
+        border: 0;
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-header {
+        gap: 18px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: start;
+        padding-top: 4px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-eyebrow,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-chip-row {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-title {
+        color: #020617;
+        font-size: clamp(24px, 1.9vw, 26px);
+        font-weight: 700;
+        line-height: 1.12;
+        letter-spacing: -0.018em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-subtitle {
+        max-width: 720px;
+        margin-top: 8px;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-actions {
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-button {
+        min-height: 34px;
+        padding: 0 13px;
+        border-color: rgba(203, 213, 225, 0.98);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.94);
+        color: #0f172a;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-button:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-button:focus-visible {
+        border-color: rgba(148, 163, 184, 0.92);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.055);
+        transform: translateY(-1px);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        margin-top: 4px;
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow:
+          0 14px 32px rgba(15, 23, 42, 0.035),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-command-fact {
+        padding: 14px 16px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-command-fact + .warehouse-receiving-command-fact {
+        border-left: 1px solid rgba(226, 232, 240, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-command-fact span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-card-label,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line-fact span {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.018em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-command-fact strong {
+        margin-top: 6px;
+        color: #020617;
+        font-size: 13px;
+        font-weight: 690;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-panel {
+        display: grid;
+        gap: 14px;
+        margin-top: 18px;
+        padding: 16px;
+        border: 1px solid rgba(226, 232, 240, 0.72);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow:
+          0 24px 52px rgba(15, 23, 42, 0.055),
+          0 8px 18px rgba(15, 23, 42, 0.028),
+          inset 0 1px 0 rgba(255, 255, 255, 0.94);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-title {
+        margin: 0;
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-note {
+        margin-top: 5px;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-layout {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-block {
+        display: grid;
+        gap: 9px;
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid rgba(226, 232, 240, 0.62);
+        border-radius: 17px;
+        background: #fbfcfe;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-kicker {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 780;
+        letter-spacing: 0.022em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-block .warehouse-receiving-readiness,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-block .warehouse-receiving-cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+        background: transparent;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-readiness-card,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-card {
+        min-height: 82px;
+        padding: 12px 13px;
+        border: 1px solid rgba(226, 232, 240, 0.58);
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow:
+          0 9px 18px rgba(15, 23, 42, 0.026),
+          inset 0 1px 0 rgba(255, 255, 255, 0.92);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-card-value {
+        margin-top: 5px;
+        color: #020617;
+        font-size: 18px;
+        font-weight: 690;
+        line-height: 1.12;
+        letter-spacing: -0.01em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-card-note {
+        margin-top: 5px;
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-note {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-guardrail {
+        display: inline-flex;
+        width: fit-content;
+        max-width: 100%;
+        gap: 8px;
+        margin-top: 8px;
+        margin-bottom: 4px;
+        padding: 7px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.78);
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.3;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-guardrail strong {
+        color: #334155;
+        font-weight: 760;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-detail {
+        gap: 16px;
+        margin-top: 18px;
+        padding: 18px;
+        border: 1px solid rgba(226, 232, 240, 0.84);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.045);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-detail-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-section-title {
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-tab {
+        min-height: 34px;
+        padding: 0 13px;
+        border-color: rgba(203, 213, 225, 0.9);
+        border-radius: 12px;
+        background: #ffffff;
+        color: #334155;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.025);
+        cursor: pointer;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-tab.is-active {
+        border-color: rgba(20, 184, 166, 0.32);
+        background: rgba(240, 253, 250, 0.82);
+        color: #0f766e;
+        box-shadow: 0 10px 22px rgba(15, 118, 110, 0.055);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-panel {
+        gap: 15px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-panel:not(.is-active) {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-panel.is-active {
+        display: grid;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-history-row {
+        position: relative;
+        gap: 12px;
+        padding: 16px 17px 16px 18px;
+        border: 1px solid rgba(226, 232, 240, 0.72);
+        border-radius: 18px;
+        background:
+          radial-gradient(circle at 4% 0%, rgba(255, 255, 255, 0.92), transparent 34%),
+          linear-gradient(180deg, #f8fbff 0%, #f5f8fc 100%);
+        box-shadow:
+          0 16px 34px rgba(15, 23, 42, 0.045),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line.is-blocked {
+        border-color: rgba(226, 232, 240, 0.72);
+        background:
+          radial-gradient(circle at 4% 0%, rgba(255, 255, 255, 0.92), transparent 34%),
+          linear-gradient(180deg, #f8fbff 0%, #f5f8fc 100%);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-history-row:hover {
+        border-color: rgba(226, 232, 240, 0.72);
+        box-shadow:
+          0 16px 34px rgba(15, 23, 42, 0.045),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line-facts {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line-fact {
+        padding: 10px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow:
+          0 6px 14px rgba(15, 23, 42, 0.025),
+          inset 0 1px 0 rgba(255, 255, 255, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line-fact strong {
+        margin-top: 5px;
+        color: #020617;
+        font-size: 12.5px;
+        font-weight: 690;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line-status {
+        border-color: rgba(203, 213, 225, 0.88);
+        border-radius: 999px;
+        background: #ffffff;
+        color: #334155;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] {
+        width: min(1120px, calc(100% - 48px));
+        padding: 18px 0 34px;
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-header {
+        gap: 18px;
+        margin-bottom: 24px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: #ffffff;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-eyebrow {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-title {
+        color: #020617;
+        font-size: clamp(24px, 1.9vw, 26px);
+        font-weight: 700;
+        line-height: 1.12;
+        letter-spacing: -0.018em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-subtitle {
+        max-width: 720px;
+        margin-top: 8px;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-chip-row {
+        display: flex;
+        margin-top: 4px;
+        gap: 6px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-chip {
+        min-height: 22px;
+        padding: 0 8px;
+        border-color: rgba(203, 213, 225, 0.78);
+        background: rgba(248, 250, 252, 0.74);
+        color: #475569;
+        font-size: 10.5px;
+        font-weight: 680;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-chip.is-read-only {
+        border-color: rgba(20, 184, 166, 0.22);
+        background: rgba(240, 253, 250, 0.72);
+        color: #0f766e;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-actions {
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-button {
+        min-height: 34px;
+        padding: 0 13px;
+        border-color: rgba(203, 213, 225, 0.98);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.94);
+        color: #0f172a;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-button:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-button:focus-visible {
+        border-color: rgba(148, 163, 184, 0.92);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.055);
+        transform: translateY(-1px);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        margin-top: 4px;
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow:
+          0 14px 32px rgba(15, 23, 42, 0.035),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-command-fact {
+        padding: 14px 16px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-command-fact + .warehouse-receiving-command-fact {
+        border-left: 1px solid rgba(226, 232, 240, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-command-fact span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-card-label,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line-fact span {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.018em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-command-fact strong {
+        margin-top: 6px;
+        color: #020617;
+        font-size: 13px;
+        font-weight: 690;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-panel {
+        display: grid;
+        gap: 14px;
+        margin-top: 18px;
+        padding: 16px;
+        border: 1px solid rgba(226, 232, 240, 0.72);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow:
+          0 24px 52px rgba(15, 23, 42, 0.055),
+          0 8px 18px rgba(15, 23, 42, 0.028),
+          inset 0 1px 0 rgba(255, 255, 255, 0.94);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-title {
+        margin: 0;
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-note {
+        margin-top: 5px;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-layout {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-block {
+        display: grid;
+        gap: 9px;
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid rgba(226, 232, 240, 0.62);
+        border-radius: 17px;
+        background: #fbfcfe;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-kicker {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 780;
+        letter-spacing: 0.022em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-block .warehouse-receiving-readiness,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-block .warehouse-receiving-cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+        background: transparent;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-readiness-card,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-card {
+        min-height: 82px;
+        padding: 12px 13px;
+        border: 1px solid rgba(226, 232, 240, 0.58);
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow:
+          0 9px 18px rgba(15, 23, 42, 0.026),
+          inset 0 1px 0 rgba(255, 255, 255, 0.92);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-card-value {
+        margin-top: 5px;
+        color: #020617;
+        font-size: 18px;
+        font-weight: 690;
+        line-height: 1.12;
+        letter-spacing: -0.01em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-card-note {
+        margin-top: 5px;
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-note {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-guardrail {
+        display: inline-flex;
+        width: fit-content;
+        max-width: 100%;
+        gap: 8px;
+        margin-top: 8px;
+        margin-bottom: 4px;
+        padding: 7px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.78);
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.3;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-guardrail strong {
+        color: #334155;
+        font-weight: 760;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-detail {
+        gap: 16px;
+        margin-top: 18px;
+        padding: 18px;
+        border: 1px solid rgba(226, 232, 240, 0.84);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.045);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-detail-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-section-title {
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-tab {
+        min-height: 34px;
+        padding: 0 13px;
+        border-color: rgba(203, 213, 225, 0.9);
+        border-radius: 12px;
+        background: #ffffff;
+        color: #334155;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.025);
+        cursor: pointer;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-tab.is-active {
+        border-color: rgba(20, 184, 166, 0.32);
+        background: rgba(240, 253, 250, 0.82);
+        color: #0f766e;
+        box-shadow: 0 10px 22px rgba(15, 118, 110, 0.055);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-panel {
+        gap: 15px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-panel:not(.is-active) {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-panel.is-active {
+        display: grid;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-history-row {
+        position: relative;
+        gap: 12px;
+        padding: 16px 17px 16px 18px;
+        border: 1px solid rgba(226, 232, 240, 0.72);
+        border-radius: 18px;
+        background:
+          radial-gradient(circle at 4% 0%, rgba(255, 255, 255, 0.92), transparent 34%),
+          linear-gradient(180deg, #f8fbff 0%, #f5f8fc 100%);
+        box-shadow:
+          0 16px 34px rgba(15, 23, 42, 0.045),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-history-row:hover {
+        border-color: rgba(226, 232, 240, 0.72);
+        box-shadow:
+          0 16px 34px rgba(15, 23, 42, 0.045),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line-facts {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line-fact {
+        padding: 10px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow:
+          0 6px 14px rgba(15, 23, 42, 0.025),
+          inset 0 1px 0 rgba(255, 255, 255, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line-fact strong {
+        margin-top: 5px;
+        color: #020617;
+        font-size: 12.5px;
+        font-weight: 690;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line-status {
+        border-color: rgba(203, 213, 225, 0.88);
+        border-radius: 999px;
+        background: #ffffff;
+        color: #334155;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] {
+        width: min(1120px, calc(100% - 48px));
+        padding: 18px 0 34px;
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-header {
+        gap: 18px;
+        margin-bottom: 24px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: #ffffff;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-eyebrow {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-title {
+        color: #020617;
+        font-size: clamp(24px, 1.9vw, 26px);
+        font-weight: 700;
+        line-height: 1.12;
+        letter-spacing: -0.018em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-subtitle {
+        max-width: 720px;
+        margin-top: 8px;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        margin-top: 4px;
+        gap: 6px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-chip-row .warehouse-inbound-chip {
+        min-height: 22px;
+        padding: 0 8px;
+        border-color: rgba(203, 213, 225, 0.78);
+        background: rgba(248, 250, 252, 0.74);
+        color: #475569;
+        font-size: 10.5px;
+        font-weight: 680;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-chip-row .warehouse-inbound-chip.is-read-only {
+        border-color: rgba(20, 184, 166, 0.22);
+        background: rgba(240, 253, 250, 0.72);
+        color: #0f766e;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-actions {
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-button {
+        min-height: 34px;
+        padding: 0 13px;
+        border-color: rgba(203, 213, 225, 0.98);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.94);
+        color: #0f172a;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-button:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-button:focus-visible {
+        border-color: rgba(148, 163, 184, 0.92);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.055);
+        transform: translateY(-1px);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        margin-top: 4px;
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow:
+          0 14px 32px rgba(15, 23, 42, 0.035),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-command-fact {
+        padding: 14px 16px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-command-fact + .warehouse-stock-exception-review-command-fact {
+        border-left: 1px solid rgba(226, 232, 240, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-command-fact span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-card-label,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-fact span {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.018em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-command-fact strong {
+        margin-top: 6px;
+        color: #020617;
+        font-size: 13px;
+        font-weight: 690;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-note {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-posture-panel {
+        display: grid;
+        gap: 14px;
+        margin-top: 18px;
+        padding: 16px;
+        border: 1px solid rgba(226, 232, 240, 0.72);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow:
+          0 24px 52px rgba(15, 23, 42, 0.055),
+          0 8px 18px rgba(15, 23, 42, 0.028),
+          inset 0 1px 0 rgba(255, 255, 255, 0.94);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-posture-panel .warehouse-receiving-posture-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-posture-title {
+        margin: 0;
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-posture-note {
+        margin-top: 5px;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-posture-kicker {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 780;
+        letter-spacing: 0.022em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-posture-block {
+        display: grid;
+        gap: 9px;
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid rgba(226, 232, 240, 0.62);
+        border-radius: 17px;
+        background: #fbfcfe;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-posture-block .warehouse-receiving-cards {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+        background: transparent;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-card {
+        min-height: 82px;
+        padding: 12px 13px;
+        border: 1px solid rgba(226, 232, 240, 0.58);
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow:
+          0 9px 18px rgba(15, 23, 42, 0.026),
+          inset 0 1px 0 rgba(255, 255, 255, 0.92);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-card-value {
+        margin-top: 5px;
+        color: #020617;
+        font-size: 18px;
+        font-weight: 690;
+        line-height: 1.12;
+        letter-spacing: -0.01em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-card-note {
+        margin-top: 5px;
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-guardrail {
+        display: inline-flex;
+        width: fit-content;
+        max-width: 100%;
+        gap: 8px;
+        margin-top: 8px;
+        margin-bottom: 4px;
+        padding: 7px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.78);
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.3;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-guardrail strong {
+        color: #334155;
+        font-weight: 760;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-panel,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-related-panel {
+        gap: 13px;
+        padding: 17px;
+        border: 1px solid rgba(226, 232, 240, 0.76);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-inbound-group-title {
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-inbound-group-note {
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-facts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-fact {
+        display: grid;
+        gap: 5px;
+        align-items: start;
+        justify-content: stretch;
+        min-height: 58px;
+        padding: 10px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow:
+          0 6px 14px rgba(15, 23, 42, 0.025),
+          inset 0 1px 0 rgba(255, 255, 255, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-fact strong {
+        color: #020617;
+        font-size: 12.5px;
+        font-weight: 690;
+        line-height: 1.25;
+        text-align: left;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-next-card,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] [data-warehouse-stock-exception-related-row] {
+        border-color: rgba(226, 232, 240, 0.78);
+        border-radius: 16px;
+        background:
+          radial-gradient(circle at 4% 0%, rgba(255, 255, 255, 0.92), transparent 34%),
+          linear-gradient(180deg, #f8fbff 0%, #f5f8fc 100%);
+        box-shadow:
+          0 12px 26px rgba(15, 23, 42, 0.04),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] {
+        width: min(1120px, calc(100% - 48px));
+        padding: 18px 0 34px;
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-header {
+        gap: 18px;
+        margin-bottom: 24px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: #ffffff;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-eyebrow {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-title {
+        color: #020617;
+        font-size: clamp(24px, 1.9vw, 26px);
+        font-weight: 700;
+        line-height: 1.12;
+        letter-spacing: -0.018em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-subtitle {
+        max-width: 720px;
+        margin-top: 8px;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        margin-top: 4px;
+        gap: 6px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-chip-row .warehouse-inbound-chip {
+        min-height: 22px;
+        padding: 0 8px;
+        border-color: rgba(203, 213, 225, 0.78);
+        background: rgba(248, 250, 252, 0.74);
+        color: #475569;
+        font-size: 10.5px;
+        font-weight: 680;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-chip-row .warehouse-inbound-chip.is-read-only {
+        border-color: rgba(20, 184, 166, 0.22);
+        background: rgba(240, 253, 250, 0.72);
+        color: #0f766e;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-actions {
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-button {
+        min-height: 34px;
+        padding: 0 13px;
+        border-color: rgba(203, 213, 225, 0.98);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.94);
+        color: #0f172a;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-button:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-button:focus-visible {
+        border-color: rgba(148, 163, 184, 0.92);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.055);
+        transform: translateY(-1px);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        margin-top: 4px;
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow:
+          0 14px 32px rgba(15, 23, 42, 0.035),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-command-fact {
+        padding: 14px 16px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-command-fact + .warehouse-stock-posture-command-fact {
+        border-left: 1px solid rgba(226, 232, 240, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-command-fact span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-card-label,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-fact span {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.018em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-command-fact strong {
+        margin-top: 6px;
+        color: #020617;
+        font-size: 13px;
+        font-weight: 690;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-note {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-panel {
+        display: grid;
+        gap: 14px;
+        margin-top: 0;
+        margin-bottom: 18px;
+        padding: 16px;
+        border: 1px solid rgba(226, 232, 240, 0.72);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow:
+          0 24px 52px rgba(15, 23, 42, 0.055),
+          0 8px 18px rgba(15, 23, 42, 0.028),
+          inset 0 1px 0 rgba(255, 255, 255, 0.94);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-panel .warehouse-receiving-posture-layout {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-posture-title {
+        margin: 0;
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-posture-note {
+        margin-top: 5px;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-posture-kicker {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 780;
+        letter-spacing: 0.022em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-block {
+        display: grid;
+        gap: 9px;
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid rgba(226, 232, 240, 0.62);
+        border-radius: 17px;
+        background: #fbfcfe;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-block .warehouse-receiving-cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+        background: transparent;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-card {
+        min-height: 82px;
+        padding: 12px 13px;
+        border: 1px solid rgba(226, 232, 240, 0.58);
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow:
+          0 9px 18px rgba(15, 23, 42, 0.026),
+          inset 0 1px 0 rgba(255, 255, 255, 0.92);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-card-value {
+        margin-top: 5px;
+        color: #020617;
+        font-size: 18px;
+        font-weight: 690;
+        line-height: 1.12;
+        letter-spacing: -0.01em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-card-note {
+        margin-top: 5px;
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-guardrail {
+        display: inline-flex;
+        width: fit-content;
+        max-width: 100%;
+        gap: 8px;
+        margin-top: 0;
+        margin-bottom: 4px;
+        padding: 7px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.78);
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.3;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-guardrail strong {
+        color: #334155;
+        font-weight: 760;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-panel,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-detail {
+        gap: 13px;
+        padding: 17px;
+        border: 1px solid rgba(226, 232, 240, 0.76);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-inbound-group-title {
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-inbound-group-note {
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-facts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-fact {
+        display: grid;
+        gap: 5px;
+        align-items: start;
+        justify-content: stretch;
+        min-height: 58px;
+        padding: 10px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow:
+          0 6px 14px rgba(15, 23, 42, 0.025),
+          inset 0 1px 0 rgba(255, 255, 255, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-fact strong {
+        color: #020617;
+        font-size: 12.5px;
+        font-weight: 690;
+        line-height: 1.25;
+        text-align: left;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-recommended-grid {
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-recommended-card,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] [data-warehouse-stock-posture-row],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] [data-warehouse-stock-posture-related-row] {
+        border-color: rgba(226, 232, 240, 0.78);
+        border-radius: 16px;
+        background:
+          radial-gradient(circle at 4% 0%, rgba(255, 255, 255, 0.92), transparent 34%),
+          linear-gradient(180deg, #f8fbff 0%, #f5f8fc 100%);
+        box-shadow:
+          0 12px 26px rgba(15, 23, 42, 0.04),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] {
+        width: min(1120px, calc(100% - 48px));
+        padding: 18px 0 34px;
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-header {
+        gap: 18px;
+        margin-bottom: 24px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: #ffffff;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-eyebrow {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-title {
+        color: #020617;
+        font-size: clamp(24px, 1.9vw, 26px);
+        font-weight: 700;
+        line-height: 1.12;
+        letter-spacing: -0.018em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-subtitle {
+        max-width: 720px;
+        margin-top: 8px;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        margin-top: 4px;
+        gap: 6px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-chip-row .warehouse-inbound-chip {
+        min-height: 22px;
+        padding: 0 8px;
+        border-color: rgba(203, 213, 225, 0.78);
+        background: rgba(248, 250, 252, 0.74);
+        color: #475569;
+        font-size: 10.5px;
+        font-weight: 680;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-chip-row .warehouse-inbound-chip.is-read-only {
+        border-color: rgba(20, 184, 166, 0.22);
+        background: rgba(240, 253, 250, 0.72);
+        color: #0f766e;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-actions {
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-button {
+        min-height: 34px;
+        padding: 0 13px;
+        border-color: rgba(203, 213, 225, 0.98);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.94);
+        color: #0f172a;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-button:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-button:focus-visible {
+        border-color: rgba(148, 163, 184, 0.92);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.055);
+        transform: translateY(-1px);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-command-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        margin-top: 4px;
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow:
+          0 14px 32px rgba(15, 23, 42, 0.035),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-command-fact {
+        padding: 14px 16px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-command-fact + .warehouse-movement-review-command-fact {
+        border-left: 1px solid rgba(226, 232, 240, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-command-fact span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-card-label,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-line-fact span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-panel-item span {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.018em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-command-fact strong {
+        margin-top: 6px;
+        color: #020617;
+        font-size: 13px;
+        font-weight: 690;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-note {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-panel {
+        display: grid;
+        gap: 14px;
+        margin-top: 0;
+        margin-bottom: 18px;
+        padding: 16px;
+        border: 1px solid rgba(226, 232, 240, 0.72);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow:
+          0 24px 52px rgba(15, 23, 42, 0.055),
+          0 8px 18px rgba(15, 23, 42, 0.028),
+          inset 0 1px 0 rgba(255, 255, 255, 0.94);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-panel .warehouse-receiving-posture-layout {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-posture-title {
+        margin: 0;
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-posture-note {
+        margin-top: 5px;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-posture-kicker {
+        color: #52637a;
+        font-size: 10px;
+        font-weight: 780;
+        letter-spacing: 0.022em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-block {
+        display: grid;
+        gap: 9px;
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid rgba(226, 232, 240, 0.62);
+        border-radius: 17px;
+        background: #fbfcfe;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-block .warehouse-receiving-cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+        background: transparent;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-card {
+        min-height: 82px;
+        padding: 12px 13px;
+        border: 1px solid rgba(226, 232, 240, 0.58);
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow:
+          0 9px 18px rgba(15, 23, 42, 0.026),
+          inset 0 1px 0 rgba(255, 255, 255, 0.92);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-card-value {
+        margin-top: 5px;
+        color: #020617;
+        font-size: 18px;
+        font-weight: 690;
+        line-height: 1.12;
+        letter-spacing: -0.01em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-card-note {
+        margin-top: 5px;
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-guardrail {
+        display: inline-flex;
+        width: fit-content;
+        max-width: 100%;
+        gap: 8px;
+        margin-top: 0;
+        margin-bottom: 4px;
+        padding: 7px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.78);
+        color: #52637a;
+        font-size: 11.5px;
+        line-height: 1.3;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-guardrail strong {
+        color: #334155;
+        font-weight: 760;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-review-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-panel,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-detail {
+        gap: 13px;
+        padding: 17px;
+        border: 1px solid rgba(226, 232, 240, 0.76);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-panel-title,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-inbound-group-title {
+        color: #020617;
+        font-size: 17px;
+        font-weight: 720;
+        letter-spacing: -0.006em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-inbound-meta,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-inbound-group-note {
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-panel-items,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-line-facts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-panel-item,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-line-fact {
+        display: grid;
+        gap: 5px;
+        align-items: start;
+        justify-content: stretch;
+        min-height: 58px;
+        padding: 10px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow:
+          0 6px 14px rgba(15, 23, 42, 0.025),
+          inset 0 1px 0 rgba(255, 255, 255, 0.88);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-panel-item strong,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-line-fact strong {
+        color: #020617;
+        font-size: 12.5px;
+        font-weight: 690;
+        line-height: 1.25;
+        text-align: left;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-line-card,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] [data-warehouse-movement-review-related-row] {
+        border-color: rgba(226, 232, 240, 0.78);
+        border-radius: 16px;
+        background:
+          radial-gradient(circle at 4% 0%, rgba(255, 255, 255, 0.92), transparent 34%),
+          linear-gradient(180deg, #f8fbff 0%, #f5f8fc 100%);
+        box-shadow:
+          0 12px 26px rgba(15, 23, 42, 0.04),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+      @media (max-width: 900px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-readiness,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line-facts {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 640px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] {
+          width: min(100%, calc(100% - 12px));
+          padding: 4px 0 24px;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-detail-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-readiness,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line-main,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-line-facts {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-actions,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-tabs {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-button,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-tab {
+          width: 100%;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-command-fact + .warehouse-receiving-command-fact {
+          border-left: 0;
+          border-top: 1px solid rgba(226, 232, 240, 0.88);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-panel {
+          padding: 13px;
+          border-radius: 18px;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-block .warehouse-receiving-readiness,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-posture-block .warehouse-receiving-cards {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      @media (max-width: 900px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-readiness,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line-facts {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 640px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] {
+          width: min(100%, calc(100% - 12px));
+          padding: 4px 0 24px;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-detail-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-readiness,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line-main,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-line-facts {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-actions,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-tabs {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-button,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-tab {
+          width: 100%;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-command-fact + .warehouse-receiving-command-fact {
+          border-left: 0;
+          border-top: 1px solid rgba(226, 232, 240, 0.88);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-panel {
+          padding: 13px;
+          border-radius: 18px;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-block .warehouse-receiving-readiness,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-posture-block .warehouse-receiving-cards {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      @media (max-width: 900px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-posture-block .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-facts {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 640px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] {
+          width: min(100%, calc(100% - 12px));
+          padding: 4px 0 24px;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-posture-block .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-facts,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-next-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-actions {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-button {
+          width: 100%;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-command-fact + .warehouse-stock-exception-review-command-fact {
+          border-left: 0;
+          border-top: 1px solid rgba(226, 232, 240, 0.88);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-stock-exception-review-posture-panel {
+          padding: 13px;
+          border-radius: 18px;
+        }
+      }
+      @media (max-width: 900px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-panel .warehouse-receiving-posture-layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-block .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-facts {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 640px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] {
+          width: min(100%, calc(100% - 12px));
+          padding: 4px 0 24px;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-panel .warehouse-receiving-posture-layout,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-block .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-exception-review-facts,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-recommended-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-actions {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-button {
+          width: 100%;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-command-fact + .warehouse-stock-posture-command-fact {
+          border-left: 0;
+          border-top: 1px solid rgba(226, 232, 240, 0.88);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-stock-posture-review-posture-panel {
+          padding: 13px;
+          border-radius: 18px;
+        }
+      }
+      @media (max-width: 900px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-panel .warehouse-receiving-posture-layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-block .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-review-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-panel-items,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-line-facts {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 640px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] {
+          width: min(100%, calc(100% - 12px));
+          padding: 4px 0 24px;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-command-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-panel .warehouse-receiving-posture-layout,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-block .warehouse-receiving-cards,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-review-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-stock-exception-panel-items,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-line-main,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-line-facts {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-actions {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-button {
+          width: 100%;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-command-fact + .warehouse-movement-review-command-fact {
+          border-left: 0;
+          border-top: 1px solid rgba(226, 232, 240, 0.88);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-movement-review-posture-panel {
+          padding: 13px;
+          border-radius: 18px;
+        }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -6724,7 +8439,7 @@
   }
 
   function receivingSummaryText(header) {
-    const parts = [header.purchase_order, header.supplier, header.target_warehouse].filter(Boolean);
+    const parts = [header.purchase_order, "Read-only receiving posture"].filter(Boolean);
     return parts.join(" · ");
   }
 
@@ -6794,9 +8509,35 @@
     `;
   }
 
-  function renderReceivingLine(line) {
+  function receivingLineStatusDetail(line, posture) {
+    const status = String(line && line.status ? line.status : "").trim();
+    const fallback = String(posture && posture.note ? posture.note : "").trim();
+    const label = String(posture && posture.label ? posture.label : "").trim();
+    const detail = status || fallback;
+    if (!detail) return "";
+    const normalizedDetail = detail.toLowerCase();
+    const normalizedLabel = label.toLowerCase();
+    if (normalizedDetail === normalizedLabel) return "";
+    if (posture && posture.key === "received" && /arriv|receiv/.test(normalizedDetail)) return "";
+    return detail;
+  }
+
+  function normalizedReceivingDate(value) {
+    return String(value == null ? "" : value).trim();
+  }
+
+  function receivingLineExpectedFact(line, headerExpectedDate) {
+    const lineDate = normalizedReceivingDate(line && line.required_date);
+    const headerDate = normalizedReceivingDate(headerExpectedDate);
+    if (!lineDate || (headerDate && lineDate === headerDate)) return "";
+    return `<div class="warehouse-receiving-line-fact warehouse-visual-fact"><span>Line expected</span><strong>${escapeHtml(lineDate)}</strong></div>`;
+  }
+
+  function renderReceivingLine(line, headerExpectedDate) {
     const posture = receivingLinePosture(line || {});
+    const statusDetail = receivingLineStatusDetail(line || {}, posture);
     const uom = line.uom || "";
+    const expectedFact = receivingLineExpectedFact(line || {}, headerExpectedDate);
     return `
       <div class="warehouse-receiving-line warehouse-visual-row-card is-${escapeHtml(posture.tone)}" data-warehouse-receiving-line="${escapeHtml(line.item_code || "")}">
         <div class="warehouse-receiving-line-main warehouse-visual-row-header">
@@ -6806,7 +8547,7 @@
           </div>
           <div class="warehouse-receiving-line-status warehouse-visual-chip is-${escapeHtml(posture.tone)}" data-warehouse-receiving-line-status="${escapeHtml(posture.key)}">
             <span>${escapeHtml(posture.label)}</span>
-            <strong>${escapeHtml(line.status || posture.note)}</strong>
+            ${statusDetail ? `<strong>${escapeHtml(statusDetail)}</strong>` : ""}
           </div>
         </div>
         <div class="warehouse-receiving-line-facts warehouse-visual-row-facts">
@@ -6814,7 +8555,7 @@
           <div class="warehouse-receiving-line-fact warehouse-visual-fact"><span>Already arrived</span><strong>${escapeHtml(line.received_qty || "0")} ${escapeHtml(uom)}</strong></div>
           <div class="warehouse-receiving-line-fact warehouse-visual-fact"><span>Still open</span><strong>${escapeHtml(line.remaining_qty || "0")} ${escapeHtml(uom)}</strong></div>
           <div class="warehouse-receiving-line-fact warehouse-visual-fact"><span>Warehouse</span><strong>${escapeHtml(line.target_warehouse || "Not visible")}</strong></div>
-          <div class="warehouse-receiving-line-fact warehouse-visual-fact"><span>Expected</span><strong>${escapeHtml(line.required_date || "Not visible")}</strong></div>
+          ${expectedFact}
         </div>
       </div>
     `;
@@ -6837,10 +8578,12 @@
   function activateReceivingTab($root, tabKey) {
     const key = tabKey || "item_lines";
     $root.find("[data-warehouse-receiving-tab]").each(function () {
-      $(this).toggleClass("is-active", String(this.getAttribute("data-warehouse-receiving-tab")) === key);
+      const isActive = String(this.getAttribute("data-warehouse-receiving-tab")) === key;
+      $(this).toggleClass("is-active", isActive).attr("aria-selected", isActive ? "true" : "false");
     });
     $root.find("[data-warehouse-receiving-panel]").each(function () {
-      $(this).toggleClass("is-active", String(this.getAttribute("data-warehouse-receiving-panel")) === key);
+      const isActive = String(this.getAttribute("data-warehouse-receiving-panel")) === key;
+      $(this).toggleClass("is-active", isActive).attr("hidden", isActive ? null : "hidden");
     });
   }
 
@@ -6881,11 +8624,26 @@
               <div class="warehouse-receiving-command-fact warehouse-visual-fact"><span>Expected</span><strong>${escapeHtml(header.required_date || "Not visible")}</strong></div>
               <div class="warehouse-receiving-command-fact warehouse-visual-fact"><span>Receiving state</span><strong>${escapeHtml(header.state_label || "Review")}</strong></div>
             </div>
-            <div class="warehouse-receiving-readiness warehouse-visual-summary-grid" data-warehouse-receiving-readiness>
-              ${readinessCards.map(renderReceivingReadinessCard).join("")}
-            </div>
-            <div class="warehouse-receiving-note">${escapeHtml(header.age_label || "Receiving posture visible")} · ${escapeHtml(header.remaining_summary || "No open quantity summary visible")}</div>
-            <div class="warehouse-receiving-cards warehouse-visual-summary-grid">${cards.map(renderReceivingCard).join("")}</div>
+            <section class="warehouse-receiving-posture-panel" data-warehouse-receiving-posture-panel>
+              <div class="warehouse-receiving-posture-head">
+                <div>
+                  <h2 class="warehouse-receiving-posture-title">Receiving posture</h2>
+                  <div class="warehouse-receiving-posture-note">${escapeHtml(header.age_label || "Receiving posture visible")} · ${escapeHtml(header.remaining_summary || "No open quantity summary visible")}</div>
+                </div>
+              </div>
+              <div class="warehouse-receiving-posture-layout">
+                <div class="warehouse-receiving-posture-block">
+                  <div class="warehouse-receiving-posture-kicker">Line readiness</div>
+                  <div class="warehouse-receiving-readiness warehouse-visual-summary-grid" data-warehouse-receiving-readiness>
+                    ${readinessCards.map(renderReceivingReadinessCard).join("")}
+                  </div>
+                </div>
+                <div class="warehouse-receiving-posture-block">
+                  <div class="warehouse-receiving-posture-kicker">Receipt posture</div>
+                  <div class="warehouse-receiving-cards warehouse-visual-summary-grid">${cards.map(renderReceivingCard).join("")}</div>
+                </div>
+              </div>
+            </section>
           `}
         </section>
         <section class="warehouse-receiving-guardrail warehouse-visual-guardrail" data-warehouse-receiving-guardrail>
@@ -6903,7 +8661,7 @@
             </div>
           </div>
           <div class="warehouse-receiving-panel warehouse-visual-row-list is-active" data-warehouse-receiving-panel="item_lines">
-            ${lines.length ? lines.map(renderReceivingLine).join("") : `<div class="warehouse-receiving-line warehouse-visual-fallback" data-warehouse-receiving-empty><span class="warehouse-receiving-meta">No item lines are visible for this order.</span></div>`}
+            ${lines.length ? lines.map((line) => renderReceivingLine(line, header.required_date)).join("") : `<div class="warehouse-receiving-line warehouse-visual-fallback" data-warehouse-receiving-empty><span class="warehouse-receiving-meta">No item lines are visible for this order.</span></div>`}
           </div>
           <div class="warehouse-receiving-panel warehouse-visual-row-list" data-warehouse-receiving-panel="receipt_history">
             <div class="warehouse-receiving-history-note">Prior receipt records visible to your role are shown as bounded history. This panel does not open native receipt pages.</div>
@@ -7052,7 +8810,7 @@
   }
 
   function pickingSummaryText(header) {
-    const parts = [header.sales_order, header.customer, header.target_warehouse].filter(Boolean);
+    const parts = [header.sales_order, "Read-only picking posture"].filter(Boolean);
     return parts.join(" · ");
   }
 
@@ -7092,6 +8850,15 @@
     ];
   }
 
+  function pickingLineStatusDetail(line, posture) {
+    const readiness = String(line && line.readiness ? line.readiness : "").trim();
+    const label = String(posture && posture.label ? posture.label : "").trim();
+    const fallback = String(posture && posture.note ? posture.note : "").trim();
+    if (!readiness) return fallback;
+    if (readiness.toLowerCase() === label.toLowerCase()) return "";
+    return readiness;
+  }
+
   function renderPickingReadinessCard(card) {
     return `
       <div class="warehouse-receiving-readiness-card warehouse-visual-summary-card is-${escapeHtml(card.tone || "review")}" data-warehouse-picking-readiness-card="${escapeHtml(card.key || "")}">
@@ -7114,6 +8881,7 @@
 
   function renderPickingLine(line) {
     const posture = pickingLinePosture(line);
+    const statusDetail = pickingLineStatusDetail(line, posture);
     const uom = line.uom || line.stock_uom || "";
     return `
       <div class="warehouse-receiving-line warehouse-picking-line warehouse-visual-row-card is-${escapeHtml(posture.tone)}" data-warehouse-picking-line="${escapeHtml(line.item_code || "")}" data-warehouse-picking-line-card>
@@ -7124,7 +8892,7 @@
           </div>
           <div class="warehouse-receiving-line-status warehouse-visual-chip is-${escapeHtml(posture.tone)}" data-warehouse-picking-line-status="${escapeHtml(posture.key)}">
             <span>${escapeHtml(posture.label)}</span>
-            <strong>${escapeHtml(line.readiness || posture.note)}</strong>
+            ${statusDetail ? `<strong>${escapeHtml(statusDetail)}</strong>` : ""}
           </div>
         </div>
         <div class="warehouse-receiving-line-facts warehouse-picking-line-facts warehouse-visual-row-facts">
@@ -7140,6 +8908,7 @@
 
   function renderPickingReadinessRow(line) {
     const posture = pickingLinePosture(line);
+    const statusDetail = pickingLineStatusDetail(line, posture);
     const uom = line.uom || line.stock_uom || "";
     return `
       <div class="warehouse-receiving-history-row warehouse-picking-readiness-row warehouse-visual-row-card is-${escapeHtml(posture.tone)}" data-warehouse-picking-readiness-row="${escapeHtml(line.item_code || "")}">
@@ -7149,7 +8918,7 @@
         </div>
         <div class="warehouse-receiving-meta">${escapeHtml(line.pending_qty || "0")} ${escapeHtml(uom)} open</div>
         <div class="warehouse-receiving-meta">${escapeHtml(line.availability || "Availability not visible")}</div>
-        <div class="warehouse-receiving-line-status warehouse-visual-chip is-${escapeHtml(posture.tone)}" data-warehouse-picking-readiness-status="${escapeHtml(posture.key)}"><span>${escapeHtml(posture.label)}</span><strong>${escapeHtml(line.readiness || posture.note)}</strong></div>
+        <div class="warehouse-receiving-line-status warehouse-visual-chip is-${escapeHtml(posture.tone)}" data-warehouse-picking-readiness-status="${escapeHtml(posture.key)}"><span>${escapeHtml(posture.label)}</span>${statusDetail ? `<strong>${escapeHtml(statusDetail)}</strong>` : ""}</div>
       </div>
     `;
   }
@@ -7157,10 +8926,12 @@
   function activatePickingTab($root, tabKey) {
     const key = tabKey || "item_lines";
     $root.find("[data-warehouse-picking-tab]").each(function () {
-      $(this).toggleClass("is-active", String(this.getAttribute("data-warehouse-picking-tab")) === key);
+      const isActive = String(this.getAttribute("data-warehouse-picking-tab")) === key;
+      $(this).toggleClass("is-active", isActive).attr("aria-selected", isActive ? "true" : "false");
     });
     $root.find("[data-warehouse-picking-panel]").each(function () {
-      $(this).toggleClass("is-active", String(this.getAttribute("data-warehouse-picking-panel")) === key);
+      const isActive = String(this.getAttribute("data-warehouse-picking-panel")) === key;
+      $(this).toggleClass("is-active", isActive).attr("hidden", isActive ? null : "hidden");
     });
   }
 
@@ -7187,6 +8958,7 @@
                 <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.customer || "Customer not visible")}</span>
                 <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.age_label || header.required_date || "Delivery date not visible")}</span>
                 <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.target_warehouse || "Warehouse not visible")}</span>
+                <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.status || header.state_label || statePayload.title || "Review")}</span>
                 <span class="warehouse-receiving-chip warehouse-visual-chip is-read-only" data-warehouse-picking-identity-chip>Read-only</span>
               </div>
             </div>
@@ -7202,11 +8974,26 @@
               <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-picking-command-fact="delivery"><span>Delivery timing</span><strong>${escapeHtml(header.required_date || header.age_label || "Not visible")}</strong></div>
               <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-picking-command-fact="state"><span>Picking state</span><strong>${escapeHtml(header.state_label || header.status || "Review")}</strong></div>
             </div>
-            <div class="warehouse-receiving-readiness warehouse-picking-readiness warehouse-visual-summary-grid" data-warehouse-picking-readiness>
-              ${readinessCards.map(renderPickingReadinessCard).join("")}
-            </div>
-            <div class="warehouse-receiving-note">${escapeHtml(header.age_label || "Picking posture visible")} · ${escapeHtml(header.remaining_summary || "No open quantity summary visible")}</div>
-            <div class="warehouse-receiving-cards warehouse-visual-summary-grid">${cards.map(renderPickingCard).join("")}</div>
+            <section class="warehouse-receiving-posture-panel warehouse-picking-posture-panel" data-warehouse-picking-posture-panel>
+              <div class="warehouse-receiving-posture-head">
+                <div>
+                  <h2 class="warehouse-receiving-posture-title">Picking posture</h2>
+                  <div class="warehouse-receiving-posture-note">${escapeHtml(header.age_label || "Picking posture visible")} · ${escapeHtml(header.remaining_summary || "No open quantity summary visible")}</div>
+                </div>
+              </div>
+              <div class="warehouse-receiving-posture-layout">
+                <div class="warehouse-receiving-posture-block">
+                  <div class="warehouse-receiving-posture-kicker">Line readiness</div>
+                  <div class="warehouse-receiving-readiness warehouse-picking-readiness warehouse-visual-summary-grid" data-warehouse-picking-readiness>
+                    ${readinessCards.map(renderPickingReadinessCard).join("")}
+                  </div>
+                </div>
+                <div class="warehouse-receiving-posture-block">
+                  <div class="warehouse-receiving-posture-kicker">Fulfillment posture</div>
+                  <div class="warehouse-receiving-cards warehouse-visual-summary-grid">${cards.map(renderPickingCard).join("")}</div>
+                </div>
+              </div>
+            </section>
           `}
         </section>
         <section class="warehouse-receiving-guardrail warehouse-picking-guardrail warehouse-visual-guardrail" data-warehouse-picking-guardrail>
@@ -7371,8 +9158,8 @@
   }
 
   function stockExceptionSummaryText(header) {
-    const parts = [header.sales_order, header.item_code, header.source_warehouse].filter(Boolean);
-    return parts.length ? parts.join(" · ") : "Demand risk, stock posture, and inbound cover review.";
+    const parts = [header.sales_order || header.item_code, "Read-only stock exception posture"].filter(Boolean);
+    return parts.length ? parts.join(" · ") : "Read-only stock exception posture";
   }
 
   function stockExceptionIdentityChips(header) {
@@ -7547,7 +9334,20 @@
               </div>
             `).join("")}
           </div>
-          <div class="warehouse-receiving-cards">${visibleCards.map(renderStockExceptionReviewCard).join("")}</div>
+          <section class="warehouse-receiving-posture-panel warehouse-stock-exception-review-posture-panel" data-warehouse-stock-exception-review-posture-panel>
+            <div class="warehouse-receiving-posture-head">
+              <div>
+                <h2 class="warehouse-receiving-posture-title">Exception posture</h2>
+                <div class="warehouse-receiving-posture-note">${escapeHtml(header.explanation || header.urgency_label || "Demand risk, stock posture, and inbound cover are shown for review only.")}</div>
+              </div>
+            </div>
+            <div class="warehouse-receiving-posture-layout">
+              <div class="warehouse-receiving-posture-block warehouse-stock-exception-review-posture-block">
+                <div class="warehouse-receiving-posture-kicker">Demand and stock posture</div>
+                <div class="warehouse-receiving-cards">${visibleCards.map(renderStockExceptionReviewCard).join("")}</div>
+              </div>
+            </div>
+          </section>
         </section>
         <section class="warehouse-inbound-queue-guardrail warehouse-stock-exception-review-guardrail" data-warehouse-stock-exception-review-guardrail>
           <strong>Review only</strong>
@@ -7933,6 +9733,9 @@
     const visibleCards = stockPostureReviewCards(cards, statePayload);
     const commandFacts = stockPostureCommandFacts(header, visibleCards);
     const recommendedItems = stockPostureRecommendedItems(actionTargets);
+    const postureSplit = Math.max(2, Math.ceil(visibleCards.length / 2));
+    const stockPositionCards = visibleCards.slice(0, postureSplit);
+    const demandCoverCards = visibleCards.slice(postureSplit);
     const $root = $(`
       <div class="sales-console-shell warehouse-receiving-shell warehouse-stock-posture-shell" data-erpw-workspace="warehouse" data-warehouse-view="stock-posture-review" data-erpw-console-runtime="ready" data-warehouse-stock-posture-shell="true" data-warehouse-stock-posture-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
         <section class="warehouse-receiving-header warehouse-stock-posture-header" data-warehouse-stock-posture-command>
@@ -7961,7 +9764,22 @@
               </div>
             `).join("")}
           </div>
-          <div class="warehouse-receiving-cards">${visibleCards.map(renderStockPostureCard).join("")}</div>
+        </section>
+        <section class="warehouse-receiving-posture-panel warehouse-stock-posture-review-posture-panel" data-warehouse-stock-posture-review-posture-panel>
+          <div class="warehouse-receiving-posture-head">
+            <h2 class="warehouse-receiving-posture-title">Stock posture</h2>
+            <div class="warehouse-receiving-posture-note">${escapeHtml(header.explanation || statePayload.detail || "Visible stock, projected posture, demand, and inbound cover are shown for review only.")}</div>
+          </div>
+          <div class="warehouse-receiving-posture-layout">
+            <div class="warehouse-receiving-posture-block warehouse-stock-posture-review-posture-block">
+              <div class="warehouse-receiving-posture-kicker">Stock position</div>
+              <div class="warehouse-receiving-cards">${stockPositionCards.map(renderStockPostureCard).join("")}</div>
+            </div>
+            <div class="warehouse-receiving-posture-block warehouse-stock-posture-review-posture-block">
+              <div class="warehouse-receiving-posture-kicker">Demand and cover</div>
+              <div class="warehouse-receiving-cards">${demandCoverCards.length ? demandCoverCards.map(renderStockPostureCard).join("") : stockPositionCards.slice(-1).map(renderStockPostureCard).join("")}</div>
+            </div>
+          </div>
         </section>
         <section class="warehouse-inbound-queue-guardrail warehouse-stock-posture-guardrail" data-warehouse-stock-posture-guardrail>
           <strong>Review only</strong>
@@ -8158,7 +9976,6 @@
       { key: "mode", label: "Read-only" },
       { key: "movement", label: header.movement_id || "Movement not visible" },
       { key: "posture", label: header.docstatus_label || statePayload.title || "Review posture" },
-      { key: "freshness", label: freshnessText(payload) },
     ];
   }
 
@@ -8302,7 +10119,11 @@
     ensureStyle();
     const header = payload.header || {};
     const cards = Array.isArray(payload.summary_cards) ? payload.summary_cards : [];
-    const panels = payload.panels || {};
+    const rawPanels = payload.panels || {};
+    const panels = Object.keys(rawPanels).length ? rawPanels : {
+      direction: payload.direction_panel || {},
+      related: payload.related_panel || {},
+    };
     const lineGroups = Array.isArray(payload.line_groups) ? payload.line_groups : [];
     const relatedRoutes = Array.isArray(payload.related_routes) ? payload.related_routes : [];
     const statePayload = payload.state || {};
@@ -8314,6 +10135,9 @@
     const safeCards = movementReviewFallbackCards(header, cards, unavailable);
     const identityChips = movementReviewIdentityChips(header, payload, statePayload);
     const commandFacts = movementReviewCommandFacts(header, safeCards, unavailable);
+    const movementSplit = Math.max(2, Math.ceil(safeCards.length / 2));
+    const movementEvidenceCards = safeCards.slice(0, movementSplit);
+    const movementContextCards = safeCards.slice(movementSplit);
     const $root = $(`
       <div class="sales-console-shell warehouse-receiving-shell warehouse-movement-review-shell" data-erpw-workspace="warehouse" data-warehouse-view="movement-review" data-erpw-console-runtime="ready" data-warehouse-movement-review-shell="true" data-warehouse-movement-review-state="${escapeHtml(statePayload.kind || "ready")}" data-warehouse-movement-review-token="${escapeHtml(header.context_token || viewState.contextToken || "")}">
         <section class="warehouse-receiving-header warehouse-movement-review-header" data-warehouse-movement-review-command>
@@ -8331,12 +10155,27 @@
           </div>
           <div class="warehouse-movement-review-command-grid" data-warehouse-movement-review-command-grid>${commandFacts.map(renderMovementReviewCommandFact).join("")}</div>
           <div class="warehouse-receiving-note"><span class="warehouse-inbound-badge">${escapeHtml(header.docstatus_label || statePayload.title || "Review")}</span> ${escapeHtml(header.direction_label || (unavailable ? "Details not visible" : ""))}</div>
-          <div class="warehouse-receiving-cards" data-warehouse-movement-review-summary>${safeCards.map(renderMovementReviewCard).join("")}</div>
-          <section class="warehouse-receiving-guardrail warehouse-movement-review-guardrail" data-warehouse-movement-review-guardrail>
-            <strong>Read-only movement review</strong>
-            <span>No stock is transferred, reconciled, adjusted, posted, reserved, picked, received, shipped, or delivered from this page.</span>
-          </section>
           ${unavailable ? `<div class="warehouse-console-state-detail" data-warehouse-movement-review-empty>${escapeHtml(statePayload.title || "Movement review unavailable")}</div>` : ""}
+        </section>
+        <section class="warehouse-receiving-posture-panel warehouse-movement-review-posture-panel" data-warehouse-movement-review-summary>
+          <div class="warehouse-receiving-posture-head">
+            <h2 class="warehouse-receiving-posture-title">Movement posture</h2>
+            <div class="warehouse-receiving-posture-note">${escapeHtml(header.direction_label || movementSummaryText(header) || "Posted movement evidence and related stock posture are shown for review only.")}</div>
+          </div>
+          <div class="warehouse-receiving-posture-layout">
+            <div class="warehouse-receiving-posture-block warehouse-movement-review-posture-block">
+              <div class="warehouse-receiving-posture-kicker">Movement evidence</div>
+              <div class="warehouse-receiving-cards">${movementEvidenceCards.map(renderMovementReviewCard).join("")}</div>
+            </div>
+            <div class="warehouse-receiving-posture-block warehouse-movement-review-posture-block">
+              <div class="warehouse-receiving-posture-kicker">Review context</div>
+              <div class="warehouse-receiving-cards">${movementContextCards.length ? movementContextCards.map(renderMovementReviewCard).join("") : movementEvidenceCards.slice(-1).map(renderMovementReviewCard).join("")}</div>
+            </div>
+          </div>
+        </section>
+        <section class="warehouse-receiving-guardrail warehouse-movement-review-guardrail" data-warehouse-movement-review-guardrail>
+          <strong>Review only</strong>
+          <span>No stock is transferred, reconciled, adjusted, posted, reserved, picked, received, shipped, or delivered from this page.</span>
         </section>
         <section class="warehouse-stock-exception-review-grid">
           ${renderMovementReviewPanel(panels.direction || {}, "direction")}
