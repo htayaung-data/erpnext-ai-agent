@@ -220,6 +220,7 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 		"movement_visibility": "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
 		"movement_review": "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review",
 		"transfer_visibility": "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
+		"quick_find": "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions",
 		"sidebar_context": "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
 	},
 	"managed_doctypes": {
@@ -241,6 +242,9 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 	},
 	"search": {
 		"enabled": False,
+		"mode": "warehouse_quick_find",
+		"placement": "warehouse_cockpit_only",
+		"placeholder": "Find purchase orders, sales orders, items, warehouses, or movements",
 	},
 	"fallback_items": [
 		{

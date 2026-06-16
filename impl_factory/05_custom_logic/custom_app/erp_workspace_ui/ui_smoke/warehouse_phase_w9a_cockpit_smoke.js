@@ -4,14 +4,16 @@ const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
 const EXPECT_W12K = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W12K === "1";
-const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL || (EXPECT_W12K ? "Warehouse W12K cockpit polish" : "Warehouse W9A cockpit");
-const SUMMARY_NAME = process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME || (EXPECT_W12K ? "warehouse-w12k-cockpit-polish-summary.json" : "warehouse-w9a-cockpit-summary.json");
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W12K_TIMEOUT || process.env.ERPW_WAREHOUSE_W9A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W12K_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W9A_ARTIFACT_DIR || path.join(
+const EXPECT_W14B = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W14B === "1";
+const EXPECT_W14C = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W14C === "1";
+const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL || (EXPECT_W14C ? "Warehouse W14C Manager Readiness" : (EXPECT_W14B ? "Warehouse W14B Quick Find" : (EXPECT_W12K ? "Warehouse W12K cockpit polish" : "Warehouse W9A cockpit")));
+const SUMMARY_NAME = process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME || (EXPECT_W14C ? "warehouse-w14c-manager-readiness-summary.json" : (EXPECT_W14B ? "warehouse-w14b-quick-find-summary.json" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish-summary.json" : "warehouse-w9a-cockpit-summary.json")));
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W14C_TIMEOUT || process.env.ERPW_WAREHOUSE_W14B_TIMEOUT || process.env.ERPW_WAREHOUSE_W12K_TIMEOUT || process.env.ERPW_WAREHOUSE_W9A_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W14C_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W14B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12K_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W9A_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `${EXPECT_W12K ? "warehouse-w12k-cockpit-polish" : "warehouse-w9a-cockpit"}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `${EXPECT_W14C ? "warehouse-w14c-manager-readiness" : (EXPECT_W14B ? "warehouse-w14b-quick-find" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish" : "warehouse-w9a-cockpit"))}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W12K_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W14C_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W14B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12K_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT || "";
 
 const AUTHORIZED_USERS = [
   {
@@ -34,7 +36,7 @@ const VIEWPORTS = [
 ];
 
 const FORBIDDEN_ACTION_RE = /\b(Receive|Ship|Dispatch|Post|Submit|Cancel|Amend|Reconcile|Stock Entry|Purchase Receipt|Delivery Note|Stock Reconciliation|Pick List|Reserve|Unreserve|Assign Serial|Assign Batch|Pack|Scan|Allocate|Create|Save|Transfer(?! Visibility)|Print|Email)\b/i;
-const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test|Quick Find|\bSearch\b)\b/i;
+const FORBIDDEN_COPY_RE = /\b(Productized|native ERP|governed|deferred|route only|mutation|backend|frontend|framework|Frappe|smoke|test)\b/i;
 const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/List\//i;
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|incoming_rate|outgoing_rate|basic_rate|\brate\b|\bamount\b|base_amount|transfer_price|profit|margin|\bcost\b|\bgl\b|accounting|billing|payment|tax|item price|stock_queue/i;
 
@@ -139,8 +141,11 @@ function workspacePayload() {
       stockExceptions: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
       movementVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
       transferVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
+      quickFind: "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions",
     },
-    search: { enabled: false },
+    search: EXPECT_W14B
+      ? { enabled: false, mode: "warehouse_quick_find", placement: "warehouse_cockpit_only" }
+      : { enabled: false },
   };
 }
 
@@ -272,6 +277,85 @@ function transferPayload() {
   };
 }
 
+function managerCenterPayload() {
+  const receivingTarget = { kind: "warehouse_page", route: "warehouse-console-receiving", purchase_order: "PO-W14C-1" };
+  const pickingTarget = { kind: "warehouse_page", route: "warehouse-console-picking", sales_order: "SO-W14C-1" };
+  const exceptionTarget = { kind: "warehouse_page", route: "warehouse-console-stock-exception", context_token: "7b2273616c65735f6f72646572223a22534f2d573134432d31222c226974656d5f636f6465223a224954454d2d57313443222c2277617265686f757365223a224d61696e202d204d227d" };
+  const movementTarget = { kind: "warehouse_page", route: "warehouse-console-movement", context_token: "7b226d6f76656d656e745f6964223a224d41542d573134432d31227d" };
+  const groups = [
+    {
+      key: "arrival_review",
+      title: "Arrival readiness",
+      summary: "Supplier-side rows that need manager review.",
+      items: [{
+        key: "arrival:PO-W14C-1",
+        title: "PO-W14C-1",
+        subtitle: "Manager Supplier",
+        status: "Overdue",
+        detail: "12 Nos remaining",
+        facts: [{ label: "Supplier", value: "Manager Supplier" }, { label: "Warehouse", value: "Main - M" }, { label: "Receiving", value: "40%" }],
+        target: receivingTarget,
+        action_label: "Review receiving",
+      }],
+    },
+    {
+      key: "pick_blockers",
+      title: "Picking blockers",
+      summary: "Customer-side rows blocked by timing or stock posture.",
+      items: [{
+        key: "picking:SO-W14C-1",
+        title: "SO-W14C-1",
+        subtitle: "Manager Customer",
+        status: "Needs stock review",
+        detail: "8 Nos remaining",
+        facts: [{ label: "Customer", value: "Manager Customer" }, { label: "Warehouse", value: "Main - M" }, { label: "Picking", value: "0%" }],
+        target: pickingTarget,
+        action_label: "Review picking",
+      }],
+    },
+    {
+      key: "stock_posture",
+      title: "Stock posture issues",
+      summary: "Shortage and missing-posture rows needing review.",
+      items: [{
+        key: "exception:SO-W14C-1",
+        title: "SO-W14C-1",
+        subtitle: "ITEM-W14C",
+        status: "Needs Stock Review",
+        detail: "Visible stock is short for open demand.",
+        facts: [{ label: "Item", value: "ITEM-W14C" }, { label: "Warehouse", value: "Main - M" }, { label: "Short", value: "6" }],
+        target: exceptionTarget,
+        action_label: "Review exception",
+      }],
+    },
+    {
+      key: "transfer_review",
+      title: "Transfer review",
+      summary: "Posted transfer visibility rows with incomplete posture.",
+      items: [{
+        key: "transfer:MAT-W14C-1",
+        title: "MAT-W14C-1",
+        subtitle: "Stores - M to Main - M",
+        status: "Needs review",
+        detail: "9 Nos",
+        facts: [{ label: "Source", value: "Stores - M" }, { label: "Target", value: "Main - M" }, { label: "Items", value: "2" }],
+        target: movementTarget,
+        action_label: "Review movement",
+      }],
+    },
+  ];
+  return {
+    visible: true,
+    state: "ready",
+    title: "Manager Readiness Center",
+    subtitle: "Read-only triage for Warehouse blockers before any separate operation.",
+    cards: groups.map((group) => ({ key: group.key, label: group.title, value: group.items.length, note: group.summary })),
+    groups,
+    empty_message: "No manager readiness blockers are visible right now.",
+    boundary_note: "Review-only. Open custom Warehouse pages for detail; no stock or document changes are made here.",
+  };
+}
+
 function overviewPayload() {
   return {
     workspace: workspacePayload(),
@@ -291,9 +375,128 @@ function overviewPayload() {
     inbound: { ...inboundPayload(), cards: inboundPayload().cards, preview_rows: inboundPayload().rows, counts: { overdue: 1, due_today: 1, partially_received: 1, expected_soon: 2 } },
     outbound: { ...outboundPayload(), cards: outboundPayload().cards, preview_rows: outboundPayload().rows, counts: { overdue: 0, due_today: 1, short_stock: 1, expected_soon: 2 } },
     stock_exceptions: stockExceptionsPayload(),
+    manager_center: EXPECT_W14C ? managerCenterPayload() : { visible: false, state: "hidden", groups: [], cards: [] },
     allowed_actions: [{ key: "refresh", label: "Refresh", kind: "read_only" }],
     action_targets: {},
     fetched_at: "2026-05-30 09:00:00",
+  };
+}
+
+function quickFindPayload() {
+  const receivingTarget = { kind: "warehouse_page", route: "warehouse-console-receiving", route_parts: ["PO-W14B-1"] };
+  const pickingTarget = { kind: "warehouse_page", route: "warehouse-console-picking", route_parts: ["SO-W14B-1"] };
+  const postureTarget = { kind: "warehouse_page", route: "warehouse-console-stock-posture", context_token: "7b226974656d5f636f6465223a224954454d2d57313442222c2277617265686f757365223a224d61696e202d204d227d" };
+  const movementTarget = { kind: "warehouse_page", route: "warehouse-console-movement", context_token: "7b226d6f76656d656e745f6964223a224d41542d573134422d31227d" };
+  const results = [
+    {
+      id: "receiving:PO-W14B-1",
+      result_type: "receiving",
+      group_key: "receiving",
+      group: "Inbound Receiving",
+      doctype: "Purchase Order",
+      name: "PO-W14B-1",
+      title: "PO-W14B-1",
+      subtitle: "Quick Find Supplier",
+      meta: "Open the custom Warehouse receiving review. No Purchase Receipt is created.",
+      target: receivingTarget,
+      primary_action_label: "Open receiving review",
+      preview: {
+        title: "PO-W14B-1",
+        subtitle: "Quick Find Supplier",
+        chips: ["Receiving"],
+        facts: [
+          { label: "Supplier", value: "Quick Find Supplier" },
+          { label: "Expected", value: "2026-06-15" },
+          { label: "Warehouse", value: "Main - M" },
+        ],
+        boundary_note: "Open the custom Warehouse receiving review. No Purchase Receipt is created.",
+        target: receivingTarget,
+        primary_action_label: "Open receiving review",
+      },
+    },
+    {
+      id: "picking:SO-W14B-1",
+      result_type: "picking",
+      group_key: "picking",
+      group: "Outbound Picking",
+      doctype: "Sales Order",
+      name: "SO-W14B-1",
+      title: "SO-W14B-1",
+      subtitle: "Quick Find Customer",
+      meta: "Open the custom Warehouse picking review. No Pick List or Delivery Note is created.",
+      target: pickingTarget,
+      primary_action_label: "Open picking review",
+      preview: {
+        title: "SO-W14B-1",
+        subtitle: "Quick Find Customer",
+        chips: ["Picking"],
+        facts: [
+          { label: "Customer", value: "Quick Find Customer" },
+          { label: "Delivery", value: "2026-06-15" },
+          { label: "Warehouse", value: "Main - M" },
+        ],
+        boundary_note: "Open the custom Warehouse picking review. No Pick List or Delivery Note is created.",
+        target: pickingTarget,
+        primary_action_label: "Open picking review",
+      },
+    },
+    {
+      id: "stock_posture:ITEM-W14B:Main - M",
+      result_type: "stock_posture",
+      group_key: "stock_posture",
+      group: "Stock Posture",
+      doctype: "Bin",
+      name: "ITEM-W14B:Main - M",
+      title: "ITEM-W14B",
+      subtitle: "Main - M",
+      meta: "Open the custom Warehouse stock posture review.",
+      target: postureTarget,
+      primary_action_label: "Review stock posture",
+      preview: {
+        title: "ITEM-W14B",
+        subtitle: "Main - M",
+        chips: ["Read-only posture"],
+        facts: [{ label: "Warehouse", value: "Main - M" }, { label: "Actual", value: "12" }],
+        boundary_note: "Open the custom Warehouse stock posture review. No Stock Ledger page is opened.",
+        target: postureTarget,
+        primary_action_label: "Review stock posture",
+      },
+    },
+    {
+      id: "movement:MAT-W14B-1",
+      result_type: "movement",
+      group_key: "movements",
+      group: "Movement Review",
+      doctype: "Stock Entry",
+      name: "MAT-W14B-1",
+      title: "MAT-W14B-1",
+      subtitle: "Material Transfer",
+      meta: "Open the custom Warehouse movement review.",
+      target: movementTarget,
+      primary_action_label: "Review movement",
+      preview: {
+        title: "MAT-W14B-1",
+        subtitle: "Material Transfer",
+        chips: ["Posted movement"],
+        facts: [{ label: "Posted", value: "2026-06-15" }, { label: "Source", value: "Stores - M" }, { label: "Target", value: "Main - M" }],
+        boundary_note: "Open the custom Warehouse movement review. No Stock Entry action is available.",
+        target: movementTarget,
+        primary_action_label: "Review movement",
+      },
+    },
+  ];
+  const groups = [
+    { key: "receiving", label: "Inbound Receiving", results: [results[0]] },
+    { key: "picking", label: "Outbound Picking", results: [results[1]] },
+    { key: "stock_posture", label: "Stock Posture", results: [results[2]] },
+    { key: "movements", label: "Movement Review", results: [results[3]] },
+  ];
+  return {
+    state: "ready",
+    query: "W14B",
+    message: "4 visible Warehouse results found.",
+    groups,
+    results,
   };
 }
 
@@ -316,11 +519,17 @@ async function installSourceOverrides(context, diagnostics) {
     const request = route.request();
     const text = requestText(request);
     if (!/warehouse-console/i.test(text)) return route.continue();
-    const isWorklist = /warehouse-console-worklist/i.test(text);
-    const file = isWorklist
-      ? "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_worklist/warehouse_console_worklist.js"
-      : "erp_workspace_ui/erp_workspace_ui/page/warehouse_console/warehouse_console.js";
-    const name = isWorklist ? "warehouse-console-worklist" : "warehouse-console";
+    const pageSources = [
+      ["warehouse-console-receiving", "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_receiving/warehouse_console_receiving.js"],
+      ["warehouse-console-picking", "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_picking/warehouse_console_picking.js"],
+      ["warehouse-console-stock-exception", "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_stock_exception/warehouse_console_stock_exception.js"],
+      ["warehouse-console-stock-posture", "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_stock_posture/warehouse_console_stock_posture.js"],
+      ["warehouse-console-movement", "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_movement/warehouse_console_movement.js"],
+      ["warehouse-console-worklist", "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_worklist/warehouse_console_worklist.js"],
+      ["warehouse-console", "erp_workspace_ui/erp_workspace_ui/page/warehouse_console/warehouse_console.js"],
+    ];
+    const match = pageSources.find(([pageName]) => new RegExp(pageName, "i").test(text)) || pageSources[pageSources.length - 1];
+    const [name, file] = match;
     const script = readSource(file);
     recordOverrideHit(diagnostics, "desk-page-getpage", request, { fulfilled: Boolean(script), page: name });
     const pageDoc = { doctype: "Page", name, page_name: name, title: "Warehouse Console", module: "ERP Workspace UI", standard: "Yes", content: "", script };
@@ -334,6 +543,7 @@ async function installSourceOverrides(context, diagnostics) {
     ["get_warehouse_stock_exceptions", "warehouse-stock-exceptions", () => stockExceptionsPayload()],
     ["get_warehouse_movement_visibility_queue", "warehouse-movement-visibility", () => movementPayload()],
     ["get_warehouse_transfer_visibility_queue", "warehouse-transfer-visibility", () => transferPayload()],
+    ["get_warehouse_quick_find_suggestions", "warehouse-quick-find", () => quickFindPayload()],
   ];
   for (const [method, key, payload] of methodPayloads) {
     await context.route(`**/api/method/erp_workspace_ui.warehouse_console.service.${method}**`, async (route) => {
@@ -447,6 +657,15 @@ async function snapshot(page) {
       movementActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-movement]")).filter(visible).length,
       transferActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-transfer]")).filter(visible).length,
       refreshActionCount: Array.from(document.querySelectorAll("[data-warehouse-refresh]")).filter(visible).length,
+      quickFindCount: Array.from(document.querySelectorAll("[data-warehouse-quick-find]")).filter(visible).length,
+      quickFindInputVisible: Array.from(document.querySelectorAll("[data-warehouse-quick-find-input]")).some(visible),
+      quickFindOptionCount: Array.from(document.querySelectorAll("[data-warehouse-quick-find-option]")).filter(visible).length,
+      quickFindPreviewVisible: Array.from(document.querySelectorAll("[data-warehouse-quick-find-preview]")).some(visible),
+      managerCenterCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center]")).filter(visible).length,
+      managerCenterCardCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center-card]")).filter(visible).length,
+      managerCenterGroupCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center-group]")).filter(visible).length,
+      managerCenterItemCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center-item]")).filter(visible).length,
+      managerCenterActionCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center-open]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     };
@@ -490,6 +709,26 @@ function assertW12KCockpit(state, contextLabel) {
   assert((state.sidebarDuplicates || []).length === 0, "Duplicate Warehouse sidebar items are visible", { context: contextLabel, state });
 }
 
+function assertW14BQuickFind(state, contextLabel) {
+  assert(state.quickFindCount === 1, "Warehouse Quick Find must render once", { context: contextLabel, state });
+  assert(state.quickFindInputVisible, "Warehouse Quick Find input is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Quick Find"), "Warehouse Quick Find label is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("preview it"), "Warehouse Quick Find preview guidance is missing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Warehouse Quick Find exposed a native route", { context: contextLabel, state });
+}
+
+function assertW14CManagerCenter(state, contextLabel) {
+  assert(state.managerCenterCount === 1, "Manager Readiness Center must render once", { context: contextLabel, state });
+  assert(state.managerCenterCardCount === 4, "Manager Readiness Center summary cards are incomplete", { context: contextLabel, state });
+  assert(state.managerCenterGroupCount === 4, "Manager Readiness Center groups are incomplete", { context: contextLabel, state });
+  assert(state.managerCenterItemCount >= 4, "Manager Readiness Center items are missing", { context: contextLabel, state });
+  assert(state.managerCenterActionCount >= 4, "Manager Readiness Center custom review actions are missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Manager Readiness Center"), "Manager Readiness Center title is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Review-only"), "Manager Readiness Center read-only boundary is missing", { context: contextLabel, state });
+  assert(!/\b(Approve|Submit|Create|Save|Post|Reserve|Unreserve|Reconcile|Adjust)\b/i.test(state.actionText), "Manager Readiness Center exposed an execution action", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Manager Readiness Center exposed a native route", { context: contextLabel, state });
+}
+
 async function assertCockpit(page, contextLabel) {
   await waitForCockpit(page);
   const state = await snapshot(page);
@@ -502,6 +741,8 @@ async function assertCockpit(page, contextLabel) {
   assert(state.movementCount >= 2, "Movement To Understand cards did not render", { context: contextLabel, state });
   assert(state.guardrailCount === 0, "Overview should not render the bottom read-only guardrail panel", { context: contextLabel, state });
   if (EXPECT_W12K) assertW12KCockpit(state, contextLabel);
+  if (EXPECT_W14B) assertW14BQuickFind(state, contextLabel);
+  if (EXPECT_W14C) assertW14CManagerCenter(state, contextLabel);
   return state;
 }
 
@@ -510,6 +751,34 @@ async function exerciseRouteAction(page, selector, expectedPath, viewName, conte
   await page.waitForURL((url) => url.pathname === expectedPath || url.pathname === expectedPath.replace("/desk/", "/app/"), { timeout: TIMEOUT });
   await waitForWorklist(page, viewName);
   assertClean(await snapshot(page), contextLabel);
+}
+
+async function exerciseQuickFind(page, diagnostics, contextLabel) {
+  await assertCockpit(page, `${contextLabel}:quick-find-start`);
+  await page.locator("[data-warehouse-quick-find-input]").fill("PO-W14B");
+  await page.waitForFunction(() => {
+    const panel = document.querySelector("[data-warehouse-quick-find-suggestions]");
+    const receiving = document.querySelector('[data-warehouse-quick-find-group="receiving"] [data-warehouse-quick-find-option]');
+    return panel && !panel.hidden && receiving;
+  }, null, { timeout: TIMEOUT });
+  if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-quick-find");
+  const optionCount = await page.locator("[data-warehouse-quick-find-option]").count();
+  assert(optionCount >= 1, "Warehouse Quick Find did not render suggestions", { context: contextLabel, optionCount });
+  await page.locator('[data-warehouse-quick-find-group="receiving"] [data-warehouse-quick-find-option]').first().click();
+  await page.waitForSelector("[data-warehouse-quick-find-preview]:not([hidden]) [data-warehouse-quick-find-open]", { state: "visible", timeout: TIMEOUT });
+  const previewText = (await page.locator("[data-warehouse-quick-find-preview]").first().innerText()).replace(/\s+/g, " ").trim();
+  assert(/custom Warehouse receiving review/i.test(previewText), "Warehouse Quick Find preview did not explain custom route target", { context: contextLabel, previewText });
+  assert(!NATIVE_ROUTE_RE.test(previewText), "Warehouse Quick Find preview exposed a native route", { context: contextLabel, previewText });
+  await page.locator("[data-warehouse-quick-find-open]").first().click();
+  await page.waitForURL((url) => url.pathname === "/desk/warehouse-console-receiving/PO-W14B-1", { timeout: TIMEOUT });
+  assert(!NATIVE_ROUTE_RE.test(page.url()), "Warehouse Quick Find opened a native ERP route", { context: contextLabel, url: page.url() });
+}
+
+async function exerciseManagerCenter(page, contextLabel) {
+  await assertCockpit(page, `${contextLabel}:manager-center-start`);
+  await page.locator("[data-warehouse-manager-center-open]").first().click();
+  await page.waitForURL((url) => url.pathname === "/desk/warehouse-console-receiving/PO-W14C-1", { timeout: TIMEOUT });
+  assert(!NATIVE_ROUTE_RE.test(page.url()), "Manager Readiness Center opened a native ERP route", { context: contextLabel, url: page.url() });
 }
 
 async function exerciseUser(browser, user, viewport) {
@@ -542,6 +811,18 @@ async function exerciseUser(browser, user, viewport) {
       await waitForCockpit(page);
       await assertCockpit(page, `${user.key}:${viewport.key}:refresh`);
       if (ASSET_ROOT) assert(overrideHitCount(diagnostics, "warehouse-overview") > refreshBaseline, "Cockpit Refresh did not force overview reload", { user: user.key, viewport: viewport.key, before: refreshBaseline, after: overrideHitCount(diagnostics, "warehouse-overview") });
+    }
+
+    if (EXPECT_W14B && viewport.key === "desktop-1440") {
+      await exerciseQuickFind(page, diagnostics, `${user.key}:quick-find`);
+      await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
+      await assertCockpit(page, `${user.key}:quick-find:return`);
+    }
+
+    if (EXPECT_W14C && viewport.key === "desktop-1440") {
+      await exerciseManagerCenter(page, `${user.key}:manager-center`);
+      await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
+      await assertCockpit(page, `${user.key}:manager-center:return`);
     }
 
     if (viewport.key === "desktop-1440") {

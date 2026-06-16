@@ -194,6 +194,27 @@ RECEIVING_DETAIL_HISTORY_ITEM_LIMIT = 120
 RECEIVING_DETAIL_HISTORY_LIMIT = 8
 PICKING_DETAIL_LINE_LIMIT = 80
 
+QUICK_FIND_MIN_QUERY_LENGTH = 2
+QUICK_FIND_DEFAULT_LIMIT = 12
+QUICK_FIND_MAX_LIMIT = 18
+QUICK_FIND_GROUP_ORDER = (
+	"receiving",
+	"picking",
+	"stock_exceptions",
+	"stock_posture",
+	"movements",
+	"transfers",
+)
+QUICK_FIND_GROUP_LABELS = {
+	"receiving": "Inbound Receiving",
+	"picking": "Outbound Picking",
+	"stock_exceptions": "Stock Exceptions",
+	"stock_posture": "Stock Posture",
+	"movements": "Movement Review",
+	"transfers": "Transfer Visibility",
+}
+MANAGER_CENTER_ITEM_LIMIT = 4
+
 
 def ensure_authenticated() -> None:
 	if getattr(frappe.session, "user", None) == "Guest":
@@ -338,11 +359,13 @@ def get_warehouse_console_overview() -> dict[str, object]:
 	inbound = _build_inbound_visibility({}, preview_limit=INBOUND_OVERVIEW_LIMIT, row_limit=INBOUND_QUEUE_LIMIT)
 	outbound = _build_outbound_visibility({}, preview_limit=OUTBOUND_OVERVIEW_LIMIT, row_limit=OUTBOUND_QUEUE_LIMIT)
 	stock_exceptions = _build_stock_exceptions_visibility({}, row_limit=STOCK_EXCEPTIONS_LIMIT)
+	transfer_visibility = _build_transfer_visibility({}, row_limit=MANAGER_CENTER_ITEM_LIMIT) if _is_warehouse_manager_context(context) else {}
 	kpis = _build_overview_kpis(inbound, outbound)
 	payload["kpis"] = kpis
 	payload["inbound"] = inbound
 	payload["outbound"] = outbound
 	payload["stock_exceptions"] = stock_exceptions
+	payload["manager_center"] = _build_manager_readiness_center(context, inbound, outbound, stock_exceptions, transfer_visibility)
 	payload["sections"] = _build_overview_sections(kpis, inbound, outbound)
 	if not any(_metric_value(metric) for metric in kpis):
 		payload["state"] = state(
@@ -368,6 +391,47 @@ def get_warehouse_console_sidebar_context() -> dict[str, object]:
 		"state": payload_state,
 		"sidebar": build_sidebar(context),
 		"fetched_at": str(now_datetime()),
+	}
+
+
+@frappe.whitelist()
+def get_warehouse_quick_find_suggestions(query: str, limit: int = QUICK_FIND_DEFAULT_LIMIT) -> dict[str, object]:
+	ensure_authenticated()
+	context = build_context()
+	needle = _normalize_quick_find_query(query)
+	if not has_warehouse_access(context):
+		return {
+			"state": "restricted",
+			"query": needle,
+			"message": "Warehouse Quick Find is restricted to Warehouse roles.",
+			"groups": [],
+			"results": [],
+		}
+	if len(needle) < QUICK_FIND_MIN_QUERY_LENGTH:
+		return {
+			"state": "idle",
+			"query": needle,
+			"message": "Type at least 2 characters to find visible Warehouse work.",
+			"groups": [],
+			"results": [],
+		}
+
+	bounded_limit = _quick_find_limit(limit)
+	results = _build_warehouse_quick_find_results(needle, bounded_limit)
+	if not results:
+		return {
+			"state": "empty",
+			"query": needle,
+			"message": "No visible Warehouse work matches this search. Use the queue filters for broader review.",
+			"groups": [],
+			"results": [],
+		}
+	return {
+		"state": "ready",
+		"query": needle,
+		"message": f"{len(results)} visible Warehouse result{'s' if len(results) != 1 else ''} found.",
+		"groups": _quick_find_groups(results),
+		"results": results,
 	}
 
 
@@ -474,6 +538,225 @@ def _build_overview_sections(kpis: list[dict[str, object]], inbound: dict[str, o
 			"cards": [_section_card("transfer_requests", "Transfer Requests", transfers, "No transfer requests needing review.")],
 		},
 	]
+
+
+def _is_warehouse_manager_context(context: dict[str, object] | None) -> bool:
+	role_variant = cstr((context or {}).get("role_variant")).strip()
+	return role_variant in {"warehouse_manager", "system_manager"}
+
+
+def _build_manager_readiness_center(
+	context: dict[str, object],
+	inbound: dict[str, object] | None,
+	outbound: dict[str, object] | None,
+	stock_exceptions: dict[str, object] | None,
+	transfer_visibility: dict[str, object] | None,
+) -> dict[str, object]:
+	if not _is_warehouse_manager_context(context):
+		return {"visible": False, "state": "hidden", "groups": [], "cards": []}
+
+	groups = [
+		_manager_center_group(
+			"arrival_review",
+			"Arrival readiness",
+			"Supplier-side rows that need manager review.",
+			_manager_center_inbound_items(inbound),
+		),
+		_manager_center_group(
+			"pick_blockers",
+			"Picking blockers",
+			"Customer-side rows blocked by timing or stock posture.",
+			_manager_center_outbound_items(outbound),
+		),
+		_manager_center_group(
+			"stock_posture",
+			"Stock posture issues",
+			"Shortage and missing-posture rows needing review.",
+			_manager_center_exception_items(stock_exceptions),
+		),
+		_manager_center_group(
+			"transfer_review",
+			"Transfer review",
+			"Posted transfer visibility rows with incomplete posture.",
+			_manager_center_transfer_items(transfer_visibility),
+		),
+	]
+	total = sum(len(group["items"]) for group in groups)
+	return {
+		"visible": True,
+		"state": "ready" if total else "empty",
+		"title": "Manager Readiness Center",
+		"subtitle": "Read-only triage for Warehouse blockers before any separate operation.",
+		"cards": [
+			{"key": group["key"], "label": group["title"], "value": len(group["items"]), "note": group["summary"]}
+			for group in groups
+		],
+		"groups": groups,
+		"empty_message": "No manager readiness blockers are visible right now.",
+		"boundary_note": "Review-only. Open custom Warehouse pages for detail; no stock or document changes are made here.",
+	}
+
+
+def _manager_center_group(key: str, title: str, summary: str, items: list[dict[str, object]]) -> dict[str, object]:
+	return {
+		"key": key,
+		"title": title,
+		"summary": summary,
+		"items": items[:MANAGER_CENTER_ITEM_LIMIT],
+	}
+
+
+def _manager_center_payload_rows(payload: dict[str, object] | None, group_keys: set[str]) -> list[dict[str, object]]:
+	rows: list[dict[str, object]] = []
+	for group in (payload or {}).get("groups") or []:
+		if not isinstance(group, dict) or cstr(group.get("key")).strip() not in group_keys:
+			continue
+		rows.extend(row for row in (group.get("rows") or []) if isinstance(row, dict))
+	return rows
+
+
+def _manager_center_inbound_items(inbound: dict[str, object] | None) -> list[dict[str, object]]:
+	items: list[dict[str, object]] = []
+	for row in _manager_center_payload_rows(inbound, {"overdue", "partially_received"}):
+		purchase_order = cstr(row.get("purchase_order")).strip()
+		if not purchase_order:
+			continue
+		items.append(_manager_center_item(
+			key=f"arrival:{purchase_order}",
+			title=purchase_order,
+			subtitle=cstr(row.get("supplier")).strip() or "Supplier not shown",
+			status=cstr(row.get("age_label") or row.get("status")).strip() or "Needs review",
+			detail=cstr(row.get("remaining_summary")).strip() or "Open receiving quantity visible.",
+			facts=[
+				("Supplier", row.get("supplier")),
+				("Warehouse", row.get("target_warehouse")),
+				("Receiving", row.get("received_percent")),
+			],
+			target=_manager_center_route_target("warehouse-console-receiving", purchase_order=purchase_order),
+			action_label="Review receiving",
+		))
+	return items[:MANAGER_CENTER_ITEM_LIMIT]
+
+
+def _manager_center_outbound_items(outbound: dict[str, object] | None) -> list[dict[str, object]]:
+	items: list[dict[str, object]] = []
+	for row in _manager_center_payload_rows(outbound, {"overdue", "needs_stock_review", "partially_picked"}):
+		sales_order = cstr(row.get("sales_order")).strip()
+		if not sales_order:
+			continue
+		items.append(_manager_center_item(
+			key=f"picking:{sales_order}",
+			title=sales_order,
+			subtitle=cstr(row.get("customer")).strip() or "Customer not shown",
+			status=cstr(row.get("stock_state") or row.get("status") or row.get("age_label")).strip() or "Needs review",
+			detail=cstr(row.get("remaining_summary")).strip() or "Open picking quantity visible.",
+			facts=[
+				("Customer", row.get("customer")),
+				("Warehouse", row.get("target_warehouse")),
+				("Picking", row.get("delivered_percent")),
+			],
+			target=_manager_center_route_target("warehouse-console-picking", sales_order=sales_order),
+			action_label="Review picking",
+		))
+	return items[:MANAGER_CENTER_ITEM_LIMIT]
+
+
+def _manager_center_exception_items(stock_exceptions: dict[str, object] | None) -> list[dict[str, object]]:
+	items: list[dict[str, object]] = []
+	for row in _manager_center_payload_rows(stock_exceptions, {"needs_stock_review", "urgent_aging", "warehouse_posture_missing"}):
+		target = (row.get("route_targets") or {}).get("exception_review") if isinstance(row.get("route_targets"), dict) else {}
+		context_token = cstr((target or {}).get("context_token") or row.get("context_token")).strip()
+		if not context_token:
+			continue
+		items.append(_manager_center_item(
+			key=f"exception:{context_token}",
+			title=cstr(row.get("sales_order")).strip() or cstr(row.get("item_code")).strip() or "Stock exception",
+			subtitle=cstr(row.get("customer")).strip() or cstr(row.get("item_name")).strip() or "Demand row",
+			status=cstr(row.get("exception_label") or row.get("urgency_label")).strip() or "Needs stock review",
+			detail=cstr(row.get("explanation")).strip() or "Stock posture needs review.",
+			facts=[
+				("Item", row.get("item_code")),
+				("Warehouse", row.get("source_warehouse")),
+				("Short", row.get("short_qty")),
+			],
+			target=_manager_center_route_target("warehouse-console-stock-exception", context_token=context_token),
+			action_label="Review exception",
+		))
+	return items[:MANAGER_CENTER_ITEM_LIMIT]
+
+
+def _manager_center_transfer_items(transfer_visibility: dict[str, object] | None) -> list[dict[str, object]]:
+	items: list[dict[str, object]] = []
+	for row in _manager_center_payload_rows(transfer_visibility, {"needs_review", "transit_related"}):
+		target = (row.get("route_targets") or {}).get("movement_review") if isinstance(row.get("route_targets"), dict) else {}
+		context_token = cstr((target or {}).get("context_token")).strip()
+		movement_id = cstr(row.get("movement_id") or row.get("transfer_id")).strip()
+		if not context_token:
+			continue
+		items.append(_manager_center_item(
+			key=f"transfer:{movement_id or context_token}",
+			title=movement_id or "Transfer movement",
+			subtitle=cstr(row.get("direction_label")).strip() or "Warehouse movement",
+			status=cstr(row.get("posture") or row.get("group_label")).strip() or "Needs review",
+			detail=cstr(row.get("quantity_summary")).strip() or "Transfer quantity visible.",
+			facts=[
+				("Source", row.get("source_warehouse")),
+				("Target", row.get("target_warehouse")),
+				("Items", row.get("item_count")),
+			],
+			target=_manager_center_route_target("warehouse-console-movement", context_token=context_token),
+			action_label="Review movement",
+		))
+	return items[:MANAGER_CENTER_ITEM_LIMIT]
+
+
+def _manager_center_item(
+	*,
+	key: str,
+	title: str,
+	subtitle: str,
+	status: str,
+	detail: str,
+	facts: list[tuple[str, object]],
+	target: dict[str, object],
+	action_label: str,
+) -> dict[str, object]:
+	return {
+		"key": key,
+		"title": title,
+		"subtitle": subtitle,
+		"status": status,
+		"detail": detail,
+		"facts": _manager_center_facts(facts),
+		"target": target,
+		"action_label": action_label,
+	}
+
+
+def _manager_center_facts(pairs: list[tuple[str, object]]) -> list[dict[str, str]]:
+	facts: list[dict[str, str]] = []
+	for label, value in pairs:
+		text = cstr(value).strip()
+		if text:
+			facts.append({"label": label, "value": text})
+	return facts[:3]
+
+
+def _manager_center_route_target(route: str, **kwargs: object) -> dict[str, object]:
+	allowed_routes = {
+		"warehouse-console-receiving",
+		"warehouse-console-picking",
+		"warehouse-console-stock-exception",
+		"warehouse-console-movement",
+	}
+	if route not in allowed_routes:
+		return {}
+	target: dict[str, object] = {"kind": "warehouse_page", "route": route}
+	for key, value in kwargs.items():
+		text = cstr(value).strip()
+		if text:
+			target[key] = text
+	return target
 
 
 def _section_card(key: str, title: str, metric: dict[str, object], empty_message: str) -> dict[str, object]:
@@ -4449,6 +4732,429 @@ def _outbound_state_label(state_key: str) -> str:
 		"needs_stock_review": "Needs Stock Review",
 		"expected_soon": "Expected Soon",
 	}.get(state_key, "Expected Soon")
+
+
+def _normalize_quick_find_query(query: object) -> str:
+	return " ".join(cstr(query).replace("\x00", " ").split())[:80]
+
+
+def _quick_find_limit(limit: object) -> int:
+	try:
+		value = int(limit or QUICK_FIND_DEFAULT_LIMIT)
+	except Exception:
+		value = QUICK_FIND_DEFAULT_LIMIT
+	return max(1, min(QUICK_FIND_MAX_LIMIT, value))
+
+
+def _build_warehouse_quick_find_results(query: str, limit: int) -> list[dict[str, object]]:
+	results: list[dict[str, object]] = []
+	seen: set[tuple[str, str]] = set()
+	builders = (
+		_quick_find_receiving_results,
+		_quick_find_picking_results,
+		_quick_find_stock_exception_results,
+		_quick_find_stock_posture_results,
+		_quick_find_movement_results,
+		_quick_find_transfer_results,
+	)
+	per_group_limit = max(2, min(5, limit))
+	for builder in builders:
+		for result in builder(query, per_group_limit):
+			key = (cstr(result.get("result_type")), cstr(result.get("name")))
+			if not key[0] or not key[1] or key in seen:
+				continue
+			seen.add(key)
+			results.append(result)
+			if len(results) >= limit:
+				return results[:limit]
+	return results[:limit]
+
+
+def _quick_find_receiving_results(query: str, limit: int) -> list[dict[str, object]]:
+	if not _can_read("Purchase Order"):
+		return []
+	rows = _quick_find_parent_rows(
+		"Purchase Order",
+		query,
+		fields=PURCHASE_ORDER_INBOUND_FIELDS,
+		search_fields=["name", "supplier", "supplier_name"],
+		base_filters=_purchase_order_due_filters(),
+		limit=limit,
+	)
+	child_parent_names = _quick_find_child_parent_names(
+		"Purchase Order Item",
+		query,
+		search_fields=["item_code", "item_name", "warehouse"],
+		limit=max(limit * 2, 6),
+	)
+	if child_parent_names:
+		rows.extend(_quick_find_parent_rows_by_name("Purchase Order", child_parent_names, PURCHASE_ORDER_INBOUND_FIELDS, _purchase_order_due_filters(), limit))
+	return [
+		_quick_find_result(
+			result_type="receiving",
+			group_key="receiving",
+			doctype="Purchase Order",
+			name=cstr(row.get("name")),
+			title=cstr(row.get("name")),
+			subtitle=cstr(row.get("supplier_name") or row.get("supplier") or "Supplier receiving review"),
+			target={"kind": "warehouse_page", "route": "warehouse-console-receiving", "route_parts": [cstr(row.get("name"))]},
+			action_label="Open receiving review",
+			chips=[cstr(row.get("status") or "Receiving")],
+			facts=_quick_find_facts(
+				("Supplier", row.get("supplier_name") or row.get("supplier")),
+				("Expected", row.get("schedule_date")),
+				("Warehouse", row.get("set_warehouse")),
+				("Received", _percent_text(row.get("per_received"))),
+			),
+			boundary_note="Open the custom Warehouse receiving review. No Purchase Receipt is created.",
+		)
+		for row in _unique_rows_by_name(rows)[:limit]
+	]
+
+
+def _quick_find_picking_results(query: str, limit: int) -> list[dict[str, object]]:
+	if not _can_read("Sales Order"):
+		return []
+	rows = _quick_find_parent_rows(
+		"Sales Order",
+		query,
+		fields=SALES_ORDER_OUTBOUND_FIELDS,
+		search_fields=["name", "customer", "customer_name"],
+		base_filters=_sales_order_outbound_filters({}),
+		limit=limit,
+	)
+	child_parent_names = _quick_find_child_parent_names(
+		"Sales Order Item",
+		query,
+		search_fields=["item_code", "item_name", "warehouse"],
+		limit=max(limit * 2, 6),
+	)
+	if child_parent_names:
+		rows.extend(_quick_find_parent_rows_by_name("Sales Order", child_parent_names, SALES_ORDER_OUTBOUND_FIELDS, _sales_order_outbound_filters({}), limit))
+	return [
+		_quick_find_result(
+			result_type="picking",
+			group_key="picking",
+			doctype="Sales Order",
+			name=cstr(row.get("name")),
+			title=cstr(row.get("name")),
+			subtitle=cstr(row.get("customer_name") or row.get("customer") or "Outbound picking review"),
+			target={"kind": "warehouse_page", "route": "warehouse-console-picking", "route_parts": [cstr(row.get("name"))]},
+			action_label="Open picking review",
+			chips=[cstr(row.get("status") or "Picking")],
+			facts=_quick_find_facts(
+				("Customer", row.get("customer_name") or row.get("customer")),
+				("Delivery", row.get("delivery_date")),
+				("Warehouse", row.get("set_warehouse")),
+				("Delivered", _percent_text(row.get("per_delivered"))),
+			),
+			boundary_note="Open the custom Warehouse picking review. No Pick List or Delivery Note is created.",
+		)
+		for row in _unique_rows_by_name(rows)[:limit]
+	]
+
+
+def _quick_find_stock_exception_results(query: str, limit: int) -> list[dict[str, object]]:
+	if not _can_read("Sales Order Item"):
+		return []
+	rows = _quick_find_child_rows(
+		"Sales Order Item",
+		query,
+		fields=SALES_ORDER_ITEM_OUTBOUND_FIELDS,
+		search_fields=["item_code", "item_name", "warehouse"],
+		limit=limit,
+	)
+	results: list[dict[str, object]] = []
+	for row in rows:
+		sales_order = cstr(row.get("parent")).strip()
+		item_code = cstr(row.get("item_code")).strip()
+		warehouse = cstr(row.get("warehouse")).strip()
+		if not sales_order or not item_code:
+			continue
+		token = _stock_exception_context_token(sales_order, item_code, warehouse)
+		results.append(_quick_find_result(
+			result_type="stock_exception",
+			group_key="stock_exceptions",
+			doctype="Sales Order Item",
+			name=f"{sales_order}:{item_code}:{warehouse}",
+			title=item_code,
+			subtitle=cstr(row.get("item_name") or sales_order or "Stock exception review"),
+			target={"kind": "warehouse_page", "route": "warehouse-console-stock-exception", "context_token": token},
+			action_label="Review exception",
+			chips=["Stock review"],
+			facts=_quick_find_facts(
+				("Sales Order", sales_order),
+				("Warehouse", warehouse),
+				("Open Qty", _number_text(flt(row.get("qty")) - flt(row.get("delivered_qty")))),
+			),
+			boundary_note="Open the custom Warehouse stock exception review. No stock is reserved or adjusted.",
+		))
+	return results[:limit]
+
+
+def _quick_find_stock_posture_results(query: str, limit: int) -> list[dict[str, object]]:
+	if not _can_read("Bin"):
+		return []
+	rows = _quick_find_parent_rows(
+		"Bin",
+		query,
+		fields=BIN_OUTBOUND_FIELDS,
+		search_fields=["item_code", "warehouse"],
+		base_filters=[],
+		limit=limit,
+	)
+	results: list[dict[str, object]] = []
+	for row in rows:
+		item_code = cstr(row.get("item_code")).strip()
+		warehouse = cstr(row.get("warehouse")).strip()
+		if not item_code and not warehouse:
+			continue
+		token = _stock_posture_context_token(item_code, warehouse)
+		results.append(_quick_find_result(
+			result_type="stock_posture",
+			group_key="stock_posture",
+			doctype="Bin",
+			name=f"{item_code}:{warehouse}",
+			title=item_code or "Warehouse stock posture",
+			subtitle=warehouse or "Warehouse not visible",
+			target={"kind": "warehouse_page", "route": "warehouse-console-stock-posture", "context_token": token},
+			action_label="Review stock posture",
+			chips=["Read-only posture"],
+			facts=_quick_find_facts(
+				("Warehouse", warehouse),
+				("Actual", _number_text(row.get("actual_qty"))),
+				("Projected", _number_text(row.get("projected_qty"))),
+			),
+			boundary_note="Open the custom Warehouse stock posture review. No Stock Ledger or valuation page is opened.",
+		))
+	return results[:limit]
+
+
+def _quick_find_movement_results(query: str, limit: int) -> list[dict[str, object]]:
+	if not _can_read("Stock Entry"):
+		return []
+	rows = _quick_find_parent_rows(
+		"Stock Entry",
+		query,
+		fields=STOCK_ENTRY_MOVEMENT_FIELDS,
+		search_fields=["name", "purpose", "stock_entry_type", "from_warehouse", "to_warehouse"],
+		base_filters=[["Stock Entry", "docstatus", "=", 1]],
+		limit=limit,
+	)
+	return [
+		_quick_find_result(
+			result_type="movement",
+			group_key="movements",
+			doctype="Stock Entry",
+			name=cstr(row.get("name")),
+			title=cstr(row.get("name")),
+			subtitle=cstr(row.get("purpose") or row.get("stock_entry_type") or "Posted movement review"),
+			target={"kind": "warehouse_page", "route": "warehouse-console-movement", "context_token": _movement_review_context_token(row.get("name"))},
+			action_label="Review movement",
+			chips=["Posted movement"],
+			facts=_quick_find_facts(
+				("Posted", row.get("posting_date")),
+				("Source", row.get("from_warehouse")),
+				("Target", row.get("to_warehouse")),
+			),
+			boundary_note="Open the custom Warehouse movement review. No Stock Entry action is available.",
+		)
+		for row in _unique_rows_by_name(rows)[:limit]
+	]
+
+
+def _quick_find_transfer_results(query: str, limit: int) -> list[dict[str, object]]:
+	if not _can_read("Stock Entry"):
+		return []
+	rows = _quick_find_parent_rows(
+		"Stock Entry",
+		query,
+		fields=STOCK_ENTRY_MOVEMENT_FIELDS,
+		search_fields=["name", "purpose", "stock_entry_type", "from_warehouse", "to_warehouse"],
+		base_filters=[["Stock Entry", "docstatus", "=", 1], ["Stock Entry", "purpose", "=", "Material Transfer"]],
+		limit=limit,
+	)
+	return [
+		_quick_find_result(
+			result_type="transfer",
+			group_key="transfers",
+			doctype="Stock Entry",
+			name=f"transfer:{cstr(row.get('name'))}",
+			title=cstr(row.get("name")),
+			subtitle=_join_quick_find_values(row.get("from_warehouse"), row.get("to_warehouse")) or "Transfer visibility",
+			target={"kind": "warehouse_page", "route": "warehouse-console-movement", "context_token": _movement_review_context_token(row.get("name"))},
+			action_label="Review transfer movement",
+			chips=["Transfer visibility"],
+			facts=_quick_find_facts(
+				("Posted", row.get("posting_date")),
+				("Source", row.get("from_warehouse")),
+				("Target", row.get("to_warehouse")),
+			),
+			boundary_note="Open the custom Warehouse movement review. Transfer execution is not available.",
+		)
+		for row in _unique_rows_by_name(rows)[:limit]
+	]
+
+
+def _quick_find_parent_rows(
+	doctype: str,
+	query: str,
+	*,
+	fields: list[str],
+	search_fields: list[str],
+	base_filters: list | None,
+	limit: int,
+) -> list[dict[str, object]]:
+	rows: list[dict[str, object]] = []
+	seen: set[str] = set()
+	for field in _quick_find_search_fields(doctype, search_fields):
+		filters = list(base_filters or [])
+		filters.append([doctype, field, "like", f"%{query}%"])
+		for row in _safe_get_list(doctype, fields=_available_fields(doctype, fields), filters=filters, order_by="modified desc", limit=limit):
+			name = cstr(row.get("name")).strip() or _join_quick_find_values(row.get("item_code"), row.get("warehouse"))
+			if not name or name in seen:
+				continue
+			seen.add(name)
+			rows.append(row)
+			if len(rows) >= limit:
+				return rows
+	return rows
+
+
+def _quick_find_parent_rows_by_name(
+	doctype: str,
+	names: list[str],
+	fields: list[str],
+	base_filters: list | None,
+	limit: int,
+) -> list[dict[str, object]]:
+	clean_names = [name for name in _unique_text(names) if name]
+	if not clean_names:
+		return []
+	filters = list(base_filters or [])
+	filters.append([doctype, "name", "in", clean_names[: max(limit * 2, 8)]])
+	return _safe_get_list(doctype, fields=_available_fields(doctype, fields), filters=filters, order_by="modified desc", limit=limit)
+
+
+def _quick_find_child_parent_names(doctype: str, query: str, *, search_fields: list[str], limit: int) -> list[str]:
+	rows = _quick_find_child_rows(doctype, query, fields=["parent"], search_fields=search_fields, limit=limit)
+	return _unique_text(row.get("parent") for row in rows)
+
+
+def _quick_find_child_rows(
+	doctype: str,
+	query: str,
+	*,
+	fields: list[str],
+	search_fields: list[str],
+	limit: int,
+) -> list[dict[str, object]]:
+	if not _can_read(doctype):
+		return []
+	rows: list[dict[str, object]] = []
+	seen: set[str] = set()
+	for field in _quick_find_search_fields(doctype, search_fields):
+		for row in _safe_get_all(
+			doctype,
+			fields=_available_fields(doctype, fields),
+			filters=[[doctype, field, "like", f"%{query}%"]],
+			order_by=None,
+			limit=limit,
+		):
+			key = _join_quick_find_values(row.get("parent"), row.get("item_code"), row.get("warehouse"), row.get("idx"))
+			if not key or key in seen:
+				continue
+			seen.add(key)
+			rows.append(row)
+			if len(rows) >= limit:
+				return rows
+	return rows
+
+
+def _quick_find_search_fields(doctype: str, fields: list[str]) -> list[str]:
+	available: list[str] = []
+	for field in fields:
+		fieldname = cstr(field).strip()
+		if not fieldname:
+			continue
+		if fieldname in STANDARD_SAFE_FIELDS or fieldname == "name" or _has_field(doctype, fieldname):
+			available.append(fieldname)
+	return available
+
+
+def _quick_find_result(
+	*,
+	result_type: str,
+	group_key: str,
+	doctype: str,
+	name: str,
+	title: str,
+	subtitle: str,
+	target: dict[str, object],
+	action_label: str,
+	chips: list[str],
+	facts: list[dict[str, str]],
+	boundary_note: str,
+) -> dict[str, object]:
+	group_label = QUICK_FIND_GROUP_LABELS.get(group_key, group_key.replace("_", " ").title())
+	preview = {
+		"title": title,
+		"subtitle": subtitle,
+		"chips": [chip for chip in chips if cstr(chip).strip()],
+		"facts": facts,
+		"target": target,
+		"primary_action_label": action_label,
+		"boundary_note": boundary_note,
+	}
+	return {
+		"id": f"{result_type}:{name}",
+		"result_type": result_type,
+		"group_key": group_key,
+		"group": group_label,
+		"doctype": doctype,
+		"name": name,
+		"label": title,
+		"title": title,
+		"subtitle": subtitle,
+		"meta": boundary_note,
+		"target": target,
+		"preview": preview,
+		"primary_action_label": action_label,
+	}
+
+
+def _quick_find_groups(results: list[dict[str, object]]) -> list[dict[str, object]]:
+	groups: list[dict[str, object]] = []
+	for group_key in QUICK_FIND_GROUP_ORDER:
+		items = [item for item in results if item.get("group_key") == group_key]
+		if items:
+			groups.append({"key": group_key, "label": QUICK_FIND_GROUP_LABELS.get(group_key, group_key.replace("_", " ").title()), "results": items})
+	return groups
+
+
+def _quick_find_facts(*pairs: tuple[str, object]) -> list[dict[str, str]]:
+	facts: list[dict[str, str]] = []
+	for label, value in pairs:
+		text = cstr(value).strip()
+		if text:
+			facts.append({"label": label, "value": text})
+	return facts[:6]
+
+
+def _join_quick_find_values(*values: object) -> str:
+	return " | ".join(cstr(value).strip() for value in values if cstr(value).strip())
+
+
+def _unique_rows_by_name(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+	unique: list[dict[str, object]] = []
+	seen: set[str] = set()
+	for row in rows:
+		name = cstr(row.get("name")).strip()
+		if not name or name in seen:
+			continue
+		seen.add(name)
+		unique.append(row)
+	return unique
 
 
 def _safe_get_list(

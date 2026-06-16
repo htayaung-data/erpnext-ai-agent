@@ -181,6 +181,7 @@
       movementVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
       movementReview: "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review",
       transferVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
+      quickFind: "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions",
       sidebarContext: "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context",
     },
     managedDoctypes: {
@@ -202,6 +203,9 @@
     },
     search: {
       enabled: false,
+      mode: "warehouse_quick_find",
+      placement: "warehouse_cockpit_only",
+      placeholder: "Find purchase orders, sales orders, items, warehouses, or movements",
     },
     fallbackItems: [
       { key: "warehouse_console_home", label: "Overview", icon: "item", target: { kind: "page", route: "warehouse-console" } },

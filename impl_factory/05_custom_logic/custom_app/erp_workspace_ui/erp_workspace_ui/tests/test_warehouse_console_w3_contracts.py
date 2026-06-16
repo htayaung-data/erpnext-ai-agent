@@ -754,7 +754,13 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             workspace["methods"]["transfer_visibility"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
         )
+        self.assertEqual(
+            workspace["methods"]["quick_find"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions",
+        )
         self.assertFalse(workspace["search"]["enabled"])
+        self.assertEqual(workspace["search"]["mode"], "warehouse_quick_find")
+        self.assertEqual(workspace["search"]["placement"], "warehouse_cockpit_only")
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
             "warehouse_console_home",
             "inbound_receiving",
@@ -772,6 +778,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
         self.assertEqual(payload["action_targets"], {})
         self.assertEqual(payload["allowed_actions"], [{"key": "refresh", "label": "Refresh", "kind": "read_only"}])
+        self.assertEqual(payload["manager_center"], {"visible": False, "state": "hidden", "groups": [], "cards": []})
         self.assertIn("inbound", payload)
         self.assertEqual(payload["inbound"]["queue_route"], "warehouse-console-worklist")
         self.assertEqual(payload["inbound"]["counts"]["overdue"], 1)
@@ -797,6 +804,75 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("base_net_rate", payload_text)
         self.assertNotIn("amount", payload_text)
         self.assertNotIn("/app/", payload_text)
+
+    def test_w14c_manager_readiness_center_is_manager_only_and_custom_route_only(self):
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+
+        payload = service.get_warehouse_console_overview()
+
+        center = payload["manager_center"]
+        self.assertTrue(center["visible"])
+        self.assertIn(center["state"], {"ready", "empty"})
+        self.assertEqual(
+            [group["key"] for group in center["groups"]],
+            ["arrival_review", "pick_blockers", "stock_posture", "transfer_review"],
+        )
+        self.assertEqual([card["key"] for card in center["cards"]], [group["key"] for group in center["groups"]])
+        self.assertIn("Review-only", center["boundary_note"])
+
+        visible_items = [item for group in center["groups"] for item in group["items"]]
+        self.assertGreaterEqual(len(visible_items), 1)
+        for item in visible_items:
+            target = item["target"]
+            self.assertEqual(target["kind"], "warehouse_page")
+            self.assertIn(target["route"], {
+                "warehouse-console-receiving",
+                "warehouse-console-picking",
+                "warehouse-console-stock-exception",
+                "warehouse-console-movement",
+            })
+            self.assertTrue(item["action_label"].startswith("Review "))
+            self.assertNotIn("approve", str(item).lower())
+            self.assertNotIn("submit", str(item).lower())
+            self.assertNotIn("/app/", str(item))
+            self.assertNotIn("/desk/Form", str(item))
+
+        center_text = str(center).lower()
+        self.assertNotIn("valuation_rate", center_text)
+        self.assertNotIn("stock_value", center_text)
+        self.assertNotIn("base_net_rate", center_text)
+
+    def test_w14b_quick_find_is_role_scoped_preview_and_custom_route_only(self):
+        payload = service.get_warehouse_quick_find_suggestions("PO", limit=8)
+
+        self.assertEqual(payload["state"], "ready")
+        self.assertIn("receiving", [group["key"] for group in payload["groups"]])
+        self.assertGreaterEqual(len(payload["results"]), 1)
+        for result in payload["results"]:
+            target = result["target"]
+            self.assertEqual(target["kind"], "warehouse_page")
+            self.assertIn(target["route"], {
+                "warehouse-console-receiving",
+                "warehouse-console-picking",
+                "warehouse-console-stock-exception",
+                "warehouse-console-stock-posture",
+                "warehouse-console-movement",
+            })
+            self.assertIn("preview", result)
+            self.assertIn("primary_action_label", result["preview"])
+            self.assertNotIn("/app/", str(result))
+            self.assertNotIn("/desk/Form", str(result))
+            self.assertNotIn("valuation_rate", str(result).lower())
+            self.assertNotIn("stock_value", str(result).lower())
+
+    def test_w14b_quick_find_restricted_without_warehouse_role(self):
+        CURRENT_ROLES[:] = []
+
+        payload = service.get_warehouse_quick_find_suggestions("PO", limit=8)
+
+        self.assertEqual(payload["state"], "restricted")
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["groups"], [])
 
     def test_inbound_queue_payload_is_grouped_read_only_and_allowlisted(self):
         payload = service.get_warehouse_inbound_receiving_queue("inbound_receiving")
