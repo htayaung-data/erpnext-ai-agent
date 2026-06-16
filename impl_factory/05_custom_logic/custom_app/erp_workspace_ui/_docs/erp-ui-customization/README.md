@@ -171,6 +171,12 @@ Current freeze facts:
 
 Documents in this folder:
 
+Active Warehouse operations roadmap after Phase 0:
+
+- `warehouse-console-phase-w15a-operations-blueprint-2026-06-16.md`
+
+Historical Warehouse W14 planning notes are superseded by W15A unless Main Control explicitly reopens W14.
+
 - `warehouse-console-phase-w5-outbound-picking-visibility-design-plan-2026-05-28.md`
 - `warehouse-console-phase-w6a-stock-exceptions-baseline-2026-05-29.md`
 - `warehouse-console-phase-w6b-stock-exception-review-baseline-2026-05-29.md`
@@ -194,6 +200,9 @@ Documents in this folder:
 - `warehouse-console-phase-w12a-premium-receiving-review-polish-plan-2026-05-31.md`
 - `warehouse-console-phase-w12a-premium-receiving-review-polish-baseline-2026-05-31.md`
 - `warehouse-console-phase-w13a-premium-ui-visual-standard-2026-06-10.md`
+- `warehouse-console-phase-w15a-operations-blueprint-2026-06-16.md`
+- `warehouse-console-phase-w14a-functional-scope-2026-06-15.md`
+- `warehouse-console-phase-w14d-inbound-arrival-readiness-design-2026-06-16.md`
 - `warehouse-console-phase-w11b-purchase-receipt-receiving-execution-design-2026-05-31.md`
 - `frozen-workspace-protection-package-standard-v1.md`
 - `sales-console-frozen-protection-package-2026-05-09.md`

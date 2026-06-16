@@ -28,19 +28,6 @@
   const STOCK_EXCEPTION_REVIEW_METHOD = warehouseMethods.stockExceptionReview || warehouseMethods.stock_exception_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review";
   const STOCK_POSTURE_REVIEW_METHOD = warehouseMethods.stockPostureReview || warehouseMethods.stock_posture_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review";
   const MOVEMENT_REVIEW_METHOD = warehouseMethods.movementReview || warehouseMethods.movement_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review";
-  const QUICK_FIND_METHOD = warehouseMethods.quickFind || warehouseMethods.quick_find || "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions";
-  const QUICK_FIND_DEBOUNCE_MS = 240;
-  const QUICK_FIND_ROW_BADGE_LABELS = Object.freeze({
-    receiving: "Receiving",
-    picking: "Picking",
-    stock_exceptions: "Exception",
-    stock_exception: "Exception",
-    stock_posture: "Posture",
-    movements: "Movement",
-    movement: "Movement",
-    transfers: "Transfer",
-    transfer: "Transfer",
-  });
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
   const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
@@ -100,74 +87,6 @@
       "\"": "&quot;",
       "'": "&#39;",
     }[character] || character));
-  }
-
-  function quickFindLabelKey(value) {
-    return String(value || "")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "");
-  }
-
-  function quickFindBadgeLabel(result) {
-    if (!result) return "Result";
-    const explicit = String(result.badge_label || result.result_label || "").trim();
-    if (explicit) return explicit;
-    return QUICK_FIND_ROW_BADGE_LABELS[quickFindLabelKey(result.group_key)]
-      || QUICK_FIND_ROW_BADGE_LABELS[quickFindLabelKey(result.result_type)]
-      || QUICK_FIND_ROW_BADGE_LABELS[quickFindLabelKey(result.group)]
-      || String(result.result_type || result.group || "Result").trim()
-      || "Result";
-  }
-
-  function warehouseQuickFindCopy(value, fallback) {
-    const copy = String(value || "").trim();
-    if (copy) return copy;
-    return fallback || "Open the custom Warehouse page for this result.";
-  }
-
-  function warehouseQuickFindRoutePart(target, key) {
-    if (!target || typeof target !== "object") return "";
-    const parts = Array.isArray(target.route_parts) ? target.route_parts : [];
-    if (key && target[key]) return String(target[key] || "").trim();
-    return String(parts[0] || target.context_token || "").trim();
-  }
-
-  function executeWarehouseQuickFindTarget(target) {
-    if (!target || typeof target !== "object") return;
-    const route = String(target.route || "").trim();
-    if (route === WORKLIST_PAGE_KEY) {
-      const queueKey = normalizeQueueKey(target.queue_key || warehouseQuickFindRoutePart(target));
-      if (isSupportedWorklistQueue(queueKey)) {
-        frappe.set_route(WORKLIST_PAGE_KEY, queueKey.replace(/_/g, "-"));
-      }
-      return;
-    }
-    if (route === RECEIVING_PAGE_KEY) {
-      const purchaseOrder = warehouseQuickFindRoutePart(target, "purchase_order");
-      if (purchaseOrder) frappe.set_route(RECEIVING_PAGE_KEY, purchaseOrder);
-      return;
-    }
-    if (route === PICKING_PAGE_KEY) {
-      const salesOrder = warehouseQuickFindRoutePart(target, "sales_order");
-      if (salesOrder) frappe.set_route(PICKING_PAGE_KEY, salesOrder);
-      return;
-    }
-    if (route === STOCK_EXCEPTION_PAGE_KEY) {
-      const token = warehouseQuickFindRoutePart(target, "context_token");
-      if (token) frappe.set_route(STOCK_EXCEPTION_PAGE_KEY, token);
-      return;
-    }
-    if (route === STOCK_POSTURE_PAGE_KEY) {
-      const token = warehouseQuickFindRoutePart(target, "context_token");
-      if (token) frappe.set_route(STOCK_POSTURE_PAGE_KEY, token);
-      return;
-    }
-    if (route === MOVEMENT_PAGE_KEY) {
-      const token = warehouseQuickFindRoutePart(target, "context_token");
-      if (token) frappe.set_route(MOVEMENT_PAGE_KEY, token);
-    }
   }
 
   function pathRouteParts() {
@@ -477,466 +396,6 @@
         letter-spacing: 0.04em;
         line-height: 1.2;
         text-transform: uppercase;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find {
-        position: relative;
-        overflow: visible;
-        z-index: 6;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-head {
-        align-items: flex-start;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-subtitle,
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-status {
-        margin-top: 3px;
-        color: #64748b;
-        font-size: 12px;
-        line-height: 1.45;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-status[data-state="error"] {
-        color: #b91c1c;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-body {
-        position: relative;
-        display: grid;
-        gap: 10px;
-        min-width: 0;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-search {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 8px;
-        align-items: center;
-        min-width: 0;
-        padding: 7px 8px;
-        border: 1px solid rgba(214, 224, 219, 0.94);
-        border-radius: 14px;
-        background: #ffffff;
-        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 14px 28px rgba(15, 23, 42, 0.035);
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-input {
-        width: 100%;
-        min-width: 0;
-        height: 36px;
-        border: 0;
-        outline: 0;
-        background: transparent;
-        color: #0f172a;
-        font-size: 13px;
-        font-weight: 520;
-        line-height: 1.3;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-input::placeholder {
-        color: #94a3b8;
-        opacity: 1;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-clear {
-        min-height: 34px;
-        padding: 0 12px;
-        border: 1px solid rgba(203, 213, 225, 0.92);
-        border-radius: 10px;
-        background: #f8fafc;
-        color: #475569;
-        font-size: 12px;
-        font-weight: 700;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-suggestions {
-        position: absolute;
-        top: calc(100% - 2px);
-        left: 0;
-        right: 0;
-        z-index: 40;
-        display: grid;
-        gap: 10px;
-        max-height: min(430px, calc(100vh - 220px));
-        overflow: auto;
-        padding: 12px;
-        border: 1px solid rgba(203, 213, 225, 0.94);
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.99);
-        box-shadow: 0 24px 50px rgba(15, 23, 42, 0.14);
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-group {
-        display: grid;
-        gap: 6px;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-group-label {
-        color: #64748b;
-        font-size: 10.5px;
-        font-weight: 800;
-        letter-spacing: 0.055em;
-        text-transform: uppercase;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-option {
-        display: grid;
-        grid-template-columns: 112px minmax(0, 1fr) minmax(180px, 0.75fr);
-        gap: 10px;
-        align-items: center;
-        width: 100%;
-        min-height: 46px;
-        padding: 9px 11px;
-        border: 1px solid rgba(226, 232, 240, 0.96);
-        border-radius: 12px;
-        background: #ffffff;
-        color: inherit;
-        text-align: left;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-option:hover,
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-option:focus-visible {
-        border-color: rgba(148, 163, 184, 0.74);
-        background: #f8fafc;
-        outline: 0;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-option-type {
-        justify-self: start;
-        display: inline-flex;
-        align-items: center;
-        min-height: 22px;
-        max-width: 100%;
-        padding: 0 8px;
-        border: 1px solid rgba(203, 213, 225, 0.92);
-        border-radius: 999px;
-        background: #f1f5f9;
-        color: #475569;
-        font-size: 10.5px;
-        font-weight: 760;
-        letter-spacing: 0.035em;
-        text-transform: uppercase;
-        white-space: nowrap;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-option-main {
-        min-width: 0;
-        color: #0f172a;
-        font-size: 13px;
-        font-weight: 760;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-option-meta {
-        min-width: 0;
-        color: #64748b;
-        font-size: 12px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-preview {
-        display: grid;
-        grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.9fr) auto;
-        gap: 14px;
-        align-items: center;
-        min-width: 0;
-        padding: 14px;
-        border: 1px solid rgba(214, 224, 219, 0.9);
-        border-radius: 14px;
-        background: #ffffff;
-        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 15px 30px rgba(15, 23, 42, 0.045);
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-preview-kicker {
-        color: #0f766e;
-        font-size: 10.5px;
-        font-weight: 800;
-        letter-spacing: 0.055em;
-        text-transform: uppercase;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-preview-title {
-        margin: 3px 0 0;
-        color: #0f172a;
-        font-size: 16px;
-        font-weight: 780;
-        line-height: 1.22;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-preview-subtitle,
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-boundary {
-        margin-top: 3px;
-        color: #64748b;
-        font-size: 12px;
-        line-height: 1.45;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-chip-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        margin-top: 7px;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-chip {
-        display: inline-flex;
-        align-items: center;
-        min-height: 23px;
-        padding: 0 8px;
-        border: 1px solid rgba(153, 246, 228, 0.52);
-        border-radius: 999px;
-        background: rgba(240, 253, 250, 0.78);
-        color: #0f766e;
-        font-size: 11px;
-        font-weight: 760;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-facts {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 7px 11px;
-        min-width: 0;
-        margin: 0;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-facts dt {
-        color: #64748b;
-        font-size: 10.5px;
-        font-weight: 780;
-        letter-spacing: 0.035em;
-        text-transform: uppercase;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-facts dd {
-        margin: 2px 0 0;
-        color: #172033;
-        font-size: 12px;
-        font-weight: 650;
-        overflow-wrap: anywhere;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-preview-action {
-        display: grid;
-        justify-items: end;
-        gap: 8px;
-        min-width: 160px;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-boundary {
-        max-width: 26ch;
-        margin: 0;
-        text-align: right;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-open {
-        min-height: 38px;
-        padding: 0 15px;
-        border: 1px solid rgba(15, 118, 110, 0.28);
-        border-radius: 10px;
-        background: #0f766e;
-        color: #ffffff;
-        box-shadow: 0 10px 18px rgba(15, 118, 110, 0.16);
-        font-size: 12px;
-        font-weight: 780;
-      }
-      @media (max-width: 980px) {
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-preview,
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-option {
-          grid-template-columns: 1fr;
-        }
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-preview-action {
-          justify-items: stretch;
-        }
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-boundary {
-          max-width: none;
-          text-align: left;
-        }
-      }
-      @media (max-width: 640px) {
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-search {
-          grid-template-columns: 1fr;
-        }
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-clear {
-          justify-self: start;
-        }
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-quick-find-facts {
-          grid-template-columns: 1fr;
-        }
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center {
-        display: grid;
-        gap: 14px;
-        border: 1px solid rgba(214, 224, 219, 0.92);
-        border-radius: 18px;
-        background: #ffffff;
-        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 24px 48px rgba(15, 23, 42, 0.055);
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-head {
-        align-items: flex-start;
-        gap: 12px;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-subtitle,
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-boundary {
-        margin-top: 4px;
-        color: #52657a;
-        font-size: 12.5px;
-        line-height: 1.45;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-summary {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 10px;
-        min-width: 0;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-card {
-        min-width: 0;
-        padding: 14px 15px;
-        border: 1px solid rgba(226, 232, 240, 0.96);
-        border-radius: 15px;
-        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-        box-shadow: 0 16px 32px rgba(15, 23, 42, 0.04);
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-card-label,
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-group-label,
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-fact-label {
-        color: #52657a;
-        font-size: 10.5px;
-        font-weight: 780;
-        letter-spacing: 0.035em;
-        line-height: 1.22;
-        text-transform: uppercase;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-card-value {
-        margin-top: 5px;
-        color: #0f172a;
-        font-size: 22px;
-        font-weight: 760;
-        line-height: 1.05;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-card-note {
-        margin-top: 5px;
-        color: #64748b;
-        font-size: 12px;
-        line-height: 1.38;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-groups {
-        display: grid;
-        gap: 12px;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-group {
-        display: grid;
-        gap: 9px;
-        min-width: 0;
-        padding: 13px;
-        border: 1px solid rgba(226, 232, 240, 0.96);
-        border-radius: 16px;
-        background: #fbfdff;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-group-head {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 12px;
-        min-width: 0;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-group-title {
-        margin: 2px 0 0;
-        color: #0f172a;
-        font-size: 15px;
-        font-weight: 780;
-        line-height: 1.22;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-group-count {
-        color: #64748b;
-        font-size: 12px;
-        white-space: nowrap;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-items {
-        display: grid;
-        gap: 9px;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-item {
-        display: grid;
-        grid-template-columns: minmax(0, 1.05fr) minmax(220px, 0.95fr) auto;
-        gap: 13px;
-        align-items: center;
-        min-width: 0;
-        padding: 13px 14px;
-        border: 1px solid rgba(214, 224, 219, 0.86);
-        border-radius: 14px;
-        background: #ffffff;
-        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.035);
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-item-title {
-        color: #0f172a;
-        font-size: 14px;
-        font-weight: 780;
-        line-height: 1.25;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-item-subtitle,
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-item-detail {
-        margin-top: 3px;
-        color: #52657a;
-        font-size: 12px;
-        line-height: 1.38;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-status {
-        display: inline-flex;
-        align-items: center;
-        width: fit-content;
-        max-width: 100%;
-        min-height: 23px;
-        margin-top: 7px;
-        padding: 0 8px;
-        border: 1px solid rgba(203, 213, 225, 0.9);
-        border-radius: 999px;
-        background: #f8fafc;
-        color: #334155;
-        font-size: 10.5px;
-        font-weight: 760;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-facts {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
-        min-width: 0;
-        margin: 0;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-fact {
-        min-width: 0;
-        padding: 10px;
-        border: 1px solid rgba(226, 232, 240, 0.94);
-        border-radius: 12px;
-        background: #f8fafc;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-fact-value {
-        margin: 3px 0 0;
-        color: #111827;
-        font-size: 12px;
-        font-weight: 680;
-        overflow-wrap: anywhere;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-action {
-        justify-self: end;
-        min-height: 38px;
-        padding: 0 14px;
-        border: 1px solid rgba(203, 213, 225, 0.94);
-        border-radius: 11px;
-        background: #ffffff;
-        color: #0f172a;
-        box-shadow: 0 10px 18px rgba(15, 23, 42, 0.045);
-        font-size: 12px;
-        font-weight: 760;
-        white-space: nowrap;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-action:hover,
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-action:focus-visible {
-        border-color: rgba(148, 163, 184, 0.72);
-        background: #f8fafc;
-        outline: 0;
-      }
-      .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-empty {
-        padding: 14px;
-        border: 1px solid rgba(226, 232, 240, 0.96);
-        border-radius: 14px;
-        background: #fbfdff;
-        color: #52657a;
-        font-size: 12.5px;
-      }
-      @media (max-width: 980px) {
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-summary {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-item {
-          grid-template-columns: 1fr;
-        }
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-action {
-          justify-self: start;
-        }
-      }
-      @media (max-width: 640px) {
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-summary,
-        .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-manager-center-facts {
-          grid-template-columns: 1fr;
-        }
       }
       .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-fact-strip,
       .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-summary-grid,
@@ -3534,6 +2993,137 @@
         color: #52637a;
         line-height: 1.45;
       }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-section {
+        display: grid;
+        gap: 16px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-subtitle {
+        max-width: 640px;
+        text-align: left;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-mode {
+        align-self: start;
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(203, 213, 225, 0.9);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.96);
+        color: #475569;
+        font-size: 11px;
+        font-weight: 760;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-groups {
+        display: grid;
+        gap: 14px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group {
+        display: grid;
+        gap: 10px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group-head h3 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 14px;
+        font-weight: 760;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group-head p {
+        max-width: 420px;
+        margin: 0;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.45;
+        text-align: right;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 112px;
+        align-items: center;
+        gap: 18px;
+        min-height: 102px;
+        padding: 16px 17px;
+        border: 1px solid rgba(225, 232, 240, 0.95);
+        border-left: 3px solid rgba(20, 184, 166, 0.3);
+        border-radius: 16px;
+        background: #ffffff;
+        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.035);
+        transition: border-color 140ms ease, border-left-width 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-planned {
+        border-left-color: rgba(148, 163, 184, 0.34);
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card:focus-within {
+        border-color: rgba(203, 213, 225, 0.98);
+        border-left-width: 4px;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 16px 28px rgba(15, 23, 42, 0.06);
+        transform: translateY(-1px);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.is-planned:hover {
+        border-left-color: rgba(148, 163, 184, 0.46);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side {
+        width: 112px;
+        min-height: 70px;
+        padding: 10px 12px;
+        border: 1px solid rgba(210, 225, 225, 0.95);
+        border-radius: 14px;
+        background: linear-gradient(180deg, #fbfefd 0%, #f8fbfb 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+        display: grid;
+        align-content: center;
+        justify-items: center;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-open {
+        margin-top: 7px;
+        min-height: 26px;
+        padding: 0 9px;
+        border: 1px solid rgba(203, 213, 225, 0.95);
+        border-radius: 9px;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 11px;
+        font-weight: 760;
+        box-shadow: 0 6px 12px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-open:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-open:focus-visible {
+        border-color: rgba(148, 163, 184, 0.9);
+        outline: 0;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-guardrail {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 14px;
+        background: #f8fafc;
+        color: #52637a;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-guardrail strong {
+        color: #0f172a;
+        white-space: nowrap;
+      }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-card-action {
         display: none;
       }
@@ -3552,7 +3142,8 @@
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-pulse-grid-secondary,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-route-grid,
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-work-grid {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-work-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-grid {
           grid-template-columns: minmax(0, 1fr);
         }
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid .sales-console-action-strip.primary,
@@ -3570,13 +3161,24 @@
           justify-content: flex-start;
         }
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-work-card.sales-console-queue-card,
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-queue-card.sales-console-queue-card {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-queue-card.sales-console-queue-card,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card {
           grid-template-columns: minmax(0, 1fr);
         }
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-work-card .sales-console-queue-side,
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-queue-card .sales-console-queue-side {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-queue-card .sales-console-queue-side,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side {
           width: 100%;
           min-height: 58px;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-guardrail {
+          display: grid;
+          align-items: start;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group-head p {
+          max-width: none;
+          text-align: left;
         }
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-header-context,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-chip-row {
@@ -7419,6 +7021,77 @@
     `;
   }
 
+  function renderActionCenterCard(card) {
+    const payload = card || {};
+    const route = payload.route || "";
+    const routePart = payload.route_part || "";
+    const hasRoute = route === WORKLIST_PAGE_KEY && isSupportedWorklistQueue(routePart);
+    const routeView = hasRoute ? worklistViewName(routePart) : "";
+    const routeTarget = hasRoute ? `${route}/${routeView}` : "";
+    const value = payload.value == null || payload.value === "" ? "--" : String(payload.value);
+    const sideLabel = payload.status_label || (hasRoute ? "Review queue" : "Planned");
+    const stateClass = hasRoute ? "is-live" : "is-planned";
+    const sideMarkup = hasRoute ? `
+      <div class="sales-console-queue-side warehouse-action-center-side">
+        <div class="sales-console-queue-count">${escapeHtml(value)}</div>
+        <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
+        <button class="warehouse-action-center-open" type="button" data-warehouse-action-center-open>${escapeHtml(payload.button_label || "Open queue")}</button>
+      </div>
+    ` : `
+      <div class="sales-console-queue-side warehouse-action-center-side">
+        <div class="sales-console-queue-count">${escapeHtml(value)}</div>
+        <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
+      </div>
+    `;
+    return `
+      <article class="sales-console-queue-card regular warehouse-action-center-card ${stateClass}" data-warehouse-action-center-card="${escapeHtml(payload.key || "")}" data-warehouse-action-center-route="${escapeHtml(route)}" data-warehouse-action-center-route-part="${escapeHtml(routePart)}" data-warehouse-cockpit-route-target="${escapeHtml(routeTarget)}">
+        <div class="sales-console-queue-main">
+          <div class="sales-console-queue-title warehouse-cockpit-card-title">${escapeHtml(payload.title || "")}</div>
+          <div class="sales-console-queue-meta warehouse-cockpit-card-note">${escapeHtml(payload.note || "")}</div>
+        </div>
+        ${sideMarkup}
+      </article>
+    `;
+  }
+
+  function renderActionCenterGroup(group) {
+    const payload = group || {};
+    const cards = Array.isArray(payload.cards) ? payload.cards : [];
+    return `
+      <section class="warehouse-action-center-group" data-warehouse-action-center-group="${escapeHtml(payload.key || "")}">
+        <div class="warehouse-action-center-group-head">
+          <h3>${escapeHtml(payload.title || "")}</h3>
+          <p>${escapeHtml(payload.summary || "")}</p>
+        </div>
+        <div class="warehouse-action-center-grid">${cards.map(renderActionCenterCard).join("")}</div>
+      </section>
+    `;
+  }
+
+  function renderCockpitActionCenter(actionCenter) {
+    const payload = actionCenter || {};
+    const sections = Array.isArray(payload.sections) ? payload.sections : [];
+    if (!sections.length) return "";
+    return `
+      <section class="sales-console-card sales-console-section warehouse-cockpit-route-section warehouse-action-center-section" data-warehouse-action-center data-warehouse-action-center-state="${escapeHtml(payload.state || "planning")}" data-warehouse-action-center-mode="${escapeHtml(payload.mode || "shell_only")}">
+        <div class="sales-console-section-head warehouse-cockpit-section-head">
+          <div>
+            <h2 class="sales-console-section-title warehouse-cockpit-section-title">${escapeHtml(payload.title || "Warehouse Action Center")}</h2>
+            <div class="sales-console-section-note warehouse-cockpit-section-note warehouse-action-center-subtitle">${escapeHtml(payload.subtitle || "")}</div>
+          </div>
+          <span class="warehouse-action-center-mode">Shell only</span>
+        </div>
+        <div class="warehouse-action-center-groups">${sections.map(renderActionCenterGroup).join("")}</div>
+        ${payload.guardrail ? `
+          <div class="warehouse-action-center-guardrail" data-warehouse-action-center-guardrail>
+            <strong>${escapeHtml(payload.guardrail.title || "Action shell only")}</strong>
+            <span>${escapeHtml(payload.guardrail.detail || "")}</span>
+          </div>
+        ` : ""}
+      </section>
+    `;
+  }
+
   function renderCockpitRiskSection() {
     const cards = [
       {
@@ -7644,288 +7317,12 @@
     `;
   }
 
-  function renderWarehouseManagerCenter(center) {
-    if (!center || center.visible === false) return "";
-    const cards = Array.isArray(center.cards) ? center.cards : [];
-    const groups = Array.isArray(center.groups) ? center.groups : [];
-    const totalItems = groups.reduce((count, group) => count + (Array.isArray(group.items) ? group.items.length : 0), 0);
-    const cardHtml = cards.map((card) => `
-      <div class="warehouse-manager-center-card" data-warehouse-manager-center-card="${escapeHtml(card.key || "")}">
-        <div class="warehouse-manager-center-card-label">${escapeHtml(card.label || "Readiness")}</div>
-        <div class="warehouse-manager-center-card-value">${escapeHtml(cardValue(card))}</div>
-        <div class="warehouse-manager-center-card-note">${escapeHtml(card.note || "")}</div>
-      </div>
-    `).join("");
-    const groupHtml = totalItems
-      ? groups.map(renderWarehouseManagerCenterGroup).join("")
-      : `<div class="warehouse-manager-center-empty" data-warehouse-manager-center-empty>${escapeHtml(center.empty_message || "No manager readiness blockers are visible right now.")}</div>`;
-    return `
-      <section class="sales-console-card sales-console-section warehouse-manager-center" data-warehouse-manager-center>
-        <div class="sales-console-section-head warehouse-manager-center-head">
-          <div>
-            <h2 class="sales-console-section-title warehouse-cockpit-section-title">${escapeHtml(center.title || "Manager Readiness Center")}</h2>
-            <div class="warehouse-manager-center-subtitle">${escapeHtml(center.subtitle || "Read-only Warehouse readiness triage.")}</div>
-          </div>
-          <div class="warehouse-manager-center-boundary">${escapeHtml(center.boundary_note || "Review-only custom Warehouse pages.")}</div>
-        </div>
-        <div class="warehouse-manager-center-summary">${cardHtml}</div>
-        <div class="warehouse-manager-center-groups">${groupHtml}</div>
-      </section>
-    `;
-  }
-
-  function renderWarehouseManagerCenterGroup(group) {
-    const items = Array.isArray(group.items) ? group.items : [];
-    if (!items.length) return "";
-    return `
-      <section class="warehouse-manager-center-group" data-warehouse-manager-center-group="${escapeHtml(group.key || "")}">
-        <div class="warehouse-manager-center-group-head">
-          <div>
-            <div class="warehouse-manager-center-group-label">${escapeHtml(group.summary || "Readiness review")}</div>
-            <h3 class="warehouse-manager-center-group-title">${escapeHtml(group.title || "Manager review")}</h3>
-          </div>
-          <div class="warehouse-manager-center-group-count">${escapeHtml(items.length)} visible</div>
-        </div>
-        <div class="warehouse-manager-center-items">${items.map(renderWarehouseManagerCenterItem).join("")}</div>
-      </section>
-    `;
-  }
-
-  function warehouseManagerCenterTargetAttrs(target) {
-    if (!target || typeof target !== "object") return "";
-    const route = String(target.route || "").trim();
-    const allowedRoutes = [RECEIVING_PAGE_KEY, PICKING_PAGE_KEY, STOCK_EXCEPTION_PAGE_KEY, MOVEMENT_PAGE_KEY];
-    if (!allowedRoutes.includes(route)) return "";
-    return [
-      `data-warehouse-manager-route="${escapeHtml(route)}"`,
-      `data-warehouse-manager-purchase-order="${escapeHtml(target.purchase_order || "")}"`,
-      `data-warehouse-manager-sales-order="${escapeHtml(target.sales_order || "")}"`,
-      `data-warehouse-manager-token="${escapeHtml(target.context_token || "")}"`,
-    ].join(" ");
-  }
-
-  function renderWarehouseManagerCenterItem(item) {
-    const facts = Array.isArray(item.facts) ? item.facts : [];
-    const targetAttrs = warehouseManagerCenterTargetAttrs(item.target);
-    const factHtml = facts.map((fact) => `
-      <div class="warehouse-manager-center-fact">
-        <dt class="warehouse-manager-center-fact-label">${escapeHtml(fact.label || "Fact")}</dt>
-        <dd class="warehouse-manager-center-fact-value">${escapeHtml(fact.value || "-")}</dd>
-      </div>
-    `).join("");
-    return `
-      <article class="warehouse-manager-center-item" data-warehouse-manager-center-item="${escapeHtml(item.key || "")}">
-        <div class="warehouse-manager-center-copy">
-          <div class="warehouse-manager-center-item-title">${escapeHtml(item.title || "Warehouse item")}</div>
-          <div class="warehouse-manager-center-item-subtitle">${escapeHtml(item.subtitle || "")}</div>
-          <div class="warehouse-manager-center-status">${escapeHtml(item.status || "Needs review")}</div>
-          <div class="warehouse-manager-center-item-detail">${escapeHtml(item.detail || "")}</div>
-        </div>
-        <dl class="warehouse-manager-center-facts">${factHtml}</dl>
-        ${targetAttrs ? `<button type="button" class="warehouse-manager-center-action" data-warehouse-manager-center-open ${targetAttrs}>${escapeHtml(item.action_label || "Review")}</button>` : ""}
-      </article>
-    `;
-  }
-
-  function executeWarehouseManagerCenterTarget(element) {
-    const $element = $(element);
-    const route = String($element.attr("data-warehouse-manager-route") || "").trim();
-    const target = {
-      kind: "warehouse_page",
-      route,
-      purchase_order: $element.attr("data-warehouse-manager-purchase-order") || "",
-      sales_order: $element.attr("data-warehouse-manager-sales-order") || "",
-      context_token: $element.attr("data-warehouse-manager-token") || "",
-    };
-    executeWarehouseQuickFindTarget(target);
-  }
-
-  function renderWarehouseQuickFindSection() {
-    const $section = $(`
-      <section class="sales-console-card sales-console-section warehouse-quick-find" data-warehouse-quick-find>
-        <div class="sales-console-section-head warehouse-quick-find-head">
-          <div>
-            <h2 class="sales-console-section-title warehouse-cockpit-section-title">Quick Find</h2>
-            <div class="warehouse-quick-find-subtitle">Find Warehouse work, preview it, then open the custom Warehouse page.</div>
-          </div>
-          <div class="sales-console-section-note warehouse-cockpit-section-note">Preview before opening</div>
-        </div>
-        <div class="warehouse-quick-find-body">
-          <div class="warehouse-quick-find-search">
-            <label class="sr-only" for="warehouse-quick-find-input">Find purchase order, sales order, item, warehouse, movement, or transfer</label>
-            <input id="warehouse-quick-find-input" class="warehouse-quick-find-input" data-warehouse-quick-find-input type="search" autocomplete="off" spellcheck="false" placeholder="Find purchase order, sales order, item, warehouse, movement, or transfer" aria-controls="warehouse-quick-find-suggestions" aria-expanded="false" />
-            <button type="button" class="warehouse-quick-find-clear" data-warehouse-quick-find-clear hidden>Clear</button>
-          </div>
-          <div id="warehouse-quick-find-suggestions" class="warehouse-quick-find-suggestions" data-warehouse-quick-find-suggestions role="listbox" hidden></div>
-          <div class="warehouse-quick-find-status" data-warehouse-quick-find-status>Type at least 2 characters to find visible Warehouse work.</div>
-          <div class="warehouse-quick-find-preview" data-warehouse-quick-find-preview hidden></div>
-        </div>
-      </section>
-    `);
-    bindWarehouseQuickFind($section);
-    return $section;
-  }
-
-  function bindWarehouseQuickFind($section) {
-    const $input = $section.find("[data-warehouse-quick-find-input]").first();
-    const $clear = $section.find("[data-warehouse-quick-find-clear]").first();
-    const state = { results: [], selected: null };
-    let timer = null;
-    let requestSerial = 0;
-
-    function resetPreview() {
-      state.selected = null;
-      $section.data("erpwWarehouseQuickFindSelected", null);
-      $section.find("[data-warehouse-quick-find-preview]").attr("hidden", "hidden").empty();
-    }
-
-    function closeSuggestions() {
-      $section.find("[data-warehouse-quick-find-suggestions]").attr("hidden", "hidden").empty();
-      $input.attr("aria-expanded", "false");
-    }
-
-    function setStatus(message, mode) {
-      $section.find("[data-warehouse-quick-find-status]").attr("data-state", mode || "idle").text(message || "");
-    }
-
-    function renderSuggestions(payload) {
-      const groups = Array.isArray(payload && payload.groups) ? payload.groups : [];
-      const $panel = $section.find("[data-warehouse-quick-find-suggestions]").first();
-      $panel.empty();
-      state.results = [];
-      groups.forEach((group) => {
-        const results = Array.isArray(group.results) ? group.results : [];
-        if (!results.length) return;
-        state.results = state.results.concat(results);
-        const $group = $(`<div class="warehouse-quick-find-group" data-warehouse-quick-find-group="${escapeHtml(group.key || "")}"></div>`);
-        $group.append(`<div class="warehouse-quick-find-group-label">${escapeHtml(group.label || group.key || "Results")}</div>`);
-        results.forEach((result) => {
-          const $option = $(`
-            <button type="button" class="warehouse-quick-find-option" role="option" data-warehouse-quick-find-option data-result-id="${escapeHtml(result.id || "")}" data-result-type="${escapeHtml(result.result_type || "")}">
-              <span class="warehouse-quick-find-option-type">${escapeHtml(quickFindBadgeLabel(result))}</span>
-              <span class="warehouse-quick-find-option-main">${escapeHtml(result.title || result.label || result.name || "Untitled")}</span>
-              <span class="warehouse-quick-find-option-meta">${escapeHtml(warehouseQuickFindCopy(result.subtitle || result.meta, "Warehouse result"))}</span>
-            </button>
-          `);
-          $option.on("click", () => selectWarehouseQuickFindResult($section, state, result));
-          $group.append($option);
-        });
-        $panel.append($group);
-      });
-      if (state.results.length) {
-        $panel.removeAttr("hidden");
-        $input.attr("aria-expanded", "true");
-      } else {
-        closeSuggestions();
-      }
-    }
-
-    function runSearch() {
-      const query = String($input.val() || "").trim();
-      $clear.prop("hidden", !query);
-      resetPreview();
-      if (query.length < 2) {
-        state.results = [];
-        closeSuggestions();
-        setStatus("Type at least 2 characters to find visible Warehouse work.", "idle");
-        return;
-      }
-      const serial = ++requestSerial;
-      setStatus("Searching visible Warehouse work...", "loading");
-      markWarehouseDiagnostic("quickFindServiceCallAttempted");
-      frappe.call({ method: QUICK_FIND_METHOD, args: { query, limit: 12 } }).then((response) => {
-        if (serial !== requestSerial || !$section.get(0).isConnected || !isActiveWarehouseRoute()) return;
-        const payload = response && response.message ? response.message : {};
-        if (payload.state === "ready") {
-          setStatus(payload.message || "Results ready. Select a result to preview before opening.", "ready");
-          renderSuggestions(payload);
-        } else {
-          state.results = [];
-          closeSuggestions();
-          setStatus(payload.message || "No visible Warehouse work matches this search.", payload.state || "empty");
-        }
-      }).catch((error) => {
-        if (serial !== requestSerial || !$section.get(0).isConnected) return;
-        state.results = [];
-        closeSuggestions();
-        setStatus(error && error.message ? error.message : "Warehouse Quick Find could not search right now.", "error");
-      });
-    }
-
-    $input.on("input", () => {
-      if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(runSearch, QUICK_FIND_DEBOUNCE_MS);
-    });
-    $input.on("keydown", (event) => {
-      if (event.key === "Escape") {
-        closeSuggestions();
-        event.preventDefault();
-      }
-      if (event.key === "Enter") event.preventDefault();
-    });
-    $clear.on("click", () => {
-      $input.val("");
-      $clear.prop("hidden", true);
-      state.results = [];
-      closeSuggestions();
-      resetPreview();
-      setStatus("Type at least 2 characters to find visible Warehouse work.", "idle");
-      $input.trigger("focus");
-    });
-  }
-
-  function selectWarehouseQuickFindResult($section, state, result) {
-    state.selected = result;
-    $section.data("erpwWarehouseQuickFindSelected", result);
-    $section.find("[data-warehouse-quick-find-suggestions]").attr("hidden", "hidden");
-    $section.find("[data-warehouse-quick-find-input]").attr("aria-expanded", "false");
-    renderWarehouseQuickFindPreview($section, result);
-  }
-
-  function renderWarehouseQuickFindPreview($section, result) {
-    const preview = (result && result.preview) || {};
-    const facts = Array.isArray(preview.facts) ? preview.facts : [];
-    const chips = Array.isArray(preview.chips) ? preview.chips : [];
-    const actionLabel = preview.primary_action_label || result.primary_action_label || "Open";
-    const boundaryNote = warehouseQuickFindCopy(preview.boundary_note, result && result.meta);
-    const $preview = $section.find("[data-warehouse-quick-find-preview]").first();
-    $preview.empty().removeAttr("hidden");
-    const factHtml = facts.map((fact) => `
-      <div>
-        <dt>${escapeHtml(fact.label || "Fact")}</dt>
-        <dd>${escapeHtml(fact.value || "-")}</dd>
-      </div>
-    `).join("");
-    const chipHtml = chips.map((chip) => `<span class="warehouse-quick-find-chip">${escapeHtml(chip)}</span>`).join("");
-    $preview.append(`
-      <div class="warehouse-quick-find-preview-copy">
-        <div class="warehouse-quick-find-preview-kicker">${escapeHtml(result.group || "Warehouse result")}</div>
-        <h3 class="warehouse-quick-find-preview-title">${escapeHtml(preview.title || result.title || result.label || result.name || "Selected result")}</h3>
-        <div class="warehouse-quick-find-preview-subtitle">${escapeHtml(preview.subtitle || result.subtitle || "Warehouse page")}</div>
-        <div class="warehouse-quick-find-chip-row">${chipHtml}</div>
-      </div>
-      <dl class="warehouse-quick-find-facts">${factHtml}</dl>
-      <div class="warehouse-quick-find-preview-action">
-        <div class="warehouse-quick-find-boundary">${escapeHtml(boundaryNote)}</div>
-        <button type="button" class="warehouse-quick-find-open" data-warehouse-quick-find-open>${escapeHtml(actionLabel)}</button>
-      </div>
-    `);
-    $preview.find("[data-warehouse-quick-find-open]").on("click", () => {
-      const selected = $section.data("erpwWarehouseQuickFindSelected") || result;
-      executeWarehouseQuickFindTarget((selected.preview && selected.preview.target) || selected.target);
-    });
-    $section.find("[data-warehouse-quick-find-status]").attr("data-state", "preview").text("Preview selected. Use Open to navigate.");
-  }
-
   function renderOverview(page, payload) {
     ensureStyle();
     const kpis = Array.isArray(payload.kpis) ? payload.kpis.slice(0, 6) : [];
     const pulseCards = cockpitPulseCards(payload, kpis);
     const heroPulseCards = pulseCards.slice(0, 3);
     const contextPulseCards = pulseCards.slice(3);
-    const $quickFind = renderWarehouseQuickFindSection();
-    const managerCenterHtml = renderWarehouseManagerCenter(payload.manager_center || {});
-    const $managerCenter = managerCenterHtml ? $(managerCenterHtml) : $();
     const $root = $(`
       <div class="sales-console-shell warehouse-console-shell warehouse-overview-shared warehouse-visual-foundation" data-erpw-workspace="warehouse" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="ready" data-warehouse-cockpit="ready" data-warehouse-visual-foundation="overview-shared-ui">
         <section class="sales-console-card sales-console-header warehouse-console-header warehouse-visual-command" data-warehouse-cockpit-command>
@@ -7937,8 +7334,6 @@
           </div>
           <div class="sales-console-kpi-grid warehouse-console-kpi-grid warehouse-cockpit-pulse-grid" data-count="3" data-warehouse-cockpit-pulse>${heroPulseCards.map(renderPulseCard).join("")}</div>
         </section>
-        <div data-warehouse-quick-find-slot></div>
-        <div data-warehouse-manager-center-slot></div>
         <section class="sales-console-card sales-console-section warehouse-cockpit-pulse-section" data-warehouse-cockpit-pulse-context>
           <div class="sales-console-section-head">
             <h2 class="sales-console-section-title">Warehouse Pulse</h2>
@@ -7949,6 +7344,7 @@
           <div class="sales-console-queue-grid warehouse-cockpit-pulse-grid-secondary">${contextPulseCards.map(renderPulseContextCard).join("")}</div>
         </section>
         ${renderCockpitStart(payload, kpis)}
+        ${renderCockpitActionCenter(payload.action_center || {})}
         <section class="sales-console-card sales-console-section warehouse-cockpit-route-section" data-warehouse-cockpit-work>
           <div class="sales-console-section-head warehouse-cockpit-section-head">
             <h2 class="sales-console-section-title warehouse-cockpit-section-title">Work To Do</h2>
@@ -7963,12 +7359,6 @@
         ${renderCockpitMovementSection()}
       </div>
     `);
-    $root.find("[data-warehouse-quick-find-slot]").replaceWith($quickFind);
-    $root.find("[data-warehouse-manager-center-slot]").replaceWith($managerCenter);
-    $root.find("[data-warehouse-manager-center-open]").on("click", (event) => {
-      event.preventDefault();
-      executeWarehouseManagerCenterTarget(event.currentTarget);
-    });
     $root.find("[data-warehouse-refresh]").on("click", (event) => {
       event.preventDefault();
       activeOverviewRenderState = null;
@@ -7999,6 +7389,16 @@
       event.preventDefault();
       frappe.route_options = {};
       frappe.set_route(WORKLIST_PAGE_KEY, "transfer-visibility");
+    });
+    $root.find("[data-warehouse-action-center-open]").on("click", (event) => {
+      event.preventDefault();
+      const card = event.currentTarget.closest("[data-warehouse-action-center-card]");
+      const route = card ? card.getAttribute("data-warehouse-action-center-route") : "";
+      const routePart = card ? card.getAttribute("data-warehouse-action-center-route-part") : "";
+      if (route === WORKLIST_PAGE_KEY && isSupportedWorklistQueue(routePart)) {
+        frappe.route_options = {};
+        frappe.set_route(WORKLIST_PAGE_KEY, worklistViewName(routePart));
+      }
     });
     replacePageBody(page, $root);
     cleanupWarehousePageHeads();

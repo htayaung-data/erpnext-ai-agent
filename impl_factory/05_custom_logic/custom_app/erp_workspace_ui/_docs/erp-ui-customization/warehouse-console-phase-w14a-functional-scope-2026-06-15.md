@@ -2,9 +2,23 @@
 
 Date: 2026-06-15
 
-Decision: `scope_ready_for_w14b_quick_find_design`
+Status: `superseded_by_w15a_operations_blueprint`
+
+Superseded by:
+
+- `warehouse-console-phase-w15a-operations-blueprint-2026-06-16.md`
+
+Use this W14A document as historical planning input only. The active Warehouse operations roadmap after Phase 0 is W15A-W15J. Future agents should not continue W14 phase naming unless Main Control explicitly reopens it.
+
+Decision: `scope_rebased_after_phase0_ready_for_w14d_inbound_arrival_design`
 
 Scope: docs-only functional planning and governance boundary. This phase does not implement runtime features, backend methods, routes, smokes, live alignment, or stock actions.
+
+Phase 0 live rebaseline, 2026-06-16:
+
+- Warehouse Quick Find is no longer a cockpit content block. It is now the shared sidebar Search helper, following the Sales/Procurement utility pattern and routing only to custom Warehouse routes.
+- The duplicated Overview Manager Readiness component has been removed. Manager work must return later as workflow-specific action readiness, not as another overview KPI section.
+- The next functional design step is inbound arrival/readiness workflow design, still without Purchase Receipt creation, stock posting, supplier messaging, or native ERP escape.
 
 ## Purpose
 
@@ -33,7 +47,8 @@ Accepted baseline behavior:
 - Review-only Warehouse workspace.
 - Custom Warehouse routes only.
 - No native ERPNext Form/List/Report escape.
-- No Quick Find/Search in Warehouse yet.
+- Warehouse Quick Find exists only as the shared sidebar Search helper; no cockpit Quick Find block remains.
+- No duplicated Manager Readiness Center on the Overview page.
 - No Stock Entry, Purchase Receipt, Delivery Note, Pick List, Stock Reservation, or Stock Reconciliation creation.
 - No submit, cancel, amend, post, reserve, unreserve, reconcile, transfer, receive, pick, pack, ship, deliver, or adjust action.
 - No valuation, accounting, price, margin, billing, payment, or commercial exposure.
@@ -201,6 +216,14 @@ W14 must proceed in small, reviewable phases.
 
 ### W14B - Warehouse Quick Find
 
+Status after Phase 0:
+
+- Implemented as shared sidebar Search helper.
+- Cockpit Quick Find block removed.
+- Custom Warehouse route targets only.
+- No native ERPNext global search behavior.
+- No stock mutation or valuation exposure.
+
 Goal:
 
 - Add a Warehouse-owned Quick Find pattern consistent with Sales/Procurement, but scoped to custom Warehouse routes only.
@@ -223,11 +246,17 @@ Rules:
 - No valuation, price, margin, billing, or accounting snippets.
 - No Sales or Procurement runtime changes.
 
-### W14C - Manager Readiness And Exception Center
+### W14C - Workflow-Specific Manager Readiness
+
+Status after Phase 0:
+
+- Do not restore the removed Overview Manager Readiness component.
+- Manager work should appear where the work happens: inbound arrival, outbound pick/pack, transfer review, inventory-control request, or exception review.
+- Any manager action must be explicit about whether it is review-only, non-mutating state capture, or a later governed stock-document write.
 
 Goal:
 
-- Add a Warehouse Manager work surface for readiness blockers without stock mutation.
+- Define Warehouse Manager readiness work without duplicating existing Overview sections or implying stock execution.
 
 Candidate groups:
 
@@ -242,6 +271,7 @@ Rules:
 - Review-only unless a later sub-phase explicitly adds non-mutating state capture.
 - No lifecycle documents.
 - No approval that implies stock posting.
+- No standalone Overview readiness dashboard unless the owner asks for a true manager inbox after workflow pages prove the need.
 
 ### W14D - Inbound Arrival Review
 
@@ -348,6 +378,11 @@ Required before any write:
 
 ## Quick Find Scope For W14B
 
+Phase 0 outcome:
+
+- This is now implemented as a sidebar utility and should stay there.
+- Future work should harden result quality and role scope, not move it back into the Overview content.
+
 Warehouse Quick Find should be the first implemented feature because it improves usability without changing data.
 
 Allowed behavior:
@@ -452,6 +487,6 @@ W14A is complete when:
 
 ## Recommendation
 
-Proceed next to W14B Warehouse Quick Find as the first functional implementation after owner acceptance of W14A.
+Proceed next to W14D Inbound Arrival Readiness Design as the first post-Phase-0 functional design package.
 
 Do not start receiving, picking, transfer, reconciliation, barcode, mobile, customer-send, supplier-send, or stock-posting implementation until the relevant W14 scope phase is accepted.

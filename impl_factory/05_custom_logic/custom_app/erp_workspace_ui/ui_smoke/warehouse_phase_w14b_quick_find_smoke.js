@@ -1,7 +1,7 @@
 process.env.ERPW_WAREHOUSE_W9A_EXPECT_W12K = "1";
 process.env.ERPW_WAREHOUSE_W9A_EXPECT_W14B = "1";
-process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL = "Warehouse W14B Quick Find";
-process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME = "warehouse-w14b-quick-find-summary.json";
+process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL = "Warehouse Phase 0 Sidebar Quick Find";
+process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME = "warehouse-phase0-sidebar-quick-find-summary.json";
 
 if (process.env.ERPW_WAREHOUSE_W14B_ASSET_ROOT && !process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT) {
   process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT = process.env.ERPW_WAREHOUSE_W14B_ASSET_ROOT;

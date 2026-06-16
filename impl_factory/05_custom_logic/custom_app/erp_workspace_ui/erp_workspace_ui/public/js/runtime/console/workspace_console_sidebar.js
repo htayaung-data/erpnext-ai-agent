@@ -1050,12 +1050,46 @@
     return false;
   }
 
+  function warehouseTargetRoutePart(target, fallbackKey) {
+    if (!target || typeof target !== "object") return "";
+    const routeParts = Array.isArray(target.route_parts) ? target.route_parts : [];
+    if (fallbackKey && target[fallbackKey]) return String(target[fallbackKey] || "").trim();
+    return String(routeParts[0] || target.context_token || target.purchase_order || target.sales_order || "").trim();
+  }
+
+  function routeToWarehouseTarget(config, target) {
+    if (!config || config.workspaceId !== "warehouse" || !target || target.kind !== "warehouse_page") return false;
+    const route = String(target.route || "").trim();
+    const routes = config.routes || {};
+    const allowedRoutes = new Set([
+      config.homeRoute,
+      config.worklistRoute,
+      routes.receiving,
+      routes.picking,
+      routes.stockException,
+      routes.stockPosture,
+      routes.movement,
+    ].filter(Boolean));
+    if (!allowedRoutes.has(route)) return false;
+    if (route === config.worklistRoute) {
+      const queueKey = String(target.queue_key || warehouseTargetRoutePart(target) || "").replace(/_/g, "-").trim();
+      if (queueKey) frappe.set_route(route, queueKey);
+      else frappe.set_route(route);
+      return true;
+    }
+    const routePart = warehouseTargetRoutePart(target);
+    if (routePart) frappe.set_route(route, routePart);
+    else frappe.set_route(route);
+    return true;
+  }
+
   function executeTarget(target) {
     if (!target) return;
     const config = workspaceConfig(getRoute());
     if (target.notice) {
       frappe.show_alert({ message: __(target.notice), indicator: "blue" });
     }
+    if (routeToWarehouseTarget(config, target)) return;
     const routeOwner = config.workspaceId === "sales" ? root.erpWorkspaceUiChildPage && root.erpWorkspaceUiChildPage.helpers : null;
     if (
       routeOwner
@@ -1266,9 +1300,10 @@
   function bindWorkspaceSearchDialog(dialog) {
     if (!dialog || !dialog.fields_dict || !dialog.fields_dict.search_html) return;
     const config = workspaceConfig(getRoute());
-    const placeholder = config.workspaceId === "procurement"
-      ? "Search suppliers, purchase requests, RFQs, quotations, or purchase orders"
-      : "Search customers, items, quotations, or sales orders";
+    const placeholder = (config.search && config.search.placeholder)
+      || (config.workspaceId === "procurement"
+        ? "Search suppliers, purchase requests, RFQs, quotations, or purchase orders"
+        : "Search customers, items, quotations, or sales orders");
     const $root = dialog.fields_dict.search_html.$wrapper;
     $root.html(`
       <div class="erpw-sales-console-search-shell">
@@ -1420,7 +1455,8 @@
     return contextPromise;
   }
 
-  function buildSignature(sidebar, activeKey) {
+  function buildSignature(sidebar, activeKey, config) {
+    const searchConfig = config && config.search ? config.search : {};
     return JSON.stringify({
       activeKey: activeKey || "",
       workspace_id: sidebar && sidebar.workspace_id,
@@ -1428,6 +1464,9 @@
       mode_label: sidebar && sidebar.mode_label,
       scope_label: sidebar && sidebar.scope_label,
       sections: sidebar && sidebar.sections,
+      search_enabled: isWorkspaceSearchEnabled(config),
+      search_mode: searchConfig.mode || "",
+      search_placement: searchConfig.placement || "",
     });
   }
 
@@ -1450,8 +1489,10 @@
       return false;
     }
 
-    const signature = buildSignature(sidebar, activeKey);
-    if (wrapper.getAttribute("data-erpw-sidebar-signature") === signature) {
+    const signature = buildSignature(sidebar, activeKey, config);
+    const expectsSearchUtility = isWorkspaceSearchEnabled(config);
+    const hasSearchUtility = Boolean(wrapper.querySelector("[data-erpw-sales-search-open]"));
+    if (wrapper.getAttribute("data-erpw-sidebar-signature") === signature && (!expectsSearchUtility || hasSearchUtility)) {
       return true;
     }
 

@@ -6,14 +6,15 @@ const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
 const EXPECT_W12K = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W12K === "1";
 const EXPECT_W14B = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W14B === "1";
 const EXPECT_W14C = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W14C === "1";
-const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL || (EXPECT_W14C ? "Warehouse W14C Manager Readiness" : (EXPECT_W14B ? "Warehouse W14B Quick Find" : (EXPECT_W12K ? "Warehouse W12K cockpit polish" : "Warehouse W9A cockpit")));
-const SUMMARY_NAME = process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME || (EXPECT_W14C ? "warehouse-w14c-manager-readiness-summary.json" : (EXPECT_W14B ? "warehouse-w14b-quick-find-summary.json" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish-summary.json" : "warehouse-w9a-cockpit-summary.json")));
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W14C_TIMEOUT || process.env.ERPW_WAREHOUSE_W14B_TIMEOUT || process.env.ERPW_WAREHOUSE_W12K_TIMEOUT || process.env.ERPW_WAREHOUSE_W9A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W14C_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W14B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12K_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W9A_ARTIFACT_DIR || path.join(
+const EXPECT_W15B = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W15B === "1";
+const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL || (EXPECT_W15B ? "Warehouse W15B Action Center shell" : (EXPECT_W14C ? "Warehouse W14C Manager Readiness" : (EXPECT_W14B ? "Warehouse W14B Quick Find" : (EXPECT_W12K ? "Warehouse W12K cockpit polish" : "Warehouse W9A cockpit"))));
+const SUMMARY_NAME = process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME || (EXPECT_W15B ? "warehouse-w15b-action-center-summary.json" : (EXPECT_W14C ? "warehouse-w14c-manager-readiness-summary.json" : (EXPECT_W14B ? "warehouse-w14b-quick-find-summary.json" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish-summary.json" : "warehouse-w9a-cockpit-summary.json"))));
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W15B_TIMEOUT || process.env.ERPW_WAREHOUSE_W14C_TIMEOUT || process.env.ERPW_WAREHOUSE_W14B_TIMEOUT || process.env.ERPW_WAREHOUSE_W12K_TIMEOUT || process.env.ERPW_WAREHOUSE_W9A_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W15B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W14C_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W14B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12K_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W9A_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `${EXPECT_W14C ? "warehouse-w14c-manager-readiness" : (EXPECT_W14B ? "warehouse-w14b-quick-find" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish" : "warehouse-w9a-cockpit"))}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `${EXPECT_W15B ? "warehouse-w15b-action-center" : (EXPECT_W14C ? "warehouse-w14c-manager-readiness" : (EXPECT_W14B ? "warehouse-w14b-quick-find" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish" : "warehouse-w9a-cockpit")))}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W14C_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W14B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12K_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W15B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W14C_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W14B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12K_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT || "";
 
 const AUTHORIZED_USERS = [
   {
@@ -142,10 +143,14 @@ function workspacePayload() {
       movementVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue",
       transferVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
       quickFind: "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions",
+      workspaceSearch: "erp_workspace_ui.warehouse_console.service.search_warehouse_console_workspace",
     },
-    search: EXPECT_W14B
-      ? { enabled: false, mode: "warehouse_quick_find", placement: "warehouse_cockpit_only" }
-      : { enabled: false },
+    search: {
+      enabled: true,
+      mode: "warehouse_sidebar_search",
+      placement: "sidebar_utility",
+      placeholder: "Find purchase orders, sales orders, items, warehouses, or movements",
+    },
   };
 }
 
@@ -356,6 +361,63 @@ function managerCenterPayload() {
   };
 }
 
+function actionCenterPayload() {
+  const card = (key, title, value, note, routePart = "") => {
+    const payload = {
+      key,
+      title,
+      value,
+      note,
+      state: routePart ? "live" : "planned",
+      status_label: routePart ? "Review queue" : "Planned",
+    };
+    if (routePart) {
+      payload.route = "warehouse-console-worklist";
+      payload.route_part = routePart;
+      payload.button_label = "Open queue";
+    }
+    return payload;
+  };
+  return {
+    key: "w15b_action_center",
+    title: "Warehouse Action Center",
+    subtitle: "Controlled entry points for future Warehouse work; current cards open custom review queues only.",
+    mode: "shell_only",
+    state: "planning",
+    role_mode: "manager",
+    sections: [
+      {
+        key: "work_entry",
+        title: "Work Entry",
+        summary: "Operational work starts here before any approved ERP document step.",
+        cards: [
+          card("arrival_checks", "Arrival checks", 2, "Supplier arrivals and count review start from the inbound queue.", "inbound-receiving"),
+          card("picking_work", "Picking work", 2, "Customer demand and stock blockers start from the outbound queue.", "outbound-picking"),
+          card("return_intake", "Return intake", "Planned", "Customer and supplier return intake will be designed after receiving and picking actions."),
+          card("cycle_counts", "Cycle counts", "Planned", "Count tasks and variance review will stay controlled by approval policy."),
+        ],
+      },
+      {
+        key: "manager_decisions",
+        title: "Manager Decisions",
+        summary: "Decision lanes for approval, release, discrepancy, and variance review.",
+        cards: [
+          card("arrival_review", "Arrival review", 2, "Review supplier-side arrivals before any separate receiving document step.", "inbound-receiving"),
+          card("picking_blockers", "Picking blockers", 2, "Review outbound demand and shortage blockers before release design.", "outbound-picking"),
+          card("exception_resolution", "Exception resolution", 1, "Shortage and posture issues stay inside custom Warehouse review routes.", "stock-exceptions"),
+          card("movement_visibility", "Movement visibility", 1, "Review posted movement and transfer posture before action workflow design.", "transfer-visibility"),
+          card("return_decisions", "Return decisions", "Planned", "Restock, quarantine, repair, or supplier-return decisions are not executable yet."),
+          card("inventory_variance", "Inventory variance", "Planned", "Variance approval and adjustment preparation are reserved for the count workflow."),
+        ],
+      },
+    ],
+    guardrail: {
+      title: "Action shell only",
+      detail: "No ERPNext stock document is created here. Cards either open custom Warehouse review queues or mark a planned workflow lane.",
+    },
+  };
+}
+
 function overviewPayload() {
   return {
     workspace: workspacePayload(),
@@ -375,6 +437,7 @@ function overviewPayload() {
     inbound: { ...inboundPayload(), cards: inboundPayload().cards, preview_rows: inboundPayload().rows, counts: { overdue: 1, due_today: 1, partially_received: 1, expected_soon: 2 } },
     outbound: { ...outboundPayload(), cards: outboundPayload().cards, preview_rows: outboundPayload().rows, counts: { overdue: 0, due_today: 1, short_stock: 1, expected_soon: 2 } },
     stock_exceptions: stockExceptionsPayload(),
+    action_center: actionCenterPayload(),
     manager_center: EXPECT_W14C ? managerCenterPayload() : { visible: false, state: "hidden", groups: [], cards: [] },
     allowed_actions: [{ key: "refresh", label: "Refresh", kind: "read_only" }],
     action_targets: {},
@@ -543,6 +606,7 @@ async function installSourceOverrides(context, diagnostics) {
     ["get_warehouse_stock_exceptions", "warehouse-stock-exceptions", () => stockExceptionsPayload()],
     ["get_warehouse_movement_visibility_queue", "warehouse-movement-visibility", () => movementPayload()],
     ["get_warehouse_transfer_visibility_queue", "warehouse-transfer-visibility", () => transferPayload()],
+    ["search_warehouse_console_workspace", "warehouse-quick-find", () => quickFindPayload()],
     ["get_warehouse_quick_find_suggestions", "warehouse-quick-find", () => quickFindPayload()],
   ];
   for (const [method, key, payload] of methodPayloads) {
@@ -666,6 +730,12 @@ async function snapshot(page) {
       managerCenterGroupCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center-group]")).filter(visible).length,
       managerCenterItemCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center-item]")).filter(visible).length,
       managerCenterActionCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center-open]")).filter(visible).length,
+      actionCenterCount: Array.from(document.querySelectorAll("[data-warehouse-action-center]")).filter(visible).length,
+      actionCenterGroupCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-group]")).filter(visible).length,
+      actionCenterCardCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-card]")).filter(visible).length,
+      actionCenterOpenCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-open]")).filter(visible).length,
+      actionCenterGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-guardrail]")).filter(visible).length,
+      actionCenterModes: Array.from(document.querySelectorAll("[data-warehouse-action-center-mode]")).map((node) => node.getAttribute("data-warehouse-action-center-mode") || "").filter(Boolean),
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     };
@@ -676,7 +746,7 @@ function assertClean(state, context) {
   assert(state.shellCount === 1, "Warehouse shell count must remain 1", { context, state });
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
-  assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive", { context, state });
+  assert(state.searchUtilityVisible, "Warehouse sidebar search helper must be available", { context, state });
   assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Forbidden stock action control is visible", { context, state });
   assert(!FORBIDDEN_COPY_RE.test(state.text), "Developer or search copy is visible", { context, state });
   assert(!VALUATION_RE.test(state.text), "Valuation, accounting, or commercial text is visible", { context, state });
@@ -710,23 +780,44 @@ function assertW12KCockpit(state, contextLabel) {
 }
 
 function assertW14BQuickFind(state, contextLabel) {
-  assert(state.quickFindCount === 1, "Warehouse Quick Find must render once", { context: contextLabel, state });
-  assert(state.quickFindInputVisible, "Warehouse Quick Find input is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Quick Find"), "Warehouse Quick Find label is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("preview it"), "Warehouse Quick Find preview guidance is missing", { context: contextLabel, state });
+  assert(state.quickFindCount === 0, "Warehouse Quick Find must not render in the cockpit content", { context: contextLabel, state });
+  assert(!state.quickFindInputVisible, "Warehouse cockpit Quick Find input should be removed", { context: contextLabel, state });
+  assert(state.searchUtilityVisible, "Warehouse Quick Find should be available as the sidebar search helper", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Preview before opening"), "Old cockpit Quick Find preview guidance is still visible", { context: contextLabel, state });
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Warehouse Quick Find exposed a native route", { context: contextLabel, state });
 }
 
 function assertW14CManagerCenter(state, contextLabel) {
-  assert(state.managerCenterCount === 1, "Manager Readiness Center must render once", { context: contextLabel, state });
-  assert(state.managerCenterCardCount === 4, "Manager Readiness Center summary cards are incomplete", { context: contextLabel, state });
-  assert(state.managerCenterGroupCount === 4, "Manager Readiness Center groups are incomplete", { context: contextLabel, state });
-  assert(state.managerCenterItemCount >= 4, "Manager Readiness Center items are missing", { context: contextLabel, state });
-  assert(state.managerCenterActionCount >= 4, "Manager Readiness Center custom review actions are missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Manager Readiness Center"), "Manager Readiness Center title is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Review-only"), "Manager Readiness Center read-only boundary is missing", { context: contextLabel, state });
-  assert(!/\b(Approve|Submit|Create|Save|Post|Reserve|Unreserve|Reconcile|Adjust)\b/i.test(state.actionText), "Manager Readiness Center exposed an execution action", { context: contextLabel, state });
-  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Manager Readiness Center exposed a native route", { context: contextLabel, state });
+  assert(state.managerCenterCount === 0, "Manager Readiness Center must be removed from the cockpit", { context: contextLabel, state });
+  assert(state.managerCenterCardCount === 0, "Manager Readiness summary cards should be removed", { context: contextLabel, state });
+  assert(state.managerCenterGroupCount === 0, "Manager Readiness groups should be removed", { context: contextLabel, state });
+  assert(state.managerCenterItemCount === 0, "Manager Readiness items should be removed", { context: contextLabel, state });
+  assert(state.managerCenterActionCount === 0, "Manager Readiness actions should be removed", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Manager Readiness Center"), "Manager Readiness Center title is still visible", { context: contextLabel, state });
+}
+
+function assertW15BActionCenter(state, contextLabel) {
+  assert(state.actionCenterCount === 1, "Warehouse Action Center must render once", { context: contextLabel, state });
+  assert(state.actionCenterGroupCount >= 2, "Warehouse Action Center groups are missing", { context: contextLabel, state });
+  assert(state.actionCenterCardCount >= 8, "Warehouse Action Center cards are missing", { context: contextLabel, state });
+  assert(state.actionCenterOpenCount >= 4, "Warehouse Action Center review queue entries are missing", { context: contextLabel, state });
+  assert(state.actionCenterGuardrailCount === 1, "Warehouse Action Center shell-only guardrail is missing", { context: contextLabel, state });
+  assert((state.actionCenterModes || []).includes("shell_only"), "Warehouse Action Center must stay shell-only", { context: contextLabel, state });
+  assert((state.text || "").includes("Warehouse Action Center"), "Warehouse Action Center title is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Work Entry"), "Warehouse Action Center work-entry group is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Manager Decisions"), "Warehouse Action Center manager-decision group is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Planned"), "Warehouse Action Center planned lanes are missing", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Manager Readiness"), "Manager Readiness copy must not return with W15B", { context: contextLabel, state });
+  const targets = state.routeTargets || [];
+  [
+    "warehouse-console-worklist/inbound-receiving",
+    "warehouse-console-worklist/outbound-picking",
+    "warehouse-console-worklist/stock-exceptions",
+    "warehouse-console-worklist/transfer-visibility",
+  ].forEach((target) => {
+    assert(targets.includes(target), `Action Center route target missing: ${target}`, { context: contextLabel, state });
+  });
+  assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Warehouse Action Center exposed a forbidden stock action control", { context: contextLabel, state });
 }
 
 async function assertCockpit(page, contextLabel) {
@@ -743,6 +834,7 @@ async function assertCockpit(page, contextLabel) {
   if (EXPECT_W12K) assertW12KCockpit(state, contextLabel);
   if (EXPECT_W14B) assertW14BQuickFind(state, contextLabel);
   if (EXPECT_W14C) assertW14CManagerCenter(state, contextLabel);
+  if (EXPECT_W15B) assertW15BActionCenter(state, contextLabel);
   return state;
 }
 
@@ -755,30 +847,22 @@ async function exerciseRouteAction(page, selector, expectedPath, viewName, conte
 
 async function exerciseQuickFind(page, diagnostics, contextLabel) {
   await assertCockpit(page, `${contextLabel}:quick-find-start`);
-  await page.locator("[data-warehouse-quick-find-input]").fill("PO-W14B");
+  await page.locator("[data-erpw-sales-search-open]").first().click();
+  await page.waitForSelector("[data-erpw-sales-search-input]", { state: "visible", timeout: TIMEOUT });
+  await page.locator("[data-erpw-sales-search-input]").fill("PO-W14B");
   await page.waitForFunction(() => {
-    const panel = document.querySelector("[data-warehouse-quick-find-suggestions]");
-    const receiving = document.querySelector('[data-warehouse-quick-find-group="receiving"] [data-warehouse-quick-find-option]');
-    return panel && !panel.hidden && receiving;
+    const results = document.querySelector("[data-erpw-sales-search-results]");
+    return results && !results.hidden && /PO-W14B-1/.test(results.textContent || "");
   }, null, { timeout: TIMEOUT });
   if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-quick-find");
-  const optionCount = await page.locator("[data-warehouse-quick-find-option]").count();
-  assert(optionCount >= 1, "Warehouse Quick Find did not render suggestions", { context: contextLabel, optionCount });
-  await page.locator('[data-warehouse-quick-find-group="receiving"] [data-warehouse-quick-find-option]').first().click();
-  await page.waitForSelector("[data-warehouse-quick-find-preview]:not([hidden]) [data-warehouse-quick-find-open]", { state: "visible", timeout: TIMEOUT });
-  const previewText = (await page.locator("[data-warehouse-quick-find-preview]").first().innerText()).replace(/\s+/g, " ").trim();
-  assert(/custom Warehouse receiving review/i.test(previewText), "Warehouse Quick Find preview did not explain custom route target", { context: contextLabel, previewText });
-  assert(!NATIVE_ROUTE_RE.test(previewText), "Warehouse Quick Find preview exposed a native route", { context: contextLabel, previewText });
-  await page.locator("[data-warehouse-quick-find-open]").first().click();
+  const resultCount = await page.locator("[data-erpw-sales-search-index]").count();
+  assert(resultCount >= 1, "Warehouse sidebar Quick Find did not render suggestions", { context: contextLabel, resultCount });
+  const resultText = (await page.locator("[data-erpw-sales-search-results]").first().innerText()).replace(/\s+/g, " ").trim();
+  assert(/PO-W14B-1/.test(resultText), "Warehouse sidebar Quick Find missing receiving result", { context: contextLabel, resultText });
+  assert(!NATIVE_ROUTE_RE.test(resultText), "Warehouse sidebar Quick Find exposed a native route", { context: contextLabel, resultText });
+  await page.locator("[data-erpw-sales-search-index]").first().click();
   await page.waitForURL((url) => url.pathname === "/desk/warehouse-console-receiving/PO-W14B-1", { timeout: TIMEOUT });
-  assert(!NATIVE_ROUTE_RE.test(page.url()), "Warehouse Quick Find opened a native ERP route", { context: contextLabel, url: page.url() });
-}
-
-async function exerciseManagerCenter(page, contextLabel) {
-  await assertCockpit(page, `${contextLabel}:manager-center-start`);
-  await page.locator("[data-warehouse-manager-center-open]").first().click();
-  await page.waitForURL((url) => url.pathname === "/desk/warehouse-console-receiving/PO-W14C-1", { timeout: TIMEOUT });
-  assert(!NATIVE_ROUTE_RE.test(page.url()), "Manager Readiness Center opened a native ERP route", { context: contextLabel, url: page.url() });
+  assert(!NATIVE_ROUTE_RE.test(page.url()), "Warehouse sidebar Quick Find opened a native ERP route", { context: contextLabel, url: page.url() });
 }
 
 async function exerciseUser(browser, user, viewport) {
@@ -820,9 +904,14 @@ async function exerciseUser(browser, user, viewport) {
     }
 
     if (EXPECT_W14C && viewport.key === "desktop-1440") {
-      await exerciseManagerCenter(page, `${user.key}:manager-center`);
+      await assertCockpit(page, `${user.key}:manager-center-removed`);
+    }
+
+    if (EXPECT_W15B && viewport.key === "desktop-1440") {
+      await exerciseRouteAction(page, "[data-warehouse-action-center-card='arrival_checks'] [data-warehouse-action-center-open]", "/desk/warehouse-console-worklist/inbound-receiving", "inbound-receiving", `${user.key}:action-center-arrival`);
+      if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-inbound");
       await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
-      await assertCockpit(page, `${user.key}:manager-center:return`);
+      await assertCockpit(page, `${user.key}:action-center-return`);
     }
 
     if (viewport.key === "desktop-1440") {

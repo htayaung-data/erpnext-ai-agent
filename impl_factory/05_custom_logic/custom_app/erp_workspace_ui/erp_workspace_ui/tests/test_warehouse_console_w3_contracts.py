@@ -758,9 +758,10 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             workspace["methods"]["quick_find"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions",
         )
-        self.assertFalse(workspace["search"]["enabled"])
-        self.assertEqual(workspace["search"]["mode"], "warehouse_quick_find")
-        self.assertEqual(workspace["search"]["placement"], "warehouse_cockpit_only")
+        self.assertTrue(workspace["search"]["enabled"])
+        self.assertEqual(workspace["search"]["mode"], "warehouse_sidebar_search")
+        self.assertEqual(workspace["search"]["placement"], "sidebar_utility")
+        self.assertEqual(workspace["methods"]["workspace_search"], "erp_workspace_ui.warehouse_console.service.search_warehouse_console_workspace")
         self.assertEqual([item["key"] for item in workspace["fallback_items"]], [
             "warehouse_console_home",
             "inbound_receiving",
@@ -778,7 +779,10 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
         self.assertEqual(payload["action_targets"], {})
         self.assertEqual(payload["allowed_actions"], [{"key": "refresh", "label": "Refresh", "kind": "read_only"}])
-        self.assertEqual(payload["manager_center"], {"visible": False, "state": "hidden", "groups": [], "cards": []})
+        self.assertNotIn("manager_center", payload)
+        self.assertIn("action_center", payload)
+        self.assertEqual(payload["action_center"]["mode"], "shell_only")
+        self.assertEqual(payload["action_center"]["state"], "planning")
         self.assertIn("inbound", payload)
         self.assertEqual(payload["inbound"]["queue_route"], "warehouse-console-worklist")
         self.assertEqual(payload["inbound"]["counts"]["overdue"], 1)
@@ -805,42 +809,62 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("amount", payload_text)
         self.assertNotIn("/app/", payload_text)
 
-    def test_w14c_manager_readiness_center_is_manager_only_and_custom_route_only(self):
+    def test_w15b_action_center_is_shell_only_and_custom_route_only(self):
         CURRENT_ROLES[:] = ["Warehouse Manager"]
 
         payload = service.get_warehouse_console_overview()
 
-        center = payload["manager_center"]
-        self.assertTrue(center["visible"])
-        self.assertIn(center["state"], {"ready", "empty"})
-        self.assertEqual(
-            [group["key"] for group in center["groups"]],
-            ["arrival_review", "pick_blockers", "stock_posture", "transfer_review"],
-        )
-        self.assertEqual([card["key"] for card in center["cards"]], [group["key"] for group in center["groups"]])
-        self.assertIn("Review-only", center["boundary_note"])
+        self.assertNotIn("manager_center", payload)
+        action_center = payload["action_center"]
+        self.assertEqual(action_center["key"], "w15b_action_center")
+        self.assertEqual(action_center["mode"], "shell_only")
+        self.assertEqual(action_center["role_mode"], "manager")
+        self.assertGreaterEqual(len(action_center["sections"]), 2)
+        allowed_route_parts = {
+            "inbound-receiving",
+            "outbound-picking",
+            "stock-exceptions",
+            "movement-visibility",
+            "transfer-visibility",
+        }
+        routed_cards = []
+        planned_cards = []
+        for section in action_center["sections"]:
+            self.assertIn("cards", section)
+            for card in section["cards"]:
+                if card.get("route"):
+                    routed_cards.append(card)
+                    self.assertEqual(card["route"], "warehouse-console-worklist")
+                    self.assertIn(card["route_part"], allowed_route_parts)
+                    self.assertEqual(card["button_label"], "Open queue")
+                else:
+                    planned_cards.append(card)
+                    self.assertEqual(card["state"], "planned")
+                    self.assertNotIn("button_label", card)
+        self.assertGreaterEqual(len(routed_cards), 4)
+        self.assertGreaterEqual(len(planned_cards), 3)
+        payload_text = str(action_center).lower()
+        self.assertNotIn("manager readiness", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        self.assertNotIn("submit", payload_text)
+        self.assertNotIn("cancel", payload_text)
+        self.assertNotIn("valuation", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("quick find", payload_text)
 
-        visible_items = [item for group in center["groups"] for item in group["items"]]
-        self.assertGreaterEqual(len(visible_items), 1)
-        for item in visible_items:
-            target = item["target"]
-            self.assertEqual(target["kind"], "warehouse_page")
-            self.assertIn(target["route"], {
-                "warehouse-console-receiving",
-                "warehouse-console-picking",
-                "warehouse-console-stock-exception",
-                "warehouse-console-movement",
-            })
-            self.assertTrue(item["action_label"].startswith("Review "))
-            self.assertNotIn("approve", str(item).lower())
-            self.assertNotIn("submit", str(item).lower())
-            self.assertNotIn("/app/", str(item))
-            self.assertNotIn("/desk/Form", str(item))
+    def test_phase0_removes_manager_readiness_from_overview_payload(self):
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
 
-        center_text = str(center).lower()
-        self.assertNotIn("valuation_rate", center_text)
-        self.assertNotIn("stock_value", center_text)
-        self.assertNotIn("base_net_rate", center_text)
+        payload = service.get_warehouse_console_overview()
+
+        self.assertNotIn("manager_center", payload)
+        payload_text = str(payload).lower()
+        self.assertNotIn("manager readiness", payload_text)
+        self.assertNotIn("manager readiness", payload_text)
+        self.assertNotIn("warehouse_page', 'route': 'warehouse-console-receiving", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
 
     def test_w14b_quick_find_is_role_scoped_preview_and_custom_route_only(self):
         payload = service.get_warehouse_quick_find_suggestions("PO", limit=8)

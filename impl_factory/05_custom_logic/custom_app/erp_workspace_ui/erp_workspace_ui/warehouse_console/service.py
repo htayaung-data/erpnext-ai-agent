@@ -58,6 +58,14 @@ TRANSFER_VISIBILITY_HORIZON_DAYS = 14
 TRANSFER_VISIBILITY_GROUP_ORDER = ("direct_transfers", "transit_related", "needs_review", "recently_posted")
 TRANSFER_VISIBILITY_DATE_WINDOWS = {"today": 0, "last_7_days": 7, "last_14_days": 14}
 
+ACTION_CENTER_WORKLIST_ROUTE_PARTS = frozenset({
+	"inbound-receiving",
+	"outbound-picking",
+	"stock-exceptions",
+	"movement-visibility",
+	"transfer-visibility",
+})
+
 PURCHASE_ORDER_INBOUND_FIELDS = [
 	"name",
 	"supplier",
@@ -213,7 +221,6 @@ QUICK_FIND_GROUP_LABELS = {
 	"movements": "Movement Review",
 	"transfers": "Transfer Visibility",
 }
-MANAGER_CENTER_ITEM_LIMIT = 4
 
 
 def ensure_authenticated() -> None:
@@ -359,14 +366,13 @@ def get_warehouse_console_overview() -> dict[str, object]:
 	inbound = _build_inbound_visibility({}, preview_limit=INBOUND_OVERVIEW_LIMIT, row_limit=INBOUND_QUEUE_LIMIT)
 	outbound = _build_outbound_visibility({}, preview_limit=OUTBOUND_OVERVIEW_LIMIT, row_limit=OUTBOUND_QUEUE_LIMIT)
 	stock_exceptions = _build_stock_exceptions_visibility({}, row_limit=STOCK_EXCEPTIONS_LIMIT)
-	transfer_visibility = _build_transfer_visibility({}, row_limit=MANAGER_CENTER_ITEM_LIMIT) if _is_warehouse_manager_context(context) else {}
 	kpis = _build_overview_kpis(inbound, outbound)
 	payload["kpis"] = kpis
 	payload["inbound"] = inbound
 	payload["outbound"] = outbound
 	payload["stock_exceptions"] = stock_exceptions
-	payload["manager_center"] = _build_manager_readiness_center(context, inbound, outbound, stock_exceptions, transfer_visibility)
 	payload["sections"] = _build_overview_sections(kpis, inbound, outbound)
+	payload["action_center"] = _build_action_center(context, kpis, inbound, outbound, stock_exceptions)
 	if not any(_metric_value(metric) for metric in kpis):
 		payload["state"] = state(
 			"empty",
@@ -392,6 +398,16 @@ def get_warehouse_console_sidebar_context() -> dict[str, object]:
 		"sidebar": build_sidebar(context),
 		"fetched_at": str(now_datetime()),
 	}
+
+
+@frappe.whitelist()
+def search_warehouse_console_workspace(query: str, limit: int = QUICK_FIND_DEFAULT_LIMIT) -> dict[str, object]:
+	"""Sidebar search entry point for Warehouse routes.
+
+	This intentionally reuses the Warehouse Quick Find result contract while keeping
+	the registry method names distinct from the optional inline quick-find service.
+	"""
+	return get_warehouse_quick_find_suggestions(query, limit)
 
 
 @frappe.whitelist()
@@ -540,223 +556,160 @@ def _build_overview_sections(kpis: list[dict[str, object]], inbound: dict[str, o
 	]
 
 
-def _is_warehouse_manager_context(context: dict[str, object] | None) -> bool:
-	role_variant = cstr((context or {}).get("role_variant")).strip()
-	return role_variant in {"warehouse_manager", "system_manager"}
-
-
-def _build_manager_readiness_center(
+def _build_action_center(
 	context: dict[str, object],
-	inbound: dict[str, object] | None,
-	outbound: dict[str, object] | None,
-	stock_exceptions: dict[str, object] | None,
-	transfer_visibility: dict[str, object] | None,
+	kpis: list[dict[str, object]],
+	inbound: dict[str, object] | None = None,
+	outbound: dict[str, object] | None = None,
+	stock_exceptions: dict[str, object] | None = None,
 ) -> dict[str, object]:
-	if not _is_warehouse_manager_context(context):
-		return {"visible": False, "state": "hidden", "groups": [], "cards": []}
+	inbound_counts = inbound.get("counts") if isinstance(inbound, dict) else {}
+	outbound_counts = outbound.get("counts") if isinstance(outbound, dict) else {}
+	exception_cards = stock_exceptions.get("cards") if isinstance(stock_exceptions, dict) else []
+	metrics = {cstr(metric.get("key")): metric for metric in kpis}
+	exception_total = next((card for card in exception_cards or [] if card.get("key") == "total_exceptions"), {})
+	inbound_attention = _safe_int((inbound_counts or {}).get("overdue")) + _safe_int((inbound_counts or {}).get("due_today"))
+	outbound_attention = (
+		_safe_int((outbound_counts or {}).get("overdue"))
+		+ _safe_int((outbound_counts or {}).get("due_today"))
+		+ _safe_int((outbound_counts or {}).get("short_stock"))
+		+ _safe_int((outbound_counts or {}).get("needs_stock_review"))
+	)
+	exception_attention = _safe_int(exception_total.get("value"))
+	transfer_attention = _metric_value(metrics.get("transfer_requests") or {})
+	role_variant = cstr(context.get("role_variant") or "warehouse_user")
+	manager_mode = role_variant in {"warehouse_manager", "system_manager"}
 
-	groups = [
-		_manager_center_group(
-			"arrival_review",
-			"Arrival readiness",
-			"Supplier-side rows that need manager review.",
-			_manager_center_inbound_items(inbound),
-		),
-		_manager_center_group(
-			"pick_blockers",
-			"Picking blockers",
-			"Customer-side rows blocked by timing or stock posture.",
-			_manager_center_outbound_items(outbound),
-		),
-		_manager_center_group(
-			"stock_posture",
-			"Stock posture issues",
-			"Shortage and missing-posture rows needing review.",
-			_manager_center_exception_items(stock_exceptions),
-		),
-		_manager_center_group(
-			"transfer_review",
-			"Transfer review",
-			"Posted transfer visibility rows with incomplete posture.",
-			_manager_center_transfer_items(transfer_visibility),
-		),
-	]
-	total = sum(len(group["items"]) for group in groups)
 	return {
-		"visible": True,
-		"state": "ready" if total else "empty",
-		"title": "Manager Readiness Center",
-		"subtitle": "Read-only triage for Warehouse blockers before any separate operation.",
-		"cards": [
-			{"key": group["key"], "label": group["title"], "value": len(group["items"]), "note": group["summary"]}
-			for group in groups
+		"key": "w15b_action_center",
+		"title": "Warehouse Action Center",
+		"subtitle": "Controlled entry points for future Warehouse work; current cards open custom review queues only.",
+		"mode": "shell_only",
+		"state": "planning",
+		"role_mode": "manager" if manager_mode else "operator",
+		"sections": [
+			{
+				"key": "work_entry",
+				"title": "Work Entry",
+				"summary": "Operational work starts here before any approved ERP document step.",
+				"cards": [
+					_action_center_card(
+						"arrival_checks",
+						"Arrival checks",
+						inbound_attention,
+						"Supplier arrivals and count review start from the inbound queue.",
+						route_part="inbound-receiving",
+					),
+					_action_center_card(
+						"picking_work",
+						"Picking work",
+						outbound_attention,
+						"Customer demand and stock blockers start from the outbound queue.",
+						route_part="outbound-picking",
+					),
+					_action_center_card(
+						"return_intake",
+						"Return intake",
+						"Planned",
+						"Customer and supplier return intake will be designed after receiving and picking actions.",
+						state_value="planned",
+					),
+					_action_center_card(
+						"cycle_counts",
+						"Cycle counts",
+						"Planned",
+						"Count tasks and variance review will stay controlled by approval policy.",
+						state_value="planned",
+					),
+				],
+			},
+			{
+				"key": "manager_decisions",
+				"title": "Manager Decisions",
+				"summary": "Decision lanes for approval, release, discrepancy, and variance review.",
+				"cards": [
+					_action_center_card(
+						"arrival_review",
+						"Arrival review",
+						inbound_attention,
+						"Review supplier-side arrivals before any separate receiving document step.",
+						route_part="inbound-receiving",
+					),
+					_action_center_card(
+						"picking_blockers",
+						"Picking blockers",
+						outbound_attention,
+						"Review outbound demand and shortage blockers before release design.",
+						route_part="outbound-picking",
+					),
+					_action_center_card(
+						"exception_resolution",
+						"Exception resolution",
+						exception_attention,
+						"Shortage and posture issues stay inside custom Warehouse review routes.",
+						route_part="stock-exceptions",
+					),
+					_action_center_card(
+						"movement_visibility",
+						"Movement visibility",
+						transfer_attention,
+						"Review posted movement and transfer posture before action workflow design.",
+						route_part="transfer-visibility",
+					),
+					_action_center_card(
+						"return_decisions",
+						"Return decisions",
+						"Planned",
+						"Restock, quarantine, repair, or supplier-return decisions are not executable yet.",
+						state_value="planned",
+					),
+					_action_center_card(
+						"inventory_variance",
+						"Inventory variance",
+						"Planned",
+						"Variance approval and adjustment preparation are reserved for the count workflow.",
+						state_value="planned",
+					),
+				],
+			},
 		],
-		"groups": groups,
-		"empty_message": "No manager readiness blockers are visible right now.",
-		"boundary_note": "Review-only. Open custom Warehouse pages for detail; no stock or document changes are made here.",
+		"guardrail": {
+			"title": "Action shell only",
+			"detail": "No ERPNext stock document is created here. Cards either open custom Warehouse review queues or mark a planned workflow lane.",
+		},
 	}
 
 
-def _manager_center_group(key: str, title: str, summary: str, items: list[dict[str, object]]) -> dict[str, object]:
-	return {
-		"key": key,
-		"title": title,
-		"summary": summary,
-		"items": items[:MANAGER_CENTER_ITEM_LIMIT],
-	}
-
-
-def _manager_center_payload_rows(payload: dict[str, object] | None, group_keys: set[str]) -> list[dict[str, object]]:
-	rows: list[dict[str, object]] = []
-	for group in (payload or {}).get("groups") or []:
-		if not isinstance(group, dict) or cstr(group.get("key")).strip() not in group_keys:
-			continue
-		rows.extend(row for row in (group.get("rows") or []) if isinstance(row, dict))
-	return rows
-
-
-def _manager_center_inbound_items(inbound: dict[str, object] | None) -> list[dict[str, object]]:
-	items: list[dict[str, object]] = []
-	for row in _manager_center_payload_rows(inbound, {"overdue", "partially_received"}):
-		purchase_order = cstr(row.get("purchase_order")).strip()
-		if not purchase_order:
-			continue
-		items.append(_manager_center_item(
-			key=f"arrival:{purchase_order}",
-			title=purchase_order,
-			subtitle=cstr(row.get("supplier")).strip() or "Supplier not shown",
-			status=cstr(row.get("age_label") or row.get("status")).strip() or "Needs review",
-			detail=cstr(row.get("remaining_summary")).strip() or "Open receiving quantity visible.",
-			facts=[
-				("Supplier", row.get("supplier")),
-				("Warehouse", row.get("target_warehouse")),
-				("Receiving", row.get("received_percent")),
-			],
-			target=_manager_center_route_target("warehouse-console-receiving", purchase_order=purchase_order),
-			action_label="Review receiving",
-		))
-	return items[:MANAGER_CENTER_ITEM_LIMIT]
-
-
-def _manager_center_outbound_items(outbound: dict[str, object] | None) -> list[dict[str, object]]:
-	items: list[dict[str, object]] = []
-	for row in _manager_center_payload_rows(outbound, {"overdue", "needs_stock_review", "partially_picked"}):
-		sales_order = cstr(row.get("sales_order")).strip()
-		if not sales_order:
-			continue
-		items.append(_manager_center_item(
-			key=f"picking:{sales_order}",
-			title=sales_order,
-			subtitle=cstr(row.get("customer")).strip() or "Customer not shown",
-			status=cstr(row.get("stock_state") or row.get("status") or row.get("age_label")).strip() or "Needs review",
-			detail=cstr(row.get("remaining_summary")).strip() or "Open picking quantity visible.",
-			facts=[
-				("Customer", row.get("customer")),
-				("Warehouse", row.get("target_warehouse")),
-				("Picking", row.get("delivered_percent")),
-			],
-			target=_manager_center_route_target("warehouse-console-picking", sales_order=sales_order),
-			action_label="Review picking",
-		))
-	return items[:MANAGER_CENTER_ITEM_LIMIT]
-
-
-def _manager_center_exception_items(stock_exceptions: dict[str, object] | None) -> list[dict[str, object]]:
-	items: list[dict[str, object]] = []
-	for row in _manager_center_payload_rows(stock_exceptions, {"needs_stock_review", "urgent_aging", "warehouse_posture_missing"}):
-		target = (row.get("route_targets") or {}).get("exception_review") if isinstance(row.get("route_targets"), dict) else {}
-		context_token = cstr((target or {}).get("context_token") or row.get("context_token")).strip()
-		if not context_token:
-			continue
-		items.append(_manager_center_item(
-			key=f"exception:{context_token}",
-			title=cstr(row.get("sales_order")).strip() or cstr(row.get("item_code")).strip() or "Stock exception",
-			subtitle=cstr(row.get("customer")).strip() or cstr(row.get("item_name")).strip() or "Demand row",
-			status=cstr(row.get("exception_label") or row.get("urgency_label")).strip() or "Needs stock review",
-			detail=cstr(row.get("explanation")).strip() or "Stock posture needs review.",
-			facts=[
-				("Item", row.get("item_code")),
-				("Warehouse", row.get("source_warehouse")),
-				("Short", row.get("short_qty")),
-			],
-			target=_manager_center_route_target("warehouse-console-stock-exception", context_token=context_token),
-			action_label="Review exception",
-		))
-	return items[:MANAGER_CENTER_ITEM_LIMIT]
-
-
-def _manager_center_transfer_items(transfer_visibility: dict[str, object] | None) -> list[dict[str, object]]:
-	items: list[dict[str, object]] = []
-	for row in _manager_center_payload_rows(transfer_visibility, {"needs_review", "transit_related"}):
-		target = (row.get("route_targets") or {}).get("movement_review") if isinstance(row.get("route_targets"), dict) else {}
-		context_token = cstr((target or {}).get("context_token")).strip()
-		movement_id = cstr(row.get("movement_id") or row.get("transfer_id")).strip()
-		if not context_token:
-			continue
-		items.append(_manager_center_item(
-			key=f"transfer:{movement_id or context_token}",
-			title=movement_id or "Transfer movement",
-			subtitle=cstr(row.get("direction_label")).strip() or "Warehouse movement",
-			status=cstr(row.get("posture") or row.get("group_label")).strip() or "Needs review",
-			detail=cstr(row.get("quantity_summary")).strip() or "Transfer quantity visible.",
-			facts=[
-				("Source", row.get("source_warehouse")),
-				("Target", row.get("target_warehouse")),
-				("Items", row.get("item_count")),
-			],
-			target=_manager_center_route_target("warehouse-console-movement", context_token=context_token),
-			action_label="Review movement",
-		))
-	return items[:MANAGER_CENTER_ITEM_LIMIT]
-
-
-def _manager_center_item(
-	*,
+def _action_center_card(
 	key: str,
 	title: str,
-	subtitle: str,
-	status: str,
-	detail: str,
-	facts: list[tuple[str, object]],
-	target: dict[str, object],
-	action_label: str,
+	value: int | str,
+	note: str,
+	route_part: str | None = None,
+	state_value: str = "live",
 ) -> dict[str, object]:
-	return {
+	card: dict[str, object] = {
 		"key": key,
 		"title": title,
-		"subtitle": subtitle,
-		"status": status,
-		"detail": detail,
-		"facts": _manager_center_facts(facts),
-		"target": target,
-		"action_label": action_label,
+		"value": value,
+		"state": state_value,
+		"note": note,
+		"status_label": "Review queue" if route_part else "Planned",
 	}
+	if route_part and route_part in ACTION_CENTER_WORKLIST_ROUTE_PARTS:
+		card.update({
+			"route": "warehouse-console-worklist",
+			"route_part": route_part,
+			"button_label": "Open queue",
+		})
+	return card
 
 
-def _manager_center_facts(pairs: list[tuple[str, object]]) -> list[dict[str, str]]:
-	facts: list[dict[str, str]] = []
-	for label, value in pairs:
-		text = cstr(value).strip()
-		if text:
-			facts.append({"label": label, "value": text})
-	return facts[:3]
-
-
-def _manager_center_route_target(route: str, **kwargs: object) -> dict[str, object]:
-	allowed_routes = {
-		"warehouse-console-receiving",
-		"warehouse-console-picking",
-		"warehouse-console-stock-exception",
-		"warehouse-console-movement",
-	}
-	if route not in allowed_routes:
-		return {}
-	target: dict[str, object] = {"kind": "warehouse_page", "route": route}
-	for key, value in kwargs.items():
-		text = cstr(value).strip()
-		if text:
-			target[key] = text
-	return target
+def _safe_int(value: object) -> int:
+	try:
+		return int(value or 0)
+	except Exception:
+		return 0
 
 
 def _section_card(key: str, title: str, metric: dict[str, object], empty_message: str) -> dict[str, object]:
