@@ -453,6 +453,10 @@ async function waitForReceivingReady(page, diagnostics, label) {
         && shell.querySelectorAll("[data-warehouse-receiving-card]").length >= 4
         && shell.querySelectorAll("[data-warehouse-receiving-line]").length >= 1
         && shell.querySelectorAll("[data-warehouse-receiving-tab]").length >= 2
+        && (!window.__erpwWarehouseExpectW12A
+          || (shell.querySelector("[data-warehouse-receiving-workflow-shell]")
+            && shell.querySelectorAll("[data-warehouse-receiving-workflow-control]").length >= 3
+            && shell.querySelectorAll("[data-warehouse-receiving-workflow-status]").length >= 6))
         && (!window.__erpwWarehouseExpectW12A || (
           shell.querySelectorAll("[data-warehouse-receiving-readiness-card]").length >= 4
           && shell.querySelector("[data-warehouse-receiving-guardrail]")
@@ -508,11 +512,19 @@ async function snapshot(page) {
       receivingCardCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-card]")).filter(visible).length,
       receivingReadinessCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-readiness-card]")).filter(visible).length,
       receivingGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-guardrail]")).filter(visible).length,
+      receivingWorkflowShellCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-workflow-shell]")).filter(visible).length,
+      receivingWorkflowStatusCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-workflow-status]")).filter(visible).length,
+      receivingWorkflowControlCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-workflow-control]")).filter(visible).length,
+      receivingWorkflowCountRowCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-count-row]")).filter(visible).length,
+      receivingWorkflowDiscrepancyCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-discrepancy-category]")).filter(visible).length,
+      receivingWorkflowManagerDecisionCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-manager-decision]")).filter(visible).length,
+      receivingWorkflowDraftPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-draft-policy]")).filter(visible).length,
       receivingLineCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-line]")).filter(visible).length,
       receivingHistoryCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-history-row]")).filter(visible).length,
       tabCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-tab]")).filter(visible).length,
       detailButtonCount: Array.from(document.querySelectorAll("[data-warehouse-row-open-detail]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
+      contentSearchUtilityVisible: Array.from(shellRoot.querySelectorAll("[data-erpw-sales-search-open], [data-warehouse-quick-find], [data-warehouse-quick-find-input], [data-warehouse-quick-find-preview]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
       bodyWidth: document.documentElement.clientWidth,
       warehouseConsoleDiagnostics: window.erpWorkspaceWarehouseConsole && window.erpWorkspaceWarehouseConsole.diagnostics ? { ...window.erpWorkspaceWarehouseConsole.diagnostics } : {},
@@ -527,11 +539,22 @@ function assertCleanWarehouseUi(state, context) {
   assert(state.headerCount === 1, "Warehouse header count must remain 1", { context, state });
   assert(state.sidebarCount <= 1, "Warehouse sidebar count must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
-  assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W4B", { context, state });
+  assert(!state.contentSearchUtilityVisible, "Warehouse search entry must stay out of W4B receiving content", { context, state });
   assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Forbidden stock action control is visible", { context, state });
   assert(!FORBIDDEN_COPY_RE.test(state.text), "Developer or governance copy is visible", { context, state });
   assert(!VALUATION_RE.test(state.text), "Valuation or commercial text is visible", { context, state });
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText}`), "Native route target is visible", { context, state });
+}
+
+function assertReceivingWorkflowShell(state, context) {
+  if (!EXPECT_W12A) return;
+  assert(state.receivingWorkflowShellCount === 1, "W15C2 receiving workflow shell did not render once", { context, state });
+  assert(state.receivingWorkflowStatusCount >= 6, "W15C2 receiving workflow status strip did not render", { context, state });
+  assert(state.receivingWorkflowControlCount >= 3, "W15C2 warehouse user planned controls did not render", { context, state });
+  assert(state.receivingWorkflowCountRowCount >= 1, "W15C2 count evidence preview did not render", { context, state });
+  assert(state.receivingWorkflowDiscrepancyCount >= 6, "W15C2 discrepancy category preview did not render", { context, state });
+  assert(state.receivingWorkflowManagerDecisionCount >= 5, "W15C2 manager decision preview did not render", { context, state });
+  assert(state.receivingWorkflowDraftPolicyCount === 1, "W15C2 draft policy preview did not render once", { context, state });
 }
 
 async function exerciseUser(browser, user) {
@@ -555,6 +578,7 @@ async function exerciseUser(browser, user) {
     await waitForReceivingReady(page, diagnostics, `${user.key}:row-drilldown`);
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:row-drilldown`);
+    assertReceivingWorkflowShell(state, `${user.key}:row-drilldown`);
     assert(state.receivingCardCount >= 4, "Receiving review cards did not render", { user: user.key, state });
     if (EXPECT_W12A) {
       assert(state.receivingReadinessCount >= 4, "Receiving readiness summary did not render", { user: user.key, state });
@@ -567,16 +591,19 @@ async function exerciseUser(browser, user) {
     await page.locator('[data-warehouse-receiving-tab="receipt_history"]').click();
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:receipt-history-tab`);
+    assertReceivingWorkflowShell(state, `${user.key}:receipt-history-tab`);
 
     await page.locator("[data-warehouse-receiving-refresh]").click();
     await waitForReceivingReady(page, diagnostics, `${user.key}:refresh`);
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:refresh`);
+    assertReceivingWorkflowShell(state, `${user.key}:refresh`);
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await waitForReceivingReady(page, diagnostics, `${user.key}:refresh-page`);
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:refresh-page`);
+    assertReceivingWorkflowShell(state, `${user.key}:refresh-page`);
     const directPurchaseOrder = Array.isArray(state.route) && state.route[1] ? String(state.route[1]) : "PO-OVERDUE";
 
     await page.locator("[data-warehouse-receiving-back]").click();
@@ -592,6 +619,7 @@ async function exerciseUser(browser, user) {
       const elapsedMs = Date.now() - started;
       state = await snapshot(page);
       assertCleanWarehouseUi(state, `${user.key}:${viewport.key}:direct`);
+      assertReceivingWorkflowShell(state, `${user.key}:${viewport.key}:direct`);
       assert(state.receivingShellCount === 1, "Receiving review shell count must remain 1", { user: user.key, viewport, state });
       assert(state.receivingLineCount >= 1, "Receiving review lines did not render", { user: user.key, viewport, state });
       assert(elapsedMs < WARM_TARGET_MS || viewport.key === "laptop-1136", "Warehouse receiving warm route exceeded target", { user: user.key, viewport, elapsedMs });
@@ -603,6 +631,7 @@ async function exerciseUser(browser, user) {
     await openRoute(page, ["warehouse-console-receiving", directPurchaseOrder], `/desk/warehouse-console-receiving/${encodeURIComponent(directPurchaseOrder)}`, diagnostics, `${user.key}:repeat-direct-2`, "receiving");
     state = await snapshot(page);
     assertCleanWarehouseUi(state, `${user.key}:repeat-direct`);
+    assertReceivingWorkflowShell(state, `${user.key}:repeat-direct`);
     assert(state.receivingShellCount === 1, "Repeated receiving route navigation must keep one shell", { user: user.key, state });
     const repeatedAfter = Number((state.warehouseConsoleDiagnostics || {}).receivingServiceCallAttempted || 0);
     const duplicateSkipped = Number((state.warehouseConsoleDiagnostics || {}).receivingDuplicateRenderSkipped || 0);

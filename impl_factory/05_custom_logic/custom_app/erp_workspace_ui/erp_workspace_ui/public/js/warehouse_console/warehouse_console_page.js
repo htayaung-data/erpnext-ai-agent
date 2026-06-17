@@ -2614,6 +2614,192 @@
           overflow-wrap: break-word;
         }
       }
+      /* W15C2 shell-only receiving workflow preview. */
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-shell {
+        display: grid;
+        gap: 14px;
+        margin-top: 14px;
+        padding: 17px;
+        border: 1px solid rgba(226, 232, 240, 0.86);
+        border-radius: 18px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-title {
+        margin: 0;
+        color: #0f172a;
+        font-size: 17px;
+        font-weight: 720;
+        line-height: 1.2;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-subtitle {
+        margin-top: 5px;
+        max-width: 760px;
+        color: #64748b;
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        border: 1px solid rgba(203, 213, 225, 0.92);
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #334155;
+        font-size: 10.5px;
+        font-weight: 720;
+        letter-spacing: 0.018em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-guardrail {
+        padding: 11px 12px;
+        border: 1px solid rgba(245, 158, 11, 0.22);
+        border-radius: 13px;
+        background: #fffbeb;
+        color: #6b4e16;
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-guardrail strong {
+        color: #3f2f10;
+        font-weight: 760;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-status {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-status-step {
+        min-width: 0;
+        padding: 9px 10px;
+        border: 1px solid rgba(226, 232, 240, 0.88);
+        border-radius: 12px;
+        background: #ffffff;
+        color: #475569;
+        font-size: 11.5px;
+        font-weight: 680;
+        line-height: 1.28;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-card {
+        display: grid;
+        gap: 10px;
+        min-width: 0;
+        padding: 14px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 15px;
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-card-title {
+        color: #0f172a;
+        font-size: 14px;
+        font-weight: 720;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-card-note {
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-actions,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-discrepancy-grid,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-grid,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-grid {
+        display: grid;
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-control,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-discrepancy-card,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-card,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-row {
+        min-width: 0;
+        padding: 10px 11px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 12px;
+        background: #f8fafc;
+        color: #334155;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-control {
+        opacity: 0.86;
+        cursor: default;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-control strong,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-discrepancy-card strong,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-card strong,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-row-title {
+        display: block;
+        color: #0f172a;
+        font-size: 12.5px;
+        font-weight: 700;
+        line-height: 1.28;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-control span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-discrepancy-card span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-card span {
+        display: block;
+        margin-top: 3px;
+        color: #64748b;
+        font-size: 11.5px;
+        line-height: 1.36;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-fields {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field {
+        min-width: 0;
+        padding: 7px 8px;
+        border: 1px solid rgba(226, 232, 240, 0.76);
+        border-radius: 10px;
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field span {
+        display: block;
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 680;
+        letter-spacing: 0.01em;
+        line-height: 1.22;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field strong {
+        display: block;
+        margin-top: 4px;
+        color: #0f172a;
+        font-size: 11.5px;
+        font-weight: 690;
+        line-height: 1.25;
+      }
+      @media (max-width: 900px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-status,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      @media (max-width: 640px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-fields {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
       /* W13B3R2 typography and density repair for desktop board labels. */
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-console-shell .warehouse-console-kpi-label,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-console-shell .warehouse-console-inbound-card-label,
@@ -8921,6 +9107,165 @@
     `;
   }
 
+  function renderReceivingWorkflowStatusStrip() {
+    const statuses = [
+      "Not Started",
+      "In Progress",
+      "Submitted For Review",
+      "Manager Review",
+      "Procurement Escalation",
+      "Draft Prepared",
+    ];
+    return `
+      <div class="warehouse-receiving-workflow-status" data-warehouse-receiving-workflow-status-strip>
+        ${statuses.map((status) => `<div class="warehouse-receiving-workflow-status-step" data-warehouse-receiving-workflow-status="${escapeHtml(status)}">${escapeHtml(status)}</div>`).join("")}
+      </div>
+    `;
+  }
+
+  function renderReceivingPlannedControl(key, title, note) {
+    return `
+      <div class="warehouse-receiving-planned-control" aria-disabled="true" data-warehouse-receiving-workflow-control="${escapeHtml(key)}">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(note || "Planned control, not active yet.")}</span>
+      </div>
+    `;
+  }
+
+  function renderReceivingCountField(label, value) {
+    return `
+      <div class="warehouse-receiving-count-field">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value == null || value === "" ? "--" : value)}</strong>
+      </div>
+    `;
+  }
+
+  function renderReceivingCountEvidenceRow(line) {
+    const uom = line && line.uom ? ` ${line.uom}` : "";
+    const expected = line && (line.remaining_qty || line.ordered_qty) ? `${line.remaining_qty || line.ordered_qty}${uom}` : "--";
+    return `
+      <div class="warehouse-receiving-count-row" data-warehouse-receiving-count-row="${escapeHtml(line && line.item_code || "")}">
+        <div class="warehouse-receiving-count-row-title">${escapeHtml(line && line.item_code || "Item not visible")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line && line.item_name || "Count evidence model preview")}</div>
+        <div class="warehouse-receiving-count-fields">
+          ${renderReceivingCountField("Expected", expected)}
+          ${renderReceivingCountField("Counted", "Not active")}
+          ${renderReceivingCountField("Accepted", "Not active")}
+          ${renderReceivingCountField("Damaged", "Not active")}
+          ${renderReceivingCountField("Short", "Not active")}
+          ${renderReceivingCountField("Over", "Not active")}
+          ${renderReceivingCountField("Quarantine", "Not active")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderReceivingDiscrepancyCard(key, title, note) {
+    return `
+      <div class="warehouse-receiving-discrepancy-card" data-warehouse-receiving-discrepancy-category="${escapeHtml(key)}">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(note)}</span>
+      </div>
+    `;
+  }
+
+  function renderReceivingManagerDecision(key, title, note) {
+    return `
+      <div class="warehouse-receiving-manager-card" aria-disabled="true" data-warehouse-receiving-manager-decision="${escapeHtml(key)}">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(note)}</span>
+      </div>
+    `;
+  }
+
+  function renderReceivingWorkflowShell(header, lines, statePayload) {
+    const visibleLines = Array.isArray(lines) ? lines.filter((line) => line && line.item_code).slice(0, 4) : [];
+    const moreLines = Array.isArray(lines) && lines.length > visibleLines.length ? lines.length - visibleLines.length : 0;
+    const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload && statePayload.kind || ""));
+    const countRows = visibleLines.length
+      ? visibleLines.map(renderReceivingCountEvidenceRow).join("")
+      : `<div class="warehouse-receiving-count-row warehouse-visual-fallback" data-warehouse-receiving-workflow-empty><div class="warehouse-receiving-count-row-title">No count preview visible</div><div class="warehouse-receiving-meta">${escapeHtml(unavailable ? "Receiving task evidence is not available for this order." : "Item lines will appear here when receiving evidence is enabled.")}</div></div>`;
+    return `
+      <section class="warehouse-receiving-workflow-shell" data-warehouse-receiving-workflow-shell data-warehouse-w15c2-shell="true">
+        <div class="warehouse-receiving-workflow-head">
+          <div>
+            <h2 class="warehouse-receiving-workflow-title">Receiving workflow</h2>
+            <div class="warehouse-receiving-workflow-subtitle">Controlled future workflow shell for arrival checks, count evidence, manager review, and Procurement escalation. This preview is display-only.</div>
+          </div>
+          <span class="warehouse-receiving-workflow-badge" data-warehouse-receiving-workflow-state>Shell only</span>
+        </div>
+        <div class="warehouse-receiving-workflow-guardrail" data-warehouse-receiving-workflow-guardrail>
+          <strong>No stock is posted.</strong>
+          <span>No Purchase Receipt is created or submitted from this shell. Draft preparation comes later through an approved workflow and remains unsubmitted.</span>
+        </div>
+        ${renderReceivingWorkflowStatusStrip()}
+        <div class="warehouse-receiving-workflow-grid">
+          <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-user-work-panel>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Warehouse User Work Panel</div>
+              <div class="warehouse-receiving-workflow-card-note">Planned controls are visible for workflow shape only. They are inactive and do not change stock or receiving records.</div>
+            </div>
+            <div class="warehouse-receiving-planned-actions">
+              ${renderReceivingPlannedControl("start_arrival_check", "Start arrival check", "Planned action for confirming goods physically arrived.")}
+              ${renderReceivingPlannedControl("save_count_draft", "Save count draft", "Planned action for storing count evidence after workflow approval.")}
+              ${renderReceivingPlannedControl("submit_for_review", "Send to manager review", "Planned handoff for manager review, not active now.")}
+            </div>
+          </section>
+          <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-discrepancy-panel>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Discrepancy categories</div>
+              <div class="warehouse-receiving-workflow-card-note">Future evidence-required categories for manager review and Procurement escalation.</div>
+            </div>
+            <div class="warehouse-receiving-discrepancy-grid">
+              ${renderReceivingDiscrepancyCard("short", "Short", "Evidence required when received quantity is below expected quantity.")}
+              ${renderReceivingDiscrepancyCard("over", "Over", "Procurement owns over-receipt policy and supplier follow-up.")}
+              ${renderReceivingDiscrepancyCard("damaged", "Damaged", "Evidence required before quarantine or supplier claim.")}
+              ${renderReceivingDiscrepancyCard("wrong_item", "Wrong item", "Procurement escalation required; do not accept as normal stock.")}
+              ${renderReceivingDiscrepancyCard("quarantine", "Quarantine", "Hold posture for damaged, wrong, or unresolved goods.")}
+              ${renderReceivingDiscrepancyCard("supplier_paperwork_mismatch", "Supplier paperwork mismatch", "Evidence required before Procurement follow-up.")}
+              ${renderReceivingDiscrepancyCard("procurement_escalation", "Procurement escalation", "For PO correction, supplier dispute, or commercial decision.")}
+            </div>
+          </section>
+        </div>
+        <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-count-evidence-preview>
+          <div>
+            <div class="warehouse-receiving-workflow-card-title">Count Evidence Preview</div>
+            <div class="warehouse-receiving-workflow-card-note">Future count model based on visible receiving lines for ${escapeHtml(header && header.purchase_order || "this order")}. Values are display-only placeholders.${moreLines ? ` Showing first ${visibleLines.length} lines; ${moreLines} more remain in Item Lines.` : ""}</div>
+          </div>
+          <div class="warehouse-receiving-count-grid">${countRows}</div>
+        </section>
+        <div class="warehouse-receiving-workflow-grid">
+          <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-manager-preview>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Manager Decision Preview</div>
+              <div class="warehouse-receiving-workflow-card-note">Planned Warehouse Manager decisions are shown as non-active review cards.</div>
+            </div>
+            <div class="warehouse-receiving-manager-grid">
+              ${renderReceivingManagerDecision("request_recount", "Request recount", "Ask Warehouse User to verify unclear counts.")}
+              ${renderReceivingManagerDecision("approve_clean_receipt", "Approve clean receipt", "For counts that match visible PO receiving posture.")}
+              ${renderReceivingManagerDecision("approve_shortage_within_tolerance", "Approve shortage within tolerance", "Allowed only after owner-approved tolerance policy.")}
+              ${renderReceivingManagerDecision("mark_quarantine_review", "Mark quarantine review", "For damaged, wrong, or held goods.")}
+              ${renderReceivingManagerDecision("escalate_to_procurement", "Escalate to Procurement", "Required for overage, wrong item, supplier return, PO correction, or supplier dispute.")}
+            </div>
+          </section>
+          <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-draft-policy>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Draft Policy Preview</div>
+              <div class="warehouse-receiving-workflow-card-note">Purchase Receipt draft preparation comes later, remains unsubmitted, and requires Procurement/Admin document review after approval.</div>
+            </div>
+            <div class="warehouse-receiving-discrepancy-grid">
+              ${renderReceivingDiscrepancyCard("draft_later_only", "Draft comes later", "No draft is prepared from this preview.")}
+              ${renderReceivingDiscrepancyCard("draft_unsubmitted", "Draft remains unsubmitted", "Stock posting stays outside this shell.")}
+              ${renderReceivingDiscrepancyCard("document_owner_review", "Document owner review", "Procurement/Admin reviews the draft handoff after preparation.")}
+              ${renderReceivingDiscrepancyCard("exclude_unresolved", "Exclude unresolved issues", "Damaged, wrong, quarantine, or unresolved overage must not become normal accepted draft lines.")}
+            </div>
+          </section>
+        </div>
+      </section>
+    `;
+  }
+
   function activateReceivingTab($root, tabKey) {
     const key = tabKey || "item_lines";
     $root.find("[data-warehouse-receiving-tab]").each(function () {
@@ -8996,6 +9341,7 @@
           <strong>Review only</strong>
           <span>No stock is posted and no Purchase Receipt is created from this screen. Use this page to understand receiving posture before any separate receiving process.</span>
         </section>
+        ${renderReceivingWorkflowShell(header, lines, statePayload)}
         <section class="warehouse-receiving-detail">
           <div class="warehouse-receiving-detail-head">
             <div>
