@@ -362,7 +362,7 @@ function managerCenterPayload() {
 }
 
 function actionCenterPayload() {
-  const card = (key, title, value, note, routePart = "") => {
+  const card = (key, title, value, note, routePart = "", buttonLabel = "Open queue") => {
     const payload = {
       key,
       title,
@@ -374,7 +374,7 @@ function actionCenterPayload() {
     if (routePart) {
       payload.route = "warehouse-console-worklist";
       payload.route_part = routePart;
-      payload.button_label = "Open queue";
+      payload.button_label = buttonLabel;
     }
     return payload;
   };
@@ -391,8 +391,8 @@ function actionCenterPayload() {
         title: "Work Entry",
         summary: "Operational work starts here before any approved ERP document step.",
         cards: [
-          card("arrival_checks", "Arrival checks", 2, "Supplier arrivals and count review start from the inbound queue.", "inbound-receiving"),
-          card("picking_work", "Picking work", 2, "Customer demand and stock blockers start from the outbound queue.", "outbound-picking"),
+          card("arrival_checks", "Arrival checks", 2, "Supplier arrivals and count review start from the inbound queue.", "inbound-receiving", "Open inbound"),
+          card("picking_work", "Picking work", 2, "Customer demand and stock blockers start from the outbound queue.", "outbound-picking", "Open picking"),
           card("return_intake", "Return intake", "Planned", "Customer and supplier return intake will be designed after receiving and picking actions."),
           card("cycle_counts", "Cycle counts", "Planned", "Count tasks and variance review will stay controlled by approval policy."),
         ],
@@ -402,10 +402,10 @@ function actionCenterPayload() {
         title: "Manager Decisions",
         summary: "Decision lanes for approval, release, discrepancy, and variance review.",
         cards: [
-          card("arrival_review", "Arrival review", 2, "Review supplier-side arrivals before any separate receiving document step.", "inbound-receiving"),
-          card("picking_blockers", "Picking blockers", 2, "Review outbound demand and shortage blockers before release design.", "outbound-picking"),
-          card("exception_resolution", "Exception resolution", 1, "Shortage and posture issues stay inside custom Warehouse review routes.", "stock-exceptions"),
-          card("movement_visibility", "Movement visibility", 1, "Review posted movement and transfer posture before action workflow design.", "transfer-visibility"),
+          card("arrival_review", "Arrival review", 2, "Review supplier-side arrivals before any separate receiving document step.", "inbound-receiving", "Review arrivals"),
+          card("picking_blockers", "Picking blockers", 2, "Review outbound demand and shortage blockers before release design.", "outbound-picking", "Review blockers"),
+          card("exception_resolution", "Exception resolution", 1, "Shortage and posture issues stay inside custom Warehouse review routes.", "stock-exceptions", "Review exceptions"),
+          card("movement_visibility", "Transfer visibility", 1, "Review posted movement and transfer posture before action workflow design.", "transfer-visibility", "Review transfers"),
           card("return_decisions", "Return decisions", "Planned", "Restock, quarantine, repair, or supplier-return decisions are not executable yet."),
           card("inventory_variance", "Inventory variance", "Planned", "Variance approval and adjustment preparation are reserved for the count workflow."),
         ],
@@ -630,7 +630,7 @@ async function login(page, user) {
 async function waitForCockpit(page) {
   await page.waitForFunction(() => {
     const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-cockpit="ready"]');
-    return Boolean(shell && shell.querySelector("[data-warehouse-cockpit-command]") && shell.querySelector("[data-warehouse-cockpit-pulse]") && shell.querySelector("[data-warehouse-cockpit-start]") && shell.querySelector("[data-warehouse-cockpit-work]") && shell.querySelector("[data-warehouse-cockpit-risk]") && shell.querySelector("[data-warehouse-cockpit-movement]"));
+    return Boolean(shell && shell.querySelector("[data-warehouse-cockpit-command]") && shell.querySelector("[data-warehouse-cockpit-pulse]") && shell.querySelector("[data-warehouse-cockpit-start]") && shell.querySelector("[data-warehouse-action-center]"));
   }, null, { timeout: TIMEOUT });
 }
 
@@ -714,6 +714,7 @@ async function snapshot(page) {
       workCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-work] .warehouse-console-inbound-panel")).filter(visible).length,
       riskCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-risk] [data-warehouse-cockpit-route-card]")).filter(visible).length,
       movementCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-movement] [data-warehouse-cockpit-route-card]")).filter(visible).length,
+      legacyRouteSectionCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-work], [data-warehouse-cockpit-risk], [data-warehouse-cockpit-movement]")).filter(visible).length,
       guardrailCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-guardrail]")).filter(visible).length,
       inboundActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-inbound]")).filter(visible).length,
       outboundActionCount: Array.from(document.querySelectorAll("[data-warehouse-open-outbound]")).filter(visible).length,
@@ -757,11 +758,11 @@ function assertW12KCockpit(state, contextLabel) {
   assert(state.commandCount === 1, "Cockpit command area must render once", { context: contextLabel, state });
   assert(state.commandChipCount === 0, "Cockpit command chips should not duplicate read-only/freshness status in the hero", { context: contextLabel, state });
   assert(state.refreshActionCount === 1, "Cockpit refresh control must render once", { context: contextLabel, state });
-  assert(state.inboundActionCount >= 2, "Inbound receiving navigation is missing", { context: contextLabel, state });
-  assert(state.outboundActionCount >= 2, "Outbound picking navigation is missing", { context: contextLabel, state });
-  assert(state.stockExceptionActionCount >= 2, "Stock exceptions navigation is missing", { context: contextLabel, state });
-  assert(state.movementActionCount >= 2, "Movement visibility navigation is missing", { context: contextLabel, state });
-  assert(state.transferActionCount >= 2, "Transfer visibility navigation is missing", { context: contextLabel, state });
+  assert(state.inboundActionCount === 1, "Inbound receiving should have one top-level Start navigation control", { context: contextLabel, state });
+  assert(state.outboundActionCount === 1, "Outbound picking should have one top-level Start navigation control", { context: contextLabel, state });
+  assert(state.stockExceptionActionCount === 1, "Stock exceptions should have one top-level Start navigation control", { context: contextLabel, state });
+  assert(state.movementActionCount === 1, "Movement visibility should have one top-level Start navigation control", { context: contextLabel, state });
+  assert(state.transferActionCount === 1, "Transfer visibility should have one top-level Start navigation control", { context: contextLabel, state });
   const targets = state.routeTargets || [];
   [
     "warehouse-console-worklist/inbound-receiving",
@@ -827,9 +828,10 @@ async function assertCockpit(page, contextLabel) {
   assert(state.cockpitCount === 1, "Cockpit shell did not render", { context: contextLabel, state });
   assert(state.pulseCount >= 6, "Warehouse pulse cards did not render", { context: contextLabel, state });
   assert(state.startCount >= 4, "Start Here cards did not render", { context: contextLabel, state });
-  assert(state.workCount >= 2, "Work To Do paired cards did not render", { context: contextLabel, state });
-  assert(state.riskCount >= 2, "Risks To Resolve cards did not render", { context: contextLabel, state });
-  assert(state.movementCount >= 2, "Movement To Understand cards did not render", { context: contextLabel, state });
+  assert(state.workCount === 0, "Legacy Work To Do cards should not duplicate Start Warehouse Work or Action Center", { context: contextLabel, state });
+  assert(state.riskCount === 0, "Legacy Risks To Resolve cards should not duplicate Start Warehouse Work or Action Center", { context: contextLabel, state });
+  assert(state.movementCount === 0, "Legacy Movement To Understand cards should not duplicate Start Warehouse Work or Action Center", { context: contextLabel, state });
+  assert(state.legacyRouteSectionCount === 0, "Legacy duplicated Overview route sections should not render", { context: contextLabel, state });
   assert(state.guardrailCount === 0, "Overview should not render the bottom read-only guardrail panel", { context: contextLabel, state });
   if (EXPECT_W12K) assertW12KCockpit(state, contextLabel);
   if (EXPECT_W14B) assertW14BQuickFind(state, contextLabel);

@@ -3053,7 +3053,7 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card {
         position: relative;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 112px;
+        grid-template-columns: minmax(0, 1fr) 128px;
         align-items: center;
         gap: 18px;
         min-height: 102px;
@@ -3080,7 +3080,7 @@
         border-left-color: rgba(148, 163, 184, 0.46);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side {
-        width: 112px;
+        width: 128px;
         min-height: 70px;
         padding: 10px 12px;
         border: 1px solid rgba(210, 225, 225, 0.95);
@@ -3091,16 +3091,24 @@
         align-content: center;
         justify-items: center;
       }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side .sales-console-queue-side-label {
+        white-space: nowrap;
+        letter-spacing: 0.02em;
+      }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-open {
         margin-top: 7px;
+        min-width: 96px;
         min-height: 26px;
         padding: 0 9px;
         border: 1px solid rgba(203, 213, 225, 0.95);
         border-radius: 9px;
         background: #ffffff;
         color: #0f172a;
-        font-size: 11px;
-        font-weight: 760;
+        font-size: 10.5px;
+        font-weight: 720;
+        letter-spacing: 0;
+        word-spacing: 2px;
+        white-space: nowrap;
         box-shadow: 0 6px 12px rgba(15, 23, 42, 0.04);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-open:hover,
@@ -3123,6 +3131,131 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-guardrail strong {
         color: #0f172a;
         white-space: nowrap;
+      }
+      /* W15B overview hierarchy refinement: status, navigation, task, risk, movement, and control lanes must read differently. */
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-pulse-section {
+        border-color: rgba(226, 232, 240, 0.92);
+        background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.028);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-pulse-section .sales-console-section-title::after {
+        content: "Status";
+        margin-left: 9px;
+        padding: 2px 7px;
+        border: 1px solid rgba(203, 213, 225, 0.86);
+        border-radius: 999px;
+        color: #64748b;
+        font-size: 9px;
+        font-weight: 760;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        vertical-align: middle;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start {
+        border-color: rgba(204, 251, 241, 0.82);
+        background:
+          linear-gradient(180deg, rgba(240, 253, 250, 0.44) 0%, rgba(255, 255, 255, 0.98) 44%),
+          #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start::before,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-work]::before,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-risk]::before,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-movement]::before,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-section::before {
+        content: "";
+        display: block;
+        width: 42px;
+        height: 2px;
+        margin: 0 0 14px;
+        border-radius: 999px;
+        background: rgba(20, 184, 166, 0.5);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-work] {
+        border-color: rgba(204, 251, 241, 0.86);
+        background: linear-gradient(180deg, rgba(240, 253, 250, 0.5) 0%, #ffffff 42%);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-risk] {
+        border-color: rgba(253, 230, 138, 0.88);
+        background: linear-gradient(180deg, rgba(255, 251, 235, 0.72) 0%, #ffffff 46%);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-risk]::before {
+        background: rgba(217, 119, 6, 0.62);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-movement] {
+        border-color: rgba(191, 219, 254, 0.9);
+        background: linear-gradient(180deg, rgba(239, 246, 255, 0.72) 0%, #ffffff 46%);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-movement]::before {
+        background: rgba(37, 99, 235, 0.5);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-work-card.sales-console-queue-card {
+        border-left-color: rgba(20, 184, 166, 0.5);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-risk] .warehouse-cockpit-queue-card.sales-console-queue-card {
+        border-left-color: rgba(217, 119, 6, 0.5);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-risk] .warehouse-cockpit-queue-card.sales-console-queue-card:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-risk] button.warehouse-cockpit-queue-card.sales-console-queue-card:focus-visible {
+        border-left-color: rgba(217, 119, 6, 0.72);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-movement] .warehouse-cockpit-queue-card.sales-console-queue-card {
+        border-left-color: rgba(37, 99, 235, 0.45);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-movement] .warehouse-cockpit-queue-card.sales-console-queue-card:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared [data-warehouse-cockpit-movement] button.warehouse-cockpit-queue-card.sales-console-queue-card:focus-visible {
+        border-left-color: rgba(37, 99, 235, 0.66);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-section {
+        border-color: rgba(203, 213, 225, 0.94);
+        background:
+          linear-gradient(180deg, rgba(248, 250, 252, 0.92) 0%, #ffffff 38%),
+          #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-section::before {
+        background: rgba(71, 85, 105, 0.48);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-groups {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+        gap: 16px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group {
+        padding: 13px;
+        border: 1px solid rgba(226, 232, 240, 0.94);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.78);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group[data-warehouse-action-center-group='work_entry'] {
+        background: linear-gradient(180deg, rgba(240, 253, 250, 0.48) 0%, rgba(255, 255, 255, 0.9) 46%);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group[data-warehouse-action-center-group='manager_decisions'] {
+        background: linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(255, 255, 255, 0.92) 46%);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card {
+        min-height: 94px;
+        border-left-color: rgba(20, 184, 166, 0.42);
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.026);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group[data-warehouse-action-center-group='manager_decisions'] .warehouse-action-center-card.is-live {
+        border-left-color: rgba(37, 99, 235, 0.42);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-planned {
+        border-style: dashed;
+        border-left-style: solid;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        opacity: 0.9;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-planned:hover {
+        transform: none;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.026);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.is-planned .sales-console-queue-count {
+        color: #64748b;
+        font-size: 13px;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-card-action {
         display: none;
@@ -7345,18 +7478,6 @@
         </section>
         ${renderCockpitStart(payload, kpis)}
         ${renderCockpitActionCenter(payload.action_center || {})}
-        <section class="sales-console-card sales-console-section warehouse-cockpit-route-section" data-warehouse-cockpit-work>
-          <div class="sales-console-section-head warehouse-cockpit-section-head">
-            <h2 class="sales-console-section-title warehouse-cockpit-section-title">Work To Do</h2>
-            <div class="sales-console-section-note warehouse-cockpit-section-note">Supplier-side and customer-side queues</div>
-          </div>
-          <div class="warehouse-cockpit-work-grid">
-            ${renderInboundOverviewPanel(payload.inbound || {})}
-            ${renderOutboundOverviewPanel(payload.outbound || {})}
-          </div>
-        </section>
-        ${renderCockpitRiskSection()}
-        ${renderCockpitMovementSection()}
       </div>
     `);
     $root.find("[data-warehouse-refresh]").on("click", (event) => {

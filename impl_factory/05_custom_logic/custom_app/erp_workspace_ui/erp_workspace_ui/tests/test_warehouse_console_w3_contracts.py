@@ -829,6 +829,14 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         }
         routed_cards = []
         planned_cards = []
+        expected_button_labels = {
+            "arrival_checks": "Open inbound",
+            "picking_work": "Open picking",
+            "arrival_review": "Review arrivals",
+            "picking_blockers": "Review blockers",
+            "exception_resolution": "Review exceptions",
+            "movement_visibility": "Review transfers",
+        }
         for section in action_center["sections"]:
             self.assertIn("cards", section)
             for card in section["cards"]:
@@ -836,7 +844,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
                     routed_cards.append(card)
                     self.assertEqual(card["route"], "warehouse-console-worklist")
                     self.assertIn(card["route_part"], allowed_route_parts)
-                    self.assertEqual(card["button_label"], "Open queue")
+                    self.assertEqual(card["button_label"], expected_button_labels[card["key"]])
                 else:
                     planned_cards.append(card)
                     self.assertEqual(card["state"], "planned")

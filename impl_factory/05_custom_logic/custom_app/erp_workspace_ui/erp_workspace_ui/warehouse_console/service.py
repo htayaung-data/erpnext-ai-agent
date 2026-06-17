@@ -599,6 +599,7 @@ def _build_action_center(
 						inbound_attention,
 						"Supplier arrivals and count review start from the inbound queue.",
 						route_part="inbound-receiving",
+						button_label="Open inbound",
 					),
 					_action_center_card(
 						"picking_work",
@@ -606,6 +607,7 @@ def _build_action_center(
 						outbound_attention,
 						"Customer demand and stock blockers start from the outbound queue.",
 						route_part="outbound-picking",
+						button_label="Open picking",
 					),
 					_action_center_card(
 						"return_intake",
@@ -634,6 +636,7 @@ def _build_action_center(
 						inbound_attention,
 						"Review supplier-side arrivals before any separate receiving document step.",
 						route_part="inbound-receiving",
+						button_label="Review arrivals",
 					),
 					_action_center_card(
 						"picking_blockers",
@@ -641,6 +644,7 @@ def _build_action_center(
 						outbound_attention,
 						"Review outbound demand and shortage blockers before release design.",
 						route_part="outbound-picking",
+						button_label="Review blockers",
 					),
 					_action_center_card(
 						"exception_resolution",
@@ -648,13 +652,15 @@ def _build_action_center(
 						exception_attention,
 						"Shortage and posture issues stay inside custom Warehouse review routes.",
 						route_part="stock-exceptions",
+						button_label="Review exceptions",
 					),
 					_action_center_card(
 						"movement_visibility",
-						"Movement visibility",
+						"Transfer visibility",
 						transfer_attention,
 						"Review posted movement and transfer posture before action workflow design.",
 						route_part="transfer-visibility",
+						button_label="Review transfers",
 					),
 					_action_center_card(
 						"return_decisions",
@@ -687,6 +693,7 @@ def _action_center_card(
 	note: str,
 	route_part: str | None = None,
 	state_value: str = "live",
+	button_label: str | None = None,
 ) -> dict[str, object]:
 	card: dict[str, object] = {
 		"key": key,
@@ -700,7 +707,7 @@ def _action_center_card(
 		card.update({
 			"route": "warehouse-console-worklist",
 			"route_part": route_part,
-			"button_label": "Open queue",
+			"button_label": button_label or "Open queue",
 		})
 	return card
 
