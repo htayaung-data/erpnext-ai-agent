@@ -202,6 +202,31 @@ RECEIVING_DETAIL_HISTORY_ITEM_LIMIT = 120
 RECEIVING_DETAIL_HISTORY_LIMIT = 8
 PICKING_DETAIL_LINE_LIMIT = 80
 
+RECEIVING_TASK_DOCTYPE = "Warehouse Receiving Task"
+RECEIVING_TASK_LINE_DOCTYPE = "Warehouse Receiving Task Line"
+RECEIVING_TASK_EVENT_DOCTYPE = "Warehouse Receiving Task Event"
+RECEIVING_TASK_POLICY_VERSION = "W15C3-draft-save-v1"
+RECEIVING_TASK_ACTIVE_STATUSES = ("Draft", "In Progress")
+RECEIVING_TASK_MAX_LINES = 80
+RECEIVING_TASK_MAX_NOTE_LENGTH = 500
+RECEIVING_TASK_MAX_EVIDENCE_LENGTH = 180
+RECEIVING_TASK_ALLOWED_DISCREPANCY_REASONS = frozenset({
+	"",
+	"short",
+	"over",
+	"damaged",
+	"wrong_item",
+	"quarantine",
+	"supplier_paperwork_mismatch",
+})
+RECEIVING_TASK_EVIDENCE_REQUIRED_REASONS = frozenset({
+	"over",
+	"damaged",
+	"wrong_item",
+	"quarantine",
+	"supplier_paperwork_mismatch",
+})
+
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
 QUICK_FIND_MAX_LIMIT = 18
@@ -1132,6 +1157,357 @@ def get_warehouse_receiving_review(purchase_order: str | None = None) -> dict[st
 		}
 	)
 	return payload
+
+
+@frappe.whitelist()
+def save_warehouse_receiving_task_draft(
+	purchase_order: str | None = None,
+	target_warehouse: str | None = None,
+	lines: str | list[dict[str, object]] | None = None,
+	note: str | None = None,
+	evidence_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Save an internal Warehouse receiving count draft.
+
+	W15C3 intentionally writes only the custom Warehouse Receiving Task records.
+	It does not create, draft, submit, or mutate ERPNext stock documents.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	po_name = cstr(purchase_order).strip()
+	warehouse = cstr(target_warehouse).strip()
+	server_request_id = _bounded_text(request_id, 120)
+	if not has_warehouse_access(context):
+		frappe.throw(_("Warehouse access required"), frappe.PermissionError)
+	if not po_name:
+		frappe.throw(_("Purchase Order is required"), ValueError)
+	if not _can_read("Purchase Order"):
+		frappe.throw(_("Purchase Order is not available for receiving review"), frappe.PermissionError)
+
+	order_record = _receiving_task_purchase_order(po_name)
+	if not order_record:
+		frappe.throw(_("This Purchase Order is not available for Warehouse receiving."), ValueError)
+	source_lines = _receiving_task_source_lines(po_name)
+	if not source_lines:
+		frappe.throw(_("No receiving lines are visible for this Purchase Order."), ValueError)
+	if not warehouse:
+		warehouse = _receiving_task_default_warehouse(source_lines, order_record)
+	if not warehouse:
+		frappe.throw(_("Target warehouse is required for receiving draft."), ValueError)
+	if warehouse not in {cstr(line.get("target_warehouse")).strip() for line in source_lines if cstr(line.get("target_warehouse")).strip()}:
+		frappe.throw(_("Target warehouse is not part of the visible Purchase Order lines."), ValueError)
+
+	task_lines = _normalize_receiving_task_lines(lines, source_lines, warehouse, _bounded_text(evidence_reference, RECEIVING_TASK_MAX_EVIDENCE_LENGTH))
+	task_doc = _get_or_create_receiving_task(order_record, warehouse, _bounded_text(note, RECEIVING_TASK_MAX_NOTE_LENGTH), server_request_id)
+	if server_request_id and cstr(getattr(task_doc, "last_request_id", "")).strip() == server_request_id and list(getattr(task_doc, "lines", []) or []):
+		return _receiving_task_saved_payload(context, task_doc, idempotent=True)
+
+	_apply_receiving_task_draft(task_doc, order_record, warehouse, task_lines, _bounded_text(note, RECEIVING_TASK_MAX_NOTE_LENGTH), _bounded_text(evidence_reference, RECEIVING_TASK_MAX_EVIDENCE_LENGTH), server_request_id)
+	return _receiving_task_saved_payload(context, task_doc, idempotent=False)
+
+
+def _receiving_task_purchase_order(po_name: str) -> dict[str, object] | None:
+	records = _safe_get_list(
+		"Purchase Order",
+		fields=_available_fields("Purchase Order", PURCHASE_ORDER_INBOUND_FIELDS),
+		filters=_purchase_order_receiving_review_filters(po_name),
+		order_by="modified desc",
+		limit=1,
+	)
+	return records[0] if records else None
+
+
+def _receiving_task_source_lines(po_name: str) -> list[dict[str, object]]:
+	rows = []
+	if _can_read("Purchase Order Item"):
+		rows = _safe_get_all(
+			"Purchase Order Item",
+			fields=_available_fields("Purchase Order Item", PURCHASE_ORDER_ITEM_DETAIL_FIELDS),
+			filters={"parent": po_name},
+			order_by="schedule_date asc, expected_delivery_date asc, idx asc",
+			limit=RECEIVING_TASK_MAX_LINES,
+		)
+	if not rows:
+		rows = _receiving_review_lines_from_parent(po_name)
+	source: list[dict[str, object]] = []
+	for row in rows[:RECEIVING_TASK_MAX_LINES]:
+		ordered_qty = flt(row.get("qty"))
+		received_qty = flt(row.get("received_qty"))
+		source.append(
+			{
+				"purchase_order_item": cstr(row.get("name")).strip(),
+				"item_code": cstr(row.get("item_code")).strip(),
+				"item_name": cstr(row.get("item_name")).strip(),
+				"uom": cstr(row.get("stock_uom") or row.get("uom") or "").strip(),
+				"expected_qty": max(ordered_qty - received_qty, 0),
+				"target_warehouse": cstr(row.get("warehouse") or "").strip(),
+			}
+		)
+	return [line for line in source if line.get("item_code")]
+
+
+def _receiving_task_default_warehouse(source_lines: list[dict[str, object]], order_record: dict[str, object]) -> str:
+	warehouses = {cstr(line.get("target_warehouse")).strip() for line in source_lines if cstr(line.get("target_warehouse")).strip()}
+	if len(warehouses) == 1:
+		return next(iter(warehouses))
+	return cstr(order_record.get("set_warehouse")).strip() if cstr(order_record.get("set_warehouse")).strip() in warehouses else ""
+
+
+def _normalize_receiving_task_lines(
+	lines: str | list[dict[str, object]] | None,
+	source_lines: list[dict[str, object]],
+	target_warehouse: str,
+	task_evidence_reference: str,
+) -> list[dict[str, object]]:
+	raw_lines = _decode_receiving_task_lines(lines)
+	if not raw_lines:
+		frappe.throw(_("At least one receiving line is required."), ValueError)
+	source_by_item = {
+		(cstr(line.get("purchase_order_item")).strip(), cstr(line.get("item_code")).strip(), cstr(line.get("target_warehouse")).strip()): line
+		for line in source_lines
+	}
+	source_by_item_code = {
+		(cstr(line.get("item_code")).strip(), cstr(line.get("target_warehouse")).strip()): line
+		for line in source_lines
+	}
+	normalized: list[dict[str, object]] = []
+	seen: set[tuple[str, str, str]] = set()
+	for raw in raw_lines[:RECEIVING_TASK_MAX_LINES]:
+		if not isinstance(raw, dict):
+			frappe.throw(_("Receiving line payload is invalid."), ValueError)
+		source = _match_receiving_task_source_line(raw, source_by_item, source_by_item_code, target_warehouse)
+		key = (
+			cstr(source.get("purchase_order_item")).strip(),
+			cstr(source.get("item_code")).strip(),
+			cstr(source.get("target_warehouse")).strip(),
+		)
+		if key in seen:
+			frappe.throw(_("Duplicate receiving line in draft."), ValueError)
+		seen.add(key)
+		line = _normalize_receiving_task_line(raw, source, task_evidence_reference)
+		normalized.append(line)
+	return normalized
+
+
+def _decode_receiving_task_lines(lines: str | list[dict[str, object]] | None) -> list[dict[str, object]]:
+	if isinstance(lines, str):
+		try:
+			decoded = json.loads(lines)
+		except Exception:
+			frappe.throw(_("Receiving line payload is invalid JSON."), ValueError)
+		if isinstance(decoded, dict):
+			decoded = decoded.get("lines")
+		return list(decoded or []) if isinstance(decoded, list) else []
+	return list(lines or []) if isinstance(lines, list) else []
+
+
+def _match_receiving_task_source_line(
+	raw: dict[str, object],
+	source_by_item: dict[tuple[str, str, str], dict[str, object]],
+	source_by_item_code: dict[tuple[str, str], dict[str, object]],
+	target_warehouse: str,
+) -> dict[str, object]:
+	purchase_order_item = cstr(raw.get("purchase_order_item")).strip()
+	item_code = cstr(raw.get("item_code")).strip()
+	line_warehouse = cstr(raw.get("target_warehouse") or target_warehouse).strip()
+	source = source_by_item.get((purchase_order_item, item_code, line_warehouse)) if purchase_order_item else None
+	if not source and item_code:
+		source = source_by_item_code.get((item_code, line_warehouse))
+	if not source:
+		frappe.throw(_("Receiving line does not belong to the selected Purchase Order and warehouse."), ValueError)
+	return source
+
+
+def _normalize_receiving_task_line(raw: dict[str, object], source: dict[str, object], task_evidence_reference: str) -> dict[str, object]:
+	expected_qty = flt(source.get("expected_qty"))
+	counted_qty = _non_negative_qty(raw.get("counted_qty"), "Counted quantity")
+	accepted_qty = _non_negative_qty(raw.get("accepted_qty"), "Accepted quantity")
+	damaged_qty = _non_negative_qty(raw.get("damaged_qty"), "Damaged quantity")
+	over_qty = _non_negative_qty(raw.get("over_qty"), "Over quantity")
+	quarantine_qty = _non_negative_qty(raw.get("quarantine_qty"), "Quarantine quantity")
+	short_qty = _non_negative_qty(raw.get("short_qty"), "Short quantity") if raw.get("short_qty") not in (None, "") else max(expected_qty - counted_qty, 0)
+	if accepted_qty + damaged_qty + quarantine_qty > counted_qty + over_qty:
+		frappe.throw(_("Accepted, damaged, and quarantine quantities cannot exceed counted quantity plus overage."), ValueError)
+	reason = cstr(raw.get("discrepancy_reason")).strip().lower()
+	if reason not in RECEIVING_TASK_ALLOWED_DISCREPANCY_REASONS:
+		frappe.throw(_("Discrepancy reason is not allowed."), ValueError)
+	evidence_reference = _bounded_text(raw.get("evidence_reference") or task_evidence_reference, RECEIVING_TASK_MAX_EVIDENCE_LENGTH)
+	if _receiving_task_line_requires_evidence(reason, damaged_qty, over_qty, quarantine_qty) and not evidence_reference:
+		frappe.throw(_("Evidence reference is required for this receiving discrepancy."), ValueError)
+	line_status = "Needs Review" if reason or damaged_qty or over_qty or quarantine_qty or short_qty else "Draft"
+	return {
+		"purchase_order_item": cstr(source.get("purchase_order_item")).strip(),
+		"item_code": cstr(source.get("item_code")).strip(),
+		"item_name": cstr(source.get("item_name")).strip(),
+		"uom": cstr(source.get("uom")).strip(),
+		"expected_qty": expected_qty,
+		"counted_qty": counted_qty,
+		"accepted_qty": accepted_qty,
+		"damaged_qty": damaged_qty,
+		"short_qty": short_qty,
+		"over_qty": over_qty,
+		"quarantine_qty": quarantine_qty,
+		"discrepancy_reason": reason,
+		"note": _bounded_text(raw.get("note"), RECEIVING_TASK_MAX_NOTE_LENGTH),
+		"evidence_reference": evidence_reference,
+		"target_warehouse": cstr(source.get("target_warehouse")).strip(),
+		"line_status": line_status,
+	}
+
+
+def _receiving_task_line_requires_evidence(reason: str, damaged_qty: float, over_qty: float, quarantine_qty: float) -> bool:
+	return bool(reason in RECEIVING_TASK_EVIDENCE_REQUIRED_REASONS or damaged_qty > 0 or over_qty > 0 or quarantine_qty > 0)
+
+
+def _non_negative_qty(value: object, label: str) -> float:
+	qty = flt(value)
+	if qty < 0:
+		frappe.throw(_("{0} cannot be negative.").format(label), ValueError)
+	return qty
+
+
+def _bounded_text(value: object, limit: int) -> str:
+	text = cstr(value).strip()
+	return text[:limit]
+
+
+def _get_or_create_receiving_task(
+	order_record: dict[str, object],
+	target_warehouse: str,
+	note: str,
+	request_id: str,
+):
+	task_name = _active_receiving_task_name(cstr(order_record.get("name")).strip(), target_warehouse)
+	if task_name:
+		return frappe.get_doc(RECEIVING_TASK_DOCTYPE, task_name)
+	task_doc = frappe.get_doc({"doctype": RECEIVING_TASK_DOCTYPE})
+	task_doc.purchase_order = cstr(order_record.get("name")).strip()
+	task_doc.supplier = cstr(order_record.get("supplier_name") or order_record.get("supplier")).strip()
+	task_doc.target_warehouse = target_warehouse
+	task_doc.status = "In Progress"
+	task_doc.assigned_user = cstr(getattr(frappe.session, "user", "")).strip()
+	task_doc.notes = note
+	task_doc.source_route = "warehouse-console-receiving"
+	task_doc.policy_version = RECEIVING_TASK_POLICY_VERSION
+	task_doc.last_request_id = request_id
+	return task_doc
+
+
+def _active_receiving_task_name(purchase_order: str, target_warehouse: str) -> str:
+	try:
+		rows = frappe.get_all(
+			RECEIVING_TASK_DOCTYPE,
+			fields=["name"],
+			filters={
+				"purchase_order": purchase_order,
+				"target_warehouse": target_warehouse,
+				"status": ["in", list(RECEIVING_TASK_ACTIVE_STATUSES)],
+			},
+			limit_page_length=1,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_receiving_task_draft(
+	task_doc,
+	order_record: dict[str, object],
+	target_warehouse: str,
+	task_lines: list[dict[str, object]],
+	note: str,
+	evidence_reference: str,
+	request_id: str,
+) -> None:
+	previous_status = cstr(getattr(task_doc, "status", "")).strip() or "Draft"
+	task_doc.status = "In Progress"
+	task_doc.supplier = cstr(order_record.get("supplier_name") or order_record.get("supplier")).strip()
+	task_doc.target_warehouse = target_warehouse
+	task_doc.assigned_user = cstr(getattr(task_doc, "assigned_user", "") or getattr(frappe.session, "user", "")).strip()
+	task_doc.notes = note
+	task_doc.evidence_reference = evidence_reference
+	task_doc.source_route = "warehouse-console-receiving"
+	task_doc.policy_version = RECEIVING_TASK_POLICY_VERSION
+	task_doc.last_request_id = request_id
+	task_doc.line_count = len(task_lines)
+	task_doc.total_expected_qty = sum(flt(line.get("expected_qty")) for line in task_lines)
+	_set_child_table(task_doc, "lines", task_lines)
+	_append_child(task_doc, "events", {
+		"event_type": "saved_count_draft",
+		"actor": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": str(now_datetime()),
+		"previous_status": previous_status,
+		"next_status": "In Progress",
+		"note": "Count draft saved.",
+		"server_request_id": request_id,
+	})
+	if cstr(getattr(task_doc, "name", "")).strip():
+		task_doc.save()
+	else:
+		task_doc.insert()
+
+
+def _set_child_table(doc, fieldname: str, rows: list[dict[str, object]]) -> None:
+	if hasattr(doc, "set"):
+		doc.set(fieldname, [])
+	else:
+		setattr(doc, fieldname, [])
+	for row in rows:
+		_append_child(doc, fieldname, row)
+
+
+def _append_child(doc, fieldname: str, row: dict[str, object]) -> None:
+	if hasattr(doc, "append"):
+		doc.append(fieldname, row)
+		return
+	values = list(getattr(doc, fieldname, []) or [])
+	values.append(dict(row))
+	setattr(doc, fieldname, values)
+
+
+def _receiving_task_saved_payload(context: dict[str, object], task_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_receiving_task_line_payload(line) for line in list(getattr(task_doc, "lines", []) or [])]
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Receiving Task Draft", "key": "receiving_task_draft", "purchase_order": cstr(getattr(task_doc, "purchase_order", "")).strip()},
+		"task": {
+			"task_id": cstr(getattr(task_doc, "name", "")).strip(),
+			"purchase_order": cstr(getattr(task_doc, "purchase_order", "")).strip(),
+			"target_warehouse": cstr(getattr(task_doc, "target_warehouse", "")).strip(),
+			"status": cstr(getattr(task_doc, "status", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"stock_effect": {
+			"stock_posted": False,
+			"purchase_receipt_created": False,
+			"purchase_receipt_submitted": False,
+		},
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _receiving_task_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"purchase_order_item": cstr(getter("purchase_order_item")).strip(),
+		"item_code": cstr(getter("item_code")).strip(),
+		"target_warehouse": cstr(getter("target_warehouse")).strip(),
+		"expected_qty": _number_text(getter("expected_qty")),
+		"counted_qty": _number_text(getter("counted_qty")),
+		"accepted_qty": _number_text(getter("accepted_qty")),
+		"damaged_qty": _number_text(getter("damaged_qty")),
+		"short_qty": _number_text(getter("short_qty")),
+		"over_qty": _number_text(getter("over_qty")),
+		"quarantine_qty": _number_text(getter("quarantine_qty")),
+		"line_status": cstr(getter("line_status")).strip(),
+	}
 
 
 def _purchase_order_receiving_review_filters(po_name: str) -> list[list[object]]:

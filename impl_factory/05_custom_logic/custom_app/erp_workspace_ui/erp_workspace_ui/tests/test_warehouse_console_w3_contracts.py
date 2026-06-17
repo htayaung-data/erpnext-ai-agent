@@ -25,6 +25,7 @@ COUNT_CALLS = []
 LIST_CALLS = []
 GET_ALL_CALLS = []
 GET_DOC_CALLS = []
+RECEIVING_TASK_DOCS = {}
 
 PO_ROWS = [
     {
@@ -451,6 +452,54 @@ def _get_meta(doctype):
             "stock_uom",
             "uom",
         },
+        "Warehouse Receiving Task": {
+            "purchase_order",
+            "supplier",
+            "target_warehouse",
+            "status",
+            "assigned_user",
+            "manager",
+            "started_at",
+            "submitted_at",
+            "reviewed_at",
+            "decision",
+            "notes",
+            "evidence_reference",
+            "source_route",
+            "policy_version",
+            "last_request_id",
+            "line_count",
+            "total_expected_qty",
+            "lines",
+            "events",
+        },
+        "Warehouse Receiving Task Line": {
+            "purchase_order_item",
+            "item_code",
+            "item_name",
+            "uom",
+            "expected_qty",
+            "counted_qty",
+            "accepted_qty",
+            "damaged_qty",
+            "short_qty",
+            "over_qty",
+            "quarantine_qty",
+            "discrepancy_reason",
+            "note",
+            "evidence_reference",
+            "target_warehouse",
+            "line_status",
+        },
+        "Warehouse Receiving Task Event": {
+            "event_type",
+            "actor",
+            "event_at",
+            "previous_status",
+            "next_status",
+            "note",
+            "server_request_id",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -547,6 +596,16 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
 
 def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_length=None, **kwargs):
     GET_ALL_CALLS.append({"doctype": doctype, "fields": fields, "filters": filters, "limit": limit_page_length})
+    if doctype == "Warehouse Receiving Task":
+        rows = list(RECEIVING_TASK_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -599,8 +658,54 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
     return []
 
 
-def _get_doc(doctype, name, *args, **kwargs):
+class _FakeWorkflowDoc:
+    def __init__(self, values=None):
+        values = dict(values or {})
+        values.pop("doctype", None)
+        self.name = values.pop("name", "")
+        self.lines = list(values.pop("lines", []) or [])
+        self.events = list(values.pop("events", []) or [])
+        for key, value in values.items():
+            setattr(self, key, value)
+
+    def get(self, fieldname, default=None):
+        return getattr(self, fieldname, default)
+
+    def set(self, fieldname, value):
+        setattr(self, fieldname, value)
+
+    def append(self, fieldname, value):
+        rows = list(getattr(self, fieldname, []) or [])
+        rows.append(dict(value))
+        setattr(self, fieldname, rows)
+        return rows[-1]
+
+    def insert(self):
+        if not self.name:
+            self.name = f"WRT-{len(RECEIVING_TASK_DOCS) + 1:05d}"
+        RECEIVING_TASK_DOCS[self.name] = self
+        return self
+
+    def save(self):
+        if not self.name:
+            self.name = f"WRT-{len(RECEIVING_TASK_DOCS) + 1:05d}"
+        RECEIVING_TASK_DOCS[self.name] = self
+        return self
+
+    def check_permission(self, ptype=None):
+        return True
+
+
+def _get_doc(doctype, name=None, *args, **kwargs):
+    if isinstance(doctype, dict):
+        if doctype.get("doctype") == "Warehouse Receiving Task":
+            return _FakeWorkflowDoc(doctype)
+        raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
+    if doctype == "Warehouse Receiving Task":
+        if name not in RECEIVING_TASK_DOCS:
+            raise Exception("Missing Warehouse Receiving Task")
+        return RECEIVING_TASK_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -685,6 +790,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         LIST_CALLS.clear()
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
+        RECEIVING_TASK_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -1493,6 +1599,116 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("/app/", payload_text)
         self.assertTrue(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
         self.assertTrue(any(call["doctype"] == "Purchase Order Item" for call in GET_ALL_CALLS))
+
+    def test_w15c3_save_receiving_task_draft_creates_internal_task_without_stock_document(self):
+        payload = service.save_warehouse_receiving_task_draft(
+            purchase_order="PO-PARTIAL",
+            target_warehouse="Main - M",
+            lines=[
+                {
+                    "item_code": "ITEM-003",
+                    "target_warehouse": "Main - M",
+                    "counted_qty": 5,
+                    "accepted_qty": 5,
+                }
+            ],
+            note="Counted at receiving dock.",
+            request_id="req-001",
+        )
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "receiving_task_draft")
+        self.assertEqual(payload["task"]["purchase_order"], "PO-PARTIAL")
+        self.assertEqual(payload["task"]["target_warehouse"], "Main - M")
+        self.assertEqual(payload["task"]["status"], "In Progress")
+        self.assertEqual(payload["task"]["line_count"], 1)
+        self.assertFalse(payload["stock_effect"]["stock_posted"])
+        self.assertFalse(payload["stock_effect"]["purchase_receipt_created"])
+        self.assertFalse(payload["stock_effect"]["purchase_receipt_submitted"])
+        self.assertEqual(len(RECEIVING_TASK_DOCS), 1)
+        task = next(iter(RECEIVING_TASK_DOCS.values()))
+        self.assertEqual(task.policy_version, service.RECEIVING_TASK_POLICY_VERSION)
+        self.assertEqual(task.last_request_id, "req-001")
+        self.assertEqual(len(task.lines), 1)
+        self.assertEqual(task.lines[0]["item_code"], "ITEM-003")
+        self.assertEqual(task.lines[0]["accepted_qty"], 5.0)
+        self.assertEqual(len(task.events), 1)
+        self.assertEqual(task.events[0]["event_type"], "saved_count_draft")
+        payload_text = str(payload).lower()
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertFalse(any(call["doctype"] == "Purchase Receipt" for call in GET_DOC_CALLS))
+
+    def test_w15c3_save_receiving_task_draft_is_idempotent_by_request_id(self):
+        first = service.save_warehouse_receiving_task_draft(
+            purchase_order="PO-PARTIAL",
+            target_warehouse="Main - M",
+            lines=[{"item_code": "ITEM-003", "target_warehouse": "Main - M", "counted_qty": 3, "accepted_qty": 3}],
+            request_id="same-req",
+        )
+        second = service.save_warehouse_receiving_task_draft(
+            purchase_order="PO-PARTIAL",
+            target_warehouse="Main - M",
+            lines=[{"item_code": "ITEM-003", "target_warehouse": "Main - M", "counted_qty": 3, "accepted_qty": 3}],
+            request_id="same-req",
+        )
+
+        self.assertEqual(first["task"]["task_id"], second["task"]["task_id"])
+        self.assertFalse(first["task"]["idempotent"])
+        self.assertTrue(second["task"]["idempotent"])
+        task = next(iter(RECEIVING_TASK_DOCS.values()))
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15c3_receiving_task_requires_evidence_for_damage_overage_and_quarantine(self):
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_task_draft(
+                purchase_order="PO-PARTIAL",
+                target_warehouse="Main - M",
+                lines=[
+                    {
+                        "item_code": "ITEM-003",
+                        "target_warehouse": "Main - M",
+                        "counted_qty": 7,
+                        "accepted_qty": 5,
+                        "damaged_qty": 2,
+                        "discrepancy_reason": "damaged",
+                    }
+                ],
+                request_id="needs-evidence",
+            )
+        self.assertEqual(RECEIVING_TASK_DOCS, {})
+
+        payload = service.save_warehouse_receiving_task_draft(
+            purchase_order="PO-PARTIAL",
+            target_warehouse="Main - M",
+            lines=[
+                {
+                    "item_code": "ITEM-003",
+                    "target_warehouse": "Main - M",
+                    "counted_qty": 7,
+                    "accepted_qty": 5,
+                    "damaged_qty": 2,
+                    "discrepancy_reason": "damaged",
+                    "evidence_reference": "Dock photo DR-1",
+                }
+            ],
+            request_id="has-evidence",
+        )
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        task = next(iter(RECEIVING_TASK_DOCS.values()))
+        self.assertEqual(task.lines[0]["evidence_reference"], "Dock photo DR-1")
+        self.assertEqual(task.lines[0]["line_status"], "Needs Review")
+
+    def test_w15c3_receiving_task_rejects_lines_outside_purchase_order_warehouse(self):
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_task_draft(
+                purchase_order="PO-PARTIAL",
+                target_warehouse="Receiving - M",
+                lines=[{"item_code": "ITEM-003", "target_warehouse": "Receiving - M", "counted_qty": 1}],
+                request_id="wrong-warehouse",
+            )
+        self.assertEqual(RECEIVING_TASK_DOCS, {})
 
     def test_picking_review_payload_is_read_only_allowlisted_and_readiness_visible(self):
         payload = service.get_warehouse_picking_review("SO-REVIEW")

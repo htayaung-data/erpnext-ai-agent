@@ -1,0 +1,147 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-06-17 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "purchase_order_item",
+  "item_code",
+  "item_name",
+  "uom",
+  "expected_qty",
+  "counted_qty",
+  "accepted_qty",
+  "damaged_qty",
+  "short_qty",
+  "over_qty",
+  "quarantine_qty",
+  "discrepancy_reason",
+  "note",
+  "evidence_reference",
+  "target_warehouse",
+  "line_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "purchase_order_item",
+   "fieldtype": "Data",
+   "label": "Purchase Order Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Data",
+   "label": "UOM",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "expected_qty",
+   "fieldtype": "Float",
+   "label": "Expected Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "counted_qty",
+   "fieldtype": "Float",
+   "label": "Counted Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "accepted_qty",
+   "fieldtype": "Float",
+   "label": "Accepted Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "damaged_qty",
+   "fieldtype": "Float",
+   "label": "Damaged Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "short_qty",
+   "fieldtype": "Float",
+   "label": "Short Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "over_qty",
+   "fieldtype": "Float",
+   "label": "Over Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "quarantine_qty",
+   "fieldtype": "Float",
+   "label": "Quarantine Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discrepancy_reason",
+   "fieldtype": "Data",
+   "label": "Discrepancy Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "label": "Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "evidence_reference",
+   "fieldtype": "Small Text",
+   "label": "Evidence Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_status",
+   "fieldtype": "Data",
+   "label": "Line Status",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Receiving Task Line",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

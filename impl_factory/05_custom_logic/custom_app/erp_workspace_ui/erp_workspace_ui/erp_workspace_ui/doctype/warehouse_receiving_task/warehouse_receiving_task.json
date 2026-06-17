@@ -1,0 +1,201 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-17 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "purchase_order",
+  "supplier",
+  "target_warehouse",
+  "status",
+  "assigned_user",
+  "manager",
+  "started_at",
+  "submitted_at",
+  "reviewed_at",
+  "decision",
+  "notes",
+  "evidence_reference",
+  "source_route",
+  "policy_version",
+  "last_request_id",
+  "line_count",
+  "total_expected_qty",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "purchase_order",
+   "fieldtype": "Link",
+   "label": "Purchase Order",
+   "options": "Purchase Order",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Data",
+   "label": "Supplier",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Warehouse",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "In Progress",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nIn Progress\nSubmitted For Review\nRecount Requested\nApproved Clean\nApproved With Discrepancy\nQuarantine Review\nEscalated To Procurement\nDraft Prepared\nClosed\nCancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "assigned_user",
+   "fieldtype": "Data",
+   "label": "Assigned User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manager",
+   "fieldtype": "Data",
+   "label": "Manager",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitted_at",
+   "fieldtype": "Datetime",
+   "label": "Submitted At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_at",
+   "fieldtype": "Datetime",
+   "label": "Reviewed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "decision",
+   "fieldtype": "Data",
+   "label": "Decision",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "evidence_reference",
+   "fieldtype": "Small Text",
+   "label": "Evidence Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_route",
+   "fieldtype": "Data",
+   "label": "Source Route",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_request_id",
+   "fieldtype": "Data",
+   "label": "Last Request Id",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_expected_qty",
+   "fieldtype": "Float",
+   "label": "Total Expected Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Receiving Task Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Receiving Task Event",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-06-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Receiving Task",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Warehouse User",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Warehouse Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Stock User",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Stock Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
