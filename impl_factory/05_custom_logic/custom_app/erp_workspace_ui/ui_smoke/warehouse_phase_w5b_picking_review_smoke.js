@@ -427,6 +427,13 @@ async function waitForPickingReady(page, diagnostics, label) {
           && shell.querySelectorAll("[data-warehouse-picking-command-fact]").length >= 4
           && shell.querySelectorAll("[data-warehouse-picking-readiness-card]").length >= 4
           && shell.querySelector("[data-warehouse-picking-guardrail]")
+          && shell.querySelector("[data-warehouse-picking-workflow-shell]")
+          && shell.querySelectorAll("[data-warehouse-picking-workflow-status]").length >= 6
+          && shell.querySelectorAll("[data-warehouse-picking-planned-control]").length >= 3
+          && shell.querySelectorAll("[data-warehouse-picking-evidence-row]").length >= 1
+          && shell.querySelectorAll("[data-warehouse-picking-exception-category]").length >= 6
+          && shell.querySelectorAll("[data-warehouse-picking-manager-decision]").length >= 6
+          && shell.querySelector("[data-warehouse-picking-delivery-policy]")
           && shell.querySelectorAll("[data-warehouse-picking-line-card]").length >= 1
           && shell.querySelectorAll("[data-warehouse-picking-line-fact]").length >= 5
         )));
@@ -501,11 +508,20 @@ async function snapshot(page) {
       pickingCommandFactCount: Array.from(document.querySelectorAll("[data-warehouse-picking-command-fact]")).filter(visible).length,
       pickingReadinessCardCount: Array.from(document.querySelectorAll("[data-warehouse-picking-readiness-card]")).filter(visible).length,
       pickingGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-picking-guardrail]")).filter(visible).length,
+      pickingWorkflowShellCount: Array.from(document.querySelectorAll("[data-warehouse-picking-workflow-shell]")).filter(visible).length,
+      pickingWorkflowStatusCount: Array.from(document.querySelectorAll("[data-warehouse-picking-workflow-status]")).filter(visible).length,
+      pickingWorkflowControlCount: Array.from(document.querySelectorAll("[data-warehouse-picking-planned-control]")).filter(visible).length,
+      pickingWorkflowEvidenceRowCount: Array.from(document.querySelectorAll("[data-warehouse-picking-evidence-row]")).filter(visible).length,
+      pickingWorkflowExceptionCount: Array.from(document.querySelectorAll("[data-warehouse-picking-exception-category]")).filter(visible).length,
+      pickingWorkflowManagerDecisionCount: Array.from(document.querySelectorAll("[data-warehouse-picking-manager-decision]")).filter(visible).length,
+      pickingWorkflowDeliveryPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-picking-delivery-policy]")).filter(visible).length,
+      pickingWorkflowActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-picking-workflow-shell] button, [data-warehouse-picking-workflow-shell] a, [data-warehouse-picking-workflow-shell] [role=button]")).filter(visible).length,
       pickingLineCardCount: Array.from(document.querySelectorAll("[data-warehouse-picking-line-card]")).filter(visible).length,
       pickingLineFactCount: Array.from(document.querySelectorAll("[data-warehouse-picking-line-fact]")).filter(visible).length,
       pickingDetailHeadCount: Array.from(document.querySelectorAll("[data-warehouse-picking-detail-head]")).filter(visible).length,
       tabCount: Array.from(document.querySelectorAll("[data-warehouse-picking-tab]")).filter(visible).length,
       detailButtonCount: Array.from(document.querySelectorAll("[data-warehouse-row-open-picking-detail]")).filter(visible).length,
+      contentSearchVisible: Array.from(shellRoot.querySelectorAll("[data-erpw-sales-search-open], input[type='search'], [placeholder*='Search'], [aria-label*='Search']")).some(visible),
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       pageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
@@ -522,7 +538,7 @@ function assertCleanWarehouseUi(state, context) {
   assert(!state.pageHeadCount || state.pageHeadCount <= 1, "Frappe page chrome must not duplicate", { context, state });
   assert(state.sidebarCount <= 1, "Warehouse sidebar count must not duplicate", { context, state });
   assert(state.horizontalOverflow <= 2, "Warehouse page has horizontal overflow", { context, state });
-  assert(!state.searchUtilityVisible, "Warehouse search entry must stay inactive in W5B", { context, state });
+  assert(!state.contentSearchVisible, "Warehouse Picking Review content must not expose page-local search", { context, state });
   assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Forbidden stock or picking action control is visible", { context, state });
   assert(!FORBIDDEN_COPY_RE.test(state.text), "Developer or governance copy is visible", { context, state });
   assert(!VALUATION_RE.test(state.text), "Valuation or commercial text is visible", { context, state });
@@ -537,6 +553,14 @@ function assertW12DPickingPolish(state, context, options = {}) {
   assert(state.pickingCommandFactCount >= 4, "Picking command facts did not render", { context, state });
   assert(state.pickingReadinessCardCount >= 4, "Picking readiness cards did not render", { context, state });
   assert(state.pickingGuardrailCount === 1, "Picking read-only guardrail did not render exactly once", { context, state });
+  assert(state.pickingWorkflowShellCount === 1, "Picking workflow shell did not render exactly once", { context, state });
+  assert(state.pickingWorkflowStatusCount >= 6, "Picking workflow status strip did not render", { context, state });
+  assert(state.pickingWorkflowControlCount >= 3, "Picking planned controls did not render", { context, state });
+  assert(state.pickingWorkflowEvidenceRowCount >= 1, "Picking evidence preview did not render", { context, state });
+  assert(state.pickingWorkflowExceptionCount >= 6, "Picking exception categories did not render", { context, state });
+  assert(state.pickingWorkflowManagerDecisionCount >= 6, "Picking manager decision preview did not render", { context, state });
+  assert(state.pickingWorkflowDeliveryPolicyCount === 1, "Picking delivery policy preview did not render exactly once", { context, state });
+  assert(state.pickingWorkflowActiveControlCount === 0, "Picking workflow shell must not expose active controls", { context, state });
   if (requireLineCards) {
     assert(state.pickingLineCardCount >= 1, "Picking item line cards did not render", { context, state });
     assert(state.pickingLineFactCount >= 5, "Picking item line facts did not render", { context, state });

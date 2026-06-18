@@ -9615,6 +9615,152 @@
     `;
   }
 
+  function renderPickingWorkflowStatusStep(step) {
+    return `
+      <div class="warehouse-receiving-workflow-status-step" data-warehouse-picking-workflow-status="${escapeHtml(step.key || "")}">
+        ${escapeHtml(step.label || "")}
+      </div>
+    `;
+  }
+
+  function renderPickingPlannedControl(control) {
+    return `
+      <div class="warehouse-receiving-planned-control" data-warehouse-picking-planned-control="${escapeHtml(control.key || "")}" aria-disabled="true">
+        <strong>${escapeHtml(control.label || "")}</strong>
+        <span>${escapeHtml(control.note || "")}</span>
+      </div>
+    `;
+  }
+
+  function renderPickingWorkflowField(label, value) {
+    return `
+      <div class="warehouse-receiving-count-field">
+        <span>${escapeHtml(label || "")}</span>
+        <strong>${escapeHtml(value == null || value === "" ? "Not active" : value)}</strong>
+      </div>
+    `;
+  }
+
+  function renderPickingEvidenceRow(line) {
+    const uom = line.uom || line.stock_uom || "";
+    const openQty = `${line.pending_qty || "0"} ${uom}`.trim();
+    return `
+      <div class="warehouse-receiving-count-row" data-warehouse-picking-evidence-row="${escapeHtml(line.item_code || "")}">
+        <div class="warehouse-receiving-count-row-title">${escapeHtml(line.item_code || "Item not visible")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || line.source_warehouse || "Line detail not visible")}</div>
+        <div class="warehouse-receiving-count-fields">
+          ${renderPickingWorkflowField("Open", openQty)}
+          ${renderPickingWorkflowField("Picked", "Not active")}
+          ${renderPickingWorkflowField("Packed", "Not active")}
+          ${renderPickingWorkflowField("Exception", "Not active")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPickingWorkflowCard(card, dataAttr) {
+    return `
+      <div class="warehouse-receiving-discrepancy-card" ${dataAttr}="${escapeHtml(card.key || "")}">
+        <strong>${escapeHtml(card.label || "")}</strong>
+        <span>${escapeHtml(card.note || "")}</span>
+      </div>
+    `;
+  }
+
+  function renderPickingWorkflowShell(header, lines, statePayload) {
+    const statusSteps = [
+      { key: "not_started", label: "Not Started" },
+      { key: "in_progress", label: "In Progress" },
+      { key: "submitted", label: "Sent For Review" },
+      { key: "manager_review", label: "Manager Review" },
+      { key: "pack_ready", label: "Pack Ready" },
+      { key: "dispatch_handoff", label: "Dispatch Handoff" },
+    ];
+    const plannedControls = [
+      { key: "start_pick_check", label: "Start pick check", note: "Planned warehouse user step for confirming physical pick work." },
+      { key: "save_pick_draft", label: "Save pick draft", note: "Planned evidence capture for picked, short, damaged, or not-found lines." },
+      { key: "send_manager_review", label: "Send to manager review", note: "Planned handoff for manager decision before dispatch readiness." },
+    ];
+    const exceptions = [
+      { key: "shortage", label: "Shortage", note: "Open quantity cannot be fully picked from the visible warehouse posture." },
+      { key: "damaged", label: "Damaged", note: "Picked goods need damage evidence before manager review." },
+      { key: "not_found", label: "Not found", note: "Expected stock is not found and may need repick or recount." },
+      { key: "substitution_blocked", label: "Substitution blocked", note: "Alternative items require Sales and customer approval before use." },
+      { key: "partial_fulfillment", label: "Partial fulfillment", note: "Partial dispatch needs manager and Sales-facing decision policy." },
+      { key: "sales_escalation", label: "Sales escalation", note: "Customer promise, shortage notification, and order changes remain Sales-owned." },
+    ];
+    const managerDecisions = [
+      { key: "request_repick", label: "Request repick", note: "Ask the warehouse user to recheck or recount the pick." },
+      { key: "approve_clean_pick", label: "Approve clean pick", note: "Approve picked lines only when no shortage or damage is present." },
+      { key: "approve_partial_pick", label: "Approve partial pick", note: "Approve a partial pick only under the later owner-approved policy." },
+      { key: "mark_shortage_review", label: "Mark shortage review", note: "Keep shortage evidence for resolution before any dispatch handoff." },
+      { key: "escalate_sales", label: "Escalate to Sales", note: "Send customer-facing changes to Sales ownership." },
+      { key: "mark_dispatch_handoff", label: "Mark dispatch handoff", note: "Planned dispatch readiness state after policy approval." },
+    ];
+    const previewLines = Array.isArray(lines) ? lines.slice(0, 4) : [];
+    const stateTitle = statePayload && statePayload.title ? statePayload.title : "";
+    return `
+      <section class="warehouse-receiving-workflow-shell" data-warehouse-picking-workflow-shell data-warehouse-w15d2-shell="true">
+        <div class="warehouse-receiving-workflow-head">
+          <div>
+            <h2 class="warehouse-receiving-workflow-title">Picking workflow</h2>
+            <div class="warehouse-receiving-workflow-subtitle">Future workflow preview for pick evidence, pack readiness, manager review, Sales escalation, and dispatch handoff. This preview is display-only.</div>
+          </div>
+          <span class="warehouse-receiving-workflow-badge" data-warehouse-picking-workflow-badge>Shell only</span>
+        </div>
+        <div class="warehouse-receiving-workflow-guardrail" data-warehouse-picking-workflow-policy>
+          <strong>No stock effect.</strong>
+          <span>No stock is reserved, picked, packed, shipped, delivered, posted, or adjusted from this workflow preview. Delivery Note, Pick List, and Stock Reservation steps require a later approved policy.</span>
+        </div>
+        <div class="warehouse-receiving-workflow-status" data-warehouse-picking-workflow-status-strip>
+          ${statusSteps.map(renderPickingWorkflowStatusStep).join("")}
+        </div>
+        <div class="warehouse-receiving-workflow-grid">
+          <div class="warehouse-receiving-workflow-card" data-warehouse-picking-user-work-panel>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Warehouse user work</div>
+              <div class="warehouse-receiving-workflow-card-note">Planned physical pick, count, and exception evidence steps. These controls are not active.</div>
+            </div>
+            <div class="warehouse-receiving-planned-actions">
+              ${plannedControls.map(renderPickingPlannedControl).join("")}
+            </div>
+          </div>
+          <div class="warehouse-receiving-workflow-card" data-warehouse-picking-evidence-preview>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Pick evidence preview</div>
+              <div class="warehouse-receiving-workflow-card-note">${escapeHtml(stateTitle || header.state_label || "Visible item lines")} remain source evidence only until a later workflow is enabled.</div>
+            </div>
+            <div class="warehouse-receiving-count-grid">
+              ${previewLines.length ? previewLines.map(renderPickingEvidenceRow).join("") : `<div class="warehouse-receiving-count-row" data-warehouse-picking-evidence-row="empty"><div class="warehouse-receiving-count-row-title">No visible pick lines</div><div class="warehouse-receiving-meta">No line evidence can be previewed for this order.</div></div>`}
+            </div>
+          </div>
+          <div class="warehouse-receiving-workflow-card" data-warehouse-picking-exception-preview>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Exception categories</div>
+              <div class="warehouse-receiving-workflow-card-note">Outbound exceptions stay internal until manager and Sales ownership rules are approved.</div>
+            </div>
+            <div class="warehouse-receiving-discrepancy-grid">
+              ${exceptions.map((card) => renderPickingWorkflowCard(card, "data-warehouse-picking-exception-category")).join("")}
+            </div>
+          </div>
+          <div class="warehouse-receiving-workflow-card" data-warehouse-picking-manager-preview>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Manager decision preview</div>
+              <div class="warehouse-receiving-workflow-card-note">Future manager choices remain preview-only and do not create stock documents.</div>
+            </div>
+            <div class="warehouse-receiving-manager-grid">
+              ${managerDecisions.map((card) => renderPickingWorkflowCard(card, "data-warehouse-picking-manager-decision")).join("")}
+            </div>
+          </div>
+        </div>
+        <div class="warehouse-receiving-workflow-card" data-warehouse-picking-delivery-policy>
+          <div class="warehouse-receiving-workflow-card-title">Delivery policy preview</div>
+          <div class="warehouse-receiving-workflow-card-note">Delivery Note draft, Pick List, Stock Reservation, and customer-facing dispatch steps are not available from this preview. Later phases must keep Sales/Admin ownership and native route restrictions explicit.</div>
+        </div>
+      </section>
+    `;
+  }
+
   function activatePickingTab($root, tabKey) {
     const key = tabKey || "item_lines";
     $root.find("[data-warehouse-picking-tab]").each(function () {
@@ -9692,6 +9838,7 @@
           <strong>Review only</strong>
           <span>No stock is reserved, picked, shipped, or delivered from this page. Use this page to understand picking posture before any separate outbound process.</span>
         </section>
+        ${unavailable ? "" : renderPickingWorkflowShell(header, lines, statePayload)}
         <section class="warehouse-receiving-detail warehouse-picking-detail" data-warehouse-picking-detail>
           <div class="warehouse-receiving-detail-head" data-warehouse-picking-detail-head>
             <div>
