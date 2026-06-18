@@ -207,6 +207,15 @@ RECEIVING_TASK_LINE_DOCTYPE = "Warehouse Receiving Task Line"
 RECEIVING_TASK_EVENT_DOCTYPE = "Warehouse Receiving Task Event"
 RECEIVING_TASK_POLICY_VERSION = "W15C3-draft-save-v1"
 RECEIVING_TASK_ACTIVE_STATUSES = ("Draft", "In Progress")
+RECEIVING_TASK_MANAGER_ROLES = frozenset({"Warehouse Manager", "Stock Manager", "System Manager"})
+RECEIVING_TASK_MANAGER_DECISION_STATUSES = frozenset({"In Progress", "Submitted For Review"})
+RECEIVING_TASK_MANAGER_DECISIONS = {
+	"request_recount": ("Recount Requested", "requested_recount"),
+	"approve_clean": ("Approved Clean", "approved_clean"),
+	"approve_discrepancy": ("Approved With Discrepancy", "approved_with_discrepancy"),
+	"mark_quarantine_review": ("Quarantine Review", "marked_quarantine_review"),
+	"escalate_to_procurement": ("Escalated To Procurement", "escalated_to_procurement"),
+}
 RECEIVING_TASK_MAX_LINES = 80
 RECEIVING_TASK_MAX_NOTE_LENGTH = 500
 RECEIVING_TASK_MAX_EVIDENCE_LENGTH = 180
@@ -1207,6 +1216,64 @@ def save_warehouse_receiving_task_draft(
 	return _receiving_task_saved_payload(context, task_doc, idempotent=False)
 
 
+@frappe.whitelist()
+def save_warehouse_receiving_manager_decision(
+	task_id: str | None = None,
+	decision: str | None = None,
+	note: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Save a manager decision on a custom Warehouse receiving task.
+
+	W15C4 writes only the Warehouse Receiving Task and its event log. It does
+	not create or submit ERPNext stock documents.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	task_name = cstr(task_id).strip()
+	decision_key = cstr(decision).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	if not _has_receiving_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not task_name:
+		frappe.throw(_("Receiving task is required."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for manager decision."), ValueError)
+	if decision_key not in RECEIVING_TASK_MANAGER_DECISIONS:
+		frappe.throw(_("Manager decision is not allowed."), ValueError)
+	owner = _receiving_task_request_id_owner(server_request_id)
+	if owner and owner != task_name:
+		frappe.throw(_("Request id was already used for another receiving task."), ValueError)
+	task_doc = _get_receiving_task_for_decision(task_name)
+	next_status, event_type = RECEIVING_TASK_MANAGER_DECISIONS[decision_key]
+	existing_event = _receiving_task_event_for_request(task_doc, server_request_id)
+	if existing_event:
+		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
+			frappe.throw(_("Request id was already used for another manager decision."), ValueError)
+		return _receiving_task_manager_decision_payload(context, task_doc, decision_key, existing_event, idempotent=True)
+	if cstr(getattr(task_doc, "last_request_id", "")).strip() == server_request_id:
+		frappe.throw(_("Request id was already used for this receiving task."), ValueError)
+	_validate_receiving_manager_decision(task_doc, decision_key)
+	previous_status = cstr(getattr(task_doc, "status", "")).strip()
+	event = {
+		"event_type": event_type,
+		"actor": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": str(now_datetime()),
+		"previous_status": previous_status,
+		"next_status": next_status,
+		"note": _bounded_text(note, RECEIVING_TASK_MAX_NOTE_LENGTH),
+		"server_request_id": server_request_id,
+	}
+	task_doc.status = next_status
+	task_doc.decision = decision_key
+	task_doc.manager = cstr(getattr(frappe.session, "user", "")).strip()
+	task_doc.reviewed_at = event["event_at"]
+	task_doc.last_request_id = server_request_id
+	_append_child(task_doc, "events", event)
+	task_doc.save()
+	return _receiving_task_manager_decision_payload(context, task_doc, decision_key, event, idempotent=False)
+
+
 def _receiving_task_purchase_order(po_name: str) -> dict[str, object] | None:
 	records = _safe_get_list(
 		"Purchase Order",
@@ -1490,6 +1557,158 @@ def _receiving_task_saved_payload(context: dict[str, object], task_doc, *, idemp
 		},
 		"valuation": {"visible": False, "fields": []},
 		"fetched_at": str(now_datetime()),
+	}
+
+
+def _has_receiving_manager_access(context: dict[str, object]) -> bool:
+	roles = set(context.get("roles") or [])
+	return bool(roles.intersection(RECEIVING_TASK_MANAGER_ROLES))
+
+
+def _get_receiving_task_for_decision(task_name: str):
+	try:
+		return frappe.get_doc(RECEIVING_TASK_DOCTYPE, task_name)
+	except Exception:
+		_clear_transient_frappe_messages()
+		frappe.throw(_("Receiving task is not available."), ValueError)
+
+
+def _receiving_task_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			RECEIVING_TASK_DOCTYPE,
+			fields=["name"],
+			filters={"last_request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _receiving_task_event_for_request(task_doc, request_id: str):
+	for event in list(getattr(task_doc, "events", []) or []):
+		if cstr(_child_value(event, "server_request_id")).strip() == request_id:
+			return event
+	return None
+
+
+def _validate_receiving_manager_decision(task_doc, decision_key: str) -> None:
+	status = cstr(getattr(task_doc, "status", "")).strip()
+	if status not in RECEIVING_TASK_MANAGER_DECISION_STATUSES:
+		frappe.throw(_("Receiving task is not ready for manager decision."), ValueError)
+	lines = list(getattr(task_doc, "lines", []) or [])
+	if not lines:
+		frappe.throw(_("Receiving task has no count lines for manager review."), ValueError)
+	has_discrepancy = any(_receiving_task_line_has_discrepancy(line) for line in lines)
+	has_quarantine_marker = any(_receiving_task_line_has_quarantine_marker(line) for line in lines)
+	has_procurement_marker = any(_receiving_task_line_has_procurement_marker(line) for line in lines)
+	if decision_key == "approve_clean" and has_discrepancy:
+		frappe.throw(_("Clean approval is available only when no receiving line needs review."), ValueError)
+	if decision_key == "approve_discrepancy" and not has_discrepancy:
+		frappe.throw(_("Discrepancy approval requires at least one receiving line needing review."), ValueError)
+	if decision_key == "mark_quarantine_review" and not has_quarantine_marker:
+		frappe.throw(_("Quarantine review requires damaged, quarantine, or wrong-item evidence."), ValueError)
+	if decision_key == "escalate_to_procurement" and not has_procurement_marker:
+		frappe.throw(_("Procurement escalation requires a Procurement-owned receiving issue."), ValueError)
+
+
+def _receiving_task_line_has_discrepancy(line) -> bool:
+	return bool(
+		_receiving_task_line_has_quantity(line, "damaged_qty")
+		or _receiving_task_line_has_quantity(line, "short_qty")
+		or _receiving_task_line_has_quantity(line, "over_qty")
+		or _receiving_task_line_has_quantity(line, "quarantine_qty")
+		or cstr(_child_value(line, "discrepancy_reason")).strip()
+		or cstr(_child_value(line, "line_status")).strip().lower() == "needs review"
+	)
+
+
+def _receiving_task_line_has_quarantine_marker(line) -> bool:
+	reason = cstr(_child_value(line, "discrepancy_reason")).strip().lower()
+	return bool(
+		_receiving_task_line_has_quantity(line, "damaged_qty")
+		or _receiving_task_line_has_quantity(line, "quarantine_qty")
+		or reason in {"damaged", "wrong_item", "quarantine"}
+	)
+
+
+def _receiving_task_line_has_procurement_marker(line) -> bool:
+	reason = cstr(_child_value(line, "discrepancy_reason")).strip().lower()
+	return bool(
+		_receiving_task_line_has_quantity(line, "over_qty")
+		or reason in {"over", "wrong_item", "supplier_paperwork_mismatch"}
+	)
+
+
+def _receiving_task_line_has_quantity(line, fieldname: str) -> bool:
+	return flt(_child_value(line, fieldname)) > 0
+
+
+def _child_value(row, fieldname: str, default: object = None) -> object:
+	if hasattr(row, "get"):
+		return row.get(fieldname, default)
+	return getattr(row, fieldname, default)
+
+
+def _receiving_task_manager_decision_payload(
+	context: dict[str, object],
+	task_doc,
+	decision_key: str,
+	event,
+	*,
+	idempotent: bool,
+) -> dict[str, object]:
+	last_event = _receiving_task_event_payload(event)
+	task_id = cstr(getattr(task_doc, "name", "")).strip()
+	purchase_order = cstr(getattr(task_doc, "purchase_order", "")).strip()
+	target_warehouse = cstr(getattr(task_doc, "target_warehouse", "")).strip()
+	status = cstr(getattr(task_doc, "status", "")).strip()
+	reviewed_at = cstr(getattr(task_doc, "reviewed_at", "")).strip() or cstr(last_event.get("event_at")).strip()
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Receiving Manager Decision", "key": "receiving_manager_decision", "purchase_order": purchase_order},
+		"task_id": task_id,
+		"purchase_order": purchase_order,
+		"target_warehouse": target_warehouse,
+		"status": status,
+		"decision": decision_key,
+		"reviewed_at": reviewed_at,
+		"idempotent": bool(idempotent),
+		"last_event": last_event,
+		"task": {
+			"task_id": task_id,
+			"purchase_order": purchase_order,
+			"target_warehouse": target_warehouse,
+			"status": status,
+			"decision": decision_key,
+			"reviewed_at": reviewed_at,
+			"idempotent": bool(idempotent),
+		},
+		"stock_effect": {
+			"stock_posted": False,
+			"purchase_receipt_created": False,
+			"purchase_receipt_submitted": False,
+		},
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _receiving_task_event_payload(event) -> dict[str, object]:
+	return {
+		"event_type": cstr(_child_value(event, "event_type")).strip(),
+		"actor": cstr(_child_value(event, "actor")).strip(),
+		"event_at": cstr(_child_value(event, "event_at")).strip(),
+		"previous_status": cstr(_child_value(event, "previous_status")).strip(),
+		"next_status": cstr(_child_value(event, "next_status")).strip(),
+		"note": cstr(_child_value(event, "note")).strip(),
+		"server_request_id": cstr(_child_value(event, "server_request_id")).strip(),
 	}
 
 

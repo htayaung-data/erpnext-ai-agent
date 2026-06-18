@@ -1600,6 +1600,24 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertTrue(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
         self.assertTrue(any(call["doctype"] == "Purchase Order Item" for call in GET_ALL_CALLS))
 
+    def _create_receiving_task(self, *, line=None, request_id="draft-for-manager"):
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        payload = service.save_warehouse_receiving_task_draft(
+            purchase_order="PO-PARTIAL",
+            target_warehouse="Main - M",
+            lines=[
+                line or {
+                    "item_code": "ITEM-003",
+                    "target_warehouse": "Main - M",
+                    "counted_qty": 13,
+                    "accepted_qty": 13,
+                }
+            ],
+            note="Counted at receiving dock.",
+            request_id=request_id,
+        )
+        return RECEIVING_TASK_DOCS[payload["task"]["task_id"]]
+
     def test_w15c3_save_receiving_task_draft_creates_internal_task_without_stock_document(self):
         payload = service.save_warehouse_receiving_task_draft(
             purchase_order="PO-PARTIAL",
@@ -1709,6 +1727,263 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
                 request_id="wrong-warehouse",
             )
         self.assertEqual(RECEIVING_TASK_DOCS, {})
+
+    def test_w15c4_manager_can_request_recount_and_event_is_appended(self):
+        task = self._create_receiving_task(request_id="draft-recount")
+
+        payload = service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="request_recount",
+            note="Recount dock two before review.",
+            request_id="mgr-recount-1",
+        )
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["status"], "Recount Requested")
+        self.assertEqual(payload["decision"], "request_recount")
+        self.assertEqual(payload["last_event"]["event_type"], "requested_recount")
+        self.assertEqual(payload["last_event"]["previous_status"], "In Progress")
+        self.assertEqual(payload["last_event"]["next_status"], "Recount Requested")
+        self.assertEqual(len(task.events), 2)
+        self.assertFalse(payload["stock_effect"]["stock_posted"])
+        self.assertFalse(payload["stock_effect"]["purchase_receipt_created"])
+        self.assertFalse(payload["stock_effect"]["purchase_receipt_submitted"])
+        self.assertFalse(any(call["doctype"] == "Purchase Receipt" for call in GET_DOC_CALLS))
+
+    def test_w15c4_manager_can_approve_clean_task_only_for_clean_lines(self):
+        task = self._create_receiving_task(request_id="draft-clean")
+
+        payload = service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="approve_clean",
+            note="Clean count.",
+            request_id="mgr-clean-1",
+        )
+
+        self.assertEqual(payload["status"], "Approved Clean")
+        self.assertEqual(payload["last_event"]["event_type"], "approved_clean")
+        self.assertEqual(task.status, "Approved Clean")
+        self.assertEqual(task.decision, "approve_clean")
+        self.assertEqual(task.manager, "warehouse@example.com")
+        self.assertEqual(len(task.events), 2)
+
+    def test_w15c4_manager_cannot_approve_clean_task_with_discrepancy_line(self):
+        task = self._create_receiving_task(
+            request_id="draft-damaged",
+            line={
+                "item_code": "ITEM-003",
+                "target_warehouse": "Main - M",
+                "counted_qty": 13,
+                "accepted_qty": 11,
+                "damaged_qty": 2,
+                "discrepancy_reason": "damaged",
+                "evidence_reference": "Dock photo D-1",
+            },
+        )
+
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_manager_decision(
+                task_id=task.name,
+                decision="approve_clean",
+                note="Clean despite damage.",
+                request_id="mgr-clean-damaged",
+            )
+        self.assertEqual(task.status, "In Progress")
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15c4_manager_can_approve_discrepancy_only_when_discrepancy_exists(self):
+        clean_task = self._create_receiving_task(request_id="draft-clean-discrepancy-check")
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_manager_decision(
+                task_id=clean_task.name,
+                decision="approve_discrepancy",
+                request_id="mgr-discrepancy-clean",
+            )
+        RECEIVING_TASK_DOCS.clear()
+        task = self._create_receiving_task(
+            request_id="draft-short",
+            line={
+                "item_code": "ITEM-003",
+                "target_warehouse": "Main - M",
+                "counted_qty": 10,
+                "accepted_qty": 10,
+            },
+        )
+
+        payload = service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="approve_discrepancy",
+            note="Shortage is inside review tolerance.",
+            request_id="mgr-discrepancy-1",
+        )
+
+        self.assertEqual(payload["status"], "Approved With Discrepancy")
+        self.assertEqual(payload["last_event"]["event_type"], "approved_with_discrepancy")
+        self.assertEqual(len(task.events), 2)
+
+    def test_w15c4_manager_can_mark_quarantine_only_with_quarantine_or_damage_evidence(self):
+        clean_task = self._create_receiving_task(request_id="draft-clean-quarantine-check")
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_manager_decision(
+                task_id=clean_task.name,
+                decision="mark_quarantine_review",
+                request_id="mgr-quarantine-clean",
+            )
+        RECEIVING_TASK_DOCS.clear()
+        task = self._create_receiving_task(
+            request_id="draft-quarantine",
+            line={
+                "item_code": "ITEM-003",
+                "target_warehouse": "Main - M",
+                "counted_qty": 13,
+                "accepted_qty": 10,
+                "quarantine_qty": 3,
+                "discrepancy_reason": "quarantine",
+                "evidence_reference": "Quarantine tag Q-7",
+            },
+        )
+
+        payload = service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="mark_quarantine_review",
+            note="Hold goods for quarantine review.",
+            request_id="mgr-quarantine-1",
+        )
+
+        self.assertEqual(payload["status"], "Quarantine Review")
+        self.assertEqual(payload["last_event"]["event_type"], "marked_quarantine_review")
+
+    def test_w15c4_manager_can_escalate_to_procurement_without_purchase_receipt_effect(self):
+        task = self._create_receiving_task(
+            request_id="draft-over",
+            line={
+                "item_code": "ITEM-003",
+                "target_warehouse": "Main - M",
+                "counted_qty": 15,
+                "accepted_qty": 13,
+                "over_qty": 2,
+                "discrepancy_reason": "over",
+                "evidence_reference": "Supplier paperwork O-4",
+            },
+        )
+
+        payload = service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="escalate_to_procurement",
+            note="Overage needs Procurement decision.",
+            request_id="mgr-procurement-1",
+        )
+
+        self.assertEqual(payload["status"], "Escalated To Procurement")
+        self.assertEqual(payload["last_event"]["event_type"], "escalated_to_procurement")
+        self.assertFalse(payload["stock_effect"]["stock_posted"])
+        self.assertFalse(payload["stock_effect"]["purchase_receipt_created"])
+        self.assertFalse(payload["stock_effect"]["purchase_receipt_submitted"])
+        self.assertFalse(any(call["doctype"] == "Purchase Receipt" for call in GET_DOC_CALLS))
+
+    def test_w15c4_warehouse_user_cannot_make_manager_decision(self):
+        task = self._create_receiving_task(request_id="draft-user-denied")
+        CURRENT_ROLES[:] = ["Warehouse User"]
+
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_manager_decision(
+                task_id=task.name,
+                decision="request_recount",
+                request_id="mgr-user-denied",
+            )
+        self.assertEqual(task.status, "In Progress")
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15c4_manager_decision_rejects_unknown_decision(self):
+        task = self._create_receiving_task(request_id="draft-unknown-decision")
+
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_manager_decision(
+                task_id=task.name,
+                decision="prepare_purchase_receipt",
+                request_id="mgr-unknown-decision",
+            )
+        self.assertEqual(task.status, "In Progress")
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15c4_manager_decision_rejects_final_status(self):
+        task = self._create_receiving_task(request_id="draft-final-status")
+        task.status = "Approved Clean"
+
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_manager_decision(
+                task_id=task.name,
+                decision="request_recount",
+                request_id="mgr-final-status",
+            )
+        self.assertEqual(task.status, "Approved Clean")
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15c4_manager_decision_request_id_is_idempotent(self):
+        task = self._create_receiving_task(request_id="draft-idempotent")
+        first = service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="request_recount",
+            note="Same request.",
+            request_id="mgr-same-req",
+        )
+        second = service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="request_recount",
+            note="Same request.",
+            request_id="mgr-same-req",
+        )
+
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(first["task_id"], second["task_id"])
+        self.assertEqual(len(task.events), 2)
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_manager_decision(
+                task_id=task.name,
+                decision="approve_clean",
+                request_id="mgr-same-req",
+            )
+
+    def test_w15c4_manager_decision_request_id_cannot_cross_tasks(self):
+        task = self._create_receiving_task(request_id="draft-cross-task-one")
+        service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="request_recount",
+            request_id="mgr-cross-task",
+        )
+
+        with self.assertRaises(Exception):
+            service.save_warehouse_receiving_manager_decision(
+                task_id="WRT-OTHER-TASK",
+                decision="request_recount",
+                request_id="mgr-cross-task",
+            )
+        self.assertEqual(task.status, "Recount Requested")
+        self.assertEqual(len(task.events), 2)
+
+    def test_w15c4_manager_decision_response_has_no_native_or_commercial_leakage(self):
+        task = self._create_receiving_task(request_id="draft-safe-response")
+
+        payload = service.save_warehouse_receiving_manager_decision(
+            task_id=task.name,
+            decision="approve_clean",
+            request_id="mgr-safe-response",
+        )
+
+        payload_text = str(payload).lower()
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("rate", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        self.assertFalse(payload["stock_effect"]["stock_posted"])
+        self.assertFalse(payload["stock_effect"]["purchase_receipt_created"])
+        self.assertFalse(payload["stock_effect"]["purchase_receipt_submitted"])
 
     def test_picking_review_payload_is_read_only_allowlisted_and_readiness_visible(self):
         payload = service.get_warehouse_picking_review("SO-REVIEW")
