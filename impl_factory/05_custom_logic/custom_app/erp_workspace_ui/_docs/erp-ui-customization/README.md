@@ -174,6 +174,7 @@ Documents in this folder:
 Active Warehouse operations roadmap after Phase 0:
 
 - `warehouse-console-phase-w15a-operations-blueprint-2026-06-16.md`
+- `warehouse-console-phase-w15c5-purchase-receipt-draft-policy-2026-06-18.md`
 
 Historical Warehouse W14 planning notes are superseded by W15A unless Main Control explicitly reopens W14.
 
