@@ -1,0 +1,188 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sales_order",
+  "customer",
+  "source_warehouse",
+  "task_status",
+  "workflow_state",
+  "source_payload_hash",
+  "request_id",
+  "created_by_user",
+  "last_action_by",
+  "last_action_at",
+  "notes",
+  "source_route",
+  "policy_version",
+  "line_count",
+  "total_open_qty",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Data",
+   "label": "Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "label": "Source Warehouse",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "In Progress",
+   "fieldname": "task_status",
+   "fieldtype": "Select",
+   "label": "Task Status",
+   "options": "Draft\nIn Progress\nSubmitted For Review\nRepick Requested\nApproved Clean\nApproved Partial\nShortage Review\nPack Ready\nDispatch Handoff Ready\nEscalated To Sales\nDelivery Draft Prepared\nClosed\nCancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload_hash",
+   "fieldtype": "Data",
+   "label": "Source Payload Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request Id",
+   "read_only": 1
+  },
+  {
+   "fieldname": "created_by_user",
+   "fieldtype": "Data",
+   "label": "Created By User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_action_by",
+   "fieldtype": "Data",
+   "label": "Last Action By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_action_at",
+   "fieldtype": "Datetime",
+   "label": "Last Action At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_route",
+   "fieldtype": "Data",
+   "label": "Source Route",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_open_qty",
+   "fieldtype": "Float",
+   "label": "Total Open Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Picking Task Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Picking Task Event",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Picking Task",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Warehouse User",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Warehouse Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Stock User",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Stock Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
+

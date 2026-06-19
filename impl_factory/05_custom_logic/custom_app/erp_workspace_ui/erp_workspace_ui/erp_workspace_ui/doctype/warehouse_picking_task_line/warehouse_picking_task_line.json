@@ -1,0 +1,156 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sales_order_item",
+  "item_code",
+  "item_name",
+  "warehouse",
+  "ordered_qty",
+  "delivered_qty",
+  "open_qty",
+  "picked_qty",
+  "packed_qty",
+  "short_qty",
+  "damaged_qty",
+  "not_found_qty",
+  "exception_type",
+  "exception_note",
+  "evidence_reference",
+  "line_status",
+  "uom"
+ ],
+ "fields": [
+  {
+   "fieldname": "sales_order_item",
+   "fieldtype": "Data",
+   "label": "Sales Order Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "ordered_qty",
+   "fieldtype": "Float",
+   "label": "Ordered Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "delivered_qty",
+   "fieldtype": "Float",
+   "label": "Delivered Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "open_qty",
+   "fieldtype": "Float",
+   "label": "Open Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "picked_qty",
+   "fieldtype": "Float",
+   "label": "Picked Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "packed_qty",
+   "fieldtype": "Float",
+   "label": "Packed Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "short_qty",
+   "fieldtype": "Float",
+   "label": "Short Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "damaged_qty",
+   "fieldtype": "Float",
+   "label": "Damaged Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "not_found_qty",
+   "fieldtype": "Float",
+   "label": "Not Found Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "exception_type",
+   "fieldtype": "Data",
+   "label": "Exception Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "exception_note",
+   "fieldtype": "Small Text",
+   "label": "Exception Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "evidence_reference",
+   "fieldtype": "Data",
+   "label": "Evidence Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_status",
+   "fieldtype": "Data",
+   "label": "Line Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Data",
+   "label": "UOM",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Picking Task Line",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
+

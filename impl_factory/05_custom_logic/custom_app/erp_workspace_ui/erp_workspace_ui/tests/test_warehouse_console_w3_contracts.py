@@ -26,6 +26,7 @@ LIST_CALLS = []
 GET_ALL_CALLS = []
 GET_DOC_CALLS = []
 RECEIVING_TASK_DOCS = {}
+PICKING_TASK_DOCS = {}
 
 PO_ROWS = [
     {
@@ -500,6 +501,52 @@ def _get_meta(doctype):
             "note",
             "server_request_id",
         },
+        "Warehouse Picking Task": {
+            "sales_order",
+            "customer",
+            "source_warehouse",
+            "task_status",
+            "workflow_state",
+            "source_payload_hash",
+            "request_id",
+            "created_by_user",
+            "last_action_by",
+            "last_action_at",
+            "notes",
+            "source_route",
+            "policy_version",
+            "line_count",
+            "total_open_qty",
+            "lines",
+            "events",
+        },
+        "Warehouse Picking Task Line": {
+            "sales_order_item",
+            "item_code",
+            "item_name",
+            "warehouse",
+            "ordered_qty",
+            "delivered_qty",
+            "open_qty",
+            "picked_qty",
+            "packed_qty",
+            "short_qty",
+            "damaged_qty",
+            "not_found_qty",
+            "exception_type",
+            "exception_note",
+            "evidence_reference",
+            "line_status",
+            "uom",
+        },
+        "Warehouse Picking Task Event": {
+            "event_type",
+            "event_label",
+            "event_by",
+            "event_at",
+            "request_id",
+            "details_json",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -606,6 +653,16 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
                 else:
                     rows = [row for row in rows if getattr(row, key, None) == value]
         return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Picking Task":
+        rows = list(PICKING_TASK_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -661,7 +718,7 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
 class _FakeWorkflowDoc:
     def __init__(self, values=None):
         values = dict(values or {})
-        values.pop("doctype", None)
+        self.doctype = values.pop("doctype", "Warehouse Receiving Task")
         self.name = values.pop("name", "")
         self.lines = list(values.pop("lines", []) or [])
         self.events = list(values.pop("events", []) or [])
@@ -681,12 +738,22 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Picking Task":
+            if not self.name:
+                self.name = f"WPT-{len(PICKING_TASK_DOCS) + 1:05d}"
+            PICKING_TASK_DOCS[self.name] = self
+            return self
         if not self.name:
             self.name = f"WRT-{len(RECEIVING_TASK_DOCS) + 1:05d}"
         RECEIVING_TASK_DOCS[self.name] = self
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Picking Task":
+            if not self.name:
+                self.name = f"WPT-{len(PICKING_TASK_DOCS) + 1:05d}"
+            PICKING_TASK_DOCS[self.name] = self
+            return self
         if not self.name:
             self.name = f"WRT-{len(RECEIVING_TASK_DOCS) + 1:05d}"
         RECEIVING_TASK_DOCS[self.name] = self
@@ -698,7 +765,7 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") == "Warehouse Receiving Task":
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
@@ -706,6 +773,10 @@ def _get_doc(doctype, name=None, *args, **kwargs):
         if name not in RECEIVING_TASK_DOCS:
             raise Exception("Missing Warehouse Receiving Task")
         return RECEIVING_TASK_DOCS[name]
+    if doctype == "Warehouse Picking Task":
+        if name not in PICKING_TASK_DOCS:
+            raise Exception("Missing Warehouse Picking Task")
+        return PICKING_TASK_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -791,6 +862,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         GET_ALL_CALLS.clear()
         GET_DOC_CALLS.clear()
         RECEIVING_TASK_DOCS.clear()
+        PICKING_TASK_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -1984,6 +2056,169 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(payload["stock_effect"]["stock_posted"])
         self.assertFalse(payload["stock_effect"]["purchase_receipt_created"])
         self.assertFalse(payload["stock_effect"]["purchase_receipt_submitted"])
+
+    def _save_pick_task(self, **overrides):
+        payload = {
+            "sales_order": "SO-REVIEW",
+            "source_warehouse": "Short - M",
+            "lines": [
+                {
+                    "item_code": "ITEM-105",
+                    "warehouse": "Short - M",
+                    "picked_qty": 2,
+                    "packed_qty": 2,
+                }
+            ],
+            "note": "Picked at outbound bench.",
+            "request_id": "pick-req-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_picking_task_draft(**payload)
+
+    def test_w15d3_warehouse_user_can_save_custom_pick_task_draft(self):
+        payload = self._save_pick_task()
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "picking_task_draft")
+        self.assertEqual(payload["task"]["sales_order"], "SO-REVIEW")
+        self.assertEqual(payload["task"]["source_warehouse"], "Short - M")
+        self.assertEqual(payload["task"]["status"], "In Progress")
+        self.assertEqual(payload["task"]["workflow_state"], "Pick draft saved")
+        self.assertEqual(payload["task"]["line_count"], 1)
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["delivery_note_created"])
+        self.assertFalse(payload["delivery_note_submitted"])
+        self.assertFalse(payload["pick_list_created"])
+        self.assertFalse(payload["stock_reserved"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(len(PICKING_TASK_DOCS), 1)
+        task = next(iter(PICKING_TASK_DOCS.values()))
+        self.assertEqual(task.policy_version, service.PICKING_TASK_POLICY_VERSION)
+        self.assertEqual(task.request_id, "pick-req-001")
+        self.assertEqual(len(task.lines), 1)
+        self.assertEqual(task.lines[0]["item_code"], "ITEM-105")
+        self.assertEqual(task.lines[0]["picked_qty"], 2.0)
+        self.assertEqual(len(task.events), 1)
+        self.assertEqual(task.events[0]["event_type"], "saved_pick_draft")
+
+    def test_w15d3_non_warehouse_user_is_denied(self):
+        CURRENT_ROLES[:] = ["Sales User"]
+        with self.assertRaises(Exception):
+            self._save_pick_task(request_id="pick-denied")
+        self.assertEqual(PICKING_TASK_DOCS, {})
+
+    def test_w15d3_unknown_or_invisible_sales_order_is_denied(self):
+        with self.assertRaises(Exception):
+            self._save_pick_task(sales_order="SO-MISSING", request_id="pick-missing")
+        self.assertEqual(PICKING_TASK_DOCS, {})
+
+    def test_w15d3_wrong_warehouse_and_line_mismatch_are_rejected(self):
+        with self.assertRaises(Exception):
+            self._save_pick_task(source_warehouse="Main - M", request_id="pick-wrong-warehouse")
+        with self.assertRaises(Exception):
+            self._save_pick_task(
+                lines=[{"item_code": "ITEM-103", "warehouse": "Short - M", "picked_qty": 1}],
+                request_id="pick-line-mismatch",
+            )
+        self.assertEqual(PICKING_TASK_DOCS, {})
+
+    def test_w15d3_duplicate_line_is_rejected(self):
+        with self.assertRaises(Exception):
+            self._save_pick_task(
+                lines=[
+                    {"item_code": "ITEM-105", "warehouse": "Short - M", "picked_qty": 1},
+                    {"item_code": "ITEM-105", "warehouse": "Short - M", "picked_qty": 1},
+                ],
+                request_id="pick-duplicate-line",
+            )
+        self.assertEqual(PICKING_TASK_DOCS, {})
+
+    def test_w15d3_negative_and_over_open_quantities_are_rejected(self):
+        with self.assertRaises(Exception):
+            self._save_pick_task(
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "picked_qty": -1}],
+                request_id="pick-negative",
+            )
+        with self.assertRaises(Exception):
+            self._save_pick_task(
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "picked_qty": 9}],
+                request_id="pick-over-open",
+            )
+        with self.assertRaises(Exception):
+            self._save_pick_task(
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "picked_qty": 2, "packed_qty": 3}],
+                request_id="pick-packed-over-picked",
+            )
+        self.assertEqual(PICKING_TASK_DOCS, {})
+
+    def test_w15d3_short_damage_and_not_found_require_evidence_or_note(self):
+        with self.assertRaises(Exception):
+            self._save_pick_task(
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "picked_qty": 1, "short_qty": 1}],
+                request_id="pick-short-no-evidence",
+                note="",
+            )
+        payload = self._save_pick_task(
+            lines=[
+                {
+                    "item_code": "ITEM-105",
+                    "warehouse": "Short - M",
+                    "picked_qty": 1,
+                    "damaged_qty": 1,
+                    "exception_type": "damaged",
+                    "evidence_reference": "Corner damage photo DR-2",
+                }
+            ],
+            request_id="pick-damaged-evidence",
+        )
+        task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
+        self.assertEqual(task.lines[0]["line_status"], "Needs Review")
+        self.assertEqual(task.lines[0]["exception_type"], "damaged")
+        self.assertEqual(task.lines[0]["evidence_reference"], "Corner damage photo DR-2")
+        self.assertEqual(payload["task"]["lines"][0]["evidence_reference"], "Corner damage photo DR-2")
+
+    def test_w15d3_request_idempotency_returns_same_result(self):
+        first = self._save_pick_task(request_id="pick-same-req")
+        second = self._save_pick_task(request_id="pick-same-req")
+
+        self.assertEqual(first["task"]["task_id"], second["task"]["task_id"])
+        self.assertFalse(first["task"]["idempotent"])
+        self.assertTrue(second["task"]["idempotent"])
+        task = next(iter(PICKING_TASK_DOCS.values()))
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15d3_request_id_reuse_across_sales_order_is_rejected(self):
+        self._save_pick_task(request_id="pick-cross-task")
+        with self.assertRaises(Exception):
+            self._save_pick_task(
+                sales_order="SO-READY",
+                source_warehouse="Main - M",
+                lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "picked_qty": 1}],
+                request_id="pick-cross-task",
+            )
+        self.assertEqual(len(PICKING_TASK_DOCS), 1)
+
+    def test_w15d3_payload_has_no_native_or_commercial_leakage_and_no_stock_docs(self):
+        payload = self._save_pick_task(request_id="pick-safe-response")
+
+        payload_text = str(payload).lower()
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertFalse(payload["delivery_note_created"])
+        self.assertFalse(payload["delivery_note_submitted"])
+        self.assertFalse(payload["pick_list_created"])
+        self.assertFalse(payload["stock_reserved"])
+        self.assertFalse(payload["stock_posted"])
+        forbidden_docs = {"Delivery Note", "Pick List", "Stock Reservation Entry", "Stock Entry", "Stock Ledger Entry"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
     def test_picking_review_payload_is_read_only_allowlisted_and_readiness_visible(self):
         payload = service.get_warehouse_picking_review("SO-REVIEW")

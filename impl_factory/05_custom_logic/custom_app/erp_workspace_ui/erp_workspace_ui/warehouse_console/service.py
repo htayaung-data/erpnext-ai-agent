@@ -236,6 +236,34 @@ RECEIVING_TASK_EVIDENCE_REQUIRED_REASONS = frozenset({
 	"supplier_paperwork_mismatch",
 })
 
+PICKING_TASK_DOCTYPE = "Warehouse Picking Task"
+PICKING_TASK_LINE_DOCTYPE = "Warehouse Picking Task Line"
+PICKING_TASK_EVENT_DOCTYPE = "Warehouse Picking Task Event"
+PICKING_TASK_POLICY_VERSION = "W15D3-pick-draft-v1"
+PICKING_TASK_ACTIVE_STATUSES = ("Draft", "In Progress")
+PICKING_TASK_MAX_LINES = 80
+PICKING_TASK_MAX_NOTE_LENGTH = 500
+PICKING_TASK_MAX_EVIDENCE_LENGTH = 180
+PICKING_TASK_ALLOWED_EXCEPTION_TYPES = frozenset({
+	"",
+	"short",
+	"damaged",
+	"not_found",
+	"wrong_bin",
+	"unavailable_stock",
+	"substitution",
+	"dispatch_paperwork_mismatch",
+})
+PICKING_TASK_EVIDENCE_REQUIRED_TYPES = frozenset({
+	"short",
+	"damaged",
+	"not_found",
+	"wrong_bin",
+	"unavailable_stock",
+	"substitution",
+	"dispatch_paperwork_mismatch",
+})
+
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
 QUICK_FIND_MAX_LIMIT = 18
@@ -2005,6 +2033,378 @@ def get_warehouse_picking_review(sales_order: str | None = None) -> dict[str, ob
 		}
 	)
 	return payload
+
+
+@frappe.whitelist()
+def save_warehouse_picking_task_draft(
+	sales_order: str | None = None,
+	source_warehouse: str | None = None,
+	lines: str | list[dict[str, object]] | None = None,
+	note: str | None = None,
+	evidence_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Save an internal Warehouse picking task draft.
+
+	W15D3 intentionally writes only the custom Warehouse Picking Task records.
+	It does not create Delivery Note, Pick List, Stock Reservation, or stock
+	posting documents.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	order_name = cstr(sales_order).strip()
+	warehouse = cstr(source_warehouse).strip()
+	server_request_id = _bounded_text(request_id, 120)
+	if not has_warehouse_access(context):
+		frappe.throw(_("Warehouse access required"), frappe.PermissionError)
+	if not order_name:
+		frappe.throw(_("Sales Order is required"), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for pick task draft."), ValueError)
+	if not _can_read("Sales Order"):
+		frappe.throw(_("Sales Order is not available for picking review"), frappe.PermissionError)
+
+	order_record = _picking_task_sales_order(order_name)
+	if not order_record:
+		frappe.throw(_("This Sales Order is not available for Warehouse picking."), ValueError)
+	source_lines = _picking_task_source_lines(order_name)
+	if not source_lines:
+		frappe.throw(_("No picking lines are visible for this Sales Order."), ValueError)
+	if not warehouse:
+		warehouse = _picking_task_default_warehouse(source_lines, order_record)
+	if not warehouse:
+		frappe.throw(_("Source warehouse is required for pick task draft."), ValueError)
+	if warehouse not in {cstr(line.get("source_warehouse")).strip() for line in source_lines if cstr(line.get("source_warehouse")).strip()}:
+		frappe.throw(_("Source warehouse is not part of the visible Sales Order lines."), ValueError)
+
+	owner_name = _picking_task_request_id_owner(server_request_id)
+	if owner_name:
+		owner_doc = frappe.get_doc(PICKING_TASK_DOCTYPE, owner_name)
+		if cstr(getattr(owner_doc, "sales_order", "")).strip() != order_name or cstr(getattr(owner_doc, "source_warehouse", "")).strip() != warehouse:
+			frappe.throw(_("Request id was already used for another picking task."), ValueError)
+		if list(getattr(owner_doc, "lines", []) or []):
+			return _picking_task_saved_payload(context, owner_doc, idempotent=True)
+
+	task_lines = _normalize_picking_task_lines(lines, source_lines, warehouse, _bounded_text(evidence_reference, PICKING_TASK_MAX_EVIDENCE_LENGTH))
+	task_doc = _get_or_create_picking_task(order_record, warehouse, _bounded_text(note, PICKING_TASK_MAX_NOTE_LENGTH), server_request_id)
+	if server_request_id and cstr(getattr(task_doc, "request_id", "")).strip() == server_request_id and list(getattr(task_doc, "lines", []) or []):
+		return _picking_task_saved_payload(context, task_doc, idempotent=True)
+
+	_apply_picking_task_draft(task_doc, order_record, warehouse, task_lines, _bounded_text(note, PICKING_TASK_MAX_NOTE_LENGTH), server_request_id)
+	return _picking_task_saved_payload(context, task_doc, idempotent=False)
+
+
+def _picking_task_sales_order(order_name: str) -> dict[str, object] | None:
+	records = _safe_get_list(
+		"Sales Order",
+		fields=_available_fields("Sales Order", SALES_ORDER_OUTBOUND_FIELDS),
+		filters=_sales_order_picking_review_filters(order_name),
+		order_by="modified desc",
+		limit=1,
+	)
+	return records[0] if records else None
+
+
+def _picking_task_source_lines(order_name: str) -> list[dict[str, object]]:
+	rows = []
+	if _can_read("Sales Order Item"):
+		rows = _safe_get_all(
+			"Sales Order Item",
+			fields=_available_fields("Sales Order Item", SALES_ORDER_ITEM_DETAIL_FIELDS),
+			filters={"parent": order_name},
+			order_by="delivery_date asc, idx asc",
+			limit=PICKING_TASK_MAX_LINES,
+		)
+	if not rows:
+		rows = _picking_review_lines_from_parent(order_name)
+	source: list[dict[str, object]] = []
+	for index, row in enumerate(rows[:PICKING_TASK_MAX_LINES], 1):
+		ordered_qty = flt(row.get("qty"))
+		delivered_qty = flt(row.get("delivered_qty"))
+		item_code = cstr(row.get("item_code")).strip()
+		warehouse = cstr(row.get("warehouse") or "").strip()
+		line_name = cstr(row.get("name")).strip() or f"{order_name}:{index}:{item_code}:{warehouse}"
+		source.append(
+			{
+				"sales_order_item": line_name,
+				"item_code": item_code,
+				"item_name": cstr(row.get("item_name")).strip(),
+				"uom": cstr(row.get("stock_uom") or row.get("uom") or "").strip(),
+				"ordered_qty": ordered_qty,
+				"delivered_qty": delivered_qty,
+				"open_qty": max(ordered_qty - delivered_qty, 0),
+				"source_warehouse": warehouse,
+			}
+		)
+	return [line for line in source if line.get("item_code") and flt(line.get("open_qty")) > 0]
+
+
+def _picking_task_default_warehouse(source_lines: list[dict[str, object]], order_record: dict[str, object]) -> str:
+	warehouses = {cstr(line.get("source_warehouse")).strip() for line in source_lines if cstr(line.get("source_warehouse")).strip()}
+	if len(warehouses) == 1:
+		return next(iter(warehouses))
+	return cstr(order_record.get("set_warehouse")).strip() if cstr(order_record.get("set_warehouse")).strip() in warehouses else ""
+
+
+def _normalize_picking_task_lines(
+	lines: str | list[dict[str, object]] | None,
+	source_lines: list[dict[str, object]],
+	source_warehouse: str,
+	task_evidence_reference: str,
+) -> list[dict[str, object]]:
+	raw_lines = _decode_picking_task_lines(lines)
+	if not raw_lines:
+		frappe.throw(_("At least one picking line is required."), ValueError)
+	source_by_line = {
+		(cstr(line.get("sales_order_item")).strip(), cstr(line.get("item_code")).strip(), cstr(line.get("source_warehouse")).strip()): line
+		for line in source_lines
+	}
+	source_by_item_code = {
+		(cstr(line.get("item_code")).strip(), cstr(line.get("source_warehouse")).strip()): line
+		for line in source_lines
+	}
+	normalized: list[dict[str, object]] = []
+	seen: set[tuple[str, str, str]] = set()
+	for raw in raw_lines[:PICKING_TASK_MAX_LINES]:
+		if not isinstance(raw, dict):
+			frappe.throw(_("Picking line payload is invalid."), ValueError)
+		source = _match_picking_task_source_line(raw, source_by_line, source_by_item_code, source_warehouse)
+		key = (
+			cstr(source.get("sales_order_item")).strip(),
+			cstr(source.get("item_code")).strip(),
+			cstr(source.get("source_warehouse")).strip(),
+		)
+		if key in seen:
+			frappe.throw(_("Duplicate picking line in draft."), ValueError)
+		seen.add(key)
+		normalized.append(_normalize_picking_task_line(raw, source, task_evidence_reference))
+	return normalized
+
+
+def _decode_picking_task_lines(lines: str | list[dict[str, object]] | None) -> list[dict[str, object]]:
+	if isinstance(lines, str):
+		try:
+			decoded = json.loads(lines)
+		except Exception:
+			frappe.throw(_("Picking line payload is invalid JSON."), ValueError)
+		if isinstance(decoded, dict):
+			decoded = decoded.get("lines")
+		return list(decoded or []) if isinstance(decoded, list) else []
+	return list(lines or []) if isinstance(lines, list) else []
+
+
+def _match_picking_task_source_line(
+	raw: dict[str, object],
+	source_by_line: dict[tuple[str, str, str], dict[str, object]],
+	source_by_item_code: dict[tuple[str, str], dict[str, object]],
+	source_warehouse: str,
+) -> dict[str, object]:
+	sales_order_item = cstr(raw.get("sales_order_item")).strip()
+	item_code = cstr(raw.get("item_code")).strip()
+	line_warehouse = cstr(raw.get("warehouse") or raw.get("source_warehouse") or source_warehouse).strip()
+	source = source_by_line.get((sales_order_item, item_code, line_warehouse)) if sales_order_item else None
+	if not source and item_code:
+		source = source_by_item_code.get((item_code, line_warehouse))
+	if not source:
+		frappe.throw(_("Picking line does not belong to the selected Sales Order and warehouse."), ValueError)
+	return source
+
+
+def _normalize_picking_task_line(raw: dict[str, object], source: dict[str, object], task_evidence_reference: str) -> dict[str, object]:
+	open_qty = flt(source.get("open_qty"))
+	picked_qty = _non_negative_qty(raw.get("picked_qty"), "Picked quantity")
+	packed_qty = _non_negative_qty(raw.get("packed_qty"), "Packed quantity")
+	short_qty = _non_negative_qty(raw.get("short_qty"), "Short quantity")
+	damaged_qty = _non_negative_qty(raw.get("damaged_qty"), "Damaged quantity")
+	not_found_qty = _non_negative_qty(raw.get("not_found_qty"), "Not-found quantity")
+	if packed_qty > picked_qty:
+		frappe.throw(_("Packed quantity cannot exceed picked quantity."), ValueError)
+	if picked_qty + short_qty + damaged_qty + not_found_qty > open_qty:
+		frappe.throw(_("Picked and exception quantities cannot exceed open quantity."), ValueError)
+	exception_type = cstr(raw.get("exception_type")).strip().lower()
+	if exception_type not in PICKING_TASK_ALLOWED_EXCEPTION_TYPES:
+		frappe.throw(_("Picking exception type is not allowed."), ValueError)
+	exception_note = _bounded_text(raw.get("exception_note") or raw.get("note"), PICKING_TASK_MAX_NOTE_LENGTH)
+	evidence_reference = _bounded_text(raw.get("evidence_reference") or task_evidence_reference, PICKING_TASK_MAX_EVIDENCE_LENGTH)
+	if _picking_task_line_requires_evidence(exception_type, short_qty, damaged_qty, not_found_qty) and not (exception_note or evidence_reference):
+		frappe.throw(_("Evidence or note is required for this picking exception."), ValueError)
+	line_status = "Needs Review" if exception_type or short_qty or damaged_qty or not_found_qty else "Draft"
+	return {
+		"sales_order_item": cstr(source.get("sales_order_item")).strip(),
+		"item_code": cstr(source.get("item_code")).strip(),
+		"item_name": cstr(source.get("item_name")).strip(),
+		"warehouse": cstr(source.get("source_warehouse")).strip(),
+		"ordered_qty": flt(source.get("ordered_qty")),
+		"delivered_qty": flt(source.get("delivered_qty")),
+		"open_qty": open_qty,
+		"picked_qty": picked_qty,
+		"packed_qty": packed_qty,
+		"short_qty": short_qty,
+		"damaged_qty": damaged_qty,
+		"not_found_qty": not_found_qty,
+		"exception_type": exception_type,
+		"exception_note": exception_note,
+		"evidence_reference": evidence_reference,
+		"line_status": line_status,
+		"uom": cstr(source.get("uom")).strip(),
+	}
+
+
+def _picking_task_line_requires_evidence(exception_type: str, short_qty: float, damaged_qty: float, not_found_qty: float) -> bool:
+	return bool(exception_type in PICKING_TASK_EVIDENCE_REQUIRED_TYPES or short_qty > 0 or damaged_qty > 0 or not_found_qty > 0)
+
+
+def _get_or_create_picking_task(
+	order_record: dict[str, object],
+	source_warehouse: str,
+	note: str,
+	request_id: str,
+):
+	task_name = _active_picking_task_name(cstr(order_record.get("name")).strip(), source_warehouse)
+	if task_name:
+		return frappe.get_doc(PICKING_TASK_DOCTYPE, task_name)
+	task_doc = frappe.get_doc({"doctype": PICKING_TASK_DOCTYPE})
+	task_doc.sales_order = cstr(order_record.get("name")).strip()
+	task_doc.customer = cstr(order_record.get("customer_name") or order_record.get("customer")).strip()
+	task_doc.source_warehouse = source_warehouse
+	task_doc.task_status = "In Progress"
+	task_doc.workflow_state = "Pick draft saved"
+	task_doc.created_by_user = cstr(getattr(frappe.session, "user", "")).strip()
+	task_doc.notes = note
+	task_doc.source_route = "warehouse-console-picking"
+	task_doc.policy_version = PICKING_TASK_POLICY_VERSION
+	task_doc.request_id = request_id
+	return task_doc
+
+
+def _active_picking_task_name(sales_order: str, source_warehouse: str) -> str:
+	try:
+		rows = frappe.get_all(
+			PICKING_TASK_DOCTYPE,
+			fields=["name"],
+			filters={
+				"sales_order": sales_order,
+				"source_warehouse": source_warehouse,
+				"task_status": ["in", list(PICKING_TASK_ACTIVE_STATUSES)],
+			},
+			limit_page_length=1,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _picking_task_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			PICKING_TASK_DOCTYPE,
+			fields=["name"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_picking_task_draft(
+	task_doc,
+	order_record: dict[str, object],
+	source_warehouse: str,
+	task_lines: list[dict[str, object]],
+	note: str,
+	request_id: str,
+) -> None:
+	previous_status = cstr(getattr(task_doc, "task_status", "")).strip() or "Draft"
+	now_value = str(now_datetime())
+	task_doc.task_status = "In Progress"
+	task_doc.workflow_state = "Pick draft saved"
+	task_doc.customer = cstr(order_record.get("customer_name") or order_record.get("customer")).strip()
+	task_doc.source_warehouse = source_warehouse
+	task_doc.created_by_user = cstr(getattr(task_doc, "created_by_user", "") or getattr(frappe.session, "user", "")).strip()
+	task_doc.last_action_by = cstr(getattr(frappe.session, "user", "")).strip()
+	task_doc.last_action_at = now_value
+	task_doc.notes = note
+	task_doc.source_route = "warehouse-console-picking"
+	task_doc.policy_version = PICKING_TASK_POLICY_VERSION
+	task_doc.request_id = request_id
+	task_doc.line_count = len(task_lines)
+	task_doc.total_open_qty = sum(flt(line.get("open_qty")) for line in task_lines)
+	_set_child_table(task_doc, "lines", task_lines)
+	_append_child(task_doc, "events", {
+		"event_type": "saved_pick_draft",
+		"event_label": "Pick draft saved",
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": request_id,
+		"details_json": json.dumps({"line_count": len(task_lines), "source_warehouse": source_warehouse}, sort_keys=True),
+	})
+	if cstr(getattr(task_doc, "name", "")).strip():
+		task_doc.save()
+	else:
+		task_doc.insert()
+
+
+def _picking_task_saved_payload(context: dict[str, object], task_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_picking_task_line_payload(line) for line in list(getattr(task_doc, "lines", []) or [])]
+	events = list(getattr(task_doc, "events", []) or [])
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Picking Task Draft", "key": "picking_task_draft", "sales_order": cstr(getattr(task_doc, "sales_order", "")).strip()},
+		"task": {
+			"task_id": cstr(getattr(task_doc, "name", "")).strip(),
+			"sales_order": cstr(getattr(task_doc, "sales_order", "")).strip(),
+			"source_warehouse": cstr(getattr(task_doc, "source_warehouse", "")).strip(),
+			"status": cstr(getattr(task_doc, "task_status", "")).strip(),
+			"workflow_state": cstr(getattr(task_doc, "workflow_state", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"events_summary": _picking_task_event_payload(events[-1]) if events else {},
+		"stock_effect": False,
+		"delivery_note_created": False,
+		"delivery_note_submitted": False,
+		"pick_list_created": False,
+		"stock_reserved": False,
+		"stock_posted": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _picking_task_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"sales_order_item": cstr(getter("sales_order_item")).strip(),
+		"item_code": cstr(getter("item_code")).strip(),
+		"warehouse": cstr(getter("warehouse")).strip(),
+		"open_qty": _number_text(getter("open_qty")),
+		"picked_qty": _number_text(getter("picked_qty")),
+		"packed_qty": _number_text(getter("packed_qty")),
+		"short_qty": _number_text(getter("short_qty")),
+		"damaged_qty": _number_text(getter("damaged_qty")),
+		"not_found_qty": _number_text(getter("not_found_qty")),
+		"exception_type": cstr(getter("exception_type")).strip(),
+		"evidence_reference": cstr(getter("evidence_reference")).strip(),
+		"line_status": cstr(getter("line_status")).strip(),
+	}
+
+
+def _picking_task_event_payload(event) -> dict[str, object]:
+	return {
+		"event_type": cstr(_child_value(event, "event_type")).strip(),
+		"event_label": cstr(_child_value(event, "event_label")).strip(),
+		"event_by": cstr(_child_value(event, "event_by")).strip(),
+		"event_at": cstr(_child_value(event, "event_at")).strip(),
+		"request_id": cstr(_child_value(event, "request_id")).strip(),
+	}
 
 
 def _sales_order_picking_review_filters(order_name: str) -> list[list[object]]:
