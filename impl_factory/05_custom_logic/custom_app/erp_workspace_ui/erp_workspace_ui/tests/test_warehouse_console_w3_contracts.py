@@ -663,6 +663,17 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
                 else:
                     rows = [row for row in rows if getattr(row, key, None) == value]
         return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Picking Task Event":
+        rows = []
+        for task in PICKING_TASK_DOCS.values():
+            for event in list(getattr(task, "events", []) or []):
+                row = dict(event)
+                row["parent"] = task.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -2217,6 +2228,348 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(payload["stock_reserved"])
         self.assertFalse(payload["stock_posted"])
         forbidden_docs = {"Delivery Note", "Pick List", "Stock Reservation Entry", "Stock Entry", "Stock Ledger Entry"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+
+    def _save_pick_manager_decision(self, task, decision, request_id, note=""):
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        return service.save_warehouse_picking_manager_decision(
+            task_id=task.name,
+            decision=decision,
+            note=note,
+            request_id=request_id,
+        )
+
+    def test_w15d4_warehouse_user_cannot_make_picking_manager_decision(self):
+        payload = self._save_pick_task(request_id="pick-user-denied-draft")
+        task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse User"]
+
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=task.name,
+                decision="request_repick",
+                note="User cannot make manager decision.",
+                request_id="pick-mgr-user-denied",
+            )
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=task.name,
+                decision="request_repick",
+                note="Stock user cannot make manager decision.",
+                request_id="pick-mgr-stock-user-denied",
+            )
+        self.assertEqual(task.task_status, "In Progress")
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15d4_manager_can_request_repick_and_event_is_appended(self):
+        payload = self._save_pick_task(request_id="pick-repick-draft")
+        task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
+
+        result = self._save_pick_manager_decision(
+            task,
+            "request_repick",
+            "pick-mgr-repick",
+            note="Check outbound bin count again.",
+        )
+
+        self.assertEqual(result["state"]["kind"], "ready")
+        self.assertEqual(result["status"], "Repick Requested")
+        self.assertEqual(result["decision"], "request_repick")
+        self.assertEqual(result["event_summary"]["event_type"], "requested_repick")
+        self.assertEqual(task.task_status, "Repick Requested")
+        self.assertEqual(task.workflow_state, "Repick requested")
+        self.assertEqual(len(task.events), 2)
+        self.assertFalse(result["stock_effect"])
+        self.assertFalse(result["delivery_note_created"])
+        self.assertFalse(result["pick_list_created"])
+        self.assertFalse(result["stock_reserved"])
+        self.assertFalse(result["sales_order_updated"])
+        self.assertFalse(result["customer_notified"])
+
+    def test_w15d4_manager_decision_rejects_unknown_and_final_status(self):
+        payload = self._save_pick_task(request_id="pick-manager-invalid-draft")
+        task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=task.name,
+                decision="create_delivery_note",
+                request_id="pick-mgr-unknown",
+            )
+        task.task_status = "Closed"
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=task.name,
+                decision="request_repick",
+                note="Closed tasks cannot move.",
+                request_id="pick-mgr-final",
+            )
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15d4_clean_pick_approval_requires_clean_lines(self):
+        clean_payload = self._save_pick_task(request_id="pick-clean-approval-draft")
+        clean_task = PICKING_TASK_DOCS[clean_payload["task"]["task_id"]]
+
+        result = self._save_pick_manager_decision(clean_task, "approve_clean_pick", "pick-mgr-clean")
+
+        self.assertEqual(result["status"], "Clean Pick Approved")
+        self.assertEqual(result["event_summary"]["event_type"], "approved_clean_pick")
+        self.assertEqual(clean_task.task_status, "Clean Pick Approved")
+
+        PICKING_TASK_DOCS.clear()
+        damaged_payload = self._save_pick_task(
+            request_id="pick-damaged-approval-draft",
+            lines=[
+                {
+                    "item_code": "ITEM-105",
+                    "warehouse": "Short - M",
+                    "picked_qty": 1,
+                    "damaged_qty": 1,
+                    "exception_type": "damaged",
+                    "evidence_reference": "Damaged carton D-15",
+                }
+            ],
+        )
+        damaged_task = PICKING_TASK_DOCS[damaged_payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=damaged_task.name,
+                decision="approve_clean_pick",
+                request_id="pick-mgr-clean-damaged",
+            )
+        self.assertEqual(damaged_task.task_status, "In Progress")
+        self.assertEqual(len(damaged_task.events), 1)
+
+    def test_w15d4_partial_pick_and_shortage_review_require_shortage_evidence(self):
+        clean_payload = self._save_pick_task(request_id="pick-partial-clean-draft")
+        clean_task = PICKING_TASK_DOCS[clean_payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=clean_task.name,
+                decision="approve_partial_pick",
+                request_id="pick-mgr-partial-clean",
+            )
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=clean_task.name,
+                decision="mark_shortage_review",
+                request_id="pick-mgr-shortage-clean",
+            )
+
+        PICKING_TASK_DOCS.clear()
+        short_payload = self._save_pick_task(
+            request_id="pick-short-approval-draft",
+            lines=[
+                {
+                    "item_code": "ITEM-105",
+                    "warehouse": "Short - M",
+                    "picked_qty": 1,
+                    "short_qty": 2,
+                    "exception_type": "short",
+                    "evidence_reference": "Shelf shortage S-2",
+                }
+            ],
+        )
+        short_task = PICKING_TASK_DOCS[short_payload["task"]["task_id"]]
+        partial = self._save_pick_manager_decision(short_task, "approve_partial_pick", "pick-mgr-partial")
+        self.assertEqual(partial["status"], "Partial Pick Approved")
+        self.assertEqual(partial["event_summary"]["event_type"], "approved_partial_pick")
+
+        PICKING_TASK_DOCS.clear()
+        short_payload = self._save_pick_task(
+            request_id="pick-short-review-draft",
+            lines=[
+                {
+                    "item_code": "ITEM-105",
+                    "warehouse": "Short - M",
+                    "picked_qty": 1,
+                    "not_found_qty": 1,
+                    "exception_type": "not_found",
+                    "evidence_reference": "Bin check NF-1",
+                }
+            ],
+        )
+        short_task = PICKING_TASK_DOCS[short_payload["task"]["task_id"]]
+        shortage = self._save_pick_manager_decision(short_task, "mark_shortage_review", "pick-mgr-shortage")
+        self.assertEqual(shortage["status"], "Shortage Review")
+        self.assertEqual(shortage["event_summary"]["event_type"], "marked_shortage_review")
+
+    def test_w15d4_sales_escalation_requires_sales_issue_or_reason(self):
+        clean_payload = self._save_pick_task(request_id="pick-sales-clean-draft")
+        clean_task = PICKING_TASK_DOCS[clean_payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=clean_task.name,
+                decision="escalate_to_sales",
+                request_id="pick-mgr-sales-clean",
+            )
+
+        result = service.save_warehouse_picking_manager_decision(
+            task_id=clean_task.name,
+            decision="escalate_to_sales",
+            note="Customer-facing delivery quantity needs Sales review.",
+            request_id="pick-mgr-sales-reason",
+        )
+        self.assertEqual(result["status"], "Sales Escalation")
+        self.assertFalse(result["sales_order_updated"])
+        self.assertFalse(result["customer_notified"])
+
+    def test_w15d4_pack_ready_requires_picked_packed_and_no_unresolved_damage(self):
+        no_pack_payload = self._save_pick_task(
+            request_id="pick-no-pack-draft",
+            lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "picked_qty": 2, "packed_qty": 0}],
+        )
+        no_pack_task = PICKING_TASK_DOCS[no_pack_payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=no_pack_task.name,
+                decision="mark_pack_ready",
+                request_id="pick-mgr-pack-no-pack",
+            )
+
+        PICKING_TASK_DOCS.clear()
+        damaged_payload = self._save_pick_task(
+            request_id="pick-pack-damaged-draft",
+            lines=[
+                {
+                    "item_code": "ITEM-105",
+                    "warehouse": "Short - M",
+                    "picked_qty": 1,
+                    "packed_qty": 1,
+                    "damaged_qty": 1,
+                    "exception_type": "damaged",
+                    "evidence_reference": "Damage D-20",
+                }
+            ],
+        )
+        damaged_task = PICKING_TASK_DOCS[damaged_payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=damaged_task.name,
+                decision="mark_pack_ready",
+                request_id="pick-mgr-pack-damaged",
+            )
+
+        PICKING_TASK_DOCS.clear()
+        clean_payload = self._save_pick_task(request_id="pick-pack-ready-draft")
+        clean_task = PICKING_TASK_DOCS[clean_payload["task"]["task_id"]]
+        ready = self._save_pick_manager_decision(clean_task, "mark_pack_ready", "pick-mgr-pack-ready")
+        self.assertEqual(ready["status"], "Pack Ready")
+        self.assertEqual(ready["event_summary"]["event_type"], "marked_pack_ready")
+
+    def test_w15d4_dispatch_handoff_requires_pack_ready_and_no_delivery_note_effect(self):
+        payload = self._save_pick_task(request_id="pick-dispatch-draft")
+        task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=task.name,
+                decision="mark_dispatch_handoff",
+                request_id="pick-mgr-dispatch-too-soon",
+            )
+        task.task_status = "Pack Ready"
+
+        result = service.save_warehouse_picking_manager_decision(
+            task_id=task.name,
+            decision="mark_dispatch_handoff",
+            request_id="pick-mgr-dispatch",
+        )
+
+        self.assertEqual(result["status"], "Dispatch Handoff Ready")
+        self.assertEqual(result["event_summary"]["event_type"], "marked_dispatch_handoff")
+        self.assertFalse(result["delivery_note_created"])
+        self.assertFalse(result["delivery_note_submitted"])
+        self.assertFalse(result["stock_posted"])
+        self.assertFalse(any(call["doctype"] == "Delivery Note" for call in GET_DOC_CALLS))
+
+    def test_w15d4_manager_decision_request_id_is_idempotent(self):
+        payload = self._save_pick_task(request_id="pick-idempotent-draft")
+        task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
+        first = self._save_pick_manager_decision(
+            task,
+            "request_repick",
+            "pick-mgr-same-req",
+            note="Same manager request.",
+        )
+        second = self._save_pick_manager_decision(
+            task,
+            "request_repick",
+            "pick-mgr-same-req",
+            note="Same manager request.",
+        )
+
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(first["task_id"], second["task_id"])
+        self.assertEqual(len(task.events), 2)
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=task.name,
+                decision="approve_clean_pick",
+                request_id="pick-mgr-same-req",
+            )
+
+    def test_w15d4_manager_request_id_cannot_cross_picking_tasks(self):
+        first_payload = self._save_pick_task(request_id="pick-cross-manager-one")
+        first_task = PICKING_TASK_DOCS[first_payload["task"]["task_id"]]
+        self._save_pick_manager_decision(
+            first_task,
+            "request_repick",
+            "pick-mgr-cross-task",
+            note="First task manager request.",
+        )
+
+        second_payload = self._save_pick_task(
+            sales_order="SO-READY",
+            source_warehouse="Main - M",
+            lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "picked_qty": 2, "packed_qty": 2}],
+            request_id="pick-cross-manager-two",
+        )
+        second_task = PICKING_TASK_DOCS[second_payload["task"]["task_id"]]
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.save_warehouse_picking_manager_decision(
+                task_id=second_task.name,
+                decision="request_repick",
+                note="Reuse is not allowed.",
+                request_id="pick-mgr-cross-task",
+            )
+        self.assertEqual(first_task.task_status, "Repick Requested")
+        self.assertEqual(second_task.task_status, "In Progress")
+
+    def test_w15d4_manager_decision_response_has_no_native_commercial_or_stock_doc_effect(self):
+        payload = self._save_pick_task(request_id="pick-safe-manager-draft")
+        task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
+
+        result = self._save_pick_manager_decision(task, "approve_clean_pick", "pick-mgr-safe-response")
+
+        payload_text = str(result).lower()
+        self.assertEqual(result["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        self.assertFalse(result["stock_effect"])
+        self.assertFalse(result["delivery_note_created"])
+        self.assertFalse(result["delivery_note_submitted"])
+        self.assertFalse(result["pick_list_created"])
+        self.assertFalse(result["stock_reserved"])
+        self.assertFalse(result["stock_posted"])
+        self.assertFalse(result["sales_order_updated"])
+        self.assertFalse(result["customer_notified"])
+        forbidden_docs = {"Delivery Note", "Pick List", "Stock Reservation Entry", "Stock Entry", "Stock Ledger Entry", "Sales Order"}
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 

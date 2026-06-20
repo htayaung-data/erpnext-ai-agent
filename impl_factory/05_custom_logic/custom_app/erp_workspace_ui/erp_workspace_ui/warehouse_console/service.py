@@ -263,6 +263,34 @@ PICKING_TASK_EVIDENCE_REQUIRED_TYPES = frozenset({
 	"substitution",
 	"dispatch_paperwork_mismatch",
 })
+PICKING_TASK_MANAGER_ROLES = frozenset({"Warehouse Manager", "Stock Manager", "System Manager"})
+PICKING_TASK_MANAGER_DECISION_STATUSES = frozenset({
+	"Draft",
+	"In Progress",
+	"Submitted For Review",
+	"Repick Requested",
+	"Shortage Review",
+	"Sales Escalation",
+	"Clean Pick Approved",
+	"Partial Pick Approved",
+	"Pack Ready",
+})
+PICKING_TASK_MANAGER_DECISIONS = {
+	"request_repick": ("Repick Requested", "requested_repick", "Repick requested"),
+	"approve_clean_pick": ("Clean Pick Approved", "approved_clean_pick", "Clean pick approved"),
+	"approve_partial_pick": ("Partial Pick Approved", "approved_partial_pick", "Partial pick approved"),
+	"mark_shortage_review": ("Shortage Review", "marked_shortage_review", "Shortage review marked"),
+	"escalate_to_sales": ("Sales Escalation", "escalated_to_sales", "Sales escalation marked"),
+	"mark_pack_ready": ("Pack Ready", "marked_pack_ready", "Pack readiness marked"),
+	"mark_dispatch_handoff": ("Dispatch Handoff Ready", "marked_dispatch_handoff", "Dispatch handoff marked"),
+}
+PICKING_TASK_SALES_ESCALATION_TYPES = frozenset({
+	"short",
+	"not_found",
+	"unavailable_stock",
+	"substitution",
+	"dispatch_paperwork_mismatch",
+})
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
@@ -2094,6 +2122,76 @@ def save_warehouse_picking_task_draft(
 	return _picking_task_saved_payload(context, task_doc, idempotent=False)
 
 
+@frappe.whitelist()
+def save_warehouse_picking_manager_decision(
+	task_id: str | None = None,
+	decision: str | None = None,
+	note: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Save a manager decision on a custom Warehouse picking task.
+
+	W15D4 writes only the Warehouse Picking Task and its event log. It does
+	not create Delivery Note, Pick List, Stock Reservation, or stock posting
+	documents.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	task_name = cstr(task_id).strip()
+	decision_key = cstr(decision).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	manager_note = _bounded_text(note, PICKING_TASK_MAX_NOTE_LENGTH)
+	if not _has_picking_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not task_name:
+		frappe.throw(_("Picking task is required."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for picking manager decision."), ValueError)
+	if decision_key not in PICKING_TASK_MANAGER_DECISIONS:
+		frappe.throw(_("Picking manager decision is not allowed."), ValueError)
+	owner = _picking_task_manager_request_id_owner(server_request_id)
+	if owner and owner != task_name:
+		frappe.throw(_("Request id was already used for another picking task."), ValueError)
+	task_doc = _get_picking_task_for_decision(task_name)
+	next_status, event_type, event_label = PICKING_TASK_MANAGER_DECISIONS[decision_key]
+	existing_event = _picking_task_event_for_request(task_doc, server_request_id)
+	if existing_event:
+		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
+			frappe.throw(_("Request id was already used for another picking manager decision."), ValueError)
+		return _picking_task_manager_decision_payload(context, task_doc, decision_key, existing_event, idempotent=True)
+	if cstr(getattr(task_doc, "request_id", "")).strip() == server_request_id:
+		frappe.throw(_("Request id was already used for this picking task."), ValueError)
+	_validate_picking_manager_decision(task_doc, decision_key, manager_note)
+	previous_status = cstr(getattr(task_doc, "task_status", "")).strip()
+	now_value = str(now_datetime())
+	event = {
+		"event_type": event_type,
+		"event_label": event_label,
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": server_request_id,
+		"details_json": json.dumps(
+			{
+				"decision": decision_key,
+				"note": manager_note,
+				"previous_status": previous_status,
+				"next_status": next_status,
+				"stock_effect": False,
+				"sales_order_updated": False,
+				"customer_notified": False,
+			},
+			sort_keys=True,
+		),
+	}
+	task_doc.task_status = next_status
+	task_doc.workflow_state = event_label
+	task_doc.last_action_by = cstr(getattr(frappe.session, "user", "")).strip()
+	task_doc.last_action_at = now_value
+	_append_child(task_doc, "events", event)
+	task_doc.save()
+	return _picking_task_manager_decision_payload(context, task_doc, decision_key, event, idempotent=False)
+
+
 def _picking_task_sales_order(order_name: str) -> dict[str, object] | None:
 	records = _safe_get_list(
 		"Sales Order",
@@ -2374,6 +2472,183 @@ def _picking_task_saved_payload(context: dict[str, object], task_doc, *, idempot
 		"pick_list_created": False,
 		"stock_reserved": False,
 		"stock_posted": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _has_picking_manager_access(context: dict[str, object]) -> bool:
+	roles = set(context.get("roles") or [])
+	return bool(roles.intersection(PICKING_TASK_MANAGER_ROLES))
+
+
+def _get_picking_task_for_decision(task_name: str):
+	try:
+		return frappe.get_doc(PICKING_TASK_DOCTYPE, task_name)
+	except Exception:
+		_clear_transient_frappe_messages()
+		frappe.throw(_("Picking task is not available."), ValueError)
+
+
+def _picking_task_manager_request_id_owner(request_id: str) -> str:
+	owner = _picking_task_request_id_owner(request_id)
+	if owner:
+		return owner
+	try:
+		rows = frappe.get_all(
+			PICKING_TASK_EVENT_DOCTYPE,
+			fields=["parent"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("parent") or rows[0].get("name")).strip() if rows else ""
+
+
+def _picking_task_event_for_request(task_doc, request_id: str):
+	for event in list(getattr(task_doc, "events", []) or []):
+		if cstr(_child_value(event, "request_id")).strip() == request_id:
+			return event
+	return None
+
+
+def _validate_picking_manager_decision(task_doc, decision_key: str, note: str) -> None:
+	status = cstr(getattr(task_doc, "task_status", "")).strip()
+	if status not in PICKING_TASK_MANAGER_DECISION_STATUSES:
+		frappe.throw(_("Picking task is not ready for manager decision."), ValueError)
+	lines = list(getattr(task_doc, "lines", []) or [])
+	if not lines:
+		frappe.throw(_("Picking task has no lines for manager review."), ValueError)
+	has_exception = any(_picking_task_line_has_exception(line) for line in lines)
+	has_shortage = any(_picking_task_line_has_shortage(line) for line in lines)
+	has_damage_or_not_found = any(_picking_task_line_has_damage_or_not_found(line) for line in lines)
+	has_partial_evidence = any(_picking_task_line_has_partial_evidence(line) for line in lines)
+	has_sales_issue = any(_picking_task_line_has_sales_issue(line) for line in lines)
+	if decision_key == "request_repick" and not (has_exception or note):
+		frappe.throw(_("Repick request requires an exception line or manager note."), ValueError)
+	if decision_key == "approve_clean_pick" and has_exception:
+		frappe.throw(_("Clean pick approval is available only when no picking line needs review."), ValueError)
+	if decision_key == "approve_partial_pick" and not has_partial_evidence:
+		frappe.throw(_("Partial pick approval requires shortage or partial-pick evidence."), ValueError)
+	if decision_key == "mark_shortage_review" and not has_shortage:
+		frappe.throw(_("Shortage review requires short or not-found evidence."), ValueError)
+	if decision_key == "escalate_to_sales" and not (has_sales_issue or note):
+		frappe.throw(_("Sales escalation requires a Sales-facing issue or manager reason."), ValueError)
+	if decision_key == "mark_pack_ready":
+		if has_damage_or_not_found:
+			frappe.throw(_("Pack readiness cannot be marked while damage or not-found issues are unresolved."), ValueError)
+		if has_exception and status not in {"Partial Pick Approved", "Clean Pick Approved"}:
+			frappe.throw(_("Pack readiness requires manager approval before exception lines can move forward."), ValueError)
+		if not _picking_task_has_picked_and_packed_lines(lines):
+			frappe.throw(_("Pack readiness requires picked and packed quantities."), ValueError)
+	if decision_key == "mark_dispatch_handoff":
+		if status not in {"Pack Ready", "Clean Pick Approved", "Partial Pick Approved"}:
+			frappe.throw(_("Dispatch handoff requires pack-ready or approved picking status."), ValueError)
+		if has_damage_or_not_found:
+			frappe.throw(_("Dispatch handoff cannot be marked while damage or not-found issues are unresolved."), ValueError)
+
+
+def _picking_task_line_has_exception(line) -> bool:
+	return bool(
+		_picking_task_line_has_quantity(line, "short_qty")
+		or _picking_task_line_has_quantity(line, "damaged_qty")
+		or _picking_task_line_has_quantity(line, "not_found_qty")
+		or cstr(_child_value(line, "exception_type")).strip()
+		or cstr(_child_value(line, "line_status")).strip().lower() == "needs review"
+	)
+
+
+def _picking_task_line_has_shortage(line) -> bool:
+	exception_type = cstr(_child_value(line, "exception_type")).strip().lower()
+	return bool(
+		_picking_task_line_has_quantity(line, "short_qty")
+		or _picking_task_line_has_quantity(line, "not_found_qty")
+		or exception_type in {"short", "not_found", "unavailable_stock"}
+	)
+
+
+def _picking_task_line_has_damage_or_not_found(line) -> bool:
+	exception_type = cstr(_child_value(line, "exception_type")).strip().lower()
+	return bool(
+		_picking_task_line_has_quantity(line, "damaged_qty")
+		or _picking_task_line_has_quantity(line, "not_found_qty")
+		or exception_type in {"damaged", "not_found"}
+	)
+
+
+def _picking_task_line_has_partial_evidence(line) -> bool:
+	exception_type = cstr(_child_value(line, "exception_type")).strip().lower()
+	picked_qty = flt(_child_value(line, "picked_qty"))
+	open_qty = flt(_child_value(line, "open_qty"))
+	return bool(_picking_task_line_has_shortage(line) or (open_qty > 0 and picked_qty < open_qty and _picking_task_line_has_exception(line)) or exception_type in PICKING_TASK_SALES_ESCALATION_TYPES)
+
+
+def _picking_task_line_has_sales_issue(line) -> bool:
+	exception_type = cstr(_child_value(line, "exception_type")).strip().lower()
+	return bool(_picking_task_line_has_shortage(line) or exception_type in PICKING_TASK_SALES_ESCALATION_TYPES)
+
+
+def _picking_task_line_has_quantity(line, fieldname: str) -> bool:
+	return flt(_child_value(line, fieldname)) > 0
+
+
+def _picking_task_has_picked_and_packed_lines(lines: list[object]) -> bool:
+	picked_total = sum(flt(_child_value(line, "picked_qty")) for line in lines)
+	packed_total = sum(flt(_child_value(line, "packed_qty")) for line in lines)
+	if picked_total <= 0 or packed_total <= 0:
+		return False
+	for line in lines:
+		picked_qty = flt(_child_value(line, "picked_qty"))
+		packed_qty = flt(_child_value(line, "packed_qty"))
+		if picked_qty > 0 and packed_qty < picked_qty:
+			return False
+	return True
+
+
+def _picking_task_manager_decision_payload(
+	context: dict[str, object],
+	task_doc,
+	decision_key: str,
+	event,
+	*,
+	idempotent: bool,
+) -> dict[str, object]:
+	last_event = _picking_task_event_payload(event)
+	task_id = cstr(getattr(task_doc, "name", "")).strip()
+	sales_order = cstr(getattr(task_doc, "sales_order", "")).strip()
+	source_warehouse = cstr(getattr(task_doc, "source_warehouse", "")).strip()
+	status = cstr(getattr(task_doc, "task_status", "")).strip()
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Picking Manager Decision", "key": "picking_manager_decision", "sales_order": sales_order},
+		"task_id": task_id,
+		"sales_order": sales_order,
+		"source_warehouse": source_warehouse,
+		"status": status,
+		"decision": decision_key,
+		"idempotent": bool(idempotent),
+		"event_summary": last_event,
+		"task": {
+			"task_id": task_id,
+			"sales_order": sales_order,
+			"source_warehouse": source_warehouse,
+			"status": status,
+			"workflow_state": cstr(getattr(task_doc, "workflow_state", "")).strip(),
+			"decision": decision_key,
+			"idempotent": bool(idempotent),
+		},
+		"stock_effect": False,
+		"delivery_note_created": False,
+		"delivery_note_submitted": False,
+		"pick_list_created": False,
+		"stock_reserved": False,
+		"stock_posted": False,
+		"sales_order_updated": False,
+		"customer_notified": False,
 		"valuation": {"visible": False, "fields": []},
 		"fetched_at": str(now_datetime()),
 	}
