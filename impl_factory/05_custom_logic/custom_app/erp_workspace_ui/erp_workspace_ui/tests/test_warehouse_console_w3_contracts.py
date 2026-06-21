@@ -28,6 +28,7 @@ GET_DOC_CALLS = []
 RECEIVING_TASK_DOCS = {}
 PICKING_TASK_DOCS = {}
 DISPATCH_HANDOFF_REQUEST_DOCS = {}
+CUSTOMER_RETURN_INTAKE_DOCS = {}
 
 PO_ROWS = [
     {
@@ -595,6 +596,54 @@ def _get_meta(doctype):
             "request_id",
             "details_json",
         },
+        "Warehouse Customer Return Intake": {
+            "customer",
+            "warehouse",
+            "intake_status",
+            "return_authorization_reference",
+            "sales_order_reference_text",
+            "delivery_note_reference_text",
+            "sales_invoice_reference_text",
+            "source_reference_note",
+            "received_by",
+            "received_at",
+            "inspection_status",
+            "manager_review_status",
+            "sales_escalation_reference",
+            "notes",
+            "source_payload_hash",
+            "policy_version",
+            "line_count",
+            "total_returned_qty",
+            "request_id",
+            "lines",
+            "events",
+        },
+        "Warehouse Customer Return Intake Line": {
+            "item_code",
+            "item_name",
+            "warehouse",
+            "returned_qty",
+            "accepted_qty",
+            "damaged_qty",
+            "quarantine_qty",
+            "repair_qty",
+            "scrap_candidate_qty",
+            "rejected_qty",
+            "condition_grade",
+            "disposition",
+            "evidence_reference",
+            "condition_note",
+            "uom",
+        },
+        "Warehouse Customer Return Intake Event": {
+            "event_type",
+            "event_label",
+            "event_by",
+            "event_at",
+            "request_id",
+            "details_json",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -691,6 +740,20 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
 
 def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_length=None, **kwargs):
     GET_ALL_CALLS.append({"doctype": doctype, "fields": fields, "filters": filters, "limit": limit_page_length})
+    if doctype == "Warehouse":
+        warehouses = {
+            row.get("set_warehouse") for row in PO_ROWS + SO_ROWS if row.get("set_warehouse")
+        } | {
+            row.get("warehouse") for row in PO_ITEM_ROWS + SO_ITEM_ROWS + BIN_ROWS if row.get("warehouse")
+        } | {
+            row.get("from_warehouse") for row in STOCK_ENTRY_ROWS if row.get("from_warehouse")
+        } | {
+            row.get("to_warehouse") for row in STOCK_ENTRY_ROWS if row.get("to_warehouse")
+        }
+        rows = [{"name": name} for name in sorted(warehouses) if name]
+        if isinstance(filters, dict) and filters.get("name"):
+            rows = [row for row in rows if row["name"] == filters.get("name")]
+        return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Warehouse Receiving Task":
         rows = list(RECEIVING_TASK_DOCS.values())
         if isinstance(filters, dict):
@@ -738,6 +801,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             for event in list(getattr(request, "events", []) or []):
                 row = dict(event)
                 row["parent"] = request.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Customer Return Intake":
+        rows = list(CUSTOMER_RETURN_INTAKE_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Customer Return Intake Event":
+        rows = []
+        for intake in CUSTOMER_RETURN_INTAKE_DOCS.values():
+            for event in list(getattr(intake, "events", []) or []):
+                row = dict(event)
+                row["parent"] = intake.name
                 rows.append(row)
         if isinstance(filters, dict):
             for key, value in filters.items():
@@ -818,6 +902,11 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Customer Return Intake":
+            if not self.name:
+                self.name = f"WCRI-{len(CUSTOMER_RETURN_INTAKE_DOCS) + 1:05d}"
+            CUSTOMER_RETURN_INTAKE_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Dispatch Handoff Request":
             if not self.name:
                 self.name = f"WDHR-{len(DISPATCH_HANDOFF_REQUEST_DOCS) + 1:05d}"
@@ -834,6 +923,11 @@ class _FakeWorkflowDoc:
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Customer Return Intake":
+            if not self.name:
+                self.name = f"WCRI-{len(CUSTOMER_RETURN_INTAKE_DOCS) + 1:05d}"
+            CUSTOMER_RETURN_INTAKE_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Dispatch Handoff Request":
             if not self.name:
                 self.name = f"WDHR-{len(DISPATCH_HANDOFF_REQUEST_DOCS) + 1:05d}"
@@ -855,7 +949,7 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request"}:
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
@@ -871,6 +965,10 @@ def _get_doc(doctype, name=None, *args, **kwargs):
         if name not in DISPATCH_HANDOFF_REQUEST_DOCS:
             raise Exception("Missing Warehouse Dispatch Handoff Request")
         return DISPATCH_HANDOFF_REQUEST_DOCS[name]
+    if doctype == "Warehouse Customer Return Intake":
+        if name not in CUSTOMER_RETURN_INTAKE_DOCS:
+            raise Exception("Missing Warehouse Customer Return Intake")
+        return CUSTOMER_RETURN_INTAKE_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -958,6 +1056,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         RECEIVING_TASK_DOCS.clear()
         PICKING_TASK_DOCS.clear()
         DISPATCH_HANDOFF_REQUEST_DOCS.clear()
+        CUSTOMER_RETURN_INTAKE_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -3083,6 +3182,161 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(movement_detail["state"]["kind"], "restricted")
         self.assertEqual(movement_detail["line_groups"], [])
         self.assertFalse(any(call["doctype"] == "Stock Entry" for call in LIST_CALLS))
+
+
+    def _save_customer_return_intake(self, **overrides):
+        payload = {
+            "customer": "CUST-RET-001",
+            "warehouse": "Main - M",
+            "return_authorization_reference": "RMA-001",
+            "sales_order_reference_text": "SO-TODAY",
+            "delivery_note_reference_text": "DN-TEXT-001",
+            "source_reference_note": "Sales approved return intake.",
+            "lines": [
+                {
+                    "item_code": "ITEM-102",
+                    "item_name": "Screen Guard",
+                    "warehouse": "Main - M",
+                    "returned_qty": 2,
+                    "accepted_qty": 2,
+                    "condition_grade": "Good",
+                    "disposition": "Restock candidate",
+                    "uom": "Nos",
+                }
+            ],
+            "notes": "Received at returns bench.",
+            "request_id": "return-intake-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_customer_return_intake_draft(**payload)
+
+    def test_w15e3_warehouse_and_stock_users_can_save_customer_return_intake_draft(self):
+        payload = self._save_customer_return_intake()
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "customer_return_intake_draft")
+        self.assertEqual(payload["intake"]["customer"], "CUST-RET-001")
+        self.assertEqual(payload["intake"]["warehouse"], "Main - M")
+        self.assertEqual(payload["intake"]["line_count"], 1)
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_increased"])
+        self.assertFalse(payload["sales_return_created"])
+        self.assertFalse(payload["credit_note_created"])
+        self.assertFalse(payload["delivery_note_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["sales_order_updated"])
+        self.assertFalse(payload["customer_notified"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(len(CUSTOMER_RETURN_INTAKE_DOCS), 1)
+        intake = next(iter(CUSTOMER_RETURN_INTAKE_DOCS.values()))
+        self.assertEqual(intake.policy_version, service.CUSTOMER_RETURN_INTAKE_POLICY_VERSION)
+        self.assertEqual(intake.request_id, "return-intake-001")
+        self.assertEqual(intake.total_returned_qty, 2.0)
+        self.assertEqual(len(intake.lines), 1)
+        self.assertEqual(intake.lines[0]["item_code"], "ITEM-102")
+        self.assertEqual(len(intake.events), 1)
+        self.assertEqual(intake.events[0]["event_type"], "saved_customer_return_intake_draft")
+
+        CUSTOMER_RETURN_INTAKE_DOCS.clear()
+        CURRENT_ROLES[:] = ["Stock User"]
+        stock_payload = self._save_customer_return_intake(request_id="return-stock-user")
+        self.assertEqual(stock_payload["state"]["kind"], "ready")
+        self.assertEqual(len(CUSTOMER_RETURN_INTAKE_DOCS), 1)
+
+    def test_w15e3_non_warehouse_user_denied_customer_return_intake(self):
+        CURRENT_ROLES[:] = ["Sales User"]
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(request_id="return-denied")
+        self.assertEqual(CUSTOMER_RETURN_INTAKE_DOCS, {})
+
+    def test_w15e3_missing_customer_authorization_or_visible_warehouse_rejected(self):
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(customer="", request_id="return-missing-customer")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(return_authorization_reference="", request_id="return-missing-rma")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(warehouse="Unknown - M", request_id="return-unknown-warehouse")
+        self.assertEqual(CUSTOMER_RETURN_INTAKE_DOCS, {})
+
+    def test_w15e3_customer_return_line_validation(self):
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(lines=[], request_id="return-missing-lines")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(lines=[{"warehouse": "Main - M", "returned_qty": 1, "condition_grade": "Good"}], request_id="return-missing-item")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 0, "condition_grade": "Good"}], request_id="return-zero-qty")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 1, "accepted_qty": -1, "condition_grade": "Good"}], request_id="return-negative-qty")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 2, "accepted_qty": 2, "damaged_qty": 1, "condition_grade": "Good"}], request_id="return-over-sum")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 1}], request_id="return-missing-condition")
+        self.assertEqual(CUSTOMER_RETURN_INTAKE_DOCS, {})
+
+    def test_w15e3_exception_quantities_require_evidence_or_condition_note(self):
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(
+                lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 2, "accepted_qty": 1, "damaged_qty": 1, "condition_grade": "Damaged"}],
+                request_id="return-damaged-no-evidence",
+            )
+        payload = self._save_customer_return_intake(
+            lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 2, "accepted_qty": 1, "damaged_qty": 1, "condition_grade": "Damaged", "evidence_reference": "RET-PHOTO-1"}],
+            request_id="return-damaged-evidence",
+        )
+        self.assertEqual(payload["state"]["kind"], "ready")
+        intake = next(iter(CUSTOMER_RETURN_INTAKE_DOCS.values()))
+        self.assertEqual(intake.lines[0]["evidence_reference"], "RET-PHOTO-1")
+
+    def test_w15e3_request_idempotency_and_changed_payload_rejection(self):
+        first = self._save_customer_return_intake(request_id="return-same-request")
+        second = self._save_customer_return_intake(request_id="return-same-request")
+
+        self.assertFalse(first["intake"]["idempotent"])
+        self.assertTrue(second["intake"]["idempotent"])
+        self.assertEqual(first["intake"]["intake_id"], second["intake"]["intake_id"])
+        self.assertEqual(len(CUSTOMER_RETURN_INTAKE_DOCS), 1)
+        intake = next(iter(CUSTOMER_RETURN_INTAKE_DOCS.values()))
+        self.assertEqual(len(intake.events), 1)
+
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(notes="Changed note.", request_id="return-same-request")
+
+    def test_w15e3_request_id_cannot_cross_customer_or_warehouse(self):
+        self._save_customer_return_intake(request_id="return-cross-request")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(customer="CUST-RET-002", request_id="return-cross-request")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(warehouse="Short - M", lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "returned_qty": 1, "accepted_qty": 1, "condition_grade": "Good"}], request_id="return-cross-request")
+        self.assertEqual(len(CUSTOMER_RETURN_INTAKE_DOCS), 1)
+
+    def test_w15e3_forbidden_fields_and_safe_payload_boundaries(self):
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(sales_return="SR-0001", request_id="return-forbidden-sales-return")
+        self.assertEqual(CUSTOMER_RETURN_INTAKE_DOCS, {})
+
+        payload = self._save_customer_return_intake(request_id="return-safe-response")
+        payload_text = str(payload).lower()
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_increased"])
+        self.assertFalse(payload["sales_return_created"])
+        self.assertFalse(payload["credit_note_created"])
+        self.assertFalse(payload["delivery_note_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["sales_order_updated"])
+        self.assertFalse(payload["customer_notified"])
+        forbidden_docs = {"Sales Return", "Credit Note", "Delivery Note", "Stock Entry", "Stock Ledger Entry", "Stock Reconciliation", "Sales Order"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
 
 if __name__ == "__main__":

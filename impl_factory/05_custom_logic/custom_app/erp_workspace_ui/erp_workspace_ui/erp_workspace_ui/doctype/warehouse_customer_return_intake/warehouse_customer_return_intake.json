@@ -1,0 +1,215 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-21 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "customer",
+  "warehouse",
+  "intake_status",
+  "return_authorization_reference",
+  "sales_order_reference_text",
+  "delivery_note_reference_text",
+  "sales_invoice_reference_text",
+  "source_reference_note",
+  "received_by",
+  "received_at",
+  "inspection_status",
+  "manager_review_status",
+  "sales_escalation_reference",
+  "notes",
+  "source_payload_hash",
+  "policy_version",
+  "line_count",
+  "total_returned_qty",
+  "request_id",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "customer",
+   "fieldtype": "Data",
+   "label": "Customer",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Data",
+   "label": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "intake_status",
+   "fieldtype": "Select",
+   "label": "Intake Status",
+   "options": "Intake Draft\nReceived For Inspection\nInspection In Progress\nSubmitted For Manager Review\nRestock Review\nQuarantine Review\nRepair Review\nScrap Review\nEscalated To Sales\nRejected / Return To Customer\nClosed\nCancelled",
+   "default": "Intake Draft",
+   "read_only": 1
+  },
+  {
+   "fieldname": "return_authorization_reference",
+   "fieldtype": "Data",
+   "label": "Return Authorization Reference",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "sales_order_reference_text",
+   "fieldtype": "Data",
+   "label": "Sales Order Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delivery_note_reference_text",
+   "fieldtype": "Data",
+   "label": "Delivery Note Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_invoice_reference_text",
+   "fieldtype": "Data",
+   "label": "Sales Invoice Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_reference_note",
+   "fieldtype": "Small Text",
+   "label": "Source Reference Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "received_by",
+   "fieldtype": "Data",
+   "label": "Received By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "received_at",
+   "fieldtype": "Datetime",
+   "label": "Received At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "inspection_status",
+   "fieldtype": "Data",
+   "label": "Inspection Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manager_review_status",
+   "fieldtype": "Data",
+   "label": "Manager Review Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Sales Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload_hash",
+   "fieldtype": "Data",
+   "label": "Source Payload Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_returned_qty",
+   "fieldtype": "Float",
+   "label": "Total Returned Qty",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request Id",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Customer Return Intake Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Customer Return Intake Event",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-06-21 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Customer Return Intake",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
