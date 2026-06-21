@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, W9/W9A/W9B cockpit information architecture and usability review, W10 phase-boundary review, W10A read-only hardening baseline, W10B read-only freeze closure, W10C page chrome fix, W11 execution-readiness boundary plan, W11A execution-readiness synthesis, W11B Purchase Receipt receiving execution design, W12A-W12K read-only premium structure polish, W13A premium UI visual standard, and W14A functional scope governance
+- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, W9/W9A/W9B cockpit information architecture and usability review, W10 phase-boundary review, W10A read-only hardening baseline, W10B read-only freeze closure, W10C page chrome fix, W11 execution-readiness boundary plan, W11A execution-readiness synthesis, W11B Purchase Receipt receiving execution design, W12A-W12K read-only premium structure polish, W13A premium UI visual standard, W14A functional scope governance, and W15A/W15C5/W15D/W15D5 controlled operations policy design
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
@@ -90,6 +90,7 @@ Freeze and governance status:
 - Warehouse Console Phase W12A-W12K Premium Structure Polish is complete as read-only visual/structure work across Cockpit, Inbound Receiving, Receiving Review, Outbound Picking, Picking Review, Stock Exceptions, Stock Exception Review, Stock Posture Review, Movement Visibility, Movement Review, and Transfer Visibility. The current W12 endpoint remains read-only and excludes stock execution, native ERPNext route escape, Quick Find/Search, valuation/accounting/commercial exposure, and Sales/Procurement runtime changes.
 - Warehouse Console Phase W13A Premium UI Visual Standard is documented on 2026-06-10 as a docs-only audit and design standard. The recommendation is `proceed_to_w13b_shared_visual_foundation`; W13 remains final visual harmonization only and does not approve backend methods, new routes, execution actions, native ERPNext escape, valuation/accounting/commercial exposure, Quick Find/Search, Sales runtime change, or Procurement runtime change.
 - Warehouse Console Phase W14A Functional Scope is documented on 2026-06-15 as a docs-only governance plan for Warehouse Quick Find, manager readiness, inbound arrival review, outbound pick/pack readiness, inventory-control requests, transfer request review, and future write-governance decisions. The recommendation is `scope_ready_for_w14b_quick_find_design`; W14A does not approve runtime implementation, backend methods, native ERPNext escape, valuation/accounting/commercial exposure, customer/supplier send actions, stock lifecycle actions, Sales runtime changes, or Procurement runtime changes.
+- Warehouse Console Phase W15D5 Delivery Note Dispatch Policy is documented on 2026-06-21 as a docs-only outbound dispatch handoff and future Delivery Note draft boundary. `Dispatch Handoff Ready` remains an internal Warehouse readiness state only; Delivery Note draft creation/submission, Pick List creation, Stock Reservation, stock posting, native ERPNext route exposure, Sales/Procurement runtime changes, and valuation/accounting/commercial exposure remain blocked until a later owner-approved policy and security review.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -176,6 +177,7 @@ Active Warehouse operations roadmap after Phase 0:
 - `warehouse-console-phase-w15a-operations-blueprint-2026-06-16.md`
 - `warehouse-console-phase-w15c5-purchase-receipt-draft-policy-2026-06-18.md`
 - `warehouse-console-phase-w15d-outbound-picking-dispatch-workflow-design-2026-06-18.md`
+- `warehouse-console-phase-w15d5-delivery-note-dispatch-policy-2026-06-21.md`
 
 Historical Warehouse W14 planning notes are superseded by W15A unless Main Control explicitly reopens W14.
 
