@@ -3339,5 +3339,186 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
 
+    def _save_customer_return_manager_decision(self, intake_id, **overrides):
+        payload = {
+            "intake_id": intake_id,
+            "decision": "mark_restock_candidate",
+            "note": "Manager reviewed physical return evidence.",
+            "request_id": "return-manager-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_customer_return_manager_decision(**payload)
+
+    def _customer_return_intake_id(self, **overrides):
+        payload = self._save_customer_return_intake(**overrides)
+        return payload["intake"]["intake_id"]
+
+    def test_w15e4_manager_roles_can_save_customer_return_manager_decision(self):
+        intake_id = self._customer_return_intake_id(request_id="return-manager-clean-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+
+        payload = self._save_customer_return_manager_decision(intake_id, request_id="return-manager-clean-decision")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "customer_return_manager_decision")
+        self.assertEqual(payload["decision"], "mark_restock_candidate")
+        self.assertEqual(payload["status"], "Restock Candidate")
+        self.assertEqual(payload["manager_review_status"], "Restock Candidate")
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_increased"])
+        self.assertFalse(payload["sales_return_created"])
+        self.assertFalse(payload["credit_note_created"])
+        self.assertFalse(payload["delivery_note_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["sales_order_updated"])
+        self.assertFalse(payload["customer_notified"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        intake = CUSTOMER_RETURN_INTAKE_DOCS[intake_id]
+        self.assertEqual(intake.intake_status, "Restock Candidate")
+        self.assertEqual(intake.manager_review_status, "Restock Candidate")
+        self.assertEqual(len(intake.events), 2)
+        self.assertEqual(intake.events[-1]["event_type"], "marked_restock_candidate")
+
+        CUSTOMER_RETURN_INTAKE_DOCS.clear()
+        CURRENT_ROLES[:] = ["Stock User"]
+        stock_manager_intake = self._customer_return_intake_id(request_id="return-stock-manager-draft")
+        CURRENT_ROLES[:] = ["Stock Manager"]
+        stock_payload = self._save_customer_return_manager_decision(stock_manager_intake, request_id="return-stock-manager-decision")
+        self.assertEqual(stock_payload["status"], "Restock Candidate")
+
+    def test_w15e4_warehouse_and_stock_users_denied_customer_return_manager_decision(self):
+        intake_id = self._customer_return_intake_id(request_id="return-manager-deny-draft")
+
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(intake_id, request_id="return-manager-deny-warehouse-user")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(intake_id, request_id="return-manager-deny-stock-user")
+
+        intake = CUSTOMER_RETURN_INTAKE_DOCS[intake_id]
+        self.assertEqual(intake.intake_status, "Intake Draft")
+        self.assertEqual(len(intake.events), 1)
+
+    def test_w15e4_customer_return_manager_decision_rules(self):
+        clean_intake = self._customer_return_intake_id(request_id="return-rules-clean")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(clean_intake, decision="request_reinspection", note="", request_id="return-rules-reinspect-clean")
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(clean_intake, decision="mark_quarantine_review", request_id="return-rules-quarantine-clean")
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(clean_intake, decision="mark_repair_candidate", request_id="return-rules-repair-clean")
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(clean_intake, decision="mark_scrap_candidate", request_id="return-rules-scrap-clean")
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(clean_intake, decision="reject_intake", note="", request_id="return-rules-reject-clean")
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(clean_intake, decision="escalate_to_sales", note="", request_id="return-rules-sales-clean")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        damaged_intake = self._customer_return_intake_id(
+            request_id="return-rules-damaged",
+            lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 2, "accepted_qty": 1, "damaged_qty": 1, "condition_grade": "Damaged", "evidence_reference": "RET-DMG-1"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(damaged_intake, decision="mark_restock_candidate", request_id="return-rules-restock-damaged")
+        quarantine_payload = self._save_customer_return_manager_decision(damaged_intake, decision="mark_quarantine_review", request_id="return-rules-quarantine-damaged")
+        self.assertEqual(quarantine_payload["status"], "Quarantine Review")
+
+    def test_w15e4_repair_scrap_reject_and_sales_decisions_require_matching_evidence(self):
+        CURRENT_ROLES[:] = ["Stock User"]
+        repair_intake = self._customer_return_intake_id(
+            request_id="return-rules-repair",
+            lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 2, "accepted_qty": 1, "repair_qty": 1, "condition_grade": "Repair", "evidence_reference": "RET-REPAIR-1"}],
+        )
+        scrap_intake = self._customer_return_intake_id(
+            request_id="return-rules-scrap",
+            lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "returned_qty": 2, "scrap_candidate_qty": 1, "rejected_qty": 1, "condition_grade": "Bad", "evidence_reference": "RET-SCRAP-1"}],
+        )
+        sales_intake = self._customer_return_intake_id(
+            request_id="return-rules-sales",
+            lines=[{"item_code": "ITEM-104", "warehouse": "Main - M", "returned_qty": 2, "rejected_qty": 1, "condition_grade": "Customer dispute", "condition_note": "Return rejected by intake condition."}],
+        )
+
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        repair_payload = self._save_customer_return_manager_decision(repair_intake, decision="mark_repair_candidate", request_id="return-rules-repair-decision")
+        scrap_payload = self._save_customer_return_manager_decision(scrap_intake, decision="mark_scrap_candidate", request_id="return-rules-scrap-decision")
+        sales_payload = self._save_customer_return_manager_decision(sales_intake, decision="escalate_to_sales", sales_escalation_reference="SALES-RET-001", request_id="return-rules-sales-decision")
+
+        self.assertEqual(repair_payload["status"], "Repair Candidate")
+        self.assertEqual(scrap_payload["status"], "Scrap Candidate")
+        self.assertEqual(sales_payload["status"], "Sales Escalation")
+        self.assertEqual(CUSTOMER_RETURN_INTAKE_DOCS[sales_intake].sales_escalation_reference, "SALES-RET-001")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        rejected_intake = self._customer_return_intake_id(
+            request_id="return-rules-reject",
+            lines=[{"item_code": "ITEM-105", "warehouse": "Main - M", "returned_qty": 1, "rejected_qty": 1, "condition_grade": "Rejected", "condition_note": "Wrong item returned."}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        rejected_payload = self._save_customer_return_manager_decision(rejected_intake, decision="reject_intake", request_id="return-rules-reject-decision")
+        self.assertEqual(rejected_payload["status"], "Rejected Intake")
+
+    def test_w15e4_customer_return_manager_idempotency_and_request_reuse(self):
+        first_intake = self._customer_return_intake_id(request_id="return-idempotency-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        first = self._save_customer_return_manager_decision(first_intake, request_id="return-idempotency-manager")
+        second = self._save_customer_return_manager_decision(first_intake, request_id="return-idempotency-manager")
+
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(len(CUSTOMER_RETURN_INTAKE_DOCS[first_intake].events), 2)
+
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(first_intake, decision="reject_intake", note="Changed decision.", request_id="return-idempotency-manager")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        second_intake = self._customer_return_intake_id(request_id="return-idempotency-second-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(second_intake, request_id="return-idempotency-manager")
+
+    def test_w15e4_unknown_or_final_customer_return_manager_decision_rejected(self):
+        intake_id = self._customer_return_intake_id(request_id="return-final-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(intake_id, decision="approve_restock", request_id="return-unknown-decision")
+
+        self._save_customer_return_manager_decision(intake_id, request_id="return-final-decision")
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(intake_id, decision="request_reinspection", note="Try after final.", request_id="return-after-final")
+
+    def test_w15e4_customer_return_manager_payload_has_no_stock_customer_or_native_effects(self):
+        intake_id = self._customer_return_intake_id(request_id="return-safe-manager-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        payload = self._save_customer_return_manager_decision(intake_id, request_id="return-safe-manager-decision")
+        payload_text = str(payload).lower()
+
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_increased"])
+        self.assertFalse(payload["sales_return_created"])
+        self.assertFalse(payload["credit_note_created"])
+        self.assertFalse(payload["delivery_note_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["sales_order_updated"])
+        self.assertFalse(payload["customer_notified"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Sales Return", "Credit Note", "Delivery Note", "Stock Entry", "Stock Ledger Entry", "Stock Reconciliation", "Sales Order"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+
+
 if __name__ == "__main__":
     unittest.main()

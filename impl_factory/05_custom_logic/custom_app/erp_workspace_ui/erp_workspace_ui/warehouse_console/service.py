@@ -334,6 +334,21 @@ CUSTOMER_RETURN_INTAKE_FORBIDDEN_FIELDS = frozenset({
 	"notify_customer",
 	"portal_user",
 })
+CUSTOMER_RETURN_MANAGER_ROLES = frozenset({"Warehouse Manager", "Stock Manager", "System Manager"})
+CUSTOMER_RETURN_MANAGER_DECISION_STATUSES = frozenset({
+	"Intake Draft",
+	"Submitted For Review",
+	"Reinspection Requested",
+})
+CUSTOMER_RETURN_MANAGER_DECISIONS = {
+	"request_reinspection": ("Reinspection Requested", "requested_reinspection", "Reinspection requested"),
+	"mark_restock_candidate": ("Restock Candidate", "marked_restock_candidate", "Restock candidate marked"),
+	"mark_quarantine_review": ("Quarantine Review", "marked_quarantine_review", "Quarantine review marked"),
+	"mark_repair_candidate": ("Repair Candidate", "marked_repair_candidate", "Repair candidate marked"),
+	"mark_scrap_candidate": ("Scrap Candidate", "marked_scrap_candidate", "Scrap candidate marked"),
+	"reject_intake": ("Rejected Intake", "rejected_intake", "Customer return intake rejected"),
+	"escalate_to_sales": ("Sales Escalation", "escalated_to_sales", "Sales escalation marked"),
+}
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
@@ -2379,6 +2394,68 @@ def save_warehouse_customer_return_intake_draft(
 	return _customer_return_intake_payload(context, intake_doc, idempotent=False)
 
 
+@frappe.whitelist()
+def save_warehouse_customer_return_manager_decision(
+	intake_id: str | None = None,
+	customer_return_intake: str | None = None,
+	decision: str | None = None,
+	note: str | None = None,
+	sales_escalation_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Save a manager disposition decision on a custom Customer Return Intake.
+
+	W15E4 writes only the custom Warehouse Customer Return Intake and event log.
+	It does not create Sales Return, Credit Note, Delivery Note, Stock Entry, or
+	stock/accounting/customer-facing documents.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	intake_name = cstr(intake_id or customer_return_intake).strip()
+	decision_key = cstr(decision).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	manager_note = _bounded_text(note, CUSTOMER_RETURN_INTAKE_MAX_NOTE_LENGTH)
+	sales_ref = _bounded_text(sales_escalation_reference, CUSTOMER_RETURN_INTAKE_MAX_REFERENCE_LENGTH)
+	if not _has_customer_return_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not intake_name:
+		frappe.throw(_("Customer return intake is required."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for customer return manager decision."), ValueError)
+	if decision_key not in CUSTOMER_RETURN_MANAGER_DECISIONS:
+		frappe.throw(_("Customer return manager decision is not allowed."), ValueError)
+	owner = _customer_return_manager_request_id_owner(server_request_id)
+	if owner and owner != intake_name:
+		frappe.throw(_("Request id was already used for another customer return intake."), ValueError)
+	intake_doc = _get_customer_return_intake_for_decision(intake_name)
+	next_status, event_type, event_label = CUSTOMER_RETURN_MANAGER_DECISIONS[decision_key]
+	existing_event = _customer_return_event_for_request(intake_doc, server_request_id)
+	if existing_event:
+		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
+			frappe.throw(_("Request id was already used for another customer return manager decision."), ValueError)
+		return _customer_return_manager_decision_payload(context, intake_doc, decision_key, existing_event, idempotent=True)
+	if cstr(getattr(intake_doc, "request_id", "")).strip() == server_request_id:
+		frappe.throw(_("Request id was already used for this customer return intake."), ValueError)
+	_validate_customer_return_manager_decision(intake_doc, decision_key, manager_note, sales_ref)
+	previous_status = cstr(getattr(intake_doc, "intake_status", "")).strip()
+	now_value = str(now_datetime())
+	event = {
+		"event_type": event_type,
+		"event_label": event_label,
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": server_request_id,
+		"details_json": json.dumps(_customer_return_manager_event_details(decision_key, manager_note, sales_ref, previous_status, next_status), sort_keys=True),
+	}
+	intake_doc.intake_status = next_status
+	intake_doc.manager_review_status = next_status
+	if sales_ref:
+		intake_doc.sales_escalation_reference = sales_ref
+	_append_child(intake_doc, "events", event)
+	intake_doc.save()
+	return _customer_return_manager_decision_payload(context, intake_doc, decision_key, event, idempotent=False)
+
+
 def _contains_forbidden_customer_return_fields(extra_fields: dict[str, object]) -> bool:
 	for key, value in (extra_fields or {}).items():
 		if key in CUSTOMER_RETURN_INTAKE_FORBIDDEN_FIELDS and cstr(value).strip():
@@ -2647,6 +2724,195 @@ def _customer_return_intake_event_payload(event) -> dict[str, object]:
 		"event_by": cstr(_child_value(event, "event_by")).strip(),
 		"event_at": cstr(_child_value(event, "event_at")).strip(),
 		"request_id": cstr(_child_value(event, "request_id")).strip(),
+	}
+
+
+def _has_customer_return_manager_access(context: dict[str, object]) -> bool:
+	roles = set(context.get("roles") or [])
+	return bool(roles.intersection(CUSTOMER_RETURN_MANAGER_ROLES))
+
+
+def _get_customer_return_intake_for_decision(intake_name: str):
+	try:
+		return frappe.get_doc(CUSTOMER_RETURN_INTAKE_DOCTYPE, intake_name)
+	except Exception:
+		_clear_transient_frappe_messages()
+		frappe.throw(_("Customer return intake is not available."), ValueError)
+
+
+def _customer_return_manager_request_id_owner(request_id: str) -> str:
+	owner = _customer_return_intake_request_id_owner(request_id)
+	if owner:
+		return owner
+	try:
+		rows = frappe.get_all(
+			CUSTOMER_RETURN_INTAKE_EVENT_DOCTYPE,
+			fields=["parent"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("parent") or rows[0].get("name")).strip() if rows else ""
+
+
+def _customer_return_event_for_request(intake_doc, request_id: str):
+	for event in list(getattr(intake_doc, "events", []) or []):
+		if cstr(_child_value(event, "request_id")).strip() == request_id:
+			return event
+	return None
+
+
+def _validate_customer_return_manager_decision(intake_doc, decision_key: str, note: str, sales_ref: str) -> None:
+	status = cstr(getattr(intake_doc, "intake_status", "")).strip()
+	if status not in CUSTOMER_RETURN_MANAGER_DECISION_STATUSES:
+		frappe.throw(_("Customer return intake is not ready for manager decision."), ValueError)
+	lines = list(getattr(intake_doc, "lines", []) or [])
+	if not lines:
+		frappe.throw(_("Customer return intake has no lines for manager review."), ValueError)
+	has_exception = any(_customer_return_line_has_exception(line) for line in lines)
+	has_restock_candidate = any(_customer_return_line_has_restock_candidate(line) for line in lines)
+	has_quarantine_marker = any(_customer_return_line_has_quarantine_marker(line) for line in lines)
+	has_repair_marker = any(_customer_return_line_has_repair_marker(line) for line in lines)
+	has_scrap_marker = any(_customer_return_line_has_scrap_marker(line) for line in lines)
+	has_rejected_marker = any(_customer_return_line_has_rejected_marker(line) for line in lines)
+	has_sales_issue = any(_customer_return_line_has_sales_issue(line) for line in lines)
+	if decision_key == "request_reinspection" and not (has_exception or note):
+		frappe.throw(_("Reinspection request requires exception evidence or manager note."), ValueError)
+	if decision_key == "mark_restock_candidate":
+		if has_exception:
+			frappe.throw(_("Restock candidate is available only when no return line needs exception review."), ValueError)
+		if not has_restock_candidate:
+			frappe.throw(_("Restock candidate requires accepted intake quantity."), ValueError)
+	if decision_key == "mark_quarantine_review" and not has_quarantine_marker:
+		frappe.throw(_("Quarantine review requires damaged or quarantine return evidence."), ValueError)
+	if decision_key == "mark_repair_candidate" and not has_repair_marker:
+		frappe.throw(_("Repair candidate requires repair evidence."), ValueError)
+	if decision_key == "mark_scrap_candidate" and not has_scrap_marker:
+		frappe.throw(_("Scrap candidate requires scrap evidence."), ValueError)
+	if decision_key == "reject_intake" and not (has_rejected_marker or note):
+		frappe.throw(_("Rejecting a customer return intake requires rejected quantity or manager note."), ValueError)
+	if decision_key == "escalate_to_sales" and not (has_sales_issue or note or sales_ref):
+		frappe.throw(_("Sales escalation requires customer-facing return issue, Sales reference, or manager note."), ValueError)
+
+
+def _customer_return_line_has_exception(line) -> bool:
+	return bool(
+		_customer_return_line_has_quantity(line, "damaged_qty")
+		or _customer_return_line_has_quantity(line, "quarantine_qty")
+		or _customer_return_line_has_quantity(line, "repair_qty")
+		or _customer_return_line_has_quantity(line, "scrap_candidate_qty")
+		or _customer_return_line_has_quantity(line, "rejected_qty")
+		or _customer_return_line_disposition_contains(line, {"quarantine", "repair", "scrap", "reject", "sales", "exception"})
+	)
+
+
+def _customer_return_line_has_restock_candidate(line) -> bool:
+	return _customer_return_line_has_quantity(line, "accepted_qty") or _customer_return_line_disposition_contains(line, {"restock candidate"})
+
+
+def _customer_return_line_has_quarantine_marker(line) -> bool:
+	return bool(
+		_customer_return_line_has_quantity(line, "quarantine_qty")
+		or _customer_return_line_has_quantity(line, "damaged_qty")
+		or _customer_return_line_disposition_contains(line, {"quarantine"})
+	)
+
+
+def _customer_return_line_has_repair_marker(line) -> bool:
+	return _customer_return_line_has_quantity(line, "repair_qty") or _customer_return_line_disposition_contains(line, {"repair"})
+
+
+def _customer_return_line_has_scrap_marker(line) -> bool:
+	return _customer_return_line_has_quantity(line, "scrap_candidate_qty") or _customer_return_line_disposition_contains(line, {"scrap"})
+
+
+def _customer_return_line_has_rejected_marker(line) -> bool:
+	return _customer_return_line_has_quantity(line, "rejected_qty") or _customer_return_line_disposition_contains(line, {"reject"})
+
+
+def _customer_return_line_has_sales_issue(line) -> bool:
+	return bool(
+		_customer_return_line_has_rejected_marker(line)
+		or _customer_return_line_has_quantity(line, "damaged_qty")
+		or _customer_return_line_has_quantity(line, "scrap_candidate_qty")
+		or _customer_return_line_disposition_contains(line, {"sales", "customer", "unauthorized", "refund", "replacement"})
+	)
+
+
+def _customer_return_line_has_quantity(line, fieldname: str) -> bool:
+	return flt(_child_value(line, fieldname)) > 0
+
+
+def _customer_return_line_disposition_contains(line, needles: set[str]) -> bool:
+	disposition = cstr(_child_value(line, "disposition")).strip().lower()
+	return any(needle in disposition for needle in needles)
+
+
+def _customer_return_manager_event_details(decision_key: str, note: str, sales_ref: str, previous_status: str, next_status: str) -> dict[str, object]:
+	return {
+		"decision": decision_key,
+		"note": note,
+		"sales_escalation_reference": sales_ref,
+		"previous_status": previous_status,
+		"next_status": next_status,
+		"stock_effect": False,
+		"stock_increased": False,
+		"sales_return_created": False,
+		"credit_note_created": False,
+		"delivery_note_created": False,
+		"stock_entry_created": False,
+		"stock_posted": False,
+		"sales_order_updated": False,
+		"customer_notified": False,
+	}
+
+
+def _customer_return_manager_decision_payload(
+	context: dict[str, object],
+	intake_doc,
+	decision_key: str,
+	event,
+	*,
+	idempotent: bool,
+) -> dict[str, object]:
+	last_event = _customer_return_intake_event_payload(event)
+	intake_id = cstr(getattr(intake_doc, "name", "")).strip()
+	status = cstr(getattr(intake_doc, "intake_status", "")).strip()
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Customer Return Manager Decision", "key": "customer_return_manager_decision"},
+		"intake_id": intake_id,
+		"customer": cstr(getattr(intake_doc, "customer", "")).strip(),
+		"warehouse": cstr(getattr(intake_doc, "warehouse", "")).strip(),
+		"status": status,
+		"manager_review_status": cstr(getattr(intake_doc, "manager_review_status", "")).strip(),
+		"decision": decision_key,
+		"idempotent": bool(idempotent),
+		"event_summary": last_event,
+		"intake": {
+			"intake_id": intake_id,
+			"customer": cstr(getattr(intake_doc, "customer", "")).strip(),
+			"warehouse": cstr(getattr(intake_doc, "warehouse", "")).strip(),
+			"status": status,
+			"manager_review_status": cstr(getattr(intake_doc, "manager_review_status", "")).strip(),
+			"decision": decision_key,
+			"idempotent": bool(idempotent),
+		},
+		"stock_effect": False,
+		"stock_increased": False,
+		"sales_return_created": False,
+		"credit_note_created": False,
+		"delivery_note_created": False,
+		"stock_entry_created": False,
+		"stock_posted": False,
+		"sales_order_updated": False,
+		"customer_notified": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
 	}
 
 
