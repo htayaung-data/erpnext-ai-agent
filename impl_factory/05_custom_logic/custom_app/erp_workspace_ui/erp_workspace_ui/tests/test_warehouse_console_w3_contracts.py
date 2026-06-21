@@ -27,6 +27,7 @@ GET_ALL_CALLS = []
 GET_DOC_CALLS = []
 RECEIVING_TASK_DOCS = {}
 PICKING_TASK_DOCS = {}
+DISPATCH_HANDOFF_REQUEST_DOCS = {}
 
 PO_ROWS = [
     {
@@ -547,6 +548,53 @@ def _get_meta(doctype):
             "request_id",
             "details_json",
         },
+        "Warehouse Dispatch Handoff Request": {
+            "picking_task",
+            "sales_order",
+            "customer",
+            "warehouse",
+            "request_status",
+            "dispatch_handoff_reference",
+            "pack_reference",
+            "package_count",
+            "handoff_note",
+            "sales_approval_reference",
+            "source_payload_hash",
+            "policy_version",
+            "line_count",
+            "total_dispatch_qty",
+            "request_id",
+            "requested_by",
+            "requested_at",
+            "lines",
+            "events",
+        },
+        "Warehouse Dispatch Handoff Request Line": {
+            "picking_task_line",
+            "sales_order_item",
+            "item_code",
+            "item_name",
+            "warehouse",
+            "open_qty",
+            "picked_qty",
+            "packed_qty",
+            "accepted_for_dispatch_qty",
+            "short_qty",
+            "damaged_qty",
+            "not_found_qty",
+            "line_status",
+            "exception_note",
+            "evidence_reference",
+            "uom",
+        },
+        "Warehouse Dispatch Handoff Request Event": {
+            "event_type",
+            "event_label",
+            "event_by",
+            "event_at",
+            "request_id",
+            "details_json",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -674,6 +722,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             for key, value in filters.items():
                 rows = [row for row in rows if row.get(key) == value]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Dispatch Handoff Request":
+        rows = list(DISPATCH_HANDOFF_REQUEST_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Dispatch Handoff Request Event":
+        rows = []
+        for request in DISPATCH_HANDOFF_REQUEST_DOCS.values():
+            for event in list(getattr(request, "events", []) or []):
+                row = dict(event)
+                row["parent"] = request.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -749,6 +818,11 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Dispatch Handoff Request":
+            if not self.name:
+                self.name = f"WDHR-{len(DISPATCH_HANDOFF_REQUEST_DOCS) + 1:05d}"
+            DISPATCH_HANDOFF_REQUEST_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Picking Task":
             if not self.name:
                 self.name = f"WPT-{len(PICKING_TASK_DOCS) + 1:05d}"
@@ -760,6 +834,11 @@ class _FakeWorkflowDoc:
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Dispatch Handoff Request":
+            if not self.name:
+                self.name = f"WDHR-{len(DISPATCH_HANDOFF_REQUEST_DOCS) + 1:05d}"
+            DISPATCH_HANDOFF_REQUEST_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Picking Task":
             if not self.name:
                 self.name = f"WPT-{len(PICKING_TASK_DOCS) + 1:05d}"
@@ -776,7 +855,7 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task"}:
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
@@ -788,6 +867,10 @@ def _get_doc(doctype, name=None, *args, **kwargs):
         if name not in PICKING_TASK_DOCS:
             raise Exception("Missing Warehouse Picking Task")
         return PICKING_TASK_DOCS[name]
+    if doctype == "Warehouse Dispatch Handoff Request":
+        if name not in DISPATCH_HANDOFF_REQUEST_DOCS:
+            raise Exception("Missing Warehouse Dispatch Handoff Request")
+        return DISPATCH_HANDOFF_REQUEST_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -874,6 +957,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         GET_DOC_CALLS.clear()
         RECEIVING_TASK_DOCS.clear()
         PICKING_TASK_DOCS.clear()
+        DISPATCH_HANDOFF_REQUEST_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -2570,6 +2654,296 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(result["sales_order_updated"])
         self.assertFalse(result["customer_notified"])
         forbidden_docs = {"Delivery Note", "Pick List", "Stock Reservation Entry", "Stock Entry", "Stock Ledger Entry", "Sales Order"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+
+    def _dispatch_ready_pick_task(
+        self,
+        request_id="pick-dispatch-ready-draft",
+        line=None,
+        status="Dispatch Handoff Ready",
+        sales_order="SO-REVIEW",
+        source_warehouse="Short - M",
+    ):
+        line_payload = line or {
+            "item_code": "ITEM-105",
+            "warehouse": source_warehouse,
+            "picked_qty": 8,
+            "packed_qty": 8,
+        }
+        payload = self._save_pick_task(
+            request_id=request_id,
+            sales_order=sales_order,
+            source_warehouse=source_warehouse,
+            lines=[line_payload],
+        )
+        task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
+        task.task_status = status
+        task.workflow_state = "Dispatch handoff marked" if status == "Dispatch Handoff Ready" else status
+        return task
+
+    def _request_dispatch_handoff(self, task, as_manager=True, **overrides):
+        if as_manager:
+            CURRENT_ROLES[:] = ["Warehouse Manager"]
+        line = list(getattr(task, "lines", []) or [])[0]
+        payload = {
+            "picking_task": task.name,
+            "lines": [
+                {
+                    "sales_order_item": line["sales_order_item"],
+                    "item_code": line["item_code"],
+                    "warehouse": line["warehouse"],
+                    "accepted_for_dispatch_qty": 8,
+                }
+            ],
+            "pack_reference": "PACK-001",
+            "dispatch_handoff_reference": "HANDOFF-001",
+            "package_count": 1,
+            "handoff_note": "Packed and staged for Sales/Admin handoff.",
+            "request_id": "dispatch-req-001",
+        }
+        payload.update(overrides)
+        return service.request_warehouse_dispatch_handoff(**payload)
+
+    def test_w15d6_warehouse_and_stock_users_are_denied_dispatch_request(self):
+        task = self._dispatch_ready_pick_task(request_id="dispatch-user-denied-draft")
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(task, as_manager=False, request_id="dispatch-user-denied")
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(task, as_manager=False, request_id="dispatch-stock-user-denied")
+        self.assertEqual(DISPATCH_HANDOFF_REQUEST_DOCS, {})
+
+    def test_w15d6_manager_can_create_dispatch_handoff_request_for_ready_clean_task(self):
+        task = self._dispatch_ready_pick_task(request_id="dispatch-clean-draft")
+
+        payload = self._request_dispatch_handoff(task, request_id="dispatch-clean-request")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "dispatch_handoff_request")
+        self.assertEqual(payload["request"]["picking_task"], task.name)
+        self.assertEqual(payload["request"]["sales_order"], "SO-REVIEW")
+        self.assertEqual(payload["request"]["warehouse"], "Short - M")
+        self.assertEqual(payload["request"]["request_status"], "Requested")
+        self.assertEqual(payload["request"]["line_count"], 1)
+        self.assertEqual(payload["event_summary"]["event_type"], "requested_dispatch_handoff")
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["delivery_note_created"])
+        self.assertFalse(payload["delivery_note_submitted"])
+        self.assertFalse(payload["pick_list_created"])
+        self.assertFalse(payload["stock_reserved"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["sales_order_updated"])
+        self.assertFalse(payload["customer_notified"])
+        self.assertEqual(len(DISPATCH_HANDOFF_REQUEST_DOCS), 1)
+        request = next(iter(DISPATCH_HANDOFF_REQUEST_DOCS.values()))
+        self.assertEqual(request.policy_version, service.DISPATCH_HANDOFF_POLICY_VERSION)
+        self.assertEqual(request.total_dispatch_qty, 8.0)
+        self.assertEqual(len(request.lines), 1)
+        self.assertEqual(len(request.events), 1)
+
+    def test_w15d6_unknown_invisible_and_not_ready_tasks_are_rejected(self):
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            service.request_warehouse_dispatch_handoff(
+                picking_task="WPT-MISSING",
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": 1}],
+                pack_reference="PACK-X",
+                request_id="dispatch-missing-task",
+            )
+        task = self._dispatch_ready_pick_task(request_id="dispatch-invisible-draft")
+        task.sales_order = "SO-MISSING"
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(task, request_id="dispatch-invisible-task")
+        self.assertEqual(DISPATCH_HANDOFF_REQUEST_DOCS, {})
+
+        PICKING_TASK_DOCS.clear()
+        task = self._dispatch_ready_pick_task(request_id="dispatch-not-ready-draft", status="In Progress")
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(task, request_id="dispatch-not-ready")
+        task.task_status = "Closed"
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(task, request_id="dispatch-closed")
+        self.assertEqual(DISPATCH_HANDOFF_REQUEST_DOCS, {})
+
+    def test_w15d6_wrong_line_and_quantity_validation(self):
+        task = self._dispatch_ready_pick_task(request_id="dispatch-line-validation-draft")
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                task,
+                lines=[{"item_code": "ITEM-103", "warehouse": "Short - M", "accepted_for_dispatch_qty": 1}],
+                request_id="dispatch-wrong-line",
+            )
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                task,
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": -1}],
+                request_id="dispatch-negative",
+            )
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                task,
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": 9}],
+                request_id="dispatch-over-picked",
+            )
+
+        PICKING_TASK_DOCS.clear()
+        task = self._dispatch_ready_pick_task(
+            request_id="dispatch-over-packed-draft",
+            line={"item_code": "ITEM-105", "warehouse": "Short - M", "picked_qty": 8, "packed_qty": 6},
+        )
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                task,
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": 7}],
+                request_id="dispatch-over-packed",
+            )
+        self.assertEqual(DISPATCH_HANDOFF_REQUEST_DOCS, {})
+
+    def test_w15d6_damaged_not_found_and_partial_without_sales_approval_are_rejected(self):
+        damaged_task = self._dispatch_ready_pick_task(
+            request_id="dispatch-damaged-draft",
+            line={
+                "item_code": "ITEM-105",
+                "warehouse": "Short - M",
+                "picked_qty": 7,
+                "packed_qty": 7,
+                "damaged_qty": 1,
+                "exception_type": "damaged",
+                "evidence_reference": "Damage D-90",
+            },
+        )
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                damaged_task,
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": 7}],
+                request_id="dispatch-damaged",
+            )
+
+        PICKING_TASK_DOCS.clear()
+        not_found_task = self._dispatch_ready_pick_task(
+            request_id="dispatch-not-found-draft",
+            line={
+                "item_code": "ITEM-105",
+                "warehouse": "Short - M",
+                "picked_qty": 7,
+                "packed_qty": 7,
+                "not_found_qty": 1,
+                "exception_type": "not_found",
+                "evidence_reference": "Bin NF-7",
+            },
+        )
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                not_found_task,
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": 7}],
+                request_id="dispatch-not-found",
+            )
+
+        PICKING_TASK_DOCS.clear()
+        partial_task = self._dispatch_ready_pick_task(
+            request_id="dispatch-partial-draft",
+            line={
+                "item_code": "ITEM-105",
+                "warehouse": "Short - M",
+                "picked_qty": 6,
+                "packed_qty": 6,
+                "short_qty": 2,
+                "exception_type": "short",
+                "evidence_reference": "Short S-8",
+            },
+        )
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                partial_task,
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": 6}],
+                request_id="dispatch-partial-no-sales",
+            )
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                partial_task,
+                lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": 6}],
+                sales_approval_reference="SALES-APP-1",
+                handoff_note="",
+                request_id="dispatch-partial-no-note",
+            )
+        payload = self._request_dispatch_handoff(
+            partial_task,
+            lines=[{"item_code": "ITEM-105", "warehouse": "Short - M", "accepted_for_dispatch_qty": 6}],
+            sales_approval_reference="SALES-APP-1",
+            handoff_note="Sales approved partial dispatch after shortage review.",
+            request_id="dispatch-partial-approved",
+        )
+        self.assertEqual(payload["request"]["request_status"], "Requested")
+        self.assertEqual(len(DISPATCH_HANDOFF_REQUEST_DOCS), 1)
+
+    def test_w15d6_missing_pack_or_handoff_evidence_is_rejected(self):
+        task = self._dispatch_ready_pick_task(request_id="dispatch-missing-evidence-draft")
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                task,
+                pack_reference="",
+                dispatch_handoff_reference="",
+                request_id="dispatch-missing-evidence",
+            )
+        self.assertEqual(DISPATCH_HANDOFF_REQUEST_DOCS, {})
+
+    def test_w15d6_request_idempotency_and_changed_payload_rejection(self):
+        task = self._dispatch_ready_pick_task(request_id="dispatch-idempotent-draft")
+        first = self._request_dispatch_handoff(task, request_id="dispatch-same-request")
+        second = self._request_dispatch_handoff(task, request_id="dispatch-same-request")
+
+        self.assertFalse(first["request"]["idempotent"])
+        self.assertTrue(second["request"]["idempotent"])
+        self.assertEqual(first["request"]["request_id"], second["request"]["request_id"])
+        self.assertEqual(len(DISPATCH_HANDOFF_REQUEST_DOCS), 1)
+        request = next(iter(DISPATCH_HANDOFF_REQUEST_DOCS.values()))
+        self.assertEqual(len(request.events), 1)
+
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(task, package_count=2, request_id="dispatch-same-request")
+
+    def test_w15d6_request_id_cannot_cross_picking_tasks(self):
+        first_task = self._dispatch_ready_pick_task(request_id="dispatch-cross-one-draft")
+        self._request_dispatch_handoff(first_task, request_id="dispatch-cross-request")
+
+        second_task = self._dispatch_ready_pick_task(
+            request_id="dispatch-cross-two-draft",
+            sales_order="SO-READY",
+            source_warehouse="Main - M",
+            line={"item_code": "ITEM-103", "warehouse": "Main - M", "picked_qty": 5, "packed_qty": 5},
+        )
+        with self.assertRaises(Exception):
+            self._request_dispatch_handoff(
+                second_task,
+                lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "accepted_for_dispatch_qty": 5}],
+                request_id="dispatch-cross-request",
+            )
+        self.assertEqual(len(DISPATCH_HANDOFF_REQUEST_DOCS), 1)
+
+    def test_w15d6_response_has_no_native_commercial_or_stock_doc_effect(self):
+        task = self._dispatch_ready_pick_task(request_id="dispatch-safe-draft")
+        payload = self._request_dispatch_handoff(task, request_id="dispatch-safe-response")
+
+        payload_text = str(payload).lower()
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["delivery_note_created"])
+        self.assertFalse(payload["delivery_note_submitted"])
+        self.assertFalse(payload["pick_list_created"])
+        self.assertFalse(payload["stock_reserved"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["sales_order_updated"])
+        self.assertFalse(payload["customer_notified"])
+        forbidden_docs = {"Delivery Note", "Pick List", "Stock Reservation Entry", "Stock Entry", "Stock Ledger Entry"}
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 

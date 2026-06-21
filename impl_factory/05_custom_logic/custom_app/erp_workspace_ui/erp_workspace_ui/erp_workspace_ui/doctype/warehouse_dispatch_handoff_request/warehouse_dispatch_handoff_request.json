@@ -1,0 +1,199 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-21 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "picking_task",
+  "sales_order",
+  "customer",
+  "warehouse",
+  "request_status",
+  "dispatch_handoff_reference",
+  "pack_reference",
+  "package_count",
+  "handoff_note",
+  "sales_approval_reference",
+  "source_payload_hash",
+  "policy_version",
+  "line_count",
+  "total_dispatch_qty",
+  "request_id",
+  "requested_by",
+  "requested_at",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "picking_task",
+   "fieldtype": "Link",
+   "label": "Picking Task",
+   "read_only": 1,
+   "options": "Warehouse Picking Task",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Data",
+   "label": "Sales Order",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Data",
+   "label": "Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Data",
+   "label": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "request_status",
+   "fieldtype": "Select",
+   "label": "Request Status",
+   "read_only": 1,
+   "options": "Requested\nBlocked\nClosed\nCancelled",
+   "default": "Requested"
+  },
+  {
+   "fieldname": "dispatch_handoff_reference",
+   "fieldtype": "Data",
+   "label": "Dispatch Handoff Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pack_reference",
+   "fieldtype": "Data",
+   "label": "Pack Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "package_count",
+   "fieldtype": "Int",
+   "label": "Package Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "handoff_note",
+   "fieldtype": "Small Text",
+   "label": "Handoff Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_approval_reference",
+   "fieldtype": "Data",
+   "label": "Sales Approval Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload_hash",
+   "fieldtype": "Data",
+   "label": "Source Payload Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "total_dispatch_qty",
+   "fieldtype": "Float",
+   "label": "Total Dispatch Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request Id",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Data",
+   "label": "Requested By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_at",
+   "fieldtype": "Datetime",
+   "label": "Requested At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Dispatch Handoff Request Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Dispatch Handoff Request Event",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-06-21 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Dispatch Handoff Request",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "Warehouse User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse Manager"
+  },
+  {
+   "read": 1,
+   "role": "Stock User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

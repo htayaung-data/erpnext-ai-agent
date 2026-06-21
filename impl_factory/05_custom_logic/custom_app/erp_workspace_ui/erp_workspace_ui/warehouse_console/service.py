@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timedelta
+import hashlib
 import json
 from typing import Any
 
@@ -291,6 +292,15 @@ PICKING_TASK_SALES_ESCALATION_TYPES = frozenset({
 	"substitution",
 	"dispatch_paperwork_mismatch",
 })
+
+DISPATCH_HANDOFF_REQUEST_DOCTYPE = "Warehouse Dispatch Handoff Request"
+DISPATCH_HANDOFF_REQUEST_LINE_DOCTYPE = "Warehouse Dispatch Handoff Request Line"
+DISPATCH_HANDOFF_REQUEST_EVENT_DOCTYPE = "Warehouse Dispatch Handoff Request Event"
+DISPATCH_HANDOFF_POLICY_VERSION = "W15D6-dispatch-handoff-request-v1"
+DISPATCH_HANDOFF_ALLOWED_TASK_STATUS = "Dispatch Handoff Ready"
+DISPATCH_HANDOFF_MAX_LINES = 80
+DISPATCH_HANDOFF_MAX_NOTE_LENGTH = 500
+DISPATCH_HANDOFF_MAX_REFERENCE_LENGTH = 180
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
@@ -2192,6 +2202,74 @@ def save_warehouse_picking_manager_decision(
 	return _picking_task_manager_decision_payload(context, task_doc, decision_key, event, idempotent=False)
 
 
+@frappe.whitelist()
+def request_warehouse_dispatch_handoff(
+	picking_task: str | None = None,
+	task_id: str | None = None,
+	lines: str | list[dict[str, object]] | None = None,
+	dispatch_handoff_reference: str | None = None,
+	pack_reference: str | None = None,
+	package_count: object | None = None,
+	handoff_note: str | None = None,
+	sales_approval_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Create a custom request-only dispatch handoff record.
+
+	W15D6 records only internal Warehouse dispatch handoff request data. It
+	does not create Delivery Note, Pick List, reservation, Stock Entry, or
+	stock posting documents.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	task_name = cstr(picking_task or task_id).strip()
+	server_request_id = _bounded_text(request_id, 120)
+	pack_ref = _bounded_text(pack_reference, DISPATCH_HANDOFF_MAX_REFERENCE_LENGTH)
+	handoff_ref = _bounded_text(dispatch_handoff_reference, DISPATCH_HANDOFF_MAX_REFERENCE_LENGTH)
+	sales_ref = _bounded_text(sales_approval_reference, DISPATCH_HANDOFF_MAX_REFERENCE_LENGTH)
+	note = _bounded_text(handoff_note, DISPATCH_HANDOFF_MAX_NOTE_LENGTH)
+	packages = _dispatch_handoff_package_count(package_count)
+	if not _has_picking_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not task_name:
+		frappe.throw(_("Picking task is required for dispatch handoff request."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for dispatch handoff request."), ValueError)
+	task_doc = _get_picking_task_for_decision(task_name)
+	_dispatch_handoff_validate_task(task_doc)
+	_dispatch_handoff_validate_visible_context(task_doc)
+	request_lines = _normalize_dispatch_handoff_lines(lines, task_doc, sales_ref, note)
+	if not request_lines:
+		frappe.throw(_("At least one dispatch handoff line is required."), ValueError)
+	if not (pack_ref or handoff_ref):
+		frappe.throw(_("Pack reference or dispatch handoff reference is required."), ValueError)
+	if _dispatch_handoff_requires_note(request_lines) and not note:
+		frappe.throw(_("Handoff note is required for partial or exception dispatch handoff."), ValueError)
+	fingerprint = _dispatch_handoff_payload_hash(task_doc, request_lines, pack_ref, handoff_ref, packages, note, sales_ref)
+	owner = _dispatch_handoff_request_id_owner(server_request_id)
+	if owner:
+		owner_doc = frappe.get_doc(DISPATCH_HANDOFF_REQUEST_DOCTYPE, owner)
+		if cstr(getattr(owner_doc, "picking_task", "")).strip() != task_name:
+			frappe.throw(_("Request id was already used for another dispatch handoff request."), ValueError)
+		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != fingerprint:
+			frappe.throw(_("Request id was already used with different dispatch handoff details."), ValueError)
+		return _dispatch_handoff_request_payload(context, owner_doc, idempotent=True)
+	request_doc = frappe.get_doc({"doctype": DISPATCH_HANDOFF_REQUEST_DOCTYPE})
+	_apply_dispatch_handoff_request(
+		request_doc,
+		task_doc,
+		request_lines,
+		pack_ref,
+		handoff_ref,
+		packages,
+		note,
+		sales_ref,
+		server_request_id,
+		fingerprint,
+	)
+	return _dispatch_handoff_request_payload(context, request_doc, idempotent=False)
+
+
 def _picking_task_sales_order(order_name: str) -> dict[str, object] | None:
 	records = _safe_get_list(
 		"Sales Order",
@@ -2474,6 +2552,319 @@ def _picking_task_saved_payload(context: dict[str, object], task_doc, *, idempot
 		"stock_posted": False,
 		"valuation": {"visible": False, "fields": []},
 		"fetched_at": str(now_datetime()),
+	}
+
+
+def _dispatch_handoff_package_count(value: object) -> int:
+	count = int(flt(value)) if value not in (None, "") else 0
+	if count < 0:
+		frappe.throw(_("Package count cannot be negative."), ValueError)
+	return count
+
+
+def _dispatch_handoff_validate_task(task_doc) -> None:
+	status = cstr(getattr(task_doc, "task_status", "")).strip()
+	if status != DISPATCH_HANDOFF_ALLOWED_TASK_STATUS:
+		frappe.throw(_("Picking task is not dispatch-handoff ready."), ValueError)
+	if not list(getattr(task_doc, "lines", []) or []):
+		frappe.throw(_("Picking task has no lines for dispatch handoff."), ValueError)
+
+
+def _dispatch_handoff_validate_visible_context(task_doc) -> None:
+	sales_order = cstr(getattr(task_doc, "sales_order", "")).strip()
+	warehouse = cstr(getattr(task_doc, "source_warehouse", "")).strip()
+	if not sales_order or not warehouse:
+		frappe.throw(_("Picking task is missing Sales Order or warehouse context."), ValueError)
+	if not _picking_task_sales_order(sales_order):
+		frappe.throw(_("Picking task is not visible for Warehouse dispatch handoff."), ValueError)
+	source_lines = _picking_task_source_lines(sales_order)
+	visible_keys = {
+		(cstr(line.get("sales_order_item")).strip(), cstr(line.get("item_code")).strip(), cstr(line.get("source_warehouse")).strip())
+		for line in source_lines
+	}
+	for line in list(getattr(task_doc, "lines", []) or []):
+		key = (
+			cstr(_child_value(line, "sales_order_item")).strip(),
+			cstr(_child_value(line, "item_code")).strip(),
+			cstr(_child_value(line, "warehouse")).strip(),
+		)
+		if key not in visible_keys:
+			frappe.throw(_("Picking task line is no longer visible for Warehouse dispatch handoff."), ValueError)
+
+
+def _normalize_dispatch_handoff_lines(
+	lines: str | list[dict[str, object]] | None,
+	task_doc,
+	sales_approval_reference: str,
+	handoff_note: str,
+) -> list[dict[str, object]]:
+	raw_lines = _decode_dispatch_handoff_lines(lines)
+	if not raw_lines:
+		frappe.throw(_("At least one dispatch handoff line is required."), ValueError)
+	task_lines = list(getattr(task_doc, "lines", []) or [])[:DISPATCH_HANDOFF_MAX_LINES]
+	by_key: dict[str, object] = {}
+	for line in task_lines:
+		for key in _dispatch_handoff_line_keys(line):
+			if key and key not in by_key:
+				by_key[key] = line
+	normalized: list[dict[str, object]] = []
+	seen: set[str] = set()
+	for raw in raw_lines[:DISPATCH_HANDOFF_MAX_LINES]:
+		if not isinstance(raw, dict):
+			frappe.throw(_("Dispatch handoff line payload is invalid."), ValueError)
+		line = _match_dispatch_handoff_line(raw, by_key)
+		line_key = _dispatch_handoff_primary_line_key(line)
+		if line_key in seen:
+			frappe.throw(_("Duplicate dispatch handoff line in request."), ValueError)
+		seen.add(line_key)
+		normalized.append(_normalize_dispatch_handoff_line(raw, line, sales_approval_reference, handoff_note))
+	if sum(flt(line.get("accepted_for_dispatch_qty")) for line in normalized) <= 0:
+		frappe.throw(_("Accepted dispatch quantity is required."), ValueError)
+	return normalized
+
+
+def _decode_dispatch_handoff_lines(lines: str | list[dict[str, object]] | None) -> list[dict[str, object]]:
+	if isinstance(lines, str):
+		try:
+			decoded = json.loads(lines)
+		except Exception:
+			frappe.throw(_("Dispatch handoff line payload is invalid JSON."), ValueError)
+		if isinstance(decoded, dict):
+			decoded = decoded.get("lines")
+		return list(decoded or []) if isinstance(decoded, list) else []
+	return list(lines or []) if isinstance(lines, list) else []
+
+
+def _dispatch_handoff_line_keys(line) -> list[str]:
+	name = cstr(_child_value(line, "name")).strip()
+	sales_order_item = cstr(_child_value(line, "sales_order_item")).strip()
+	item_code = cstr(_child_value(line, "item_code")).strip()
+	warehouse = cstr(_child_value(line, "warehouse")).strip()
+	keys = []
+	if name:
+		keys.append(f"name::{name}")
+	if sales_order_item:
+		keys.append(f"soi::{sales_order_item}")
+	if item_code and warehouse:
+		keys.append(f"itemwh::{item_code}::{warehouse}")
+	return keys
+
+
+def _dispatch_handoff_primary_line_key(line) -> str:
+	keys = _dispatch_handoff_line_keys(line)
+	return keys[0] if keys else f"line::{cstr(_child_value(line, 'item_code')).strip()}"
+
+
+def _match_dispatch_handoff_line(raw: dict[str, object], by_key: dict[str, object]):
+	picking_task_line = cstr(raw.get("picking_task_line")).strip()
+	sales_order_item = cstr(raw.get("sales_order_item")).strip()
+	item_code = cstr(raw.get("item_code")).strip()
+	warehouse = cstr(raw.get("warehouse")).strip()
+	for key in (
+		f"name::{picking_task_line}" if picking_task_line else "",
+		f"soi::{sales_order_item}" if sales_order_item else "",
+		f"itemwh::{item_code}::{warehouse}" if item_code and warehouse else "",
+	):
+		if key and key in by_key:
+			return by_key[key]
+	frappe.throw(_("Dispatch handoff line does not belong to the selected picking task."), ValueError)
+
+
+def _normalize_dispatch_handoff_line(
+	raw: dict[str, object],
+	task_line,
+	sales_approval_reference: str,
+	handoff_note: str,
+) -> dict[str, object]:
+	accepted_qty = _non_negative_qty(raw.get("accepted_for_dispatch_qty"), "Accepted dispatch quantity")
+	picked_qty = flt(_child_value(task_line, "picked_qty"))
+	packed_qty = flt(_child_value(task_line, "packed_qty"))
+	open_qty = flt(_child_value(task_line, "open_qty"))
+	short_qty = flt(_child_value(task_line, "short_qty"))
+	damaged_qty = flt(_child_value(task_line, "damaged_qty"))
+	not_found_qty = flt(_child_value(task_line, "not_found_qty"))
+	exception_type = cstr(_child_value(task_line, "exception_type")).strip().lower()
+	if accepted_qty > picked_qty:
+		frappe.throw(_("Accepted dispatch quantity cannot exceed picked quantity."), ValueError)
+	if accepted_qty > packed_qty:
+		frappe.throw(_("Accepted dispatch quantity cannot exceed packed quantity."), ValueError)
+	if damaged_qty > 0 or not_found_qty > 0 or exception_type in {"damaged", "not_found"}:
+		frappe.throw(_("Damaged or not-found goods cannot be included in dispatch handoff request."), ValueError)
+	is_partial = accepted_qty < open_qty or short_qty > 0 or exception_type in {"short", "unavailable_stock", "substitution", "dispatch_paperwork_mismatch"}
+	if is_partial and not sales_approval_reference:
+		frappe.throw(_("Sales approval reference is required for partial or customer-facing dispatch handoff."), ValueError)
+	if is_partial and not handoff_note:
+		frappe.throw(_("Handoff note is required for partial dispatch handoff."), ValueError)
+	return {
+		"picking_task_line": cstr(_child_value(task_line, "name") or _dispatch_handoff_primary_line_key(task_line)).strip(),
+		"sales_order_item": cstr(_child_value(task_line, "sales_order_item")).strip(),
+		"item_code": cstr(_child_value(task_line, "item_code")).strip(),
+		"item_name": cstr(_child_value(task_line, "item_name")).strip(),
+		"warehouse": cstr(_child_value(task_line, "warehouse")).strip(),
+		"open_qty": open_qty,
+		"picked_qty": picked_qty,
+		"packed_qty": packed_qty,
+		"accepted_for_dispatch_qty": accepted_qty,
+		"short_qty": short_qty,
+		"damaged_qty": damaged_qty,
+		"not_found_qty": not_found_qty,
+		"line_status": cstr(_child_value(task_line, "line_status")).strip(),
+		"exception_note": cstr(_child_value(task_line, "exception_note")).strip(),
+		"evidence_reference": cstr(_child_value(task_line, "evidence_reference")).strip(),
+		"uom": cstr(_child_value(task_line, "uom")).strip(),
+	}
+
+
+def _dispatch_handoff_requires_note(lines: list[dict[str, object]]) -> bool:
+	return any(
+		flt(line.get("accepted_for_dispatch_qty")) < flt(line.get("open_qty"))
+		or flt(line.get("short_qty")) > 0
+		or cstr(line.get("line_status")).strip().lower() == "needs review"
+		for line in lines
+	)
+
+
+def _dispatch_handoff_payload_hash(
+	task_doc,
+	lines: list[dict[str, object]],
+	pack_reference: str,
+	dispatch_handoff_reference: str,
+	package_count: int,
+	handoff_note: str,
+	sales_approval_reference: str,
+) -> str:
+	canonical = {
+		"picking_task": cstr(getattr(task_doc, "name", "")).strip(),
+		"sales_order": cstr(getattr(task_doc, "sales_order", "")).strip(),
+		"warehouse": cstr(getattr(task_doc, "source_warehouse", "")).strip(),
+		"pack_reference": pack_reference,
+		"dispatch_handoff_reference": dispatch_handoff_reference,
+		"package_count": package_count,
+		"handoff_note": handoff_note,
+		"sales_approval_reference": sales_approval_reference,
+		"lines": sorted(
+			[
+				{
+					"sales_order_item": line.get("sales_order_item"),
+					"item_code": line.get("item_code"),
+					"warehouse": line.get("warehouse"),
+					"accepted_for_dispatch_qty": flt(line.get("accepted_for_dispatch_qty")),
+				}
+				for line in lines
+			],
+			key=lambda row: (cstr(row.get("sales_order_item")), cstr(row.get("item_code")), cstr(row.get("warehouse"))),
+		),
+	}
+	return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _dispatch_handoff_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			DISPATCH_HANDOFF_REQUEST_DOCTYPE,
+			fields=["name"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_dispatch_handoff_request(
+	request_doc,
+	task_doc,
+	request_lines: list[dict[str, object]],
+	pack_reference: str,
+	dispatch_handoff_reference: str,
+	package_count: int,
+	handoff_note: str,
+	sales_approval_reference: str,
+	request_id: str,
+	payload_hash: str,
+) -> None:
+	now_value = str(now_datetime())
+	request_doc.picking_task = cstr(getattr(task_doc, "name", "")).strip()
+	request_doc.sales_order = cstr(getattr(task_doc, "sales_order", "")).strip()
+	request_doc.customer = cstr(getattr(task_doc, "customer", "")).strip()
+	request_doc.warehouse = cstr(getattr(task_doc, "source_warehouse", "")).strip()
+	request_doc.request_status = "Requested"
+	request_doc.dispatch_handoff_reference = dispatch_handoff_reference
+	request_doc.pack_reference = pack_reference
+	request_doc.package_count = package_count
+	request_doc.handoff_note = handoff_note
+	request_doc.sales_approval_reference = sales_approval_reference
+	request_doc.source_payload_hash = payload_hash
+	request_doc.policy_version = DISPATCH_HANDOFF_POLICY_VERSION
+	request_doc.line_count = len(request_lines)
+	request_doc.total_dispatch_qty = sum(flt(line.get("accepted_for_dispatch_qty")) for line in request_lines)
+	request_doc.request_id = request_id
+	request_doc.requested_by = cstr(getattr(frappe.session, "user", "")).strip()
+	request_doc.requested_at = now_value
+	_set_child_table(request_doc, "lines", request_lines)
+	_append_child(request_doc, "events", {
+		"event_type": "requested_dispatch_handoff",
+		"event_label": "Dispatch handoff requested",
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": request_id,
+		"details_json": json.dumps({"line_count": len(request_lines), "stock_effect": False}, sort_keys=True),
+	})
+	request_doc.insert()
+
+
+def _dispatch_handoff_request_payload(context: dict[str, object], request_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_dispatch_handoff_line_payload(line) for line in list(getattr(request_doc, "lines", []) or [])]
+	events = list(getattr(request_doc, "events", []) or [])
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Dispatch Handoff Request", "key": "dispatch_handoff_request", "sales_order": cstr(getattr(request_doc, "sales_order", "")).strip()},
+		"request": {
+			"request_id": cstr(getattr(request_doc, "name", "")).strip(),
+			"request_status": cstr(getattr(request_doc, "request_status", "")).strip(),
+			"picking_task": cstr(getattr(request_doc, "picking_task", "")).strip(),
+			"sales_order": cstr(getattr(request_doc, "sales_order", "")).strip(),
+			"warehouse": cstr(getattr(request_doc, "warehouse", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"event_summary": _picking_task_event_payload(events[-1]) if events else {},
+		"stock_effect": False,
+		"delivery_note_created": False,
+		"delivery_note_submitted": False,
+		"pick_list_created": False,
+		"stock_reserved": False,
+		"stock_posted": False,
+		"sales_order_updated": False,
+		"customer_notified": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _dispatch_handoff_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"picking_task_line": cstr(getter("picking_task_line")).strip(),
+		"sales_order_item": cstr(getter("sales_order_item")).strip(),
+		"item_code": cstr(getter("item_code")).strip(),
+		"warehouse": cstr(getter("warehouse")).strip(),
+		"open_qty": _number_text(getter("open_qty")),
+		"picked_qty": _number_text(getter("picked_qty")),
+		"packed_qty": _number_text(getter("packed_qty")),
+		"accepted_for_dispatch_qty": _number_text(getter("accepted_for_dispatch_qty")),
+		"short_qty": _number_text(getter("short_qty")),
+		"damaged_qty": _number_text(getter("damaged_qty")),
+		"not_found_qty": _number_text(getter("not_found_qty")),
+		"line_status": cstr(getter("line_status")).strip(),
+		"evidence_reference": cstr(getter("evidence_reference")).strip(),
+		"uom": cstr(getter("uom")).strip(),
 	}
 
 
