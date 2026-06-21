@@ -737,6 +737,14 @@ async function snapshot(page) {
       actionCenterOpenCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-open]")).filter(visible).length,
       actionCenterGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-guardrail]")).filter(visible).length,
       actionCenterModes: Array.from(document.querySelectorAll("[data-warehouse-action-center-mode]")).map((node) => node.getAttribute("data-warehouse-action-center-mode") || "").filter(Boolean),
+      customerReturnShellCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-shell]")).filter(visible).length,
+      customerReturnStatusCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-status]")).filter(visible).length,
+      customerReturnUserPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-user-preview]")).filter(visible).length,
+      customerReturnManagerPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-manager-preview]")).filter(visible).length,
+      customerReturnEvidencePreviewCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-evidence-preview]")).filter(visible).length,
+      customerReturnPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-policy]")).filter(visible).length,
+      customerReturnPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-planned-control]")).filter(visible).length,
+      customerReturnActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-shell] button, [data-warehouse-customer-return-shell] a, [data-warehouse-customer-return-shell] [role=button]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     };
@@ -797,6 +805,21 @@ function assertW14CManagerCenter(state, contextLabel) {
   assert(!(state.text || "").includes("Manager Readiness Center"), "Manager Readiness Center title is still visible", { context: contextLabel, state });
 }
 
+function assertW15E2CustomerReturnShell(state, contextLabel) {
+  assert(state.customerReturnShellCount === 1, "Customer Return Intake shell must render once", { context: contextLabel, state });
+  assert(state.customerReturnStatusCount >= 6, "Customer Return Intake workflow states are missing", { context: contextLabel, state });
+  assert(state.customerReturnUserPreviewCount === 1, "Customer Return Intake user preview is missing", { context: contextLabel, state });
+  assert(state.customerReturnManagerPreviewCount === 1, "Customer Return Intake manager preview is missing", { context: contextLabel, state });
+  assert(state.customerReturnEvidencePreviewCount === 1, "Customer Return Intake evidence preview is missing", { context: contextLabel, state });
+  assert(state.customerReturnPolicyCount === 1, "Customer Return Intake future document policy is missing", { context: contextLabel, state });
+  assert(state.customerReturnPlannedControlCount >= 12, "Customer Return Intake planned controls are missing", { context: contextLabel, state });
+  assert(state.customerReturnActiveControlCount === 0, "Customer Return Intake planned controls must be inert", { context: contextLabel, state });
+  assert((state.text || "").includes("Customer return intake"), "Customer Return Intake title is missing", { context: contextLabel, state });
+  assert((state.text || "").toLowerCase().includes("shell only"), "Customer Return Intake shell-only badge is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No stock is increased"), "Customer Return Intake guardrail is missing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Customer Return Intake exposed a native route", { context: contextLabel, state });
+}
+
 function assertW15BActionCenter(state, contextLabel) {
   assert(state.actionCenterCount === 1, "Warehouse Action Center must render once", { context: contextLabel, state });
   assert(state.actionCenterGroupCount >= 2, "Warehouse Action Center groups are missing", { context: contextLabel, state });
@@ -837,6 +860,7 @@ async function assertCockpit(page, contextLabel) {
   if (EXPECT_W14B) assertW14BQuickFind(state, contextLabel);
   if (EXPECT_W14C) assertW14CManagerCenter(state, contextLabel);
   if (EXPECT_W15B) assertW15BActionCenter(state, contextLabel);
+  assertW15E2CustomerReturnShell(state, contextLabel);
   return state;
 }
 

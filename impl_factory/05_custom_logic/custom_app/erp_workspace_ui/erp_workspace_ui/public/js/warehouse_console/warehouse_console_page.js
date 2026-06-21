@@ -3318,6 +3318,169 @@
         color: #0f172a;
         white-space: nowrap;
       }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-shell {
+        display: grid;
+        gap: 16px;
+        padding: 18px 20px 20px;
+        border: 1px solid rgba(203, 213, 225, 0.94);
+        border-radius: 16px;
+        background:
+          linear-gradient(180deg, rgba(255, 251, 235, 0.54) 0%, rgba(255, 255, 255, 0.98) 36%),
+          #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 12px 28px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-shell::before {
+        content: "";
+        display: block;
+        width: 42px;
+        height: 2px;
+        margin: 0 0 2px;
+        border-radius: 999px;
+        background: rgba(217, 119, 6, 0.58);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-copy {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-title {
+        margin: 0;
+        color: #0f172a;
+        font-size: 17px;
+        font-weight: 760;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-subtitle {
+        max-width: 680px;
+        color: #52637a;
+        font-size: 12.5px;
+        line-height: 1.48;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(245, 158, 11, 0.26);
+        border-radius: 999px;
+        background: rgba(255, 251, 235, 0.92);
+        color: #92400e;
+        font-size: 11px;
+        font-weight: 760;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-guardrail {
+        padding: 11px 12px;
+        border: 1px dashed rgba(245, 158, 11, 0.35);
+        border-radius: 14px;
+        background: rgba(255, 251, 235, 0.62);
+        color: #52637a;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-status-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-status-chip {
+        min-height: 40px;
+        padding: 9px 10px;
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        border-radius: 12px;
+        background: #ffffff;
+        color: #334155;
+        font-size: 12px;
+        font-weight: 720;
+        line-height: 1.2;
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.024);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-panel {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border: 1px solid rgba(226, 232, 240, 0.94);
+        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.84);
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.026);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-panel h3 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 760;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-items {
+        display: grid;
+        gap: 7px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-planned {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 36px;
+        padding: 8px 10px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 11px;
+        background: #f8fafc;
+        color: #334155;
+        font-size: 12px;
+        font-weight: 680;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-planned::after {
+        content: "Planned";
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.025em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-evidence-grid,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-owner-grid,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-mini {
+        min-height: 44px;
+        padding: 9px 10px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 11px;
+        background: #ffffff;
+        color: #334155;
+        font-size: 12px;
+        font-weight: 680;
+        line-height: 1.28;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-mini span {
+        display: block;
+        margin-top: 3px;
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-panel {
+        grid-column: 1 / -1;
+      }
       /* W15B overview hierarchy refinement: status, navigation, task, risk, movement, and control lanes must read differently. */
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-pulse-section {
         border-color: rgba(226, 232, 240, 0.92);
@@ -3462,8 +3625,17 @@
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-route-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-work-grid,
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-grid {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-status-strip,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-evidence-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-owner-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-grid {
           grid-template-columns: minmax(0, 1fr);
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-head {
+          display: grid;
+          align-items: start;
         }
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid .sales-console-action-strip.primary,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid .sales-console-action-strip.secondary {
@@ -7411,6 +7583,103 @@
     `;
   }
 
+  function renderCustomerReturnIntakeShell() {
+    const statuses = [
+      "Return Requested",
+      "Physical Intake",
+      "Inspection",
+      "Manager Review",
+      "Disposition Recommendation",
+      "Sales / Finance Handoff",
+    ];
+    const userPreview = [
+      "Receive returned goods",
+      "Count returned quantity",
+      "Record condition",
+      "Add evidence reference",
+      "Send to manager review",
+    ];
+    const managerPreview = [
+      "Request reinspection",
+      "Mark restock candidate",
+      "Mark quarantine review",
+      "Mark repair review",
+      "Mark scrap candidate",
+      "Reject return intake",
+      "Escalate to Sales",
+    ];
+    const evidence = [
+      ["Customer/source reference", "Sales-visible intake source"],
+      ["Item identity", "Item and returned unit posture"],
+      ["Returned quantity", "Physical count evidence"],
+      ["Condition grade", "Inspection posture"],
+      ["Evidence reference", "Future attachment or note reference"],
+      ["Manager event", "Disposition review trail"],
+      ["Sales escalation reference", "Customer-facing follow-up marker"],
+    ];
+    const ownership = [
+      ["Warehouse", "Physical evidence"],
+      ["Warehouse Manager", "Internal disposition recommendation"],
+      ["Sales", "Customer authorization, communication, replacement, and refund decision"],
+      ["Finance/Admin", "Credit, refund, write-off, and document governance"],
+    ];
+    const policy = [
+      ["Sales Return", "Future policy only, blocked now"],
+      ["Credit Note", "Future policy only, blocked now"],
+      ["Return Delivery Note", "Future policy only, blocked now"],
+      ["Stock Entry", "Future policy only, blocked now"],
+      ["Reference handling", "Plain text/status only if later approved"],
+    ];
+    const plannedMarkup = (items) => items.map((item) => `
+      <div class="warehouse-customer-return-planned" data-warehouse-customer-return-planned-control aria-disabled="true">${escapeHtml(item)}</div>
+    `).join("");
+    const miniMarkup = (items) => items.map((item) => `
+      <div class="warehouse-customer-return-mini">
+        ${escapeHtml(item[0])}
+        <span>${escapeHtml(item[1])}</span>
+      </div>
+    `).join("");
+    return `
+      <section class="sales-console-card sales-console-section warehouse-customer-return-shell" data-warehouse-customer-return-shell>
+        <div class="warehouse-customer-return-head">
+          <div class="warehouse-customer-return-copy">
+            <h2 class="warehouse-customer-return-title">Customer return intake</h2>
+            <div class="warehouse-customer-return-subtitle">Planned workflow shell for physical return intake evidence, inspection posture, manager recommendation, and Sales or Finance handoff.</div>
+          </div>
+          <span class="warehouse-customer-return-badge">Shell only</span>
+        </div>
+        <div class="warehouse-customer-return-guardrail">
+          No stock is increased, no Sales Return, Credit Note, Delivery Note, Stock Entry, or Stock Ledger entry is created from this shell.
+        </div>
+        <div class="warehouse-customer-return-status-strip">
+          ${statuses.map((status) => `<div class="warehouse-customer-return-status-chip" data-warehouse-customer-return-status>${escapeHtml(status)}</div>`).join("")}
+        </div>
+        <div class="warehouse-customer-return-grid">
+          <section class="warehouse-customer-return-panel" data-warehouse-customer-return-user-preview>
+            <h3>Warehouse user preview</h3>
+            <div class="warehouse-customer-return-items">${plannedMarkup(userPreview)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel" data-warehouse-customer-return-manager-preview>
+            <h3>Manager preview</h3>
+            <div class="warehouse-customer-return-items">${plannedMarkup(managerPreview)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel" data-warehouse-customer-return-evidence-preview>
+            <h3>Evidence preview</h3>
+            <div class="warehouse-customer-return-evidence-grid">${miniMarkup(evidence)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel">
+            <h3>Role ownership</h3>
+            <div class="warehouse-customer-return-owner-grid">${miniMarkup(ownership)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel warehouse-customer-return-policy-panel" data-warehouse-customer-return-policy>
+            <h3>Future document policy</h3>
+            <div class="warehouse-customer-return-policy-grid">${miniMarkup(policy)}</div>
+          </section>
+        </div>
+      </section>
+    `;
+  }
+
   function renderCockpitRiskSection() {
     const cards = [
       {
@@ -7664,6 +7933,7 @@
         </section>
         ${renderCockpitStart(payload, kpis)}
         ${renderCockpitActionCenter(payload.action_center || {})}
+        ${renderCustomerReturnIntakeShell()}
       </div>
     `);
     $root.find("[data-warehouse-refresh]").on("click", (event) => {
