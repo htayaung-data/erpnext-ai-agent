@@ -1,0 +1,222 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "supplier",
+  "warehouse",
+  "candidate_status",
+  "supplier_return_reference",
+  "purchase_order_reference_text",
+  "purchase_receipt_reference_text",
+  "purchase_invoice_reference_text",
+  "source_reference_note",
+  "captured_by",
+  "captured_at",
+  "evidence_status",
+  "manager_review_status",
+  "procurement_escalation_reference",
+  "finance_escalation_reference",
+  "notes",
+  "source_payload_hash",
+  "policy_version",
+  "line_count",
+  "total_candidate_qty",
+  "request_id",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Data",
+   "label": "Supplier",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Data",
+   "label": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "candidate_status",
+   "fieldtype": "Select",
+   "label": "Candidate Status",
+   "options": "Candidate Draft\nPhysical Evidence Captured\nSubmitted For Manager Review\nQuarantine Review\nSupplier Return Candidate\nProcurement Escalation\nFinance/Admin Escalation\nRejected Candidate\nClosed\nCancelled",
+   "default": "Candidate Draft",
+   "read_only": 1
+  },
+  {
+   "fieldname": "supplier_return_reference",
+   "fieldtype": "Data",
+   "label": "Warehouse Source Reference",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "purchase_order_reference_text",
+   "fieldtype": "Data",
+   "label": "Purchase Order Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_receipt_reference_text",
+   "fieldtype": "Data",
+   "label": "Purchase Receipt Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_invoice_reference_text",
+   "fieldtype": "Data",
+   "label": "Purchase Invoice Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_reference_note",
+   "fieldtype": "Small Text",
+   "label": "Source Reference Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "captured_by",
+   "fieldtype": "Data",
+   "label": "Captured By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "captured_at",
+   "fieldtype": "Datetime",
+   "label": "Captured At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "evidence_status",
+   "fieldtype": "Data",
+   "label": "Evidence Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manager_review_status",
+   "fieldtype": "Data",
+   "label": "Manager Review Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "procurement_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Procurement Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "finance_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Finance Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload_hash",
+   "fieldtype": "Data",
+   "label": "Source Payload Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_candidate_qty",
+   "fieldtype": "Float",
+   "label": "Total Candidate Qty",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request Id",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Supplier Return Candidate Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Supplier Return Candidate Event",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-06-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Supplier Return Candidate",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

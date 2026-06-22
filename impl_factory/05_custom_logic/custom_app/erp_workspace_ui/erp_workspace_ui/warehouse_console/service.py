@@ -384,6 +384,37 @@ CUSTOMER_RETURN_HANDOFF_TYPE_SOURCE_STATUSES = {
 	"scrap_writeoff_review": frozenset({"Scrap Candidate"}),
 }
 
+SUPPLIER_RETURN_CANDIDATE_DOCTYPE = "Warehouse Supplier Return Candidate"
+SUPPLIER_RETURN_CANDIDATE_LINE_DOCTYPE = "Warehouse Supplier Return Candidate Line"
+SUPPLIER_RETURN_CANDIDATE_EVENT_DOCTYPE = "Warehouse Supplier Return Candidate Event"
+SUPPLIER_RETURN_CANDIDATE_POLICY_VERSION = "W15F3-supplier-return-candidate-draft-v1"
+SUPPLIER_RETURN_CANDIDATE_MAX_LINES = 80
+SUPPLIER_RETURN_CANDIDATE_MAX_NOTE_LENGTH = 500
+SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH = 180
+SUPPLIER_RETURN_CANDIDATE_FORBIDDEN_FIELDS = frozenset({
+	"return_purchase_receipt",
+	"purchase_receipt_return",
+	"purchase_invoice_return",
+	"debit_note",
+	"stock_entry",
+	"stock_entry_id",
+	"stock_ledger_entry",
+	"stock_balance",
+	"stock_reconciliation",
+	"purchase_order_update",
+	"valuation_rate",
+	"stock_value",
+	"rate",
+	"amount",
+	"base_amount",
+	"tax",
+	"account",
+	"gl_entry",
+	"supplier_email",
+	"notify_supplier",
+	"portal_user",
+})
+
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
@@ -2550,6 +2581,352 @@ def request_warehouse_customer_return_handoff(
 		fingerprint,
 	)
 	return _customer_return_handoff_request_payload(context, request_doc, idempotent=False)
+
+
+@frappe.whitelist()
+def save_warehouse_supplier_return_candidate_draft(
+	supplier: str | None = None,
+	warehouse: str | None = None,
+	lines: str | list[dict[str, object]] | None = None,
+	supplier_return_reference: str | None = None,
+	purchase_order_reference_text: str | None = None,
+	purchase_receipt_reference_text: str | None = None,
+	purchase_invoice_reference_text: str | None = None,
+	source_reference_note: str | None = None,
+	notes: str | None = None,
+	procurement_escalation_reference: str | None = None,
+	finance_escalation_reference: str | None = None,
+	request_id: str | None = None,
+	**extra_fields,
+) -> dict[str, object]:
+	"""Save an internal Supplier Return Candidate draft.
+
+	W15F3 writes only custom Warehouse Supplier Return Candidate records. It
+	does not notify suppliers, create return Purchase Receipts, create Purchase
+	Invoice returns/debit notes, update Purchase Orders, or post stock.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	server_request_id = _bounded_text(request_id, 120)
+	supplier_name = _bounded_text(supplier, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	candidate_warehouse = _bounded_text(warehouse, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	supplier_ref = _bounded_text(supplier_return_reference, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if not has_warehouse_access(context):
+		frappe.throw(_("Warehouse access required"), frappe.PermissionError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for supplier return candidate draft."), ValueError)
+	if _contains_forbidden_supplier_return_fields(extra_fields):
+		frappe.throw(_("Supplier return candidate contains fields that are not allowed in Warehouse."), ValueError)
+	if not supplier_name:
+		frappe.throw(_("Supplier is required for supplier return candidate draft."), ValueError)
+	if not supplier_ref:
+		frappe.throw(_("Supplier return source reference is required for supplier return candidate draft."), ValueError)
+	if not candidate_warehouse:
+		frappe.throw(_("Warehouse is required for supplier return candidate draft."), ValueError)
+	if not _supplier_return_warehouse_is_visible(candidate_warehouse):
+		frappe.throw(_("Warehouse is not available for supplier return candidate."), ValueError)
+	candidate_lines = _normalize_supplier_return_candidate_lines(lines, candidate_warehouse)
+	payload_hash = _supplier_return_candidate_payload_hash(
+		supplier_name,
+		candidate_warehouse,
+		supplier_ref,
+		_bounded_text(purchase_order_reference_text, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		_bounded_text(purchase_receipt_reference_text, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		_bounded_text(purchase_invoice_reference_text, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		_bounded_text(source_reference_note, SUPPLIER_RETURN_CANDIDATE_MAX_NOTE_LENGTH),
+		_bounded_text(notes, SUPPLIER_RETURN_CANDIDATE_MAX_NOTE_LENGTH),
+		_bounded_text(procurement_escalation_reference, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		_bounded_text(finance_escalation_reference, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		candidate_lines,
+	)
+	owner = _supplier_return_candidate_request_id_owner(server_request_id)
+	if owner:
+		owner_doc = frappe.get_doc(SUPPLIER_RETURN_CANDIDATE_DOCTYPE, owner)
+		if cstr(getattr(owner_doc, "supplier", "")).strip() != supplier_name or cstr(getattr(owner_doc, "warehouse", "")).strip() != candidate_warehouse:
+			frappe.throw(_("Request id was already used for another supplier return candidate."), ValueError)
+		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != payload_hash:
+			frappe.throw(_("Request id was already used with different supplier return candidate details."), ValueError)
+		return _supplier_return_candidate_payload(context, owner_doc, idempotent=True)
+	candidate_doc = frappe.get_doc({"doctype": SUPPLIER_RETURN_CANDIDATE_DOCTYPE})
+	_apply_supplier_return_candidate_draft(
+		candidate_doc,
+		supplier_name,
+		candidate_warehouse,
+		supplier_ref,
+		_bounded_text(purchase_order_reference_text, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		_bounded_text(purchase_receipt_reference_text, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		_bounded_text(purchase_invoice_reference_text, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		_bounded_text(source_reference_note, SUPPLIER_RETURN_CANDIDATE_MAX_NOTE_LENGTH),
+		_bounded_text(notes, SUPPLIER_RETURN_CANDIDATE_MAX_NOTE_LENGTH),
+		_bounded_text(procurement_escalation_reference, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		_bounded_text(finance_escalation_reference, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		candidate_lines,
+		server_request_id,
+		payload_hash,
+	)
+	return _supplier_return_candidate_payload(context, candidate_doc, idempotent=False)
+
+
+def _contains_forbidden_supplier_return_fields(extra_fields: dict[str, object]) -> bool:
+	for key, value in (extra_fields or {}).items():
+		if key in SUPPLIER_RETURN_CANDIDATE_FORBIDDEN_FIELDS and cstr(value).strip():
+			return True
+		if key not in SUPPLIER_RETURN_CANDIDATE_FORBIDDEN_FIELDS and cstr(value).strip():
+			return True
+	return False
+
+
+def _supplier_return_warehouse_is_visible(warehouse: str) -> bool:
+	return _customer_return_warehouse_is_visible(warehouse)
+
+
+def _normalize_supplier_return_candidate_lines(lines: str | list[dict[str, object]] | None, warehouse: str) -> list[dict[str, object]]:
+	raw_lines = _decode_supplier_return_candidate_lines(lines)
+	if not raw_lines:
+		frappe.throw(_("At least one supplier return candidate line is required."), ValueError)
+	if len(raw_lines) > SUPPLIER_RETURN_CANDIDATE_MAX_LINES:
+		frappe.throw(_("Supplier return candidate draft has too many lines."), ValueError)
+	normalized: list[dict[str, object]] = []
+	seen: set[tuple[str, str, str]] = set()
+	for raw in raw_lines:
+		if not isinstance(raw, dict):
+			frappe.throw(_("Supplier return candidate line payload is invalid."), ValueError)
+		line = _normalize_supplier_return_candidate_line(raw, warehouse)
+		key = (cstr(line.get("item_code")).strip(), cstr(line.get("warehouse")).strip(), cstr(line.get("uom")).strip())
+		if key in seen:
+			frappe.throw(_("Duplicate supplier return candidate line in draft."), ValueError)
+		seen.add(key)
+		normalized.append(line)
+	return normalized
+
+
+def _decode_supplier_return_candidate_lines(lines: str | list[dict[str, object]] | None) -> list[dict[str, object]]:
+	if isinstance(lines, str):
+		try:
+			decoded = json.loads(lines)
+		except Exception:
+			frappe.throw(_("Supplier return candidate line payload is invalid JSON."), ValueError)
+		if isinstance(decoded, dict):
+			decoded = decoded.get("lines")
+		return list(decoded or []) if isinstance(decoded, list) else []
+	return list(lines or []) if isinstance(lines, list) else []
+
+
+def _normalize_supplier_return_candidate_line(raw: dict[str, object], parent_warehouse: str) -> dict[str, object]:
+	item_code = _bounded_text(raw.get("item_code"), SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if not item_code:
+		frappe.throw(_("Item identity is required for supplier return candidate."), ValueError)
+	line_warehouse = _bounded_text(raw.get("warehouse") or parent_warehouse, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if line_warehouse != parent_warehouse:
+		frappe.throw(_("Supplier return candidate line warehouse must match the candidate warehouse."), ValueError)
+	candidate_qty = _non_negative_qty(raw.get("candidate_qty"), "Candidate quantity")
+	if candidate_qty <= 0:
+		frappe.throw(_("Candidate quantity must be greater than zero."), ValueError)
+	quarantine_qty = _non_negative_qty(raw.get("quarantine_qty"), "Quarantine quantity")
+	damaged_qty = _non_negative_qty(raw.get("damaged_qty"), "Damaged quantity")
+	wrong_item_qty = _non_negative_qty(raw.get("wrong_item_qty"), "Wrong item quantity")
+	overage_qty = _non_negative_qty(raw.get("overage_qty"), "Overage quantity")
+	quality_hold_qty = _non_negative_qty(raw.get("quality_hold_qty"), "Quality hold quantity")
+	if quarantine_qty + damaged_qty + wrong_item_qty + overage_qty + quality_hold_qty > candidate_qty:
+		frappe.throw(_("Supplier return posture quantities cannot exceed candidate quantity."), ValueError)
+	condition_grade = _bounded_text(raw.get("condition_grade"), SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	condition_note = _bounded_text(raw.get("condition_note") or raw.get("note"), SUPPLIER_RETURN_CANDIDATE_MAX_NOTE_LENGTH)
+	if not (condition_grade or condition_note):
+		frappe.throw(_("Condition grade or condition note is required for supplier return candidate."), ValueError)
+	evidence_reference = _bounded_text(raw.get("evidence_reference"), SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if (quarantine_qty > 0 or damaged_qty > 0 or wrong_item_qty > 0 or overage_qty > 0 or quality_hold_qty > 0) and not (evidence_reference or condition_note):
+		frappe.throw(_("Evidence reference or condition note is required for supplier return exception quantities."), ValueError)
+	return {
+		"item_code": item_code,
+		"item_name": _bounded_text(raw.get("item_name"), SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		"warehouse": line_warehouse,
+		"candidate_qty": candidate_qty,
+		"quarantine_qty": quarantine_qty,
+		"damaged_qty": damaged_qty,
+		"wrong_item_qty": wrong_item_qty,
+		"overage_qty": overage_qty,
+		"quality_hold_qty": quality_hold_qty,
+		"condition_grade": condition_grade,
+		"disposition": _bounded_text(raw.get("disposition"), SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH),
+		"evidence_reference": evidence_reference,
+		"condition_note": condition_note,
+		"uom": _bounded_text(raw.get("uom"), 40),
+	}
+
+
+def _supplier_return_candidate_payload_hash(
+	supplier: str,
+	warehouse: str,
+	supplier_return_reference: str,
+	purchase_order_reference_text: str,
+	purchase_receipt_reference_text: str,
+	purchase_invoice_reference_text: str,
+	source_reference_note: str,
+	notes: str,
+	procurement_escalation_reference: str,
+	finance_escalation_reference: str,
+	lines: list[dict[str, object]],
+) -> str:
+	canonical = {
+		"supplier": supplier,
+		"warehouse": warehouse,
+		"supplier_return_reference": supplier_return_reference,
+		"purchase_order_reference_text": purchase_order_reference_text,
+		"purchase_receipt_reference_text": purchase_receipt_reference_text,
+		"purchase_invoice_reference_text": purchase_invoice_reference_text,
+		"source_reference_note": source_reference_note,
+		"notes": notes,
+		"procurement_escalation_reference": procurement_escalation_reference,
+		"finance_escalation_reference": finance_escalation_reference,
+		"lines": sorted([
+			{
+				"item_code": line.get("item_code"),
+				"item_name": line.get("item_name"),
+				"warehouse": line.get("warehouse"),
+				"candidate_qty": flt(line.get("candidate_qty")),
+				"quarantine_qty": flt(line.get("quarantine_qty")),
+				"damaged_qty": flt(line.get("damaged_qty")),
+				"wrong_item_qty": flt(line.get("wrong_item_qty")),
+				"overage_qty": flt(line.get("overage_qty")),
+				"quality_hold_qty": flt(line.get("quality_hold_qty")),
+				"condition_grade": line.get("condition_grade"),
+				"disposition": line.get("disposition"),
+				"evidence_reference": line.get("evidence_reference"),
+				"condition_note": line.get("condition_note"),
+				"uom": line.get("uom"),
+			}
+			for line in lines
+		], key=lambda row: (cstr(row.get("item_code")), cstr(row.get("warehouse")), cstr(row.get("uom")))),
+	}
+	return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _supplier_return_candidate_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			SUPPLIER_RETURN_CANDIDATE_DOCTYPE,
+			fields=["name"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_supplier_return_candidate_draft(
+	candidate_doc,
+	supplier: str,
+	warehouse: str,
+	supplier_return_reference: str,
+	purchase_order_reference_text: str,
+	purchase_receipt_reference_text: str,
+	purchase_invoice_reference_text: str,
+	source_reference_note: str,
+	notes: str,
+	procurement_escalation_reference: str,
+	finance_escalation_reference: str,
+	lines: list[dict[str, object]],
+	request_id: str,
+	payload_hash: str,
+) -> None:
+	now_value = str(now_datetime())
+	candidate_doc.supplier = supplier
+	candidate_doc.warehouse = warehouse
+	candidate_doc.candidate_status = "Candidate Draft"
+	candidate_doc.supplier_return_reference = supplier_return_reference
+	candidate_doc.purchase_order_reference_text = purchase_order_reference_text
+	candidate_doc.purchase_receipt_reference_text = purchase_receipt_reference_text
+	candidate_doc.purchase_invoice_reference_text = purchase_invoice_reference_text
+	candidate_doc.source_reference_note = source_reference_note
+	candidate_doc.captured_by = cstr(getattr(frappe.session, "user", "")).strip()
+	candidate_doc.captured_at = now_value
+	candidate_doc.evidence_status = "Draft evidence"
+	candidate_doc.manager_review_status = "Not submitted"
+	candidate_doc.procurement_escalation_reference = procurement_escalation_reference
+	candidate_doc.finance_escalation_reference = finance_escalation_reference
+	candidate_doc.notes = notes
+	candidate_doc.source_payload_hash = payload_hash
+	candidate_doc.policy_version = SUPPLIER_RETURN_CANDIDATE_POLICY_VERSION
+	candidate_doc.line_count = len(lines)
+	candidate_doc.total_candidate_qty = sum(flt(line.get("candidate_qty")) for line in lines)
+	candidate_doc.request_id = request_id
+	_set_child_table(candidate_doc, "lines", lines)
+	_append_child(candidate_doc, "events", {
+		"event_type": "saved_supplier_return_candidate_draft",
+		"event_label": "Supplier return candidate draft saved",
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": request_id,
+		"details_json": json.dumps({"line_count": len(lines), "stock_effect": False, "supplier_notified": False}, sort_keys=True),
+	})
+	candidate_doc.insert()
+
+
+def _supplier_return_candidate_payload(context: dict[str, object], candidate_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_supplier_return_candidate_line_payload(line) for line in list(getattr(candidate_doc, "lines", []) or [])]
+	events = list(getattr(candidate_doc, "events", []) or [])
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Supplier Return Candidate Draft", "key": "supplier_return_candidate_draft"},
+		"candidate": {
+			"candidate_id": cstr(getattr(candidate_doc, "name", "")).strip(),
+			"candidate_status": cstr(getattr(candidate_doc, "candidate_status", "")).strip(),
+			"supplier": cstr(getattr(candidate_doc, "supplier", "")).strip(),
+			"warehouse": cstr(getattr(candidate_doc, "warehouse", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"event_summary": _supplier_return_candidate_event_payload(events[-1]) if events else {},
+		"stock_effect": False,
+		"stock_decreased": False,
+		"return_purchase_receipt_created": False,
+		"purchase_invoice_return_created": False,
+		"debit_note_created": False,
+		"stock_entry_created": False,
+		"stock_posted": False,
+		"purchase_order_updated": False,
+		"supplier_notified": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _supplier_return_candidate_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"item_code": cstr(getter("item_code")).strip(),
+		"item_name": cstr(getter("item_name")).strip(),
+		"warehouse": cstr(getter("warehouse")).strip(),
+		"candidate_qty": _number_text(getter("candidate_qty")),
+		"quarantine_qty": _number_text(getter("quarantine_qty")),
+		"damaged_qty": _number_text(getter("damaged_qty")),
+		"wrong_item_qty": _number_text(getter("wrong_item_qty")),
+		"overage_qty": _number_text(getter("overage_qty")),
+		"quality_hold_qty": _number_text(getter("quality_hold_qty")),
+		"condition_grade": cstr(getter("condition_grade")).strip(),
+		"disposition": cstr(getter("disposition")).strip(),
+		"evidence_reference": cstr(getter("evidence_reference")).strip(),
+		"uom": cstr(getter("uom")).strip(),
+	}
+
+
+def _supplier_return_candidate_event_payload(event) -> dict[str, object]:
+	if not event:
+		return {}
+	return {
+		"event_type": cstr(_child_value(event, "event_type")).strip(),
+		"event_label": cstr(_child_value(event, "event_label")).strip(),
+		"event_by": cstr(_child_value(event, "event_by")).strip(),
+		"event_at": cstr(_child_value(event, "event_at")).strip(),
+		"request_id": cstr(_child_value(event, "request_id")).strip(),
+	}
 
 
 def _contains_forbidden_customer_return_fields(extra_fields: dict[str, object]) -> bool:

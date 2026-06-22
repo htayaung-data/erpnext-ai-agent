@@ -32,6 +32,7 @@ PICKING_TASK_DOCS = {}
 DISPATCH_HANDOFF_REQUEST_DOCS = {}
 CUSTOMER_RETURN_INTAKE_DOCS = {}
 CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS = {}
+SUPPLIER_RETURN_CANDIDATE_DOCS = {}
 
 PO_ROWS = [
     {
@@ -696,6 +697,54 @@ def _get_meta(doctype):
             "request_id",
             "details_json",
         },
+        "Warehouse Supplier Return Candidate": {
+            "supplier",
+            "warehouse",
+            "candidate_status",
+            "supplier_return_reference",
+            "purchase_order_reference_text",
+            "purchase_receipt_reference_text",
+            "purchase_invoice_reference_text",
+            "source_reference_note",
+            "captured_by",
+            "captured_at",
+            "evidence_status",
+            "manager_review_status",
+            "procurement_escalation_reference",
+            "finance_escalation_reference",
+            "notes",
+            "source_payload_hash",
+            "policy_version",
+            "line_count",
+            "total_candidate_qty",
+            "request_id",
+            "lines",
+            "events",
+        },
+        "Warehouse Supplier Return Candidate Line": {
+            "item_code",
+            "item_name",
+            "warehouse",
+            "candidate_qty",
+            "quarantine_qty",
+            "damaged_qty",
+            "wrong_item_qty",
+            "overage_qty",
+            "quality_hold_qty",
+            "condition_grade",
+            "disposition",
+            "evidence_reference",
+            "condition_note",
+            "uom",
+        },
+        "Warehouse Supplier Return Candidate Event": {
+            "event_type",
+            "event_label",
+            "event_by",
+            "event_at",
+            "request_id",
+            "details_json",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -900,6 +949,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             for key, value in filters.items():
                 rows = [row for row in rows if row.get(key) == value]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Supplier Return Candidate":
+        rows = list(SUPPLIER_RETURN_CANDIDATE_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Supplier Return Candidate Event":
+        rows = []
+        for candidate in SUPPLIER_RETURN_CANDIDATE_DOCS.values():
+            for event in list(getattr(candidate, "events", []) or []):
+                row = dict(event)
+                row["parent"] = candidate.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -975,6 +1045,11 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Supplier Return Candidate":
+            if not self.name:
+                self.name = f"WSRC-{len(SUPPLIER_RETURN_CANDIDATE_DOCS) + 1:05d}"
+            SUPPLIER_RETURN_CANDIDATE_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Customer Return Intake":
             if not self.name:
                 self.name = f"WCRI-{len(CUSTOMER_RETURN_INTAKE_DOCS) + 1:05d}"
@@ -1006,6 +1081,11 @@ class _FakeWorkflowDoc:
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Supplier Return Candidate":
+            if not self.name:
+                self.name = f"WSRC-{len(SUPPLIER_RETURN_CANDIDATE_DOCS) + 1:05d}"
+            SUPPLIER_RETURN_CANDIDATE_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Customer Return Intake":
             if not self.name:
                 self.name = f"WCRI-{len(CUSTOMER_RETURN_INTAKE_DOCS) + 1:05d}"
@@ -1032,7 +1112,7 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request"}:
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
@@ -1056,6 +1136,10 @@ def _get_doc(doctype, name=None, *args, **kwargs):
         if name not in CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS:
             raise Exception("Missing Warehouse Customer Return Handoff Request")
         return CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS[name]
+    if doctype == "Warehouse Supplier Return Candidate":
+        if name not in SUPPLIER_RETURN_CANDIDATE_DOCS:
+            raise Exception("Missing Warehouse Supplier Return Candidate")
+        return SUPPLIER_RETURN_CANDIDATE_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -1145,6 +1229,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         DISPATCH_HANDOFF_REQUEST_DOCS.clear()
         CUSTOMER_RETURN_INTAKE_DOCS.clear()
         CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS.clear()
+        SUPPLIER_RETURN_CANDIDATE_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -3831,6 +3916,177 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("/app/", payload_text)
         self.assertNotIn("/desk/form", payload_text)
         forbidden_docs = {"Sales Return", "Credit Note", "Delivery Note", "Stock Entry", "Stock Ledger Entry", "Stock Reconciliation", "Sales Order"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+
+    def _save_supplier_return_candidate(self, **overrides):
+        payload = {
+            "supplier": "SUP-RETURN-001",
+            "warehouse": "Main - M",
+            "supplier_return_reference": "WH-SUP-RET-SRC-001",
+            "purchase_order_reference_text": "PO-REF-001",
+            "purchase_receipt_reference_text": "PR-REF-001",
+            "source_reference_note": "Quarantine evidence from receiving review.",
+            "notes": "Supplier return candidate draft.",
+            "lines": [
+                {
+                    "item_code": "ITEM-201",
+                    "item_name": "Supplier Return Item",
+                    "warehouse": "Main - M",
+                    "candidate_qty": 2,
+                    "quarantine_qty": 1,
+                    "condition_grade": "Quarantine",
+                    "evidence_reference": "SUP-RET-PHOTO-1",
+                    "uom": "Nos",
+                }
+            ],
+            "request_id": "supplier-return-candidate-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_supplier_return_candidate_draft(**payload)
+
+    def test_w15f3_warehouse_and_stock_users_can_save_supplier_return_candidate_draft(self):
+        payload = self._save_supplier_return_candidate()
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "supplier_return_candidate_draft")
+        self.assertEqual(payload["candidate"]["supplier"], "SUP-RETURN-001")
+        self.assertEqual(payload["candidate"]["warehouse"], "Main - M")
+        self.assertEqual(payload["candidate"]["line_count"], 1)
+        self.assertFalse(payload["candidate"]["idempotent"])
+        self.assertEqual(payload["candidate"]["lines"][0]["candidate_qty"], "2")
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_decreased"])
+        self.assertFalse(payload["supplier_notified"])
+        self.assertEqual(len(SUPPLIER_RETURN_CANDIDATE_DOCS), 1)
+        candidate = next(iter(SUPPLIER_RETURN_CANDIDATE_DOCS.values()))
+        self.assertEqual(candidate.policy_version, service.SUPPLIER_RETURN_CANDIDATE_POLICY_VERSION)
+        self.assertEqual(candidate.request_id, "supplier-return-candidate-001")
+        self.assertEqual(candidate.total_candidate_qty, 2.0)
+        self.assertEqual(candidate.lines[0]["evidence_reference"], "SUP-RET-PHOTO-1")
+        self.assertEqual(candidate.events[0]["event_type"], "saved_supplier_return_candidate_draft")
+
+        SUPPLIER_RETURN_CANDIDATE_DOCS.clear()
+        CURRENT_ROLES[:] = ["Stock User"]
+        stock_payload = self._save_supplier_return_candidate(request_id="supplier-return-stock-user")
+        self.assertEqual(stock_payload["state"]["kind"], "ready")
+        self.assertEqual(len(SUPPLIER_RETURN_CANDIDATE_DOCS), 1)
+
+    def test_w15f3_non_warehouse_user_denied_supplier_return_candidate(self):
+        CURRENT_ROLES[:] = ["Procurement User"]
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(request_id="supplier-return-denied")
+        self.assertEqual(SUPPLIER_RETURN_CANDIDATE_DOCS, {})
+
+    def test_w15f3_missing_supplier_source_or_visible_warehouse_rejected(self):
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(supplier="", request_id="supplier-return-missing-supplier")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(supplier_return_reference="", request_id="supplier-return-missing-source")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(warehouse="Unknown - M", request_id="supplier-return-unknown-warehouse")
+        self.assertEqual(SUPPLIER_RETURN_CANDIDATE_DOCS, {})
+
+    def test_w15f3_supplier_return_candidate_line_validation(self):
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(lines=[], request_id="supplier-return-missing-lines")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(lines=[{"warehouse": "Main - M", "candidate_qty": 1, "condition_grade": "Good"}], request_id="supplier-return-missing-item")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 0, "condition_grade": "Good"}], request_id="supplier-return-zero-qty")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 1, "quarantine_qty": -1, "condition_grade": "Good"}], request_id="supplier-return-negative-qty")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 2, "quarantine_qty": 2, "damaged_qty": 1, "condition_grade": "Damaged", "evidence_reference": "SUP-EVID-1"}], request_id="supplier-return-over-sum")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 1}], request_id="supplier-return-missing-condition")
+        too_many_lines = [
+            {"item_code": f"ITEM-OVER-{idx}", "warehouse": "Main - M", "candidate_qty": 1, "condition_grade": "Good"}
+            for idx in range(service.SUPPLIER_RETURN_CANDIDATE_MAX_LINES + 1)
+        ]
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(lines=too_many_lines, request_id="supplier-return-too-many-lines")
+        self.assertEqual(SUPPLIER_RETURN_CANDIDATE_DOCS, {})
+
+    def test_w15f3_supplier_return_exception_quantities_require_evidence_or_condition_note(self):
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(
+                lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 2, "damaged_qty": 1, "condition_grade": "Damaged"}],
+                request_id="supplier-return-damaged-no-evidence",
+            )
+        payload = self._save_supplier_return_candidate(
+            lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 2, "damaged_qty": 1, "condition_grade": "Damaged", "evidence_reference": "SUP-DMG-1"}],
+            request_id="supplier-return-damaged-evidence",
+        )
+        self.assertEqual(payload["candidate"]["lines"][0]["evidence_reference"], "SUP-DMG-1")
+        candidate = next(iter(SUPPLIER_RETURN_CANDIDATE_DOCS.values()))
+        self.assertEqual(candidate.lines[0]["evidence_reference"], "SUP-DMG-1")
+
+    def test_w15f3_supplier_return_request_idempotency_and_changed_payload_rejection(self):
+        first = self._save_supplier_return_candidate(request_id="supplier-return-same-request")
+        second = self._save_supplier_return_candidate(request_id="supplier-return-same-request")
+
+        self.assertFalse(first["candidate"]["idempotent"])
+        self.assertTrue(second["candidate"]["idempotent"])
+        self.assertEqual(len(SUPPLIER_RETURN_CANDIDATE_DOCS), 1)
+        candidate = next(iter(SUPPLIER_RETURN_CANDIDATE_DOCS.values()))
+        self.assertEqual(len(candidate.events), 1)
+
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(notes="Changed note.", request_id="supplier-return-same-request")
+
+        changed_item_name_lines = [
+            {
+                "item_code": "ITEM-201",
+                "item_name": "Changed Supplier Return Item",
+                "warehouse": "Main - M",
+                "candidate_qty": 2,
+                "quarantine_qty": 1,
+                "condition_grade": "Quarantine",
+                "evidence_reference": "SUP-RET-PHOTO-1",
+                "uom": "Nos",
+            }
+        ]
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(lines=changed_item_name_lines, request_id="supplier-return-same-request")
+
+    def test_w15f3_supplier_return_request_id_cannot_cross_supplier_or_warehouse(self):
+        self._save_supplier_return_candidate(request_id="supplier-return-cross-request")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(supplier="SUP-RETURN-002", request_id="supplier-return-cross-request")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(
+                warehouse="Short - M",
+                lines=[{"item_code": "ITEM-202", "warehouse": "Short - M", "candidate_qty": 1, "condition_grade": "Quarantine", "condition_note": "Short warehouse hold."}],
+                request_id="supplier-return-cross-request",
+            )
+        self.assertEqual(len(SUPPLIER_RETURN_CANDIDATE_DOCS), 1)
+
+    def test_w15f3_supplier_return_forbidden_fields_and_safe_payload_boundaries(self):
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(return_purchase_receipt="PR-RET-0001", request_id="supplier-return-forbidden-pr")
+        self.assertEqual(SUPPLIER_RETURN_CANDIDATE_DOCS, {})
+
+        payload = self._save_supplier_return_candidate(request_id="supplier-return-safe-response")
+        payload_text = str(payload).lower()
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_decreased"])
+        self.assertFalse(payload["return_purchase_receipt_created"])
+        self.assertFalse(payload["purchase_invoice_return_created"])
+        self.assertFalse(payload["debit_note_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["purchase_order_updated"])
+        self.assertFalse(payload["supplier_notified"])
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Purchase Receipt", "Purchase Invoice", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reconciliation", "Purchase Order"}
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
