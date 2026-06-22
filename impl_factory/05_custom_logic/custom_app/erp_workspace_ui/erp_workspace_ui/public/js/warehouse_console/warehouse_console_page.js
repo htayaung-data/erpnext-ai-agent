@@ -3481,6 +3481,24 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-panel {
         grid-column: 1 / -1;
       }
+
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-shell.warehouse-supplier-return-shell {
+        background:
+          linear-gradient(180deg, rgba(239, 246, 255, 0.62) 0%, rgba(255, 255, 255, 0.98) 36%),
+          #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-shell.warehouse-supplier-return-shell::before {
+        background: rgba(37, 99, 235, 0.42);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-supplier-return-shell .warehouse-customer-return-badge {
+        border-color: rgba(37, 99, 235, 0.2);
+        background: rgba(239, 246, 255, 0.9);
+        color: #1d4ed8;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-supplier-return-shell .warehouse-customer-return-guardrail {
+        border-color: rgba(37, 99, 235, 0.24);
+        background: rgba(239, 246, 255, 0.56);
+      }
       /* W15B overview hierarchy refinement: status, navigation, task, risk, movement, and control lanes must read differently. */
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-pulse-section {
         border-color: rgba(226, 232, 240, 0.92);
@@ -7904,6 +7922,103 @@
       </section>
     `;
   }
+  function renderSupplierReturnCandidateShell() {
+    const statuses = [
+      "Candidate Source",
+      "Physical Evidence",
+      "Manager Review",
+      "Procurement Review",
+      "Finance/Admin Review",
+      "Supplier Handoff Request",
+    ];
+    const userPreview = [
+      "Identify supplier-return goods",
+      "Count candidate quantity",
+      "Record condition",
+      "Add evidence reference",
+      "Send to manager review",
+    ];
+    const managerPreview = [
+      "Request reinspection",
+      "Mark quarantine review",
+      "Mark supplier-return candidate",
+      "Escalate to Procurement",
+      "Escalate to Finance/Admin",
+      "Reject supplier-return candidate",
+    ];
+    const evidence = [
+      ["Supplier/source reference", "PO, receipt, quarantine, or Procurement instruction"],
+      ["Item identity", "Item and unit posture"],
+      ["Candidate quantity", "Physical count evidence"],
+      ["Condition grade", "Damage, wrong item, quality, or quarantine posture"],
+      ["Evidence reference", "Future attachment or note reference"],
+      ["Manager event", "Supplier-return review trail"],
+      ["Procurement marker", "Supplier-facing follow-up marker"],
+    ];
+    const ownership = [
+      ["Warehouse", "Physical evidence and candidate posture"],
+      ["Warehouse Manager", "Internal return recommendation"],
+      ["Procurement", "Supplier communication, claim, and PO decision"],
+      ["Finance/Admin", "Debit, payable, and document governance"],
+    ];
+    const policy = [
+      ["Return Purchase Receipt", "Future policy only, blocked now"],
+      ["Purchase Invoice return", "Future policy only, blocked now"],
+      ["Stock Entry", "Future policy only, blocked now"],
+      ["Stock Ledger / Stock Balance", "Future policy only, blocked now"],
+      ["Supplier notification", "Procurement-owned, blocked now"],
+      ["Reference handling", "Plain text/status only if later approved"],
+    ];
+    const plannedMarkup = (items) => items.map((item) => `
+      <div class="warehouse-customer-return-planned" data-warehouse-supplier-return-planned-control aria-disabled="true">${escapeHtml(item)}</div>
+    `).join("");
+    const miniMarkup = (items) => items.map((item) => `
+      <div class="warehouse-customer-return-mini">
+        ${escapeHtml(item[0])}
+        <span>${escapeHtml(item[1])}</span>
+      </div>
+    `).join("");
+    return `
+      <section class="sales-console-card sales-console-section warehouse-customer-return-shell warehouse-supplier-return-shell" data-warehouse-supplier-return-shell>
+        <div class="warehouse-customer-return-head">
+          <div class="warehouse-customer-return-copy">
+            <h2 class="warehouse-customer-return-title">Supplier return candidate</h2>
+            <div class="warehouse-customer-return-subtitle">Planned workflow shell for supplier-return evidence, manager recommendation, Procurement review, and Finance/Admin handoff.</div>
+          </div>
+          <span class="warehouse-customer-return-badge">Shell only</span>
+        </div>
+        <div class="warehouse-customer-return-guardrail" data-warehouse-supplier-return-guardrail>
+          No supplier is notified, no stock is decreased, and no return Purchase Receipt, Purchase Invoice return, Stock Entry, Stock Ledger, or Stock Balance record is created from this shell.
+        </div>
+        <div class="warehouse-customer-return-status-strip">
+          ${statuses.map((status) => `<div class="warehouse-customer-return-status-chip" data-warehouse-supplier-return-status>${escapeHtml(status)}</div>`).join("")}
+        </div>
+        <div class="warehouse-customer-return-grid">
+          <section class="warehouse-customer-return-panel" data-warehouse-supplier-return-user-preview>
+            <h3>Warehouse user preview</h3>
+            <div class="warehouse-customer-return-items">${plannedMarkup(userPreview)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel" data-warehouse-supplier-return-manager-preview>
+            <h3>Manager preview</h3>
+            <div class="warehouse-customer-return-items">${plannedMarkup(managerPreview)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel" data-warehouse-supplier-return-evidence-preview>
+            <h3>Evidence preview</h3>
+            <div class="warehouse-customer-return-evidence-grid">${miniMarkup(evidence)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel">
+            <h3>Role ownership</h3>
+            <div class="warehouse-customer-return-owner-grid">${miniMarkup(ownership)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel warehouse-customer-return-policy-panel" data-warehouse-supplier-return-policy>
+            <h3>Future document policy</h3>
+            <div class="warehouse-customer-return-policy-grid">${miniMarkup(policy)}</div>
+          </section>
+        </div>
+      </section>
+    `;
+  }
+
 
   function renderOverview(page, payload) {
     ensureStyle();
@@ -7934,6 +8049,7 @@
         ${renderCockpitStart(payload, kpis)}
         ${renderCockpitActionCenter(payload.action_center || {})}
         ${renderCustomerReturnIntakeShell()}
+        ${renderSupplierReturnCandidateShell()}
       </div>
     `);
     $root.find("[data-warehouse-refresh]").on("click", (event) => {

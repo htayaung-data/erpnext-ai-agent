@@ -745,6 +745,14 @@ async function snapshot(page) {
       customerReturnPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-policy]")).filter(visible).length,
       customerReturnPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-planned-control]")).filter(visible).length,
       customerReturnActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-shell] button, [data-warehouse-customer-return-shell] a, [data-warehouse-customer-return-shell] [role=button]")).filter(visible).length,
+      supplierReturnShellCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-shell]")).filter(visible).length,
+      supplierReturnStatusCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-status]")).filter(visible).length,
+      supplierReturnUserPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-user-preview]")).filter(visible).length,
+      supplierReturnManagerPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-manager-preview]")).filter(visible).length,
+      supplierReturnEvidencePreviewCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-evidence-preview]")).filter(visible).length,
+      supplierReturnPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-policy]")).filter(visible).length,
+      supplierReturnPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-planned-control]")).filter(visible).length,
+      supplierReturnActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-shell] button, [data-warehouse-supplier-return-shell] a, [data-warehouse-supplier-return-shell] [role=button]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     };
@@ -820,6 +828,22 @@ function assertW15E2CustomerReturnShell(state, contextLabel) {
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Customer Return Intake exposed a native route", { context: contextLabel, state });
 }
 
+function assertW15F2SupplierReturnShell(state, contextLabel) {
+  assert(state.supplierReturnShellCount === 1, "Supplier Return Candidate shell must render once", { context: contextLabel, state });
+  assert(state.supplierReturnStatusCount >= 6, "Supplier Return Candidate workflow states are missing", { context: contextLabel, state });
+  assert(state.supplierReturnUserPreviewCount === 1, "Supplier Return Candidate user preview is missing", { context: contextLabel, state });
+  assert(state.supplierReturnManagerPreviewCount === 1, "Supplier Return Candidate manager preview is missing", { context: contextLabel, state });
+  assert(state.supplierReturnEvidencePreviewCount === 1, "Supplier Return Candidate evidence preview is missing", { context: contextLabel, state });
+  assert(state.supplierReturnPolicyCount === 1, "Supplier Return Candidate future document policy is missing", { context: contextLabel, state });
+  assert(state.supplierReturnPlannedControlCount >= 11, "Supplier Return Candidate planned controls are missing", { context: contextLabel, state });
+  assert(state.supplierReturnActiveControlCount === 0, "Supplier Return Candidate planned controls must be inert", { context: contextLabel, state });
+  assert((state.text || "").includes("Supplier return candidate"), "Supplier Return Candidate title is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Procurement review"), "Supplier Return Candidate Procurement review context is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No supplier is notified"), "Supplier Return Candidate guardrail is missing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Supplier Return Candidate exposed a native route", { context: contextLabel, state });
+}
+
+
 function assertW15BActionCenter(state, contextLabel) {
   assert(state.actionCenterCount === 1, "Warehouse Action Center must render once", { context: contextLabel, state });
   assert(state.actionCenterGroupCount >= 2, "Warehouse Action Center groups are missing", { context: contextLabel, state });
@@ -861,6 +885,7 @@ async function assertCockpit(page, contextLabel) {
   if (EXPECT_W14C) assertW14CManagerCenter(state, contextLabel);
   if (EXPECT_W15B) assertW15BActionCenter(state, contextLabel);
   assertW15E2CustomerReturnShell(state, contextLabel);
+  assertW15F2SupplierReturnShell(state, contextLabel);
   return state;
 }
 
