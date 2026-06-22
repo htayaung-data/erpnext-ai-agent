@@ -4090,6 +4090,167 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
+    def _supplier_return_candidate_id(self, **overrides):
+        payload = self._save_supplier_return_candidate(**overrides)
+        return payload["candidate"]["candidate_id"]
+
+    def _save_supplier_return_manager_decision(self, candidate_id, **overrides):
+        payload = {
+            "candidate_id": candidate_id,
+            "decision": "mark_supplier_return_candidate",
+            "note": "Manager reviewed supplier-return evidence.",
+            "request_id": "supplier-return-manager-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_supplier_return_manager_decision(**payload)
+
+    def test_w15f4_manager_roles_can_save_supplier_return_decision(self):
+        candidate_id = self._supplier_return_candidate_id(request_id="supplier-manager-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+
+        payload = self._save_supplier_return_manager_decision(candidate_id, request_id="supplier-manager-decision")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "supplier_return_manager_decision")
+        self.assertEqual(payload["candidate"]["candidate_status"], "Supplier Return Candidate")
+        self.assertEqual(payload["candidate"]["decision"], "mark_supplier_return_candidate")
+        self.assertFalse(payload["candidate"]["idempotent"])
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["supplier_notified"])
+        candidate = SUPPLIER_RETURN_CANDIDATE_DOCS[candidate_id]
+        self.assertEqual(candidate.candidate_status, "Supplier Return Candidate")
+        self.assertEqual(candidate.manager_review_status, "Supplier Return Candidate")
+        self.assertEqual(candidate.events[-1]["event_type"], "marked_supplier_return_candidate")
+
+        SUPPLIER_RETURN_CANDIDATE_DOCS.clear()
+        CURRENT_ROLES[:] = ["Stock User"]
+        stock_candidate = self._supplier_return_candidate_id(request_id="supplier-stock-manager-draft")
+        CURRENT_ROLES[:] = ["Stock Manager"]
+        stock_payload = self._save_supplier_return_manager_decision(stock_candidate, request_id="supplier-stock-manager-decision")
+        self.assertEqual(stock_payload["candidate"]["candidate_status"], "Supplier Return Candidate")
+
+    def test_w15f4_warehouse_and_stock_users_denied_supplier_return_decision(self):
+        candidate_id = self._supplier_return_candidate_id(request_id="supplier-manager-deny-draft")
+
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(candidate_id, request_id="supplier-manager-deny-warehouse")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(candidate_id, request_id="supplier-manager-deny-stock")
+
+        candidate = SUPPLIER_RETURN_CANDIDATE_DOCS[candidate_id]
+        self.assertEqual(candidate.candidate_status, "Candidate Draft")
+        self.assertEqual(len(candidate.events), 1)
+
+    def test_w15f4_supplier_return_decision_rules(self):
+        clean_candidate = self._supplier_return_candidate_id(
+            request_id="supplier-rules-clean-draft",
+            lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 2, "condition_grade": "Good"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(clean_candidate, decision="unknown_decision", request_id="supplier-rules-unknown")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(clean_candidate, decision="request_reinspection", note="", request_id="supplier-rules-reinspect-no-note")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(clean_candidate, decision="mark_quarantine_review", note="", request_id="supplier-rules-quarantine-no-marker")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(clean_candidate, decision="mark_supplier_return_candidate", note="", request_id="supplier-rules-candidate-no-evidence")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(clean_candidate, decision="escalate_to_procurement", note="", procurement_escalation_reference="", request_id="supplier-rules-procurement-no-evidence")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(clean_candidate, decision="escalate_to_finance_admin", note="", finance_escalation_reference="", request_id="supplier-rules-finance-no-note")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(clean_candidate, decision="reject_supplier_return_candidate", note="", request_id="supplier-rules-reject-no-note")
+
+        reinspection = self._save_supplier_return_manager_decision(clean_candidate, decision="request_reinspection", note="Count evidence is unclear.", request_id="supplier-rules-reinspect")
+        self.assertEqual(reinspection["candidate"]["candidate_status"], "Reinspection Requested")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        quarantine_candidate = self._supplier_return_candidate_id(
+            request_id="supplier-rules-quarantine-draft",
+            lines=[{"item_code": "ITEM-202", "warehouse": "Main - M", "candidate_qty": 2, "quarantine_qty": 1, "condition_grade": "Quarantine", "evidence_reference": "SUP-QA-1"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        quarantine_payload = self._save_supplier_return_manager_decision(quarantine_candidate, decision="mark_quarantine_review", note="", request_id="supplier-rules-quarantine")
+        self.assertEqual(quarantine_payload["candidate"]["candidate_status"], "Quarantine Review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        procurement_candidate = self._supplier_return_candidate_id(request_id="supplier-rules-procurement-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        procurement_payload = self._save_supplier_return_manager_decision(
+            procurement_candidate,
+            decision="escalate_to_procurement",
+            note="",
+            procurement_escalation_reference="PROC-SUP-RET-001",
+            request_id="supplier-rules-procurement",
+        )
+        self.assertEqual(procurement_payload["candidate"]["candidate_status"], "Procurement Escalation")
+        self.assertEqual(SUPPLIER_RETURN_CANDIDATE_DOCS[procurement_candidate].procurement_escalation_reference, "PROC-SUP-RET-001")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        finance_candidate = self._supplier_return_candidate_id(request_id="supplier-rules-finance-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        finance_payload = self._save_supplier_return_manager_decision(
+            finance_candidate,
+            decision="escalate_to_finance_admin",
+            note="Finance/Admin should review debit policy.",
+            finance_escalation_reference="FIN-SUP-RET-001",
+            request_id="supplier-rules-finance",
+        )
+        self.assertEqual(finance_payload["candidate"]["candidate_status"], "Finance/Admin Escalation")
+        self.assertEqual(SUPPLIER_RETURN_CANDIDATE_DOCS[finance_candidate].finance_escalation_reference, "FIN-SUP-RET-001")
+
+    def test_w15f4_supplier_return_manager_idempotency_and_status_safety(self):
+        first_candidate = self._supplier_return_candidate_id(request_id="supplier-manager-idem-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        first = self._save_supplier_return_manager_decision(first_candidate, request_id="supplier-manager-idem")
+        second = self._save_supplier_return_manager_decision(first_candidate, request_id="supplier-manager-idem")
+
+        self.assertFalse(first["candidate"]["idempotent"])
+        self.assertTrue(second["candidate"]["idempotent"])
+        self.assertEqual(len(SUPPLIER_RETURN_CANDIDATE_DOCS[first_candidate].events), 2)
+
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(first_candidate, decision="escalate_to_procurement", request_id="supplier-manager-idem")
+
+        second_candidate = self._supplier_return_candidate_id(request_id="supplier-manager-idem-second-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(second_candidate, request_id="supplier-manager-idem")
+
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(first_candidate, request_id="supplier-manager-final-reject")
+
+    def test_w15f4_supplier_return_manager_payload_has_no_stock_supplier_or_native_effects(self):
+        candidate_id = self._supplier_return_candidate_id(request_id="supplier-manager-safe-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        payload = self._save_supplier_return_manager_decision(candidate_id, request_id="supplier-manager-safe-decision")
+        payload_text = str(payload).lower()
+
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_decreased"])
+        self.assertFalse(payload["return_purchase_receipt_created"])
+        self.assertFalse(payload["purchase_invoice_return_created"])
+        self.assertFalse(payload["debit_note_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["purchase_order_updated"])
+        self.assertFalse(payload["supplier_notified"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Purchase Receipt", "Purchase Invoice", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reconciliation", "Purchase Order"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -414,6 +414,21 @@ SUPPLIER_RETURN_CANDIDATE_FORBIDDEN_FIELDS = frozenset({
 	"notify_supplier",
 	"portal_user",
 })
+SUPPLIER_RETURN_MANAGER_ROLES = frozenset({"Warehouse Manager", "Stock Manager", "System Manager"})
+SUPPLIER_RETURN_MANAGER_DECISION_STATUSES = frozenset({
+	"Candidate Draft",
+	"Physical Evidence Captured",
+	"Submitted For Manager Review",
+	"Reinspection Requested",
+})
+SUPPLIER_RETURN_MANAGER_DECISIONS = {
+	"request_reinspection": ("Reinspection Requested", "requested_reinspection", "Reinspection requested"),
+	"mark_quarantine_review": ("Quarantine Review", "marked_quarantine_review", "Quarantine review marked"),
+	"mark_supplier_return_candidate": ("Supplier Return Candidate", "marked_supplier_return_candidate", "Supplier return candidate marked"),
+	"escalate_to_procurement": ("Procurement Escalation", "escalated_to_procurement", "Procurement escalation marked"),
+	"escalate_to_finance_admin": ("Finance/Admin Escalation", "escalated_to_finance_admin", "Finance/Admin escalation marked"),
+	"reject_supplier_return_candidate": ("Rejected Candidate", "rejected_supplier_return_candidate", "Supplier return candidate rejected"),
+}
 
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
@@ -2926,6 +2941,206 @@ def _supplier_return_candidate_event_payload(event) -> dict[str, object]:
 		"event_by": cstr(_child_value(event, "event_by")).strip(),
 		"event_at": cstr(_child_value(event, "event_at")).strip(),
 		"request_id": cstr(_child_value(event, "request_id")).strip(),
+	}
+
+
+@frappe.whitelist()
+def save_warehouse_supplier_return_manager_decision(
+	candidate_id: str | None = None,
+	supplier_return_candidate: str | None = None,
+	decision: str | None = None,
+	note: str | None = None,
+	procurement_escalation_reference: str | None = None,
+	finance_escalation_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Save a manager decision on a custom Supplier Return Candidate.
+
+	W15F4 writes only the custom Warehouse Supplier Return Candidate and event
+	log. It does not notify suppliers, create return Purchase Receipts, create
+	Purchase Invoice returns/debit notes, update Purchase Orders, or post stock.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	candidate_name = cstr(candidate_id or supplier_return_candidate).strip()
+	decision_key = cstr(decision).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	manager_note = _bounded_text(note, SUPPLIER_RETURN_CANDIDATE_MAX_NOTE_LENGTH)
+	procurement_ref = _bounded_text(procurement_escalation_reference, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	finance_ref = _bounded_text(finance_escalation_reference, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if not _has_supplier_return_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not candidate_name:
+		frappe.throw(_("Supplier return candidate is required."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for supplier return manager decision."), ValueError)
+	if decision_key not in SUPPLIER_RETURN_MANAGER_DECISIONS:
+		frappe.throw(_("Supplier return manager decision is not allowed."), ValueError)
+	owner = _supplier_return_manager_request_id_owner(server_request_id)
+	if owner and owner != candidate_name:
+		frappe.throw(_("Request id was already used for another supplier return candidate."), ValueError)
+	candidate_doc = _get_supplier_return_candidate_for_decision(candidate_name)
+	next_status, event_type, event_label = SUPPLIER_RETURN_MANAGER_DECISIONS[decision_key]
+	existing_event = _supplier_return_event_for_request(candidate_doc, server_request_id)
+	if existing_event:
+		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
+			frappe.throw(_("Request id was already used for another supplier return manager decision."), ValueError)
+		return _supplier_return_manager_decision_payload(context, candidate_doc, decision_key, existing_event, idempotent=True)
+	if cstr(getattr(candidate_doc, "request_id", "")).strip() == server_request_id:
+		frappe.throw(_("Request id was already used for this supplier return candidate."), ValueError)
+	_validate_supplier_return_manager_decision(candidate_doc, decision_key, manager_note, procurement_ref, finance_ref)
+	previous_status = cstr(getattr(candidate_doc, "candidate_status", "")).strip()
+	now_value = str(now_datetime())
+	event = {
+		"event_type": event_type,
+		"event_label": event_label,
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": server_request_id,
+		"details_json": json.dumps(_supplier_return_manager_event_details(decision_key, manager_note, procurement_ref, finance_ref, previous_status, next_status), sort_keys=True),
+	}
+	candidate_doc.candidate_status = next_status
+	candidate_doc.manager_review_status = next_status
+	if procurement_ref:
+		candidate_doc.procurement_escalation_reference = procurement_ref
+	if finance_ref:
+		candidate_doc.finance_escalation_reference = finance_ref
+	_append_child(candidate_doc, "events", event)
+	candidate_doc.save()
+	return _supplier_return_manager_decision_payload(context, candidate_doc, decision_key, event, idempotent=False)
+
+
+def _has_supplier_return_manager_access(context: dict[str, object]) -> bool:
+	roles = set(context.get("roles") or [])
+	return bool(roles.intersection(SUPPLIER_RETURN_MANAGER_ROLES))
+
+
+def _get_supplier_return_candidate_for_decision(candidate_name: str):
+	try:
+		return frappe.get_doc(SUPPLIER_RETURN_CANDIDATE_DOCTYPE, candidate_name)
+	except Exception:
+		_clear_transient_frappe_messages()
+		frappe.throw(_("Supplier return candidate is not available."), frappe.PermissionError)
+
+
+def _supplier_return_manager_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			SUPPLIER_RETURN_CANDIDATE_EVENT_DOCTYPE,
+			fields=["parent"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("parent")).strip() if rows else ""
+
+
+def _supplier_return_event_for_request(candidate_doc, request_id: str):
+	for event in list(getattr(candidate_doc, "events", []) or []):
+		if cstr(_child_value(event, "request_id")).strip() == request_id:
+			return event
+	return None
+
+
+def _validate_supplier_return_manager_decision(candidate_doc, decision_key: str, note: str, procurement_ref: str, finance_ref: str) -> None:
+	status = cstr(getattr(candidate_doc, "candidate_status", "")).strip()
+	if status not in SUPPLIER_RETURN_MANAGER_DECISION_STATUSES:
+		frappe.throw(_("Supplier return candidate is not ready for manager decision."), ValueError)
+	lines = list(getattr(candidate_doc, "lines", []) or [])
+	if not lines:
+		frappe.throw(_("Supplier return candidate has no lines to review."), ValueError)
+	if decision_key == "request_reinspection" and not note:
+		frappe.throw(_("Manager note is required to request supplier return reinspection."), ValueError)
+	if decision_key == "mark_quarantine_review" and not (any(_supplier_return_line_has_quarantine_marker(line) for line in lines) or note):
+		frappe.throw(_("Quarantine review requires quarantine, damage, wrong-item, quality-hold evidence, or manager note."), ValueError)
+	has_supplier_return_evidence = any(_supplier_return_line_has_supplier_return_evidence(line) for line in lines)
+	if decision_key == "mark_supplier_return_candidate" and not (has_supplier_return_evidence or note):
+		frappe.throw(_("Supplier return candidate marking requires supplier-return evidence or manager note."), ValueError)
+	if decision_key == "escalate_to_procurement" and not (procurement_ref or note or has_supplier_return_evidence):
+		frappe.throw(_("Procurement escalation requires supplier-return evidence, reference, or manager note."), ValueError)
+	if decision_key == "escalate_to_finance_admin" and not (finance_ref or note):
+		frappe.throw(_("Finance/Admin escalation requires reference or manager note."), ValueError)
+	if decision_key == "reject_supplier_return_candidate" and not note:
+		frappe.throw(_("Manager note is required to reject supplier return candidate."), ValueError)
+
+
+def _supplier_return_line_has_quarantine_marker(line) -> bool:
+	return (
+		_supplier_return_line_has_quantity(line, "quarantine_qty")
+		or _supplier_return_line_has_quantity(line, "damaged_qty")
+		or _supplier_return_line_has_quantity(line, "wrong_item_qty")
+		or _supplier_return_line_has_quantity(line, "quality_hold_qty")
+	)
+
+
+def _supplier_return_line_has_supplier_return_evidence(line) -> bool:
+	return bool(
+		_supplier_return_line_has_quantity(line, "quarantine_qty")
+		or _supplier_return_line_has_quantity(line, "damaged_qty")
+		or _supplier_return_line_has_quantity(line, "wrong_item_qty")
+		or _supplier_return_line_has_quantity(line, "overage_qty")
+		or _supplier_return_line_has_quantity(line, "quality_hold_qty")
+		or cstr(_child_value(line, "evidence_reference")).strip()
+		or cstr(_child_value(line, "condition_note")).strip()
+	)
+
+
+def _supplier_return_line_has_quantity(line, fieldname: str) -> bool:
+	return flt(_child_value(line, fieldname, 0)) > 0
+
+
+def _supplier_return_manager_event_details(decision_key: str, note: str, procurement_ref: str, finance_ref: str, previous_status: str, next_status: str) -> dict[str, object]:
+	return {
+		"decision": decision_key,
+		"note": note,
+		"procurement_escalation_reference": procurement_ref,
+		"finance_escalation_reference": finance_ref,
+		"previous_status": previous_status,
+		"next_status": next_status,
+		"stock_effect": False,
+		"supplier_notified": False,
+		"return_purchase_receipt_created": False,
+		"purchase_invoice_return_created": False,
+	}
+
+
+def _supplier_return_manager_decision_payload(
+	context: dict[str, object],
+	candidate_doc,
+	decision_key: str,
+	event,
+	*,
+	idempotent: bool,
+) -> dict[str, object]:
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Supplier Return Manager Decision", "key": "supplier_return_manager_decision"},
+		"candidate": {
+			"candidate_id": cstr(getattr(candidate_doc, "name", "")).strip(),
+			"candidate_status": cstr(getattr(candidate_doc, "candidate_status", "")).strip(),
+			"supplier": cstr(getattr(candidate_doc, "supplier", "")).strip(),
+			"warehouse": cstr(getattr(candidate_doc, "warehouse", "")).strip(),
+			"decision": decision_key,
+			"idempotent": bool(idempotent),
+		},
+		"event_summary": _supplier_return_candidate_event_payload(event),
+		"stock_effect": False,
+		"stock_decreased": False,
+		"return_purchase_receipt_created": False,
+		"purchase_invoice_return_created": False,
+		"debit_note_created": False,
+		"stock_entry_created": False,
+		"stock_posted": False,
+		"purchase_order_updated": False,
+		"supplier_notified": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
 	}
 
 

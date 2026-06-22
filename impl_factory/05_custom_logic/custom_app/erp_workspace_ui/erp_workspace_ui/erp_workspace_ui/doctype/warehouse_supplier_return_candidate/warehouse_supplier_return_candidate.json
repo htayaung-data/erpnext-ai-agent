@@ -49,7 +49,7 @@
    "fieldname": "candidate_status",
    "fieldtype": "Select",
    "label": "Candidate Status",
-   "options": "Candidate Draft\nPhysical Evidence Captured\nSubmitted For Manager Review\nQuarantine Review\nSupplier Return Candidate\nProcurement Escalation\nFinance/Admin Escalation\nRejected Candidate\nClosed\nCancelled",
+   "options": "Candidate Draft\nPhysical Evidence Captured\nSubmitted For Manager Review\nReinspection Requested\nQuarantine Review\nSupplier Return Candidate\nProcurement Escalation\nFinance/Admin Escalation\nRejected Candidate\nClosed\nCancelled",
    "default": "Candidate Draft",
    "read_only": 1
   },
