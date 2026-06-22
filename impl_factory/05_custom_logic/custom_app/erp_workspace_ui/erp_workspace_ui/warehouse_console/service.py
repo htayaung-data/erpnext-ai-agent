@@ -350,6 +350,41 @@ CUSTOMER_RETURN_MANAGER_DECISIONS = {
 	"escalate_to_sales": ("Sales Escalation", "escalated_to_sales", "Sales escalation marked"),
 }
 
+CUSTOMER_RETURN_HANDOFF_REQUEST_DOCTYPE = "Warehouse Customer Return Handoff Request"
+CUSTOMER_RETURN_HANDOFF_REQUEST_LINE_DOCTYPE = "Warehouse Customer Return Handoff Request Line"
+CUSTOMER_RETURN_HANDOFF_REQUEST_EVENT_DOCTYPE = "Warehouse Customer Return Handoff Request Event"
+CUSTOMER_RETURN_HANDOFF_POLICY_VERSION = "W15E7-customer-return-handoff-request-v1"
+CUSTOMER_RETURN_HANDOFF_MAX_LINES = 80
+CUSTOMER_RETURN_HANDOFF_MAX_NOTE_LENGTH = 500
+CUSTOMER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH = 180
+CUSTOMER_RETURN_HANDOFF_ALLOWED_SOURCE_STATUSES = frozenset({
+	"Restock Candidate",
+	"Quarantine Review",
+	"Repair Candidate",
+	"Scrap Candidate",
+	"Rejected Intake",
+	"Sales Escalation",
+})
+CUSTOMER_RETURN_HANDOFF_ALLOWED_TYPES = frozenset({
+	"sales_authorization_review",
+	"customer_resolution_review",
+	"finance_credit_review",
+	"stock_governance_review",
+	"quarantine_quality_review",
+	"repair_review",
+	"scrap_writeoff_review",
+})
+CUSTOMER_RETURN_HANDOFF_TYPE_SOURCE_STATUSES = {
+	"sales_authorization_review": frozenset({"Sales Escalation", "Rejected Intake"}),
+	"customer_resolution_review": frozenset({"Sales Escalation", "Rejected Intake"}),
+	"finance_credit_review": frozenset({"Restock Candidate", "Repair Candidate", "Scrap Candidate", "Rejected Intake", "Sales Escalation"}),
+	"stock_governance_review": frozenset({"Restock Candidate"}),
+	"quarantine_quality_review": frozenset({"Quarantine Review"}),
+	"repair_review": frozenset({"Repair Candidate"}),
+	"scrap_writeoff_review": frozenset({"Scrap Candidate"}),
+}
+
+
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
 QUICK_FIND_MAX_LIMIT = 18
@@ -2456,6 +2491,67 @@ def save_warehouse_customer_return_manager_decision(
 	return _customer_return_manager_decision_payload(context, intake_doc, decision_key, event, idempotent=False)
 
 
+@frappe.whitelist()
+def request_warehouse_customer_return_handoff(
+	customer_return_intake: str | None = None,
+	intake_id: str | None = None,
+	handoff_type: str | None = None,
+	handoff_note: str | None = None,
+	sales_escalation_reference: str | None = None,
+	finance_escalation_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Create a custom request-only customer return handoff record.
+
+	W15E7 records only internal Warehouse Customer Return Handoff Request data.
+	It does not create Sales Return, Credit Note, Delivery Note, Stock Entry,
+	stock posting, customer notification, or commercial/accounting records.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	intake_name = cstr(customer_return_intake or intake_id).strip()
+	handoff_key = cstr(handoff_type).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	note = _bounded_text(handoff_note, CUSTOMER_RETURN_HANDOFF_MAX_NOTE_LENGTH)
+	sales_ref = _bounded_text(sales_escalation_reference, CUSTOMER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH)
+	finance_ref = _bounded_text(finance_escalation_reference, CUSTOMER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH)
+	if not _has_customer_return_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not intake_name:
+		frappe.throw(_("Customer return intake is required for handoff request."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for customer return handoff request."), ValueError)
+	if handoff_key not in CUSTOMER_RETURN_HANDOFF_ALLOWED_TYPES:
+		frappe.throw(_("Customer return handoff type is not allowed."), ValueError)
+	if not note:
+		frappe.throw(_("Handoff note is required for customer return handoff request."), ValueError)
+	intake_doc = _get_customer_return_intake_for_decision(intake_name)
+	_validate_customer_return_handoff_source(intake_doc, handoff_key)
+	request_lines = _customer_return_handoff_lines_from_intake(intake_doc)
+	fingerprint = _customer_return_handoff_payload_hash(intake_doc, handoff_key, note, sales_ref, finance_ref, request_lines)
+	owner = _customer_return_handoff_request_id_owner(server_request_id)
+	if owner:
+		owner_doc = frappe.get_doc(CUSTOMER_RETURN_HANDOFF_REQUEST_DOCTYPE, owner)
+		if cstr(getattr(owner_doc, "customer_return_intake", "")).strip() != intake_name:
+			frappe.throw(_("Request id was already used for another customer return handoff request."), ValueError)
+		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != fingerprint:
+			frappe.throw(_("Request id was already used with different customer return handoff details."), ValueError)
+		return _customer_return_handoff_request_payload(context, owner_doc, idempotent=True)
+	request_doc = frappe.get_doc({"doctype": CUSTOMER_RETURN_HANDOFF_REQUEST_DOCTYPE})
+	_apply_customer_return_handoff_request(
+		request_doc,
+		intake_doc,
+		handoff_key,
+		note,
+		sales_ref,
+		finance_ref,
+		request_lines,
+		server_request_id,
+		fingerprint,
+	)
+	return _customer_return_handoff_request_payload(context, request_doc, idempotent=False)
+
+
 def _contains_forbidden_customer_return_fields(extra_fields: dict[str, object]) -> bool:
 	for key, value in (extra_fields or {}).items():
 		if key in CUSTOMER_RETURN_INTAKE_FORBIDDEN_FIELDS and cstr(value).strip():
@@ -2913,6 +3009,240 @@ def _customer_return_manager_decision_payload(
 		"customer_notified": False,
 		"valuation": {"visible": False, "fields": []},
 		"fetched_at": str(now_datetime()),
+	}
+
+
+
+def _validate_customer_return_handoff_source(intake_doc, handoff_type: str) -> None:
+	status = cstr(getattr(intake_doc, "intake_status", "")).strip()
+	if status not in CUSTOMER_RETURN_HANDOFF_ALLOWED_SOURCE_STATUSES:
+		frappe.throw(_("Customer return intake is not ready for handoff request."), ValueError)
+	allowed_statuses = CUSTOMER_RETURN_HANDOFF_TYPE_SOURCE_STATUSES.get(handoff_type) or frozenset()
+	if status not in allowed_statuses:
+		frappe.throw(_("Customer return handoff type does not match the intake disposition."), ValueError)
+	if not cstr(getattr(intake_doc, "customer", "")).strip():
+		frappe.throw(_("Customer return handoff requires customer context."), ValueError)
+	warehouse = cstr(getattr(intake_doc, "warehouse", "")).strip()
+	if not warehouse or not _customer_return_warehouse_is_visible(warehouse):
+		frappe.throw(_("Customer return handoff warehouse is not visible."), ValueError)
+	if not cstr(getattr(intake_doc, "return_authorization_reference", "")).strip():
+		frappe.throw(_("Customer return handoff requires return authorization reference."), ValueError)
+	if not list(getattr(intake_doc, "lines", []) or []):
+		frappe.throw(_("Customer return intake has no lines for handoff request."), ValueError)
+
+
+def _customer_return_handoff_lines_from_intake(intake_doc) -> list[dict[str, object]]:
+	lines = []
+	seen: set[tuple[str, str, str]] = set()
+	for source_line in list(getattr(intake_doc, "lines", []) or [])[:CUSTOMER_RETURN_HANDOFF_MAX_LINES]:
+		line = _customer_return_handoff_line_from_intake(source_line, intake_doc)
+		key = (cstr(line.get("intake_line_reference")).strip(), cstr(line.get("item_code")).strip(), cstr(line.get("warehouse")).strip())
+		if key in seen:
+			frappe.throw(_("Duplicate customer return handoff line in request."), ValueError)
+		seen.add(key)
+		lines.append(line)
+	if not lines:
+		frappe.throw(_("At least one customer return handoff line is required."), ValueError)
+	if sum(flt(line.get("returned_qty")) for line in lines) <= 0:
+		frappe.throw(_("Returned quantity is required for customer return handoff request."), ValueError)
+	return lines
+
+
+def _customer_return_handoff_line_from_intake(source_line, intake_doc) -> dict[str, object]:
+	item_code = cstr(_child_value(source_line, "item_code")).strip()
+	warehouse = cstr(_child_value(source_line, "warehouse") or getattr(intake_doc, "warehouse", "")).strip()
+	uom = cstr(_child_value(source_line, "uom")).strip()
+	returned_qty = flt(_child_value(source_line, "returned_qty"))
+	accepted_qty = flt(_child_value(source_line, "accepted_qty"))
+	damaged_qty = flt(_child_value(source_line, "damaged_qty"))
+	quarantine_qty = flt(_child_value(source_line, "quarantine_qty"))
+	repair_qty = flt(_child_value(source_line, "repair_qty"))
+	scrap_qty = flt(_child_value(source_line, "scrap_candidate_qty"))
+	rejected_qty = flt(_child_value(source_line, "rejected_qty"))
+	condition_grade = cstr(_child_value(source_line, "condition_grade")).strip()
+	disposition = cstr(_child_value(source_line, "disposition")).strip()
+	evidence_reference = cstr(_child_value(source_line, "evidence_reference")).strip()
+	if not item_code:
+		frappe.throw(_("Customer return handoff line requires item identity."), ValueError)
+	if warehouse != cstr(getattr(intake_doc, "warehouse", "")).strip():
+		frappe.throw(_("Customer return handoff line warehouse must match intake warehouse."), ValueError)
+	if returned_qty <= 0:
+		frappe.throw(_("Customer return handoff line requires returned quantity."), ValueError)
+	if accepted_qty + damaged_qty + quarantine_qty + repair_qty + scrap_qty + rejected_qty > returned_qty:
+		frappe.throw(_("Customer return handoff disposition quantities cannot exceed returned quantity."), ValueError)
+	if (damaged_qty > 0 or quarantine_qty > 0 or repair_qty > 0 or scrap_qty > 0 or rejected_qty > 0) and not (evidence_reference or condition_grade or disposition):
+		frappe.throw(_("Customer return handoff exception line requires evidence or condition."), ValueError)
+	line_reference = cstr(_child_value(source_line, "name")).strip() or f"{item_code}::{warehouse}::{uom}"
+	return {
+		"intake_line_reference": line_reference,
+		"item_code": item_code,
+		"item_name": cstr(_child_value(source_line, "item_name")).strip(),
+		"warehouse": warehouse,
+		"returned_qty": returned_qty,
+		"accepted_for_intake_qty": accepted_qty,
+		"damaged_qty": damaged_qty,
+		"quarantine_qty": quarantine_qty,
+		"repair_qty": repair_qty,
+		"scrap_candidate_qty": scrap_qty,
+		"rejected_qty": rejected_qty,
+		"condition_grade": condition_grade,
+		"disposition": disposition,
+		"evidence_reference": evidence_reference,
+		"uom": uom,
+	}
+
+
+def _customer_return_handoff_payload_hash(
+	intake_doc,
+	handoff_type: str,
+	handoff_note: str,
+	sales_escalation_reference: str,
+	finance_escalation_reference: str,
+	lines: list[dict[str, object]],
+) -> str:
+	canonical = {
+		"customer_return_intake": cstr(getattr(intake_doc, "name", "")).strip(),
+		"customer": cstr(getattr(intake_doc, "customer", "")).strip(),
+		"warehouse": cstr(getattr(intake_doc, "warehouse", "")).strip(),
+		"source_status": cstr(getattr(intake_doc, "intake_status", "")).strip(),
+		"handoff_type": handoff_type,
+		"handoff_note": handoff_note,
+		"sales_escalation_reference": sales_escalation_reference,
+		"finance_escalation_reference": finance_escalation_reference,
+		"lines": sorted(
+			[
+				{
+					"intake_line_reference": line.get("intake_line_reference"),
+					"item_code": line.get("item_code"),
+					"warehouse": line.get("warehouse"),
+					"returned_qty": flt(line.get("returned_qty")),
+					"accepted_for_intake_qty": flt(line.get("accepted_for_intake_qty")),
+					"damaged_qty": flt(line.get("damaged_qty")),
+					"quarantine_qty": flt(line.get("quarantine_qty")),
+					"repair_qty": flt(line.get("repair_qty")),
+					"scrap_candidate_qty": flt(line.get("scrap_candidate_qty")),
+					"rejected_qty": flt(line.get("rejected_qty")),
+				}
+				for line in lines
+			],
+			key=lambda row: (cstr(row.get("intake_line_reference")), cstr(row.get("item_code")), cstr(row.get("warehouse"))),
+		),
+	}
+	return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _customer_return_handoff_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			CUSTOMER_RETURN_HANDOFF_REQUEST_DOCTYPE,
+			fields=["name"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_customer_return_handoff_request(
+	request_doc,
+	intake_doc,
+	handoff_type: str,
+	handoff_note: str,
+	sales_escalation_reference: str,
+	finance_escalation_reference: str,
+	request_lines: list[dict[str, object]],
+	request_id: str,
+	payload_hash: str,
+) -> None:
+	now_value = str(now_datetime())
+	request_doc.customer_return_intake = cstr(getattr(intake_doc, "name", "")).strip()
+	request_doc.customer = cstr(getattr(intake_doc, "customer", "")).strip()
+	request_doc.warehouse = cstr(getattr(intake_doc, "warehouse", "")).strip()
+	request_doc.handoff_status = "Requested"
+	request_doc.handoff_type = handoff_type
+	request_doc.manager_decision = cstr(getattr(intake_doc, "intake_status", "")).strip()
+	request_doc.return_authorization_reference = cstr(getattr(intake_doc, "return_authorization_reference", "")).strip()
+	request_doc.sales_order_reference_text = cstr(getattr(intake_doc, "sales_order_reference_text", "")).strip()
+	request_doc.delivery_note_reference_text = cstr(getattr(intake_doc, "delivery_note_reference_text", "")).strip()
+	request_doc.sales_invoice_reference_text = cstr(getattr(intake_doc, "sales_invoice_reference_text", "")).strip()
+	request_doc.sales_escalation_reference = sales_escalation_reference or cstr(getattr(intake_doc, "sales_escalation_reference", "")).strip()
+	request_doc.finance_escalation_reference = finance_escalation_reference
+	request_doc.handoff_note = handoff_note
+	request_doc.source_payload_hash = payload_hash
+	request_doc.policy_version = CUSTOMER_RETURN_HANDOFF_POLICY_VERSION
+	request_doc.line_count = len(request_lines)
+	request_doc.total_returned_qty = sum(flt(line.get("returned_qty")) for line in request_lines)
+	request_doc.request_id = request_id
+	request_doc.requested_by = cstr(getattr(frappe.session, "user", "")).strip()
+	request_doc.requested_at = now_value
+	_set_child_table(request_doc, "lines", request_lines)
+	_append_child(request_doc, "events", {
+		"event_type": "requested_customer_return_handoff",
+		"event_label": "Customer return handoff requested",
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": request_id,
+		"details_json": json.dumps({"handoff_type": handoff_type, "line_count": len(request_lines), "stock_effect": False, "customer_notified": False}, sort_keys=True),
+	})
+	request_doc.insert()
+
+
+def _customer_return_handoff_request_payload(context: dict[str, object], request_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_customer_return_handoff_line_payload(line) for line in list(getattr(request_doc, "lines", []) or [])]
+	events = list(getattr(request_doc, "events", []) or [])
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Customer Return Handoff Request", "key": "customer_return_handoff_request"},
+		"request": {
+			"request_id": cstr(getattr(request_doc, "name", "")).strip(),
+			"handoff_status": cstr(getattr(request_doc, "handoff_status", "")).strip(),
+			"handoff_type": cstr(getattr(request_doc, "handoff_type", "")).strip(),
+			"customer_return_intake": cstr(getattr(request_doc, "customer_return_intake", "")).strip(),
+			"customer": cstr(getattr(request_doc, "customer", "")).strip(),
+			"warehouse": cstr(getattr(request_doc, "warehouse", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"event_summary": _customer_return_intake_event_payload(events[-1]) if events else {},
+		"stock_effect": False,
+		"stock_increased": False,
+		"sales_return_created": False,
+		"credit_note_created": False,
+		"delivery_note_created": False,
+		"stock_entry_created": False,
+		"stock_posted": False,
+		"sales_order_updated": False,
+		"customer_notified": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _customer_return_handoff_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"intake_line_reference": cstr(getter("intake_line_reference")).strip(),
+		"item_code": cstr(getter("item_code")).strip(),
+		"item_name": cstr(getter("item_name")).strip(),
+		"warehouse": cstr(getter("warehouse")).strip(),
+		"returned_qty": _number_text(getter("returned_qty")),
+		"accepted_for_intake_qty": _number_text(getter("accepted_for_intake_qty")),
+		"damaged_qty": _number_text(getter("damaged_qty")),
+		"quarantine_qty": _number_text(getter("quarantine_qty")),
+		"repair_qty": _number_text(getter("repair_qty")),
+		"scrap_candidate_qty": _number_text(getter("scrap_candidate_qty")),
+		"rejected_qty": _number_text(getter("rejected_qty")),
+		"condition_grade": cstr(getter("condition_grade")).strip(),
+		"disposition": cstr(getter("disposition")).strip(),
+		"evidence_reference": cstr(getter("evidence_reference")).strip(),
+		"uom": cstr(getter("uom")).strip(),
 	}
 
 
