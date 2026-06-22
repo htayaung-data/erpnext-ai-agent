@@ -1,0 +1,220 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-22 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "customer_return_intake",
+  "customer",
+  "warehouse",
+  "handoff_status",
+  "handoff_type",
+  "manager_decision",
+  "return_authorization_reference",
+  "sales_order_reference_text",
+  "delivery_note_reference_text",
+  "sales_invoice_reference_text",
+  "sales_escalation_reference",
+  "finance_escalation_reference",
+  "handoff_note",
+  "source_payload_hash",
+  "policy_version",
+  "line_count",
+  "total_returned_qty",
+  "request_id",
+  "requested_by",
+  "requested_at",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "customer_return_intake",
+   "fieldtype": "Data",
+   "label": "Customer Return Intake",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Data",
+   "label": "Customer",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Data",
+   "label": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "handoff_status",
+   "fieldtype": "Select",
+   "label": "Handoff Status",
+   "read_only": 1,
+   "options": "Requested\nBlocked\nClosed\nCancelled",
+   "default": "Requested"
+  },
+  {
+   "fieldname": "handoff_type",
+   "fieldtype": "Select",
+   "label": "Handoff Type",
+   "read_only": 1,
+   "options": "sales_authorization_review\ncustomer_resolution_review\nfinance_credit_review\nstock_governance_review\nquarantine_quality_review\nrepair_review\nscrap_writeoff_review",
+   "reqd": 1
+  },
+  {
+   "fieldname": "manager_decision",
+   "fieldtype": "Data",
+   "label": "Manager Decision",
+   "read_only": 1
+  },
+  {
+   "fieldname": "return_authorization_reference",
+   "fieldtype": "Data",
+   "label": "Return Authorization Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_order_reference_text",
+   "fieldtype": "Data",
+   "label": "Sales Order Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delivery_note_reference_text",
+   "fieldtype": "Data",
+   "label": "Delivery Note Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_invoice_reference_text",
+   "fieldtype": "Data",
+   "label": "Sales Invoice Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Sales Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "finance_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Finance Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "handoff_note",
+   "fieldtype": "Small Text",
+   "label": "Handoff Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload_hash",
+   "fieldtype": "Data",
+   "label": "Source Payload Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "total_returned_qty",
+   "fieldtype": "Float",
+   "label": "Total Returned Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request Id",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Data",
+   "label": "Requested By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_at",
+   "fieldtype": "Datetime",
+   "label": "Requested At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Customer Return Handoff Request Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Customer Return Handoff Request Event",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-06-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Customer Return Handoff Request",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "Warehouse User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse Manager"
+  },
+  {
+   "read": 1,
+   "role": "Stock User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
