@@ -7,14 +7,15 @@ const EXPECT_W12K = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W12K === "1";
 const EXPECT_W14B = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W14B === "1";
 const EXPECT_W14C = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W14C === "1";
 const EXPECT_W15B = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W15B === "1";
-const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL || (EXPECT_W15B ? "Warehouse W15B Action Center shell" : (EXPECT_W14C ? "Warehouse W14C Manager Readiness" : (EXPECT_W14B ? "Warehouse W14B Quick Find" : (EXPECT_W12K ? "Warehouse W12K cockpit polish" : "Warehouse W9A cockpit"))));
-const SUMMARY_NAME = process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME || (EXPECT_W15B ? "warehouse-w15b-action-center-summary.json" : (EXPECT_W14C ? "warehouse-w14c-manager-readiness-summary.json" : (EXPECT_W14B ? "warehouse-w14b-quick-find-summary.json" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish-summary.json" : "warehouse-w9a-cockpit-summary.json"))));
-const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W15B_TIMEOUT || process.env.ERPW_WAREHOUSE_W14C_TIMEOUT || process.env.ERPW_WAREHOUSE_W14B_TIMEOUT || process.env.ERPW_WAREHOUSE_W12K_TIMEOUT || process.env.ERPW_WAREHOUSE_W9A_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W15B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W14C_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W14B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12K_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W9A_ARTIFACT_DIR || path.join(
+const EXPECT_W15G = process.env.ERPW_WAREHOUSE_W9A_EXPECT_W15G === "1";
+const PHASE_LABEL = process.env.ERPW_WAREHOUSE_W9A_PHASE_LABEL || (EXPECT_W15G ? "Warehouse W15G2 Internal Transfer shell" : (EXPECT_W15B ? "Warehouse W15B Action Center shell" : (EXPECT_W14C ? "Warehouse W14C Manager Readiness" : (EXPECT_W14B ? "Warehouse W14B Quick Find" : (EXPECT_W12K ? "Warehouse W12K cockpit polish" : "Warehouse W9A cockpit")))));
+const SUMMARY_NAME = process.env.ERPW_WAREHOUSE_W9A_SUMMARY_NAME || (EXPECT_W15G ? "warehouse-w15g2-internal-transfer-summary.json" : (EXPECT_W15B ? "warehouse-w15b-action-center-summary.json" : (EXPECT_W14C ? "warehouse-w14c-manager-readiness-summary.json" : (EXPECT_W14B ? "warehouse-w14b-quick-find-summary.json" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish-summary.json" : "warehouse-w9a-cockpit-summary.json")))));
+const TIMEOUT = Number(process.env.ERPW_WAREHOUSE_W15G_TIMEOUT || process.env.ERPW_WAREHOUSE_W15B_TIMEOUT || process.env.ERPW_WAREHOUSE_W14C_TIMEOUT || process.env.ERPW_WAREHOUSE_W14B_TIMEOUT || process.env.ERPW_WAREHOUSE_W12K_TIMEOUT || process.env.ERPW_WAREHOUSE_W9A_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_WAREHOUSE_W15G_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W15B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W14C_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W14B_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W12K_ARTIFACT_DIR || process.env.ERPW_WAREHOUSE_W9A_ARTIFACT_DIR || path.join(
   fs.existsSync("/freeze-artifacts") ? "/freeze-artifacts" : path.join(__dirname, "artifacts"),
-  `${EXPECT_W15B ? "warehouse-w15b-action-center" : (EXPECT_W14C ? "warehouse-w14c-manager-readiness" : (EXPECT_W14B ? "warehouse-w14b-quick-find" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish" : "warehouse-w9a-cockpit")))}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+  `${EXPECT_W15G ? "warehouse-w15g2-internal-transfer" : (EXPECT_W15B ? "warehouse-w15b-action-center" : (EXPECT_W14C ? "warehouse-w14c-manager-readiness" : (EXPECT_W14B ? "warehouse-w14b-quick-find" : (EXPECT_W12K ? "warehouse-w12k-cockpit-polish" : "warehouse-w9a-cockpit"))))}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
 );
-const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W15B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W14C_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W14B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12K_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT || "";
+const ASSET_ROOT = process.env.ERPW_WAREHOUSE_W15G_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W15B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W14C_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W14B_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W12K_ASSET_ROOT || process.env.ERPW_WAREHOUSE_W9A_ASSET_ROOT || "";
 
 const AUTHORIZED_USERS = [
   {
@@ -753,6 +754,14 @@ async function snapshot(page) {
       supplierReturnPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-policy]")).filter(visible).length,
       supplierReturnPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-planned-control]")).filter(visible).length,
       supplierReturnActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-shell] button, [data-warehouse-supplier-return-shell] a, [data-warehouse-supplier-return-shell] [role=button]")).filter(visible).length,
+      internalTransferShellCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-shell]")).filter(visible).length,
+      internalTransferStatusCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-status]")).filter(visible).length,
+      internalTransferUserPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-user-preview]")).filter(visible).length,
+      internalTransferManagerPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-manager-preview]")).filter(visible).length,
+      internalTransferEvidencePreviewCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-evidence-preview]")).filter(visible).length,
+      internalTransferPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-policy]")).filter(visible).length,
+      internalTransferPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-planned-control]")).filter(visible).length,
+      internalTransferActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-shell] button, [data-warehouse-internal-transfer-shell] a, [data-warehouse-internal-transfer-shell] [role=button]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     };
@@ -844,6 +853,23 @@ function assertW15F2SupplierReturnShell(state, contextLabel) {
 }
 
 
+function assertW15G2InternalTransferShell(state, contextLabel) {
+  assert(state.internalTransferShellCount === 1, "Internal Transfer Candidate shell must render once", { context: contextLabel, state });
+  assert(state.internalTransferStatusCount >= 6, "Internal Transfer Candidate workflow states are missing", { context: contextLabel, state });
+  assert(state.internalTransferUserPreviewCount === 1, "Internal Transfer Candidate user preview is missing", { context: contextLabel, state });
+  assert(state.internalTransferManagerPreviewCount === 1, "Internal Transfer Candidate manager preview is missing", { context: contextLabel, state });
+  assert(state.internalTransferEvidencePreviewCount === 1, "Internal Transfer Candidate evidence preview is missing", { context: contextLabel, state });
+  assert(state.internalTransferPolicyCount === 1, "Internal Transfer Candidate future document policy is missing", { context: contextLabel, state });
+  assert(state.internalTransferPlannedControlCount >= 11, "Internal Transfer Candidate planned controls are missing", { context: contextLabel, state });
+  assert(state.internalTransferActiveControlCount === 0, "Internal Transfer Candidate planned controls must be inert", { context: contextLabel, state });
+  assert((state.text || "").includes("Internal transfer candidate"), "Internal Transfer Candidate title is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Inventory/Admin review"), "Internal Transfer Candidate Inventory/Admin review context is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No stock is moved"), "Internal Transfer Candidate guardrail is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("no Stock Entry is created or submitted"), "Internal Transfer Candidate Stock Entry guardrail is missing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Internal Transfer Candidate exposed a native route", { context: contextLabel, state });
+}
+
+
 function assertW15BActionCenter(state, contextLabel) {
   assert(state.actionCenterCount === 1, "Warehouse Action Center must render once", { context: contextLabel, state });
   assert(state.actionCenterGroupCount >= 2, "Warehouse Action Center groups are missing", { context: contextLabel, state });
@@ -886,6 +912,7 @@ async function assertCockpit(page, contextLabel) {
   if (EXPECT_W15B) assertW15BActionCenter(state, contextLabel);
   assertW15E2CustomerReturnShell(state, contextLabel);
   assertW15F2SupplierReturnShell(state, contextLabel);
+  assertW15G2InternalTransferShell(state, contextLabel);
   return state;
 }
 

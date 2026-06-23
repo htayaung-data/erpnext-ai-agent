@@ -3509,6 +3509,23 @@
         border-color: rgba(37, 99, 235, 0.24);
         background: rgba(239, 246, 255, 0.56);
       }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-shell.warehouse-internal-transfer-shell {
+        background:
+          linear-gradient(180deg, rgba(236, 253, 245, 0.66) 0%, rgba(255, 255, 255, 0.98) 36%),
+          #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-shell.warehouse-internal-transfer-shell::before {
+        background: rgba(20, 184, 166, 0.48);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-internal-transfer-shell .warehouse-customer-return-badge {
+        border-color: rgba(20, 184, 166, 0.22);
+        background: rgba(240, 253, 250, 0.92);
+        color: #0f766e;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-internal-transfer-shell .warehouse-customer-return-guardrail {
+        border-color: rgba(20, 184, 166, 0.26);
+        background: rgba(240, 253, 250, 0.62);
+      }
       /* W15B overview hierarchy refinement: status, navigation, task, risk, movement, and control lanes must read differently. */
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-pulse-section {
         border-color: rgba(226, 232, 240, 0.92);
@@ -8030,6 +8047,104 @@
   }
 
 
+
+  function renderInternalTransferCandidateShell() {
+    const statuses = [
+      "Transfer Source",
+      "Target Warehouse",
+      "Physical Count",
+      "Manager Review",
+      "Inventory/Admin Review",
+      "Document Policy",
+    ];
+    const userPreview = [
+      "Start transfer check",
+      "Count source quantity",
+      "Record target warehouse",
+      "Add evidence reference",
+      "Send to manager review",
+    ];
+    const managerPreview = [
+      "Request recount",
+      "Mark transfer candidate",
+      "Mark quarantine review",
+      "Request Inventory/Admin review",
+      "Reject transfer candidate",
+      "Close transfer candidate",
+    ];
+    const evidence = [
+      ["Source warehouse", "Where the stock is physically counted"],
+      ["Target warehouse", "Requested internal destination"],
+      ["Item identity", "Item and unit posture"],
+      ["Requested quantity", "Transfer intent quantity"],
+      ["Counted quantity", "Physical count evidence"],
+      ["Evidence reference", "Future attachment or note reference"],
+      ["Manager event", "Transfer candidate review trail"],
+    ];
+    const ownership = [
+      ["Warehouse", "Physical count and transfer intent"],
+      ["Warehouse Manager", "Internal transfer recommendation"],
+      ["Inventory/Admin", "Stock document policy governance"],
+      ["System/Admin", "Native-submit containment and policy"],
+    ];
+    const policy = [
+      ["Stock Entry", "Future policy only, blocked now"],
+      ["Stock Ledger / Stock Balance", "Future policy only, blocked now"],
+      ["Stock Reconciliation", "Future policy only, blocked now"],
+      ["Stock Reservation", "Future policy only, blocked now"],
+      ["Stock movement", "Blocked now"],
+      ["Reference handling", "Plain text/status only if later approved"],
+    ];
+    const plannedMarkup = (items) => items.map((item) => `
+      <div class="warehouse-customer-return-planned" data-warehouse-internal-transfer-planned-control aria-disabled="true">${escapeHtml(item)}</div>
+    `).join("");
+    const miniMarkup = (items) => items.map((item) => `
+      <div class="warehouse-customer-return-mini">
+        ${escapeHtml(item[0])}
+        <span>${escapeHtml(item[1])}</span>
+      </div>
+    `).join("");
+    return `
+      <section class="sales-console-card sales-console-section warehouse-customer-return-shell warehouse-internal-transfer-shell" data-warehouse-internal-transfer-shell>
+        <div class="warehouse-customer-return-head">
+          <div class="warehouse-customer-return-copy">
+            <h2 class="warehouse-customer-return-title">Internal transfer candidate</h2>
+            <div class="warehouse-customer-return-subtitle">Planned workflow shell for internal transfer intent, source count evidence, manager recommendation, and Inventory/Admin review.</div>
+          </div>
+          <span class="warehouse-customer-return-badge">Shell only</span>
+        </div>
+        <div class="warehouse-customer-return-guardrail" data-warehouse-internal-transfer-guardrail>
+          No stock is moved, no Stock Entry is created or submitted, and no Stock Ledger or Stock Balance record is changed from this shell.
+        </div>
+        <div class="warehouse-customer-return-status-strip">
+          ${statuses.map((status) => `<div class="warehouse-customer-return-status-chip" data-warehouse-internal-transfer-status>${escapeHtml(status)}</div>`).join("")}
+        </div>
+        <div class="warehouse-customer-return-grid">
+          <section class="warehouse-customer-return-panel" data-warehouse-internal-transfer-user-preview>
+            <h3>Warehouse user preview</h3>
+            <div class="warehouse-customer-return-items">${plannedMarkup(userPreview)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel" data-warehouse-internal-transfer-manager-preview>
+            <h3>Manager preview</h3>
+            <div class="warehouse-customer-return-items">${plannedMarkup(managerPreview)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel" data-warehouse-internal-transfer-evidence-preview>
+            <h3>Evidence preview</h3>
+            <div class="warehouse-customer-return-evidence-grid">${miniMarkup(evidence)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel">
+            <h3>Role ownership</h3>
+            <div class="warehouse-customer-return-owner-grid">${miniMarkup(ownership)}</div>
+          </section>
+          <section class="warehouse-customer-return-panel warehouse-customer-return-policy-panel" data-warehouse-internal-transfer-policy>
+            <h3>Future document policy</h3>
+            <div class="warehouse-customer-return-policy-grid">${miniMarkup(policy)}</div>
+          </section>
+        </div>
+      </section>
+    `;
+  }
+
   function renderOverview(page, payload) {
     ensureStyle();
     const kpis = Array.isArray(payload.kpis) ? payload.kpis.slice(0, 6) : [];
@@ -8060,6 +8175,7 @@
         ${renderCockpitActionCenter(payload.action_center || {})}
         ${renderCustomerReturnIntakeShell()}
         ${renderSupplierReturnCandidateShell()}
+        ${renderInternalTransferCandidateShell()}
       </div>
     `);
     $root.find("[data-warehouse-refresh]").on("click", (event) => {
