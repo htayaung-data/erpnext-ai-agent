@@ -4251,6 +4251,169 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
+    def _load_supplier_return_handoff_doctype(self, folder_name):
+        doctype_path = Path("erp_workspace_ui/erp_workspace_ui/doctype") / folder_name / f"{folder_name}.json"
+        return json.loads(doctype_path.read_text())
+
+    def test_w15f6_supplier_return_handoff_request_doctypes_are_internal_and_request_only(self):
+        parent = self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request")
+        line = self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request_line")
+        event = self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request_event")
+
+        self.assertEqual(parent["name"], "Warehouse Supplier Return Handoff Request")
+        self.assertEqual(line["name"], "Warehouse Supplier Return Handoff Request Line")
+        self.assertEqual(event["name"], "Warehouse Supplier Return Handoff Request Event")
+        for meta in (parent, line, event):
+            self.assertEqual(meta["module"], "ERP Workspace UI")
+            self.assertEqual(meta["is_submittable"], 0)
+            self.assertEqual(meta["index_web_pages_for_search"], 0)
+            self.assertEqual(meta["links"], [])
+            self.assertEqual(meta["actions"], [])
+
+        self.assertEqual(parent["autoname"], "hash")
+        self.assertEqual(parent["istable"], 0)
+        self.assertEqual(line["istable"], 1)
+        self.assertEqual(event["istable"], 1)
+
+        fields = {field["fieldname"]: field for field in parent["fields"]}
+        self.assertEqual(fields["lines"]["fieldtype"], "Table")
+        self.assertEqual(fields["lines"]["options"], "Warehouse Supplier Return Handoff Request Line")
+        self.assertEqual(fields["events"]["fieldtype"], "Table")
+        self.assertEqual(fields["events"]["options"], "Warehouse Supplier Return Handoff Request Event")
+        self.assertEqual(
+            fields["handoff_type"]["options"].splitlines(),
+            [
+                "supplier_authorization_review",
+                "supplier_claim_review",
+                "po_correction_review",
+                "replacement_or_credit_review",
+                "finance_debit_review",
+                "stock_document_policy_review",
+                "quality_quarantine_review",
+                "supplier_handoff_review",
+            ],
+        )
+
+        permissions = {row["role"]: row for row in parent["permissions"]}
+        self.assertEqual(permissions["Warehouse User"], {"read": 1, "role": "Warehouse User"})
+        self.assertEqual(permissions["Stock User"], {"read": 1, "role": "Stock User"})
+        self.assertEqual(permissions["Warehouse Manager"], {"create": 1, "read": 1, "write": 1, "role": "Warehouse Manager"})
+        self.assertEqual(permissions["Stock Manager"], {"create": 1, "read": 1, "write": 1, "role": "Stock Manager"})
+        self.assertEqual(permissions["System Manager"], {"create": 1, "read": 1, "write": 1, "role": "System Manager"})
+
+    def test_w15f6_supplier_return_handoff_doctypes_have_no_forbidden_fields(self):
+        metas = [
+            self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request"),
+            self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request_line"),
+            self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request_event"),
+        ]
+        forbidden_fieldnames = {
+            "route",
+            "native_route",
+            "url",
+            "file_url",
+            "supplier_email",
+            "notify_supplier",
+            "portal_user",
+            "return_purchase_receipt",
+            "purchase_receipt_return",
+            "purchase_invoice_return",
+            "debit_note",
+            "stock_entry",
+            "stock_ledger_entry",
+            "stock_balance",
+            "stock_reconciliation",
+            "stock_posted",
+            "purchase_order_update",
+            "valuation_rate",
+            "stock_value",
+            "rate",
+            "amount",
+            "base_amount",
+            "tax",
+            "account",
+            "gl_entry",
+            "payable",
+            "payment",
+            "billing",
+            "landed_cost",
+            "margin",
+            "profit",
+            "cost",
+            "credit",
+        }
+        forbidden_fieldtypes = {"Link", "Dynamic Link", "Attach", "Attach Image", "HTML", "Button", "Currency"}
+
+        for meta in metas:
+            for field in meta["fields"]:
+                fieldname = field["fieldname"]
+                self.assertNotIn(fieldname, forbidden_fieldnames)
+                self.assertNotIn(field["fieldtype"], forbidden_fieldtypes)
+                self.assertEqual(field.get("read_only"), 1)
+        text = json.dumps(metas).lower()
+        self.assertNotIn("/app", text)
+        self.assertNotIn("/desk/form", text)
+        self.assertNotIn("/desk/list", text)
+        self.assertNotIn("/desk/report", text)
+        self.assertNotIn("query-report", text)
+
+    def test_w15f6_supplier_return_handoff_field_maps_match_policy(self):
+        parent = self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request")
+        line = self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request_line")
+        event = self._load_supplier_return_handoff_doctype("warehouse_supplier_return_handoff_request_event")
+
+        self.assertEqual(
+            set(parent["field_order"]),
+            {
+                "supplier_return_candidate",
+                "supplier_reference_text",
+                "warehouse_source_reference",
+                "warehouse",
+                "purchase_order_reference_text",
+                "purchase_receipt_reference_text",
+                "purchase_invoice_reference_text",
+                "handoff_status",
+                "handoff_type",
+                "manager_decision",
+                "procurement_escalation_reference",
+                "finance_escalation_reference",
+                "supplier_claim_reference",
+                "handoff_note",
+                "source_payload_hash",
+                "policy_version",
+                "line_count",
+                "total_candidate_qty",
+                "request_id",
+                "requested_by",
+                "requested_at",
+                "lines",
+                "events",
+            },
+        )
+        self.assertEqual(
+            set(line["field_order"]),
+            {
+                "candidate_line_reference",
+                "item_code",
+                "item_name",
+                "warehouse",
+                "candidate_qty",
+                "supplier_return_candidate_qty",
+                "damaged_qty",
+                "wrong_item_qty",
+                "quarantine_qty",
+                "rejected_qty",
+                "condition_grade",
+                "reason_code",
+                "evidence_reference",
+                "uom",
+            },
+        )
+        self.assertEqual(
+            set(event["field_order"]),
+            {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

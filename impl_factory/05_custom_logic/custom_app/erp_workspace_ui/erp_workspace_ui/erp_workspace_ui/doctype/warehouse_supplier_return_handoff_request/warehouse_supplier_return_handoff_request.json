@@ -1,0 +1,228 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "supplier_return_candidate",
+  "supplier_reference_text",
+  "warehouse_source_reference",
+  "warehouse",
+  "purchase_order_reference_text",
+  "purchase_receipt_reference_text",
+  "purchase_invoice_reference_text",
+  "handoff_status",
+  "handoff_type",
+  "manager_decision",
+  "procurement_escalation_reference",
+  "finance_escalation_reference",
+  "supplier_claim_reference",
+  "handoff_note",
+  "source_payload_hash",
+  "policy_version",
+  "line_count",
+  "total_candidate_qty",
+  "request_id",
+  "requested_by",
+  "requested_at",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "supplier_return_candidate",
+   "fieldtype": "Data",
+   "label": "Supplier Return Candidate",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "supplier_reference_text",
+   "fieldtype": "Data",
+   "label": "Supplier Reference Text",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse_source_reference",
+   "fieldtype": "Data",
+   "label": "Warehouse Source Reference",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Data",
+   "label": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "purchase_order_reference_text",
+   "fieldtype": "Data",
+   "label": "Purchase Order Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_receipt_reference_text",
+   "fieldtype": "Data",
+   "label": "Purchase Receipt Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_invoice_reference_text",
+   "fieldtype": "Data",
+   "label": "Purchase Invoice Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "handoff_status",
+   "fieldtype": "Select",
+   "label": "Handoff Status",
+   "read_only": 1,
+   "options": "Requested\nBlocked\nClosed\nCancelled",
+   "default": "Requested"
+  },
+  {
+   "fieldname": "handoff_type",
+   "fieldtype": "Select",
+   "label": "Handoff Type",
+   "read_only": 1,
+   "options": "supplier_authorization_review\nsupplier_claim_review\npo_correction_review\nreplacement_or_credit_review\nfinance_debit_review\nstock_document_policy_review\nquality_quarantine_review\nsupplier_handoff_review",
+   "reqd": 1
+  },
+  {
+   "fieldname": "manager_decision",
+   "fieldtype": "Data",
+   "label": "Manager Decision",
+   "read_only": 1
+  },
+  {
+   "fieldname": "procurement_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Procurement Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "finance_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Finance Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "supplier_claim_reference",
+   "fieldtype": "Data",
+   "label": "Supplier Claim Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "handoff_note",
+   "fieldtype": "Small Text",
+   "label": "Handoff Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload_hash",
+   "fieldtype": "Data",
+   "label": "Source Payload Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "total_candidate_qty",
+   "fieldtype": "Float",
+   "label": "Total Candidate Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request Id",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Data",
+   "label": "Requested By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_at",
+   "fieldtype": "Datetime",
+   "label": "Requested At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Supplier Return Handoff Request Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Supplier Return Handoff Request Event",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-06-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Supplier Return Handoff Request",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "Warehouse User"
+  },
+  {
+   "read": 1,
+   "role": "Stock User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
