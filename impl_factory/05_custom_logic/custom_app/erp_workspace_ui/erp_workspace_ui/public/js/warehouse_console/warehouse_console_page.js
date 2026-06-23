@@ -3392,6 +3392,8 @@
         gap: 8px;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-status-chip {
+        display: flex;
+        align-items: center;
         min-height: 40px;
         padding: 9px 10px;
         border: 1px solid rgba(226, 232, 240, 0.92);
@@ -3410,6 +3412,7 @@
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-panel {
         display: grid;
+        align-content: start;
         gap: 10px;
         padding: 14px;
         border: 1px solid rgba(226, 232, 240, 0.94);
@@ -3456,10 +3459,14 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-owner-grid,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-grid {
         display: grid;
+        align-content: start;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-mini {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
         min-height: 44px;
         padding: 9px 10px;
         border: 1px solid rgba(226, 232, 240, 0.9);
@@ -3477,6 +3484,9 @@
         font-size: 11px;
         font-weight: 600;
         line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-evidence-grid .warehouse-customer-return-mini:nth-child(odd):last-child {
+        grid-column: 1 / -1;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-panel {
         grid-column: 1 / -1;
