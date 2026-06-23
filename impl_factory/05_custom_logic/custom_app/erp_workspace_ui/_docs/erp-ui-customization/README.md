@@ -7,7 +7,7 @@ Current implementation focus:
 - Main Phase 1 Shared Core Platform governance
 - Sales Console
 - Procurement Console
-- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, W9/W9A/W9B cockpit information architecture and usability review, W10 phase-boundary review, W10A read-only hardening baseline, W10B read-only freeze closure, W10C page chrome fix, W11 execution-readiness boundary plan, W11A execution-readiness synthesis, W11B Purchase Receipt receiving execution design, W12A-W12K read-only premium structure polish, W13A premium UI visual standard, W14A functional scope governance, and W15A/W15C5/W15D/W15D5/W15E1/W15E5/W15F1/W15F5 controlled operations policy design
+- Warehouse Console W1/W2 docs-only roadmap, W3/W3A protected read-only foundation and landing baseline, W4/W4A/W4B inbound visibility, W5A/W5B outbound picking visibility, W6A/W6B stock exception visibility and review, W7A stock posture review, W8/W8A/W8B movement visibility and review, W8C transfer visibility, W9/W9A/W9B cockpit information architecture and usability review, W10 phase-boundary review, W10A read-only hardening baseline, W10B read-only freeze closure, W10C page chrome fix, W11 execution-readiness boundary plan, W11A execution-readiness synthesis, W11B Purchase Receipt receiving execution design, W12A-W12K read-only premium structure polish, W13A premium UI visual standard, W14A functional scope governance, and W15A/W15C5/W15D/W15D5/W15E1/W15E5/W15F1/W15F5/W15G1 controlled operations policy design
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - Frozen Workspace Protection Package Standard
@@ -95,6 +95,7 @@ Freeze and governance status:
 - Warehouse Console Phase W15E5 Customer Return Sales/Admin Handoff Policy is documented on 2026-06-22 as a docs-only customer return handoff boundary. Customer return manager decisions remain internal Warehouse disposition posture only; Sales/Admin/Finance handoff is request/status policy only, while Sales Return, Credit Note, return Delivery Note, Stock Entry, Stock Ledger mutation, Stock Reconciliation, customer notification, stock increase/posting, native ERPNext route exposure, Sales/Procurement runtime changes, and valuation/accounting/commercial exposure remain blocked until later owner/security approval.
 - Warehouse Console Phase W15F1 Supplier Return Workflow Design is documented on 2026-06-22 as a docs-only supplier return policy package. Supplier return candidate work remains custom-record design only; return Purchase Receipt, Purchase Invoice return/debit note, Stock Entry, Stock Ledger mutation, Stock Balance mutation, Stock Reconciliation, supplier notification, Purchase Order update, stock decrease/posting, native ERPNext route exposure, Sales/Procurement runtime changes, and valuation/accounting/commercial exposure remain blocked until later owner/security approval.
 - Warehouse Console Phase W15F5 Supplier Return Procurement/Admin Handoff Policy is documented on 2026-06-23 as a docs-only supplier return handoff boundary. Supplier return manager decisions remain internal Warehouse disposition posture only; Procurement/Admin/Finance handoff is request/status policy only, while return Purchase Receipt, Purchase Invoice return/debit note, Stock Entry, Stock Ledger mutation, Stock Balance mutation, Stock Reconciliation, supplier notification, Purchase Order update, stock decrease/posting, native ERPNext route exposure, Sales/Procurement runtime changes, and valuation/accounting/commercial exposure remain blocked until later owner/security approval.
+- Warehouse Console Phase W15G1 Internal Transfer Workflow Design is documented on 2026-06-24 as a docs-only internal transfer policy package. Internal transfer candidate work remains custom-record design only; Stock Entry creation/submission, Stock Ledger mutation, Stock Balance mutation, Stock Reconciliation, Stock Reservation, stock movement/posting, native ERPNext route exposure, Sales/Procurement runtime changes, and valuation/accounting/commercial exposure remain blocked until later owner/security approval.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
@@ -183,6 +184,10 @@ Active Warehouse operations roadmap after Phase 0:
 - `warehouse-console-phase-w15d-outbound-picking-dispatch-workflow-design-2026-06-18.md`
 - `warehouse-console-phase-w15d5-delivery-note-dispatch-policy-2026-06-21.md`
 - `warehouse-console-phase-w15e1-customer-return-workflow-design-2026-06-21.md`
+- `warehouse-console-phase-w15e5-customer-return-sales-admin-handoff-policy-2026-06-22.md`
+- `warehouse-console-phase-w15f1-supplier-return-workflow-design-2026-06-22.md`
+- `warehouse-console-phase-w15f5-supplier-return-procurement-admin-handoff-policy-2026-06-23.md`
+- `warehouse-console-phase-w15g1-internal-transfer-workflow-design-2026-06-24.md`
 
 Historical Warehouse W14 planning notes are superseded by W15A unless Main Control explicitly reopens W14.
 
