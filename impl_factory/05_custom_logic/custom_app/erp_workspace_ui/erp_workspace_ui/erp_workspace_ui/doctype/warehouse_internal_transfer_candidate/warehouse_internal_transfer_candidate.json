@@ -1,0 +1,218 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-06-24 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-06-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "autoname": "hash",
+ "field_order": [
+  "source_context",
+  "source_reference_text",
+  "source_warehouse",
+  "target_warehouse",
+  "transfer_reason",
+  "transfer_priority",
+  "candidate_status",
+  "manager_review_status",
+  "inventory_admin_escalation_reference",
+  "quarantine_review_reference",
+  "evidence_status",
+  "notes",
+  "source_payload_hash",
+  "policy_version",
+  "line_count",
+  "total_candidate_qty",
+  "request_id",
+  "created_by",
+  "created_at",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "source_context",
+   "fieldtype": "Data",
+   "label": "Source Context",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_reference_text",
+   "fieldtype": "Data",
+   "label": "Source Reference Text",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Data",
+   "label": "Source Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Data",
+   "label": "Target Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "transfer_reason",
+   "fieldtype": "Data",
+   "label": "Transfer Reason",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "transfer_priority",
+   "fieldtype": "Select",
+   "label": "Transfer Priority",
+   "read_only": 1,
+   "options": "Normal\nHigh\nUrgent",
+   "default": "Normal"
+  },
+  {
+   "fieldname": "candidate_status",
+   "fieldtype": "Select",
+   "label": "Candidate Status",
+   "read_only": 1,
+   "options": "Draft\nCount In Progress\nSubmitted For Review\nRecount Requested\nTransfer Candidate\nQuarantine Review\nInventory/Admin Review\nRejected\nCancelled\nClosed",
+   "default": "Draft"
+  },
+  {
+   "fieldname": "manager_review_status",
+   "fieldtype": "Data",
+   "label": "Manager Review Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "inventory_admin_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Inventory Admin Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "quarantine_review_reference",
+   "fieldtype": "Data",
+   "label": "Quarantine Review Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "evidence_status",
+   "fieldtype": "Data",
+   "label": "Evidence Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload_hash",
+   "fieldtype": "Data",
+   "label": "Source Payload Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "total_candidate_qty",
+   "fieldtype": "Float",
+   "label": "Total Candidate Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request Id",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "created_by",
+   "fieldtype": "Data",
+   "label": "Created By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "created_at",
+   "fieldtype": "Datetime",
+   "label": "Created At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Internal Transfer Candidate Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Internal Transfer Candidate Event",
+   "read_only": 1
+  }
+ ],
+ "istable": 0,
+ "name": "Warehouse Internal Transfer Candidate",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Warehouse Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Stock Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ]
+}

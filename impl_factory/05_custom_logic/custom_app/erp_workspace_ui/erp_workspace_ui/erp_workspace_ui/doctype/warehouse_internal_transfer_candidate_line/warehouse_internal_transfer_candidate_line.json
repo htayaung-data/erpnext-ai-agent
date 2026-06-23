@@ -1,0 +1,139 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-06-24 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-06-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "field_order": [
+  "item_code",
+  "item_name",
+  "source_warehouse",
+  "target_warehouse",
+  "requested_qty",
+  "counted_qty",
+  "transfer_candidate_qty",
+  "blocked_qty",
+  "quarantine_qty",
+  "damaged_qty",
+  "short_qty",
+  "condition_grade",
+  "reason_code",
+  "evidence_reference",
+  "uom"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "label": "Item Code",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Data",
+   "label": "Source Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Data",
+   "label": "Target Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_qty",
+   "fieldtype": "Float",
+   "label": "Requested Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "counted_qty",
+   "fieldtype": "Float",
+   "label": "Counted Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "transfer_candidate_qty",
+   "fieldtype": "Float",
+   "label": "Transfer Candidate Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "blocked_qty",
+   "fieldtype": "Float",
+   "label": "Blocked Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "quarantine_qty",
+   "fieldtype": "Float",
+   "label": "Quarantine Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "damaged_qty",
+   "fieldtype": "Float",
+   "label": "Damaged Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "short_qty",
+   "fieldtype": "Float",
+   "label": "Short Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "condition_grade",
+   "fieldtype": "Data",
+   "label": "Condition Grade",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reason_code",
+   "fieldtype": "Data",
+   "label": "Reason Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "evidence_reference",
+   "fieldtype": "Data",
+   "label": "Evidence Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Data",
+   "label": "UOM",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "name": "Warehouse Internal Transfer Candidate Line",
+ "permissions": []
+}

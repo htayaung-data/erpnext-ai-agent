@@ -4665,5 +4665,160 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
 
+    def _load_internal_transfer_doctype(self, folder):
+        path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "doctype" / folder / f"{folder}.json"
+        return json.loads(path.read_text())
+
+    def test_w15g3_internal_transfer_candidate_doctypes_are_internal_non_submittable(self):
+        parent = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate")
+        line = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_line")
+        event = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_event")
+
+        self.assertEqual(parent["module"], "ERP Workspace UI")
+        self.assertEqual(line["module"], "ERP Workspace UI")
+        self.assertEqual(event["module"], "ERP Workspace UI")
+        for meta in (parent, line, event):
+            self.assertEqual(meta["is_submittable"], 0)
+            self.assertEqual(meta["index_web_pages_for_search"], 0)
+            self.assertEqual(meta["links"], [])
+            self.assertEqual(meta["actions"], [])
+        self.assertEqual(parent["istable"], 0)
+        self.assertEqual(line["istable"], 1)
+        self.assertEqual(event["istable"], 1)
+        self.assertEqual(parent["fields"][-2]["options"], "Warehouse Internal Transfer Candidate Line")
+        self.assertEqual(parent["fields"][-1]["options"], "Warehouse Internal Transfer Candidate Event")
+
+    def test_w15g3_internal_transfer_candidate_permissions_match_policy(self):
+        parent = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate")
+        line = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_line")
+        event = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_event")
+
+        permissions = {row["role"]: row for row in parent["permissions"]}
+        for role in {"Warehouse User", "Stock User", "Warehouse Manager", "Stock Manager", "System Manager"}:
+            self.assertIn(role, permissions)
+            self.assertEqual(permissions[role].get("read"), 1)
+            self.assertEqual(permissions[role].get("create"), 1)
+            self.assertEqual(permissions[role].get("write"), 1)
+        self.assertEqual(line["permissions"], [])
+        self.assertEqual(event["permissions"], [])
+
+    def test_w15g3_internal_transfer_candidate_forbidden_fields_absent(self):
+        metas = [
+            self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate"),
+            self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_line"),
+            self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_event"),
+        ]
+        forbidden_fieldnames = {
+            "stock_entry",
+            "stock_entry_draft",
+            "stock_entry_submitted",
+            "stock_entry_name",
+            "stock_ledger",
+            "stock_ledger_entry",
+            "stock_balance",
+            "stock_reconciliation",
+            "stock_reservation",
+            "reserve_stock",
+            "unreserve_stock",
+            "stock_posted",
+            "valuation_rate",
+            "stock_value",
+            "rate",
+            "amount",
+            "base_amount",
+            "tax",
+            "account",
+            "gl_entry",
+            "payable",
+            "payment",
+            "billing",
+            "landed_cost",
+            "margin",
+            "profit",
+            "cost",
+            "debit",
+            "credit",
+            "sales_order",
+            "purchase_order",
+            "delivery_note",
+            "purchase_receipt",
+            "purchase_invoice",
+            "native_route",
+            "route",
+            "url",
+            "email",
+            "portal",
+        }
+        forbidden_fieldtypes = {"Link", "Dynamic Link", "Attach", "Attach Image", "HTML", "Button", "Currency"}
+
+        for meta in metas:
+            for field in meta["fields"]:
+                self.assertNotIn(field["fieldname"], forbidden_fieldnames)
+                self.assertNotIn(field["fieldtype"], forbidden_fieldtypes)
+                self.assertEqual(field.get("read_only"), 1)
+        text = json.dumps(metas).lower()
+        self.assertNotIn("/app", text)
+        self.assertNotIn("/desk/form", text)
+        self.assertNotIn("/desk/list", text)
+        self.assertNotIn("/desk/report", text)
+        self.assertNotIn("query-report", text)
+
+    def test_w15g3_internal_transfer_candidate_field_maps_match_policy(self):
+        parent = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate")
+        line = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_line")
+        event = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_event")
+
+        self.assertEqual(
+            set(parent["field_order"]),
+            {
+                "source_context",
+                "source_reference_text",
+                "source_warehouse",
+                "target_warehouse",
+                "transfer_reason",
+                "transfer_priority",
+                "candidate_status",
+                "manager_review_status",
+                "inventory_admin_escalation_reference",
+                "quarantine_review_reference",
+                "evidence_status",
+                "notes",
+                "source_payload_hash",
+                "policy_version",
+                "line_count",
+                "total_candidate_qty",
+                "request_id",
+                "created_by",
+                "created_at",
+                "lines",
+                "events",
+            },
+        )
+        self.assertEqual(
+            set(line["field_order"]),
+            {
+                "item_code",
+                "item_name",
+                "source_warehouse",
+                "target_warehouse",
+                "requested_qty",
+                "counted_qty",
+                "transfer_candidate_qty",
+                "blocked_qty",
+                "quarantine_qty",
+                "damaged_qty",
+                "short_qty",
+                "condition_grade",
+                "reason_code",
+                "evidence_reference",
+                "uom",
+            },
+        )
+        self.assertEqual(
+            set(event["field_order"]),
+            {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
