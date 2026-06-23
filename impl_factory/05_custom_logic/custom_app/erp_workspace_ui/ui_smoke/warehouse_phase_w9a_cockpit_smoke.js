@@ -738,6 +738,11 @@ async function snapshot(page) {
       actionCenterOpenCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-open]")).filter(visible).length,
       actionCenterGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-guardrail]")).filter(visible).length,
       actionCenterModes: Array.from(document.querySelectorAll("[data-warehouse-action-center-mode]")).map((node) => node.getAttribute("data-warehouse-action-center-mode") || "").filter(Boolean),
+      plannedWorkflowGroupCount: Array.from(document.querySelectorAll("[data-warehouse-planned-workflows]")).filter(visible).length,
+      plannedWorkflowCardCount: Array.from(document.querySelectorAll("[data-warehouse-planned-workflow-card]")).filter(visible).length,
+      plannedWorkflowToggleCount: Array.from(document.querySelectorAll("[data-warehouse-planned-workflow-toggle]")).filter(visible).length,
+      plannedWorkflowVisibleDetailCount: Array.from(document.querySelectorAll("[data-warehouse-planned-workflow-detail]")).filter(visible).length,
+      plannedWorkflowExpandedKeys: Array.from(document.querySelectorAll("[data-warehouse-planned-workflow-detail]")).filter(visible).map((node) => node.getAttribute("data-warehouse-planned-workflow-detail") || "").filter(Boolean),
       customerReturnShellCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-shell]")).filter(visible).length,
       customerReturnStatusCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-status]")).filter(visible).length,
       customerReturnUserPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-user-preview]")).filter(visible).length,
@@ -821,6 +826,23 @@ function assertW14CManagerCenter(state, contextLabel) {
   assert(state.managerCenterActionCount === 0, "Manager Readiness actions should be removed", { context: contextLabel, state });
   assert(!(state.text || "").includes("Manager Readiness Center"), "Manager Readiness Center title is still visible", { context: contextLabel, state });
 }
+
+function assertW15PlannedWorkflowGroup(state, contextLabel) {
+  assert(state.plannedWorkflowGroupCount === 1, "Planned workflow group must render once", { context: contextLabel, state });
+  assert(state.plannedWorkflowCardCount === 3, "Planned workflow summary cards must render once each", { context: contextLabel, state });
+  assert(state.plannedWorkflowToggleCount === 3, "Planned workflow detail toggles must render once each", { context: contextLabel, state });
+  assert(state.plannedWorkflowVisibleDetailCount === 0, "Planned workflow details should be collapsed by default", { context: contextLabel, state });
+  assert(state.customerReturnShellCount === 0, "Customer Return detail shell should be collapsed by default", { context: contextLabel, state });
+  assert(state.supplierReturnShellCount === 0, "Supplier Return detail shell should be collapsed by default", { context: contextLabel, state });
+  assert(state.internalTransferShellCount === 0, "Internal Transfer detail shell should be collapsed by default", { context: contextLabel, state });
+  assert((state.text || "").includes("Planned workflow shells"), "Planned workflow group title is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Customer return intake"), "Customer Return summary card is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Supplier return candidate"), "Supplier Return summary card is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Internal transfer candidate"), "Internal Transfer summary card is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No document created"), "Planned workflow request-only context is missing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Planned workflow group exposed a native route", { context: contextLabel, state });
+}
+
 
 function assertW15E2CustomerReturnShell(state, contextLabel) {
   assert(state.customerReturnShellCount === 1, "Customer Return Intake shell must render once", { context: contextLabel, state });
@@ -910,11 +932,37 @@ async function assertCockpit(page, contextLabel) {
   if (EXPECT_W14B) assertW14BQuickFind(state, contextLabel);
   if (EXPECT_W14C) assertW14CManagerCenter(state, contextLabel);
   if (EXPECT_W15B) assertW15BActionCenter(state, contextLabel);
-  assertW15E2CustomerReturnShell(state, contextLabel);
-  assertW15F2SupplierReturnShell(state, contextLabel);
-  assertW15G2InternalTransferShell(state, contextLabel);
+  assertW15PlannedWorkflowGroup(state, contextLabel);
   return state;
 }
+
+async function exercisePlannedWorkflowDisclosure(page, contextLabel) {
+  const workflows = [
+    { key: "customer-return", shellSelector: "[data-warehouse-customer-return-shell]", assertShell: assertW15E2CustomerReturnShell },
+    { key: "supplier-return", shellSelector: "[data-warehouse-supplier-return-shell]", assertShell: assertW15F2SupplierReturnShell },
+    { key: "internal-transfer", shellSelector: "[data-warehouse-internal-transfer-shell]", assertShell: assertW15G2InternalTransferShell },
+  ];
+  for (const workflow of workflows) {
+    await page.locator(`[data-warehouse-planned-workflow-toggle="${workflow.key}"]`).click();
+    await page.waitForSelector(`[data-warehouse-planned-workflow-detail="${workflow.key}"] ${workflow.shellSelector}`, { state: "visible", timeout: TIMEOUT });
+    const state = await snapshot(page);
+    assert(state.plannedWorkflowVisibleDetailCount === 1, "Only one planned workflow detail should be expanded", { context: contextLabel, workflow: workflow.key, state });
+    assert((state.plannedWorkflowExpandedKeys || []).includes(workflow.key), "Expanded planned workflow key is missing", { context: contextLabel, workflow: workflow.key, state });
+    workflow.assertShell(state, `${contextLabel}:${workflow.key}`);
+  }
+  await page.locator(`[data-warehouse-planned-workflow-toggle="${workflows[workflows.length - 1].key}"]`).click();
+  await page.waitForFunction(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    return !Array.from(document.querySelectorAll("[data-warehouse-planned-workflow-detail]")).some(visible);
+  }, null, { timeout: TIMEOUT });
+  assertW15PlannedWorkflowGroup(await snapshot(page), `${contextLabel}:collapsed`);
+}
+
 
 async function exerciseRouteAction(page, selector, expectedPath, viewName, contextLabel) {
   await page.locator(selector).first().click();
@@ -956,6 +1004,7 @@ async function exerciseUser(browser, user, viewport) {
     const sidebarCollapsed = await collapseBodySidebarForNarrowViewport(page);
     if (viewport.width <= 520) assert(sidebarCollapsed, "Mobile body sidebar was not collapsed for Warehouse cockpit evidence", { user: user.key, viewport });
     await assertCockpit(page, `${user.key}:${viewport.key}:cockpit`);
+    if (viewport.key === "desktop-1440") await exercisePlannedWorkflowDisclosure(page, `${user.key}:${viewport.key}:planned-workflows`);
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await collapseBodySidebarForNarrowViewport(page);

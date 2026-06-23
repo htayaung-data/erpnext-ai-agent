@@ -3526,6 +3526,156 @@
         border-color: rgba(20, 184, 166, 0.26);
         background: rgba(240, 253, 250, 0.62);
       }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows {
+        display: grid;
+        gap: 14px;
+        padding: 18px 20px 20px;
+        border: 1px solid rgba(203, 213, 225, 0.94);
+        border-radius: 18px;
+        background:
+          linear-gradient(180deg, rgba(248, 250, 252, 0.88) 0%, rgba(255, 255, 255, 0.98) 42%),
+          #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 12px 28px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-copy {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-title {
+        margin: 0;
+        color: #0f172a;
+        font-size: 17px;
+        font-weight: 780;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-subtitle {
+        max-width: 760px;
+        color: #52637a;
+        font-size: 12.5px;
+        line-height: 1.48;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-mode {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(148, 163, 184, 0.34);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.9);
+        color: #475569;
+        font-size: 11px;
+        font-weight: 760;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card {
+        display: grid;
+        gap: 10px;
+        min-height: 166px;
+        padding: 14px;
+        border: 1px solid rgba(226, 232, 240, 0.94);
+        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.028);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card.is-expanded {
+        border-color: rgba(20, 184, 166, 0.34);
+        box-shadow: 0 12px 26px rgba(15, 118, 110, 0.08);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-title {
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 760;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-kicker {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.025em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-note,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-guardrail {
+        color: #52637a;
+        font-size: 12px;
+        line-height: 1.42;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-guardrail {
+        padding: 9px 10px;
+        border: 1px dashed rgba(203, 213, 225, 0.9);
+        border-radius: 12px;
+        background: rgba(248, 250, 252, 0.78);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-meta span {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 999px;
+        color: #64748b;
+        font-size: 10.5px;
+        font-weight: 700;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-toggle {
+        justify-self: start;
+        min-height: 30px;
+        padding: 0 11px;
+        border: 1px solid rgba(203, 213, 225, 0.95);
+        border-radius: 999px;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 11px;
+        font-weight: 760;
+        cursor: pointer;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-toggle:hover {
+        border-color: rgba(20, 184, 166, 0.38);
+        color: #0f766e;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-details {
+        display: grid;
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-detail[hidden] {
+        display: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-detail > .warehouse-customer-return-shell {
+        margin-top: 0;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.026);
+      }
       /* W15B overview hierarchy refinement: status, navigation, task, risk, movement, and control lanes must read differently. */
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-pulse-section {
         border-color: rgba(226, 232, 240, 0.92);
@@ -3671,6 +3821,7 @@
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-route-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-work-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-grid,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-status-strip,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-evidence-grid,
@@ -3678,7 +3829,8 @@
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-grid {
           grid-template-columns: minmax(0, 1fr);
         }
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-head {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-head,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-head {
           display: grid;
           align-items: start;
         }
@@ -8145,6 +8297,70 @@
     `;
   }
 
+
+  function renderPlannedWorkflowShells() {
+    const workflows = [
+      {
+        key: "customer-return",
+        title: "Customer return intake",
+        note: "Physical return intake evidence, inspection posture, and Sales or Finance handoff.",
+        owner: "Sales / Finance",
+        guardrail: "No stock increase, no Sales Return, no Credit Note.",
+        detail: renderCustomerReturnIntakeShell(),
+      },
+      {
+        key: "supplier-return",
+        title: "Supplier return candidate",
+        note: "Supplier-return evidence, manager recommendation, Procurement review, and Finance/Admin handoff.",
+        owner: "Procurement / Finance",
+        guardrail: "No supplier notification, no stock decrease, no return purchase document.",
+        detail: renderSupplierReturnCandidateShell(),
+      },
+      {
+        key: "internal-transfer",
+        title: "Internal transfer candidate",
+        note: "Internal transfer intent, source count evidence, manager recommendation, and Inventory/Admin review.",
+        owner: "Inventory / Admin",
+        guardrail: "No stock movement, no Stock Entry, no Stock Ledger or Balance change.",
+        detail: renderInternalTransferCandidateShell(),
+      },
+    ];
+    const cards = workflows.map((workflow) => `
+      <article class="warehouse-planned-workflow-card" data-warehouse-planned-workflow-card="${escapeHtml(workflow.key)}">
+        <div class="warehouse-planned-workflow-card-head">
+          <div class="warehouse-planned-workflow-title">${escapeHtml(workflow.title)}</div>
+          <span class="warehouse-planned-workflow-kicker">Shell only</span>
+        </div>
+        <div class="warehouse-planned-workflow-note">${escapeHtml(workflow.note)}</div>
+        <div class="warehouse-planned-workflow-guardrail">${escapeHtml(workflow.guardrail)}</div>
+        <div class="warehouse-planned-workflow-meta">
+          <span>${escapeHtml(workflow.owner)}</span>
+          <span>Request only</span>
+          <span>No document created</span>
+        </div>
+        <button class="warehouse-planned-workflow-toggle" type="button" aria-expanded="false" data-warehouse-planned-workflow-toggle="${escapeHtml(workflow.key)}">View details</button>
+      </article>
+    `).join("");
+    const details = workflows.map((workflow) => `
+      <div class="warehouse-planned-workflow-detail" data-warehouse-planned-workflow-detail="${escapeHtml(workflow.key)}" hidden>
+        ${workflow.detail}
+      </div>
+    `).join("");
+    return `
+      <section class="sales-console-card sales-console-section warehouse-planned-workflows" data-warehouse-planned-workflows>
+        <div class="warehouse-planned-workflows-head">
+          <div class="warehouse-planned-workflows-copy">
+            <h2 class="warehouse-planned-workflows-title">Planned workflow shells</h2>
+            <div class="warehouse-planned-workflows-subtitle">Future controlled workflow lanes stay compact here. Expand one lane to inspect guardrails and ownership; no ERP document or stock action starts from this section.</div>
+          </div>
+          <span class="warehouse-planned-workflows-mode">Planned only</span>
+        </div>
+        <div class="warehouse-planned-workflows-grid">${cards}</div>
+        <div class="warehouse-planned-workflow-details">${details}</div>
+      </section>
+    `;
+  }
+
   function renderOverview(page, payload) {
     ensureStyle();
     const kpis = Array.isArray(payload.kpis) ? payload.kpis.slice(0, 6) : [];
@@ -8173,11 +8389,21 @@
         </section>
         ${renderCockpitStart(payload, kpis)}
         ${renderCockpitActionCenter(payload.action_center || {})}
-        ${renderCustomerReturnIntakeShell()}
-        ${renderSupplierReturnCandidateShell()}
-        ${renderInternalTransferCandidateShell()}
+        ${renderPlannedWorkflowShells()}
       </div>
     `);
+    $root.find("[data-warehouse-planned-workflow-toggle]").on("click", (event) => {
+      event.preventDefault();
+      const $toggle = $(event.currentTarget);
+      const workflowKey = $toggle.attr("data-warehouse-planned-workflow-toggle") || "";
+      const wasExpanded = $toggle.attr("aria-expanded") === "true";
+      $root.find("[data-warehouse-planned-workflow-toggle]").attr("aria-expanded", "false").text("View details").closest("[data-warehouse-planned-workflow-card]").removeClass("is-expanded");
+      $root.find("[data-warehouse-planned-workflow-detail]").prop("hidden", true);
+      if (!wasExpanded && workflowKey) {
+        $toggle.attr("aria-expanded", "true").text("Hide details").closest("[data-warehouse-planned-workflow-card]").addClass("is-expanded");
+        $root.find(`[data-warehouse-planned-workflow-detail="${workflowKey}"]`).prop("hidden", false);
+      }
+    });
     $root.find("[data-warehouse-refresh]").on("click", (event) => {
       event.preventDefault();
       activeOverviewRenderState = null;
