@@ -429,6 +429,40 @@ SUPPLIER_RETURN_MANAGER_DECISIONS = {
 	"escalate_to_finance_admin": ("Finance/Admin Escalation", "escalated_to_finance_admin", "Finance/Admin escalation marked"),
 	"reject_supplier_return_candidate": ("Rejected Candidate", "rejected_supplier_return_candidate", "Supplier return candidate rejected"),
 }
+SUPPLIER_RETURN_HANDOFF_REQUEST_DOCTYPE = "Warehouse Supplier Return Handoff Request"
+SUPPLIER_RETURN_HANDOFF_REQUEST_LINE_DOCTYPE = "Warehouse Supplier Return Handoff Request Line"
+SUPPLIER_RETURN_HANDOFF_REQUEST_EVENT_DOCTYPE = "Warehouse Supplier Return Handoff Request Event"
+SUPPLIER_RETURN_HANDOFF_POLICY_VERSION = "W15F7-supplier-return-handoff-request-v1"
+SUPPLIER_RETURN_HANDOFF_MAX_LINES = 80
+SUPPLIER_RETURN_HANDOFF_MAX_NOTE_LENGTH = 500
+SUPPLIER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH = 180
+SUPPLIER_RETURN_HANDOFF_ALLOWED_SOURCE_STATUSES = frozenset({
+	"Supplier Return Candidate",
+	"Procurement Escalation",
+	"Finance/Admin Escalation",
+	"Quarantine Review",
+	"Rejected Candidate",
+})
+SUPPLIER_RETURN_HANDOFF_ALLOWED_TYPES = frozenset({
+	"supplier_authorization_review",
+	"supplier_claim_review",
+	"po_correction_review",
+	"replacement_or_credit_review",
+	"finance_debit_review",
+	"stock_document_policy_review",
+	"quality_quarantine_review",
+	"supplier_handoff_review",
+})
+SUPPLIER_RETURN_HANDOFF_TYPE_SOURCE_STATUSES = {
+	"supplier_authorization_review": frozenset({"Supplier Return Candidate", "Procurement Escalation", "Rejected Candidate"}),
+	"supplier_claim_review": frozenset({"Supplier Return Candidate", "Procurement Escalation"}),
+	"po_correction_review": frozenset({"Procurement Escalation"}),
+	"replacement_or_credit_review": frozenset({"Supplier Return Candidate", "Procurement Escalation"}),
+	"finance_debit_review": frozenset({"Finance/Admin Escalation"}),
+	"stock_document_policy_review": frozenset({"Supplier Return Candidate", "Finance/Admin Escalation", "Quarantine Review", "Rejected Candidate"}),
+	"quality_quarantine_review": frozenset({"Quarantine Review"}),
+	"supplier_handoff_review": frozenset({"Procurement Escalation"}),
+}
 
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
@@ -3010,6 +3044,70 @@ def save_warehouse_supplier_return_manager_decision(
 	return _supplier_return_manager_decision_payload(context, candidate_doc, decision_key, event, idempotent=False)
 
 
+@frappe.whitelist()
+def request_warehouse_supplier_return_handoff(
+	supplier_return_candidate: str | None = None,
+	candidate_id: str | None = None,
+	handoff_type: str | None = None,
+	handoff_note: str | None = None,
+	procurement_escalation_reference: str | None = None,
+	finance_escalation_reference: str | None = None,
+	supplier_claim_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Create a custom request-only supplier return handoff record.
+
+	W15F7 records only internal Warehouse Supplier Return Handoff Request data.
+	It does not notify suppliers, create return Purchase Receipts, create
+	Purchase Invoice returns/debit notes, update Purchase Orders, or post stock.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	candidate_name = cstr(supplier_return_candidate or candidate_id).strip()
+	handoff_key = cstr(handoff_type).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	note = _bounded_text(handoff_note, SUPPLIER_RETURN_HANDOFF_MAX_NOTE_LENGTH)
+	procurement_ref = _bounded_text(procurement_escalation_reference, SUPPLIER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH)
+	finance_ref = _bounded_text(finance_escalation_reference, SUPPLIER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH)
+	claim_ref = _bounded_text(supplier_claim_reference, SUPPLIER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH)
+	if not _has_supplier_return_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not candidate_name:
+		frappe.throw(_("Supplier return candidate is required for handoff request."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for supplier return handoff request."), ValueError)
+	if handoff_key not in SUPPLIER_RETURN_HANDOFF_ALLOWED_TYPES:
+		frappe.throw(_("Supplier return handoff type is not allowed."), ValueError)
+	if not note:
+		frappe.throw(_("Handoff note is required for supplier return handoff request."), ValueError)
+	candidate_doc = _get_supplier_return_candidate_for_decision(candidate_name)
+	_validate_supplier_return_handoff_source(candidate_doc, handoff_key)
+	request_lines = _supplier_return_handoff_lines_from_candidate(candidate_doc)
+	fingerprint = _supplier_return_handoff_payload_hash(candidate_doc, handoff_key, note, procurement_ref, finance_ref, claim_ref, request_lines)
+	owner = _supplier_return_handoff_request_id_owner(server_request_id)
+	if owner:
+		owner_doc = frappe.get_doc(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCTYPE, owner)
+		if cstr(getattr(owner_doc, "supplier_return_candidate", "")).strip() != candidate_name:
+			frappe.throw(_("Request id was already used for another supplier return handoff request."), ValueError)
+		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != fingerprint:
+			frappe.throw(_("Request id was already used with different supplier return handoff details."), ValueError)
+		return _supplier_return_handoff_request_payload(context, owner_doc, idempotent=True)
+	request_doc = frappe.get_doc({"doctype": SUPPLIER_RETURN_HANDOFF_REQUEST_DOCTYPE})
+	_apply_supplier_return_handoff_request(
+		request_doc,
+		candidate_doc,
+		handoff_key,
+		note,
+		procurement_ref,
+		finance_ref,
+		claim_ref,
+		request_lines,
+		server_request_id,
+		fingerprint,
+	)
+	return _supplier_return_handoff_request_payload(context, request_doc, idempotent=False)
+
+
 def _has_supplier_return_manager_access(context: dict[str, object]) -> bool:
 	roles = set(context.get("roles") or [])
 	return bool(roles.intersection(SUPPLIER_RETURN_MANAGER_ROLES))
@@ -3141,6 +3239,238 @@ def _supplier_return_manager_decision_payload(
 		"supplier_notified": False,
 		"valuation": {"visible": False, "fields": []},
 		"fetched_at": str(now_datetime()),
+	}
+
+
+def _validate_supplier_return_handoff_source(candidate_doc, handoff_type: str) -> None:
+	status = cstr(getattr(candidate_doc, "candidate_status", "")).strip()
+	if status not in SUPPLIER_RETURN_HANDOFF_ALLOWED_SOURCE_STATUSES:
+		frappe.throw(_("Supplier return candidate is not ready for handoff request."), ValueError)
+	allowed_statuses = SUPPLIER_RETURN_HANDOFF_TYPE_SOURCE_STATUSES.get(handoff_type) or frozenset()
+	if status not in allowed_statuses:
+		frappe.throw(_("Supplier return handoff type does not match the candidate disposition."), ValueError)
+	if not cstr(getattr(candidate_doc, "supplier", "")).strip():
+		frappe.throw(_("Supplier return handoff requires supplier context."), ValueError)
+	if not cstr(getattr(candidate_doc, "supplier_return_reference", "")).strip():
+		frappe.throw(_("Supplier return handoff requires warehouse source reference."), ValueError)
+	warehouse = cstr(getattr(candidate_doc, "warehouse", "")).strip()
+	if not warehouse or not _customer_return_warehouse_is_visible(warehouse):
+		frappe.throw(_("Supplier return handoff warehouse is not visible."), ValueError)
+	if not list(getattr(candidate_doc, "lines", []) or []):
+		frappe.throw(_("Supplier return candidate has no lines for handoff request."), ValueError)
+
+
+def _supplier_return_handoff_lines_from_candidate(candidate_doc) -> list[dict[str, object]]:
+	lines = []
+	seen: set[tuple[str, str, str]] = set()
+	for source_line in list(getattr(candidate_doc, "lines", []) or [])[:SUPPLIER_RETURN_HANDOFF_MAX_LINES]:
+		line = _supplier_return_handoff_line_from_candidate(source_line, candidate_doc)
+		key = (cstr(line.get("candidate_line_reference")).strip(), cstr(line.get("item_code")).strip(), cstr(line.get("warehouse")).strip())
+		if key in seen:
+			frappe.throw(_("Duplicate supplier return handoff line in request."), ValueError)
+		seen.add(key)
+		lines.append(line)
+	if not lines:
+		frappe.throw(_("At least one supplier return handoff line is required."), ValueError)
+	if sum(flt(line.get("candidate_qty")) for line in lines) <= 0:
+		frappe.throw(_("Candidate quantity is required for supplier return handoff request."), ValueError)
+	return lines
+
+
+def _supplier_return_handoff_line_from_candidate(source_line, candidate_doc) -> dict[str, object]:
+	item_code = cstr(_child_value(source_line, "item_code")).strip()
+	warehouse = cstr(_child_value(source_line, "warehouse") or getattr(candidate_doc, "warehouse", "")).strip()
+	uom = cstr(_child_value(source_line, "uom")).strip()
+	candidate_qty = flt(_child_value(source_line, "candidate_qty"))
+	damaged_qty = flt(_child_value(source_line, "damaged_qty"))
+	wrong_item_qty = flt(_child_value(source_line, "wrong_item_qty"))
+	quarantine_qty = flt(_child_value(source_line, "quarantine_qty"))
+	condition_grade = cstr(_child_value(source_line, "condition_grade")).strip()
+	reason_code = cstr(_child_value(source_line, "disposition")).strip()
+	evidence_reference = cstr(_child_value(source_line, "evidence_reference")).strip()
+	if not item_code:
+		frappe.throw(_("Supplier return handoff line requires item identity."), ValueError)
+	if warehouse != cstr(getattr(candidate_doc, "warehouse", "")).strip():
+		frappe.throw(_("Supplier return handoff line warehouse must match candidate warehouse."), ValueError)
+	if candidate_qty <= 0:
+		frappe.throw(_("Supplier return handoff line requires candidate quantity."), ValueError)
+	if damaged_qty + wrong_item_qty + quarantine_qty > candidate_qty:
+		frappe.throw(_("Supplier return handoff exception quantities cannot exceed candidate quantity."), ValueError)
+	if (damaged_qty > 0 or wrong_item_qty > 0 or quarantine_qty > 0) and not (evidence_reference or condition_grade or reason_code):
+		frappe.throw(_("Supplier return handoff exception line requires evidence, condition, or reason."), ValueError)
+	line_reference = cstr(_child_value(source_line, "name")).strip() or f"{item_code}::{warehouse}::{uom}"
+	return {
+		"candidate_line_reference": line_reference,
+		"item_code": item_code,
+		"item_name": cstr(_child_value(source_line, "item_name")).strip(),
+		"warehouse": warehouse,
+		"candidate_qty": candidate_qty,
+		"supplier_return_candidate_qty": candidate_qty,
+		"damaged_qty": damaged_qty,
+		"wrong_item_qty": wrong_item_qty,
+		"quarantine_qty": quarantine_qty,
+		"rejected_qty": 0,
+		"condition_grade": condition_grade,
+		"reason_code": reason_code,
+		"evidence_reference": evidence_reference,
+		"uom": uom,
+	}
+
+
+def _supplier_return_handoff_payload_hash(
+	candidate_doc,
+	handoff_type: str,
+	handoff_note: str,
+	procurement_escalation_reference: str,
+	finance_escalation_reference: str,
+	supplier_claim_reference: str,
+	lines: list[dict[str, object]],
+) -> str:
+	canonical = {
+		"supplier_return_candidate": cstr(getattr(candidate_doc, "name", "")).strip(),
+		"supplier": cstr(getattr(candidate_doc, "supplier", "")).strip(),
+		"warehouse": cstr(getattr(candidate_doc, "warehouse", "")).strip(),
+		"source_status": cstr(getattr(candidate_doc, "candidate_status", "")).strip(),
+		"handoff_type": handoff_type,
+		"handoff_note": handoff_note,
+		"procurement_escalation_reference": procurement_escalation_reference,
+		"finance_escalation_reference": finance_escalation_reference,
+		"supplier_claim_reference": supplier_claim_reference,
+		"lines": sorted(
+			[
+				{
+					"candidate_line_reference": line.get("candidate_line_reference"),
+					"item_code": line.get("item_code"),
+					"warehouse": line.get("warehouse"),
+					"candidate_qty": flt(line.get("candidate_qty")),
+					"supplier_return_candidate_qty": flt(line.get("supplier_return_candidate_qty")),
+					"damaged_qty": flt(line.get("damaged_qty")),
+					"wrong_item_qty": flt(line.get("wrong_item_qty")),
+					"quarantine_qty": flt(line.get("quarantine_qty")),
+					"rejected_qty": flt(line.get("rejected_qty")),
+				}
+				for line in lines
+			],
+			key=lambda row: (cstr(row.get("candidate_line_reference")), cstr(row.get("item_code")), cstr(row.get("warehouse"))),
+		),
+	}
+	return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _supplier_return_handoff_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			SUPPLIER_RETURN_HANDOFF_REQUEST_DOCTYPE,
+			fields=["name"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_supplier_return_handoff_request(
+	request_doc,
+	candidate_doc,
+	handoff_type: str,
+	handoff_note: str,
+	procurement_escalation_reference: str,
+	finance_escalation_reference: str,
+	supplier_claim_reference: str,
+	request_lines: list[dict[str, object]],
+	request_id: str,
+	payload_hash: str,
+) -> None:
+	now_value = str(now_datetime())
+	request_doc.supplier_return_candidate = cstr(getattr(candidate_doc, "name", "")).strip()
+	request_doc.supplier_reference_text = cstr(getattr(candidate_doc, "supplier", "")).strip()
+	request_doc.warehouse_source_reference = cstr(getattr(candidate_doc, "supplier_return_reference", "")).strip()
+	request_doc.warehouse = cstr(getattr(candidate_doc, "warehouse", "")).strip()
+	request_doc.purchase_order_reference_text = cstr(getattr(candidate_doc, "purchase_order_reference_text", "")).strip()
+	request_doc.purchase_receipt_reference_text = cstr(getattr(candidate_doc, "purchase_receipt_reference_text", "")).strip()
+	request_doc.purchase_invoice_reference_text = cstr(getattr(candidate_doc, "purchase_invoice_reference_text", "")).strip()
+	request_doc.handoff_status = "Requested"
+	request_doc.handoff_type = handoff_type
+	request_doc.manager_decision = cstr(getattr(candidate_doc, "candidate_status", "")).strip()
+	request_doc.procurement_escalation_reference = procurement_escalation_reference or cstr(getattr(candidate_doc, "procurement_escalation_reference", "")).strip()
+	request_doc.finance_escalation_reference = finance_escalation_reference or cstr(getattr(candidate_doc, "finance_escalation_reference", "")).strip()
+	request_doc.supplier_claim_reference = supplier_claim_reference
+	request_doc.handoff_note = handoff_note
+	request_doc.source_payload_hash = payload_hash
+	request_doc.policy_version = SUPPLIER_RETURN_HANDOFF_POLICY_VERSION
+	request_doc.line_count = len(request_lines)
+	request_doc.total_candidate_qty = sum(flt(line.get("candidate_qty")) for line in request_lines)
+	request_doc.request_id = request_id
+	request_doc.requested_by = cstr(getattr(frappe.session, "user", "")).strip()
+	request_doc.requested_at = now_value
+	_set_child_table(request_doc, "lines", request_lines)
+	_append_child(request_doc, "events", {
+		"event_type": "requested_supplier_return_handoff",
+		"event_label": "Supplier return handoff requested",
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": request_id,
+		"details_json": json.dumps({"handoff_type": handoff_type, "line_count": len(request_lines), "stock_effect": False, "supplier_notified": False}, sort_keys=True),
+	})
+	request_doc.insert()
+
+
+def _supplier_return_handoff_request_payload(context: dict[str, object], request_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_supplier_return_handoff_line_payload(line) for line in list(getattr(request_doc, "lines", []) or [])]
+	events = list(getattr(request_doc, "events", []) or [])
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Supplier Return Handoff Request", "key": "supplier_return_handoff_request"},
+		"request": {
+			"request_id": cstr(getattr(request_doc, "name", "")).strip(),
+			"handoff_status": cstr(getattr(request_doc, "handoff_status", "")).strip(),
+			"handoff_type": cstr(getattr(request_doc, "handoff_type", "")).strip(),
+			"supplier_return_candidate": cstr(getattr(request_doc, "supplier_return_candidate", "")).strip(),
+			"supplier_reference_text": cstr(getattr(request_doc, "supplier_reference_text", "")).strip(),
+			"warehouse_source_reference": cstr(getattr(request_doc, "warehouse_source_reference", "")).strip(),
+			"warehouse": cstr(getattr(request_doc, "warehouse", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"event_summary": _supplier_return_candidate_event_payload(events[-1]) if events else {},
+		"stock_effect": False,
+		"stock_decreased": False,
+		"return_purchase_receipt_created": False,
+		"purchase_invoice_return_created": False,
+		"debit_note_created": False,
+		"stock_entry_created": False,
+		"stock_posted": False,
+		"purchase_order_updated": False,
+		"supplier_notified": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _supplier_return_handoff_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"candidate_line_reference": cstr(getter("candidate_line_reference")).strip(),
+		"item_code": cstr(getter("item_code")).strip(),
+		"item_name": cstr(getter("item_name")).strip(),
+		"warehouse": cstr(getter("warehouse")).strip(),
+		"candidate_qty": _number_text(getter("candidate_qty")),
+		"supplier_return_candidate_qty": _number_text(getter("supplier_return_candidate_qty")),
+		"damaged_qty": _number_text(getter("damaged_qty")),
+		"wrong_item_qty": _number_text(getter("wrong_item_qty")),
+		"quarantine_qty": _number_text(getter("quarantine_qty")),
+		"rejected_qty": _number_text(getter("rejected_qty")),
+		"condition_grade": cstr(getter("condition_grade")).strip(),
+		"reason_code": cstr(getter("reason_code")).strip(),
+		"evidence_reference": cstr(getter("evidence_reference")).strip(),
+		"uom": cstr(getter("uom")).strip(),
 	}
 
 

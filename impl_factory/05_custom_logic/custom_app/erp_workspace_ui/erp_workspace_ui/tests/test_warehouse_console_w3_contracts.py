@@ -33,6 +33,7 @@ DISPATCH_HANDOFF_REQUEST_DOCS = {}
 CUSTOMER_RETURN_INTAKE_DOCS = {}
 CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS = {}
 SUPPLIER_RETURN_CANDIDATE_DOCS = {}
+SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS = {}
 
 PO_ROWS = [
     {
@@ -745,6 +746,55 @@ def _get_meta(doctype):
             "request_id",
             "details_json",
         },
+        "Warehouse Supplier Return Handoff Request": {
+            "supplier_return_candidate",
+            "supplier_reference_text",
+            "warehouse_source_reference",
+            "warehouse",
+            "purchase_order_reference_text",
+            "purchase_receipt_reference_text",
+            "purchase_invoice_reference_text",
+            "handoff_status",
+            "handoff_type",
+            "manager_decision",
+            "procurement_escalation_reference",
+            "finance_escalation_reference",
+            "supplier_claim_reference",
+            "handoff_note",
+            "source_payload_hash",
+            "policy_version",
+            "line_count",
+            "total_candidate_qty",
+            "request_id",
+            "requested_by",
+            "requested_at",
+            "lines",
+            "events",
+        },
+        "Warehouse Supplier Return Handoff Request Line": {
+            "candidate_line_reference",
+            "item_code",
+            "item_name",
+            "warehouse",
+            "candidate_qty",
+            "supplier_return_candidate_qty",
+            "damaged_qty",
+            "wrong_item_qty",
+            "quarantine_qty",
+            "rejected_qty",
+            "condition_grade",
+            "reason_code",
+            "evidence_reference",
+            "uom",
+        },
+        "Warehouse Supplier Return Handoff Request Event": {
+            "event_type",
+            "event_label",
+            "event_by",
+            "event_at",
+            "request_id",
+            "details_json",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -970,6 +1020,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             for key, value in filters.items():
                 rows = [row for row in rows if row.get(key) == value]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Supplier Return Handoff Request":
+        rows = list(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Supplier Return Handoff Request Event":
+        rows = []
+        for request in SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS.values():
+            for event in list(getattr(request, "events", []) or []):
+                row = dict(event)
+                row["parent"] = request.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -1045,6 +1116,11 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Supplier Return Handoff Request":
+            if not self.name:
+                self.name = f"WSRH-{len(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS) + 1:05d}"
+            SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Supplier Return Candidate":
             if not self.name:
                 self.name = f"WSRC-{len(SUPPLIER_RETURN_CANDIDATE_DOCS) + 1:05d}"
@@ -1081,6 +1157,11 @@ class _FakeWorkflowDoc:
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Supplier Return Handoff Request":
+            if not self.name:
+                self.name = f"WSRH-{len(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS) + 1:05d}"
+            SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Supplier Return Candidate":
             if not self.name:
                 self.name = f"WSRC-{len(SUPPLIER_RETURN_CANDIDATE_DOCS) + 1:05d}"
@@ -1112,7 +1193,7 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate"}:
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
@@ -1140,6 +1221,10 @@ def _get_doc(doctype, name=None, *args, **kwargs):
         if name not in SUPPLIER_RETURN_CANDIDATE_DOCS:
             raise Exception("Missing Warehouse Supplier Return Candidate")
         return SUPPLIER_RETURN_CANDIDATE_DOCS[name]
+    if doctype == "Warehouse Supplier Return Handoff Request":
+        if name not in SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS:
+            raise Exception("Missing Warehouse Supplier Return Handoff Request")
+        return SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -1230,6 +1315,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         CUSTOMER_RETURN_INTAKE_DOCS.clear()
         CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS.clear()
         SUPPLIER_RETURN_CANDIDATE_DOCS.clear()
+        SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -4413,6 +4499,170 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             set(event["field_order"]),
             {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
         )
+
+    def _supplier_return_handoff_ready_candidate(self, *, candidate_request_id="supplier-handoff-source", decision="mark_supplier_return_candidate", decision_request_id="supplier-handoff-manager", lines=None, procurement_escalation_reference=None, finance_escalation_reference=None):
+        CURRENT_ROLES[:] = ["Stock User"]
+        overrides = {"request_id": candidate_request_id}
+        if lines is not None:
+            overrides["lines"] = lines
+        candidate_id = self._supplier_return_candidate_id(**overrides)
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        decision_kwargs = {"decision": decision, "request_id": decision_request_id}
+        if procurement_escalation_reference:
+            decision_kwargs["procurement_escalation_reference"] = procurement_escalation_reference
+        if finance_escalation_reference:
+            decision_kwargs["finance_escalation_reference"] = finance_escalation_reference
+        if decision in {"request_reinspection", "reject_supplier_return_candidate", "escalate_to_finance_admin"}:
+            decision_kwargs.setdefault("note", "Manager disposition needs downstream review.")
+        self._save_supplier_return_manager_decision(candidate_id, **decision_kwargs)
+        return candidate_id
+
+    def _request_supplier_return_handoff(self, candidate_id, **overrides):
+        payload = {
+            "supplier_return_candidate": candidate_id,
+            "handoff_type": "supplier_authorization_review",
+            "handoff_note": "Manager requests supplier authorization review only.",
+            "request_id": "supplier-handoff-001",
+        }
+        payload.update(overrides)
+        return service.request_warehouse_supplier_return_handoff(**payload)
+
+    def test_w15f7_manager_can_request_supplier_return_handoff_from_reviewed_candidate(self):
+        candidate_id = self._supplier_return_handoff_ready_candidate()
+
+        payload = self._request_supplier_return_handoff(candidate_id)
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "supplier_return_handoff_request")
+        self.assertEqual(payload["request"]["handoff_status"], "Requested")
+        self.assertEqual(payload["request"]["handoff_type"], "supplier_authorization_review")
+        self.assertEqual(payload["request"]["supplier_return_candidate"], candidate_id)
+        self.assertEqual(payload["request"]["supplier_reference_text"], "SUP-RETURN-001")
+        self.assertEqual(payload["request"]["warehouse_source_reference"], "WH-SUP-RET-SRC-001")
+        self.assertFalse(payload["request"]["idempotent"])
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_decreased"])
+        self.assertFalse(payload["return_purchase_receipt_created"])
+        self.assertFalse(payload["purchase_invoice_return_created"])
+        self.assertFalse(payload["debit_note_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["purchase_order_updated"])
+        self.assertFalse(payload["supplier_notified"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(len(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS), 1)
+        request = next(iter(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS.values()))
+        self.assertEqual(request.policy_version, service.SUPPLIER_RETURN_HANDOFF_POLICY_VERSION)
+        self.assertEqual(request.supplier_return_candidate, candidate_id)
+        self.assertEqual(request.handoff_status, "Requested")
+        self.assertEqual(request.manager_decision, "Supplier Return Candidate")
+        self.assertEqual(request.total_candidate_qty, 2.0)
+        self.assertEqual(len(request.lines), 1)
+        self.assertEqual(request.lines[0]["supplier_return_candidate_qty"], 2.0)
+        self.assertEqual(request.events[0]["event_type"], "requested_supplier_return_handoff")
+
+    def test_w15f7_warehouse_and_stock_users_denied_supplier_return_handoff(self):
+        candidate_id = self._supplier_return_handoff_ready_candidate(candidate_request_id="supplier-handoff-deny-source", decision_request_id="supplier-handoff-deny-manager")
+
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(candidate_id, request_id="supplier-handoff-deny-warehouse")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(candidate_id, request_id="supplier-handoff-deny-stock")
+
+        self.assertEqual(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS, {})
+
+    def test_w15f7_supplier_return_handoff_source_state_and_type_rules(self):
+        unreviewed_candidate = self._supplier_return_candidate_id(request_id="supplier-handoff-unreviewed-source")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(unreviewed_candidate, request_id="supplier-handoff-unreviewed")
+
+        supplier_candidate = self._supplier_return_handoff_ready_candidate(candidate_request_id="supplier-handoff-candidate-source", decision_request_id="supplier-handoff-candidate-manager")
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(supplier_candidate, handoff_type="finance_debit_review", request_id="supplier-handoff-wrong-type")
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(supplier_candidate, handoff_note="", request_id="supplier-handoff-missing-note")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        procurement_candidate = self._supplier_return_handoff_ready_candidate(
+            candidate_request_id="supplier-handoff-procurement-source",
+            decision="escalate_to_procurement",
+            decision_request_id="supplier-handoff-procurement-manager",
+            procurement_escalation_reference="PROC-SUP-HANDOFF-001",
+        )
+        procurement_payload = self._request_supplier_return_handoff(
+            procurement_candidate,
+            handoff_type="supplier_handoff_review",
+            procurement_escalation_reference="PROC-SUP-HANDOFF-001",
+            request_id="supplier-handoff-procurement",
+        )
+        self.assertEqual(procurement_payload["request"]["handoff_type"], "supplier_handoff_review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        quarantine_candidate = self._supplier_return_handoff_ready_candidate(
+            candidate_request_id="supplier-handoff-quarantine-source",
+            decision="mark_quarantine_review",
+            decision_request_id="supplier-handoff-quarantine-manager",
+            lines=[{"item_code": "ITEM-202", "warehouse": "Main - M", "candidate_qty": 2, "quarantine_qty": 1, "condition_grade": "Quarantine", "evidence_reference": "SUP-QA-2"}],
+        )
+        quarantine_payload = self._request_supplier_return_handoff(quarantine_candidate, handoff_type="quality_quarantine_review", request_id="supplier-handoff-quarantine")
+        self.assertEqual(quarantine_payload["request"]["handoff_type"], "quality_quarantine_review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        finance_candidate = self._supplier_return_handoff_ready_candidate(
+            candidate_request_id="supplier-handoff-finance-source",
+            decision="escalate_to_finance_admin",
+            decision_request_id="supplier-handoff-finance-manager",
+            finance_escalation_reference="FIN-SUP-HANDOFF-001",
+        )
+        finance_payload = self._request_supplier_return_handoff(finance_candidate, handoff_type="finance_debit_review", finance_escalation_reference="FIN-SUP-HANDOFF-001", request_id="supplier-handoff-finance")
+        self.assertEqual(finance_payload["request"]["handoff_type"], "finance_debit_review")
+
+    def test_w15f7_supplier_return_handoff_idempotency_and_request_reuse(self):
+        first_candidate = self._supplier_return_handoff_ready_candidate(candidate_request_id="supplier-handoff-idem-source", decision_request_id="supplier-handoff-idem-manager")
+        first = self._request_supplier_return_handoff(first_candidate, request_id="supplier-handoff-idem")
+        second = self._request_supplier_return_handoff(first_candidate, request_id="supplier-handoff-idem")
+
+        self.assertFalse(first["request"]["idempotent"])
+        self.assertTrue(second["request"]["idempotent"])
+        self.assertEqual(first["request"]["request_id"], second["request"]["request_id"])
+        self.assertEqual(len(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS), 1)
+
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(first_candidate, handoff_note="Changed handoff note.", request_id="supplier-handoff-idem")
+
+        second_candidate = self._supplier_return_handoff_ready_candidate(candidate_request_id="supplier-handoff-idem-second-source", decision_request_id="supplier-handoff-idem-second-manager")
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(second_candidate, request_id="supplier-handoff-idem")
+
+    def test_w15f7_supplier_return_handoff_payload_has_no_stock_supplier_or_native_effects(self):
+        candidate_id = self._supplier_return_handoff_ready_candidate(candidate_request_id="supplier-handoff-safe-source", decision_request_id="supplier-handoff-safe-manager")
+        payload = self._request_supplier_return_handoff(candidate_id, request_id="supplier-handoff-safe")
+        payload_text = str(payload).lower()
+
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_decreased"])
+        self.assertFalse(payload["return_purchase_receipt_created"])
+        self.assertFalse(payload["purchase_invoice_return_created"])
+        self.assertFalse(payload["debit_note_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["purchase_order_updated"])
+        self.assertFalse(payload["supplier_notified"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Purchase Receipt", "Purchase Invoice", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reconciliation", "Purchase Order"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
 
 if __name__ == "__main__":
