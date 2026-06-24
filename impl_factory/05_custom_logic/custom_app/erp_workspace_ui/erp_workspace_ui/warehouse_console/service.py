@@ -464,6 +464,76 @@ SUPPLIER_RETURN_HANDOFF_TYPE_SOURCE_STATUSES = {
 	"supplier_handoff_review": frozenset({"Procurement Escalation"}),
 }
 
+INTERNAL_TRANSFER_CANDIDATE_DOCTYPE = "Warehouse Internal Transfer Candidate"
+INTERNAL_TRANSFER_CANDIDATE_LINE_DOCTYPE = "Warehouse Internal Transfer Candidate Line"
+INTERNAL_TRANSFER_CANDIDATE_EVENT_DOCTYPE = "Warehouse Internal Transfer Candidate Event"
+INTERNAL_TRANSFER_CANDIDATE_POLICY_VERSION = "W15G4-internal-transfer-candidate-draft-v1"
+INTERNAL_TRANSFER_CANDIDATE_MAX_LINES = 80
+INTERNAL_TRANSFER_CANDIDATE_MAX_NOTE_LENGTH = 500
+INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH = 180
+INTERNAL_TRANSFER_CANDIDATE_FORBIDDEN_FIELDS = frozenset({
+	"stock_entry",
+	"stock_entry_id",
+	"stock_entry_draft",
+	"stock_entry_submitted",
+	"stock_entry_cancelled",
+	"stock_entry_amended",
+	"stock_ledger_entry",
+	"stock_balance",
+	"stock_reconciliation",
+	"stock_reservation",
+	"stock_posted",
+	"reserve_stock",
+	"unreserve_stock",
+	"valuation_rate",
+	"stock_value",
+	"rate",
+	"amount",
+	"base_amount",
+	"tax",
+	"account",
+	"gl_entry",
+	"gl",
+	"payable",
+	"payment",
+	"billing",
+	"landed_cost",
+	"margin",
+	"profit",
+	"cost",
+	"debit",
+	"credit",
+	"sales_order",
+	"purchase_order",
+	"procurement_reference",
+	"customer_email",
+	"supplier_email",
+	"notify_customer",
+	"notify_supplier",
+	"customer_notification",
+	"supplier_notification",
+	"portal_user",
+	"email",
+	"portal",
+})
+INTERNAL_TRANSFER_CANDIDATE_LINE_ALLOWED_FIELDS = frozenset({
+	"item_code",
+	"item_name",
+	"source_warehouse",
+	"target_warehouse",
+	"requested_qty",
+	"counted_qty",
+	"transfer_candidate_qty",
+	"blocked_qty",
+	"quarantine_qty",
+	"damaged_qty",
+	"short_qty",
+	"condition_grade",
+	"reason_code",
+	"evidence_reference",
+	"uom",
+})
+
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
@@ -2967,6 +3037,381 @@ def _supplier_return_candidate_line_payload(line) -> dict[str, object]:
 
 
 def _supplier_return_candidate_event_payload(event) -> dict[str, object]:
+	if not event:
+		return {}
+	return {
+		"event_type": cstr(_child_value(event, "event_type")).strip(),
+		"event_label": cstr(_child_value(event, "event_label")).strip(),
+		"event_by": cstr(_child_value(event, "event_by")).strip(),
+		"event_at": cstr(_child_value(event, "event_at")).strip(),
+		"request_id": cstr(_child_value(event, "request_id")).strip(),
+	}
+
+
+@frappe.whitelist()
+def save_warehouse_internal_transfer_candidate_draft(
+	source_warehouse: str | None = None,
+	target_warehouse: str | None = None,
+	lines: str | list[dict[str, object]] | None = None,
+	source_context: str | None = None,
+	source_reference_text: str | None = None,
+	transfer_reason: str | None = None,
+	transfer_priority: str | None = None,
+	evidence_status: str | None = None,
+	notes: str | None = None,
+	inventory_admin_escalation_reference: str | None = None,
+	quarantine_review_reference: str | None = None,
+	request_id: str | None = None,
+	**extra_fields,
+) -> dict[str, object]:
+	"""Save an internal transfer candidate draft.
+
+	W15G4 writes only custom Warehouse Internal Transfer Candidate records. It
+	does not create Stock Entry drafts, submit stock documents, reserve stock,
+	or mutate Stock Ledger/Balance/Reconciliation records.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	server_request_id = _bounded_text(request_id, 120)
+	source_wh = _bounded_text(source_warehouse, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	target_wh = _bounded_text(target_warehouse, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	source_ctx = _bounded_text(source_context, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	source_ref = _bounded_text(source_reference_text, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	reason = _bounded_text(transfer_reason, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	priority = _bounded_text(transfer_priority, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	evidence = _bounded_text(evidence_status, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH) or "Draft evidence"
+	note = _bounded_text(notes, INTERNAL_TRANSFER_CANDIDATE_MAX_NOTE_LENGTH)
+	inventory_ref = _bounded_text(inventory_admin_escalation_reference, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	quarantine_ref = _bounded_text(quarantine_review_reference, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if not has_warehouse_access(context):
+		frappe.throw(_("Warehouse access required"), frappe.PermissionError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for internal transfer candidate draft."), ValueError)
+	if _contains_forbidden_internal_transfer_fields(extra_fields):
+		frappe.throw(_("Internal transfer candidate contains fields that are not allowed in Warehouse."), ValueError)
+	if not source_wh:
+		frappe.throw(_("Source warehouse is required for internal transfer candidate draft."), ValueError)
+	if not target_wh:
+		frappe.throw(_("Target warehouse is required for internal transfer candidate draft."), ValueError)
+	if source_wh == target_wh:
+		frappe.throw(_("Source and target warehouses must be different for internal transfer candidate draft."), ValueError)
+	if not _internal_transfer_warehouse_is_visible(source_wh) or not _internal_transfer_warehouse_is_visible(target_wh):
+		frappe.throw(_("Source or target warehouse is not available for internal transfer candidate."), ValueError)
+	if not source_ctx:
+		frappe.throw(_("Source context is required for internal transfer candidate draft."), ValueError)
+	if not reason:
+		frappe.throw(_("Transfer reason is required for internal transfer candidate draft."), ValueError)
+	candidate_lines = _normalize_internal_transfer_candidate_lines(lines, source_wh, target_wh)
+	payload_hash = _internal_transfer_candidate_payload_hash(
+		source_wh,
+		target_wh,
+		source_ctx,
+		source_ref,
+		reason,
+		priority,
+		evidence,
+		note,
+		inventory_ref,
+		quarantine_ref,
+		candidate_lines,
+	)
+	owner = _internal_transfer_candidate_request_id_owner(server_request_id)
+	if owner:
+		owner_doc = frappe.get_doc(INTERNAL_TRANSFER_CANDIDATE_DOCTYPE, owner)
+		if cstr(getattr(owner_doc, "source_warehouse", "")).strip() != source_wh or cstr(getattr(owner_doc, "target_warehouse", "")).strip() != target_wh:
+			frappe.throw(_("Request id was already used for another internal transfer candidate."), ValueError)
+		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != payload_hash:
+			frappe.throw(_("Request id was already used with different internal transfer candidate details."), ValueError)
+		return _internal_transfer_candidate_payload(context, owner_doc, idempotent=True)
+	candidate_doc = frappe.get_doc({"doctype": INTERNAL_TRANSFER_CANDIDATE_DOCTYPE})
+	_apply_internal_transfer_candidate_draft(
+		candidate_doc,
+		source_wh,
+		target_wh,
+		source_ctx,
+		source_ref,
+		reason,
+		priority,
+		evidence,
+		note,
+		inventory_ref,
+		quarantine_ref,
+		candidate_lines,
+		server_request_id,
+		payload_hash,
+	)
+	return _internal_transfer_candidate_payload(context, candidate_doc, idempotent=False)
+
+
+def _contains_forbidden_internal_transfer_fields(extra_fields: dict[str, object]) -> bool:
+	for key, value in (extra_fields or {}).items():
+		if key in INTERNAL_TRANSFER_CANDIDATE_FORBIDDEN_FIELDS and cstr(value).strip():
+			return True
+		if key not in INTERNAL_TRANSFER_CANDIDATE_FORBIDDEN_FIELDS and cstr(value).strip():
+			return True
+	return False
+
+
+def _internal_transfer_warehouse_is_visible(warehouse: str) -> bool:
+	return _customer_return_warehouse_is_visible(warehouse)
+
+
+def _normalize_internal_transfer_candidate_lines(lines: str | list[dict[str, object]] | None, source_warehouse: str, target_warehouse: str) -> list[dict[str, object]]:
+	raw_lines = _decode_internal_transfer_candidate_lines(lines)
+	if not raw_lines:
+		frappe.throw(_("At least one internal transfer candidate line is required."), ValueError)
+	if len(raw_lines) > INTERNAL_TRANSFER_CANDIDATE_MAX_LINES:
+		frappe.throw(_("Internal transfer candidate draft has too many lines."), ValueError)
+	normalized: list[dict[str, object]] = []
+	seen: set[tuple[str, str, str, str]] = set()
+	for raw in raw_lines:
+		if not isinstance(raw, dict):
+			frappe.throw(_("Internal transfer candidate line payload is invalid."), ValueError)
+		line = _normalize_internal_transfer_candidate_line(raw, source_warehouse, target_warehouse)
+		key = (
+			cstr(line.get("item_code")).strip(),
+			cstr(line.get("source_warehouse")).strip(),
+			cstr(line.get("target_warehouse")).strip(),
+			cstr(line.get("uom")).strip(),
+		)
+		if key in seen:
+			frappe.throw(_("Duplicate internal transfer candidate line in draft."), ValueError)
+		seen.add(key)
+		normalized.append(line)
+	return normalized
+
+
+def _decode_internal_transfer_candidate_lines(lines: str | list[dict[str, object]] | None) -> list[dict[str, object]]:
+	if isinstance(lines, str):
+		try:
+			decoded = json.loads(lines)
+		except Exception:
+			frappe.throw(_("Internal transfer candidate line payload is invalid JSON."), ValueError)
+		if isinstance(decoded, dict):
+			decoded = decoded.get("lines")
+		return list(decoded or []) if isinstance(decoded, list) else []
+	return list(lines or []) if isinstance(lines, list) else []
+
+
+def _normalize_internal_transfer_candidate_line(raw: dict[str, object], source_warehouse: str, target_warehouse: str) -> dict[str, object]:
+	for key, value in (raw or {}).items():
+		if key not in INTERNAL_TRANSFER_CANDIDATE_LINE_ALLOWED_FIELDS and cstr(value).strip():
+			frappe.throw(_("Internal transfer candidate line contains fields that are not allowed in Warehouse."), ValueError)
+	item_code = _bounded_text(raw.get("item_code"), INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if not item_code:
+		frappe.throw(_("Item identity is required for internal transfer candidate."), ValueError)
+	line_source = _bounded_text(raw.get("source_warehouse") or source_warehouse, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	line_target = _bounded_text(raw.get("target_warehouse") or target_warehouse, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if line_source != source_warehouse or line_target != target_warehouse:
+		frappe.throw(_("Internal transfer candidate line warehouse must match the candidate source and target."), ValueError)
+	requested_qty = _non_negative_qty(raw.get("requested_qty"), "Requested quantity")
+	counted_qty = _non_negative_qty(raw.get("counted_qty"), "Counted quantity")
+	candidate_qty = _non_negative_qty(raw.get("transfer_candidate_qty"), "Transfer candidate quantity")
+	blocked_qty = _non_negative_qty(raw.get("blocked_qty"), "Blocked quantity")
+	quarantine_qty = _non_negative_qty(raw.get("quarantine_qty"), "Quarantine quantity")
+	damaged_qty = _non_negative_qty(raw.get("damaged_qty"), "Damaged quantity")
+	short_qty = _non_negative_qty(raw.get("short_qty"), "Short quantity")
+	if requested_qty <= 0:
+		frappe.throw(_("Requested quantity must be greater than zero for internal transfer candidate."), ValueError)
+	if counted_qty <= 0:
+		frappe.throw(_("Counted quantity must be greater than zero for internal transfer candidate."), ValueError)
+	if candidate_qty <= 0:
+		frappe.throw(_("Transfer candidate quantity must be greater than zero."), ValueError)
+	if candidate_qty > requested_qty or candidate_qty > counted_qty:
+		frappe.throw(_("Transfer candidate quantity cannot exceed requested or counted quantity."), ValueError)
+	if candidate_qty + blocked_qty + quarantine_qty + damaged_qty + short_qty > requested_qty:
+		frappe.throw(_("Internal transfer posture quantities cannot exceed requested quantity."), ValueError)
+	reason_code = _bounded_text(raw.get("reason_code"), INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	evidence_reference = _bounded_text(raw.get("evidence_reference"), INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if not (reason_code or evidence_reference):
+		frappe.throw(_("Reason code or evidence reference is required for internal transfer candidate line."), ValueError)
+	if (blocked_qty > 0 or quarantine_qty > 0 or damaged_qty > 0 or short_qty > 0) and not evidence_reference:
+		frappe.throw(_("Evidence reference is required for internal transfer exception quantities."), ValueError)
+	return {
+		"item_code": item_code,
+		"item_name": _bounded_text(raw.get("item_name"), INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH),
+		"source_warehouse": line_source,
+		"target_warehouse": line_target,
+		"requested_qty": requested_qty,
+		"counted_qty": counted_qty,
+		"transfer_candidate_qty": candidate_qty,
+		"blocked_qty": blocked_qty,
+		"quarantine_qty": quarantine_qty,
+		"damaged_qty": damaged_qty,
+		"short_qty": short_qty,
+		"condition_grade": _bounded_text(raw.get("condition_grade"), INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH),
+		"reason_code": reason_code,
+		"evidence_reference": evidence_reference,
+		"uom": _bounded_text(raw.get("uom"), 40),
+	}
+
+
+def _internal_transfer_candidate_payload_hash(
+	source_warehouse: str,
+	target_warehouse: str,
+	source_context: str,
+	source_reference_text: str,
+	transfer_reason: str,
+	transfer_priority: str,
+	evidence_status: str,
+	notes: str,
+	inventory_admin_escalation_reference: str,
+	quarantine_review_reference: str,
+	lines: list[dict[str, object]],
+) -> str:
+	canonical = {
+		"source_warehouse": source_warehouse,
+		"target_warehouse": target_warehouse,
+		"source_context": source_context,
+		"source_reference_text": source_reference_text,
+		"transfer_reason": transfer_reason,
+		"transfer_priority": transfer_priority,
+		"evidence_status": evidence_status,
+		"notes": notes,
+		"inventory_admin_escalation_reference": inventory_admin_escalation_reference,
+		"quarantine_review_reference": quarantine_review_reference,
+		"lines": sorted([
+			{
+				"item_code": line.get("item_code"),
+				"item_name": line.get("item_name"),
+				"source_warehouse": line.get("source_warehouse"),
+				"target_warehouse": line.get("target_warehouse"),
+				"requested_qty": flt(line.get("requested_qty")),
+				"counted_qty": flt(line.get("counted_qty")),
+				"transfer_candidate_qty": flt(line.get("transfer_candidate_qty")),
+				"blocked_qty": flt(line.get("blocked_qty")),
+				"quarantine_qty": flt(line.get("quarantine_qty")),
+				"damaged_qty": flt(line.get("damaged_qty")),
+				"short_qty": flt(line.get("short_qty")),
+				"condition_grade": line.get("condition_grade"),
+				"reason_code": line.get("reason_code"),
+				"evidence_reference": line.get("evidence_reference"),
+				"uom": line.get("uom"),
+			}
+			for line in lines
+		], key=lambda row: (cstr(row.get("item_code")), cstr(row.get("source_warehouse")), cstr(row.get("target_warehouse")), cstr(row.get("uom")))),
+	}
+	return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _internal_transfer_candidate_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			INTERNAL_TRANSFER_CANDIDATE_DOCTYPE,
+			fields=["name"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_internal_transfer_candidate_draft(
+	candidate_doc,
+	source_warehouse: str,
+	target_warehouse: str,
+	source_context: str,
+	source_reference_text: str,
+	transfer_reason: str,
+	transfer_priority: str,
+	evidence_status: str,
+	notes: str,
+	inventory_admin_escalation_reference: str,
+	quarantine_review_reference: str,
+	lines: list[dict[str, object]],
+	request_id: str,
+	payload_hash: str,
+) -> None:
+	now_value = str(now_datetime())
+	candidate_doc.source_context = source_context
+	candidate_doc.source_reference_text = source_reference_text
+	candidate_doc.source_warehouse = source_warehouse
+	candidate_doc.target_warehouse = target_warehouse
+	candidate_doc.transfer_reason = transfer_reason
+	candidate_doc.transfer_priority = transfer_priority
+	candidate_doc.candidate_status = "Draft"
+	candidate_doc.manager_review_status = "Not submitted"
+	candidate_doc.inventory_admin_escalation_reference = inventory_admin_escalation_reference
+	candidate_doc.quarantine_review_reference = quarantine_review_reference
+	candidate_doc.evidence_status = evidence_status
+	candidate_doc.notes = notes
+	candidate_doc.source_payload_hash = payload_hash
+	candidate_doc.policy_version = INTERNAL_TRANSFER_CANDIDATE_POLICY_VERSION
+	candidate_doc.line_count = len(lines)
+	candidate_doc.total_candidate_qty = sum(flt(line.get("transfer_candidate_qty")) for line in lines)
+	candidate_doc.request_id = request_id
+	candidate_doc.created_by = cstr(getattr(frappe.session, "user", "")).strip()
+	candidate_doc.created_at = now_value
+	_set_child_table(candidate_doc, "lines", lines)
+	_append_child(candidate_doc, "events", {
+		"event_type": "saved_internal_transfer_candidate_draft",
+		"event_label": "Internal transfer candidate draft saved",
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": request_id,
+		"details_json": json.dumps({"line_count": len(lines), "stock_effect": False, "stock_entry_created": False}, sort_keys=True),
+	})
+	candidate_doc.insert()
+
+
+def _internal_transfer_candidate_payload(context: dict[str, object], candidate_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_internal_transfer_candidate_line_payload(line) for line in list(getattr(candidate_doc, "lines", []) or [])]
+	events = list(getattr(candidate_doc, "events", []) or [])
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Internal Transfer Candidate Draft", "key": "internal_transfer_candidate_draft"},
+		"candidate": {
+			"candidate_id": cstr(getattr(candidate_doc, "name", "")).strip(),
+			"candidate_status": cstr(getattr(candidate_doc, "candidate_status", "")).strip(),
+			"source_warehouse": cstr(getattr(candidate_doc, "source_warehouse", "")).strip(),
+			"target_warehouse": cstr(getattr(candidate_doc, "target_warehouse", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"event_summary": _internal_transfer_candidate_event_payload(events[-1]) if events else {},
+		"stock_effect": False,
+		"stock_moved": False,
+		"stock_entry_created": False,
+		"stock_entry_submitted": False,
+		"stock_posted": False,
+		"stock_reservation_created": False,
+		"stock_ledger_updated": False,
+		"stock_balance_updated": False,
+		"stock_reconciliation_created": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _internal_transfer_candidate_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"item_code": cstr(getter("item_code")).strip(),
+		"item_name": cstr(getter("item_name")).strip(),
+		"source_warehouse": cstr(getter("source_warehouse")).strip(),
+		"target_warehouse": cstr(getter("target_warehouse")).strip(),
+		"requested_qty": _number_text(getter("requested_qty")),
+		"counted_qty": _number_text(getter("counted_qty")),
+		"transfer_candidate_qty": _number_text(getter("transfer_candidate_qty")),
+		"blocked_qty": _number_text(getter("blocked_qty")),
+		"quarantine_qty": _number_text(getter("quarantine_qty")),
+		"damaged_qty": _number_text(getter("damaged_qty")),
+		"short_qty": _number_text(getter("short_qty")),
+		"condition_grade": cstr(getter("condition_grade")).strip(),
+		"reason_code": cstr(getter("reason_code")).strip(),
+		"evidence_reference": cstr(getter("evidence_reference")).strip(),
+		"uom": cstr(getter("uom")).strip(),
+	}
+
+
+def _internal_transfer_candidate_event_payload(event) -> dict[str, object]:
 	if not event:
 		return {}
 	return {

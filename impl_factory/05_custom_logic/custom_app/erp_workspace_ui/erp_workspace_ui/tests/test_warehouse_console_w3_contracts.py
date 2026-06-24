@@ -34,6 +34,7 @@ CUSTOMER_RETURN_INTAKE_DOCS = {}
 CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS = {}
 SUPPLIER_RETURN_CANDIDATE_DOCS = {}
 SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS = {}
+INTERNAL_TRANSFER_CANDIDATE_DOCS = {}
 
 PO_ROWS = [
     {
@@ -795,6 +796,54 @@ def _get_meta(doctype):
             "request_id",
             "details_json",
         },
+        "Warehouse Internal Transfer Candidate": {
+            "source_context",
+            "source_reference_text",
+            "source_warehouse",
+            "target_warehouse",
+            "transfer_reason",
+            "transfer_priority",
+            "candidate_status",
+            "manager_review_status",
+            "inventory_admin_escalation_reference",
+            "quarantine_review_reference",
+            "evidence_status",
+            "notes",
+            "source_payload_hash",
+            "policy_version",
+            "line_count",
+            "total_candidate_qty",
+            "request_id",
+            "created_by",
+            "created_at",
+            "lines",
+            "events",
+        },
+        "Warehouse Internal Transfer Candidate Line": {
+            "item_code",
+            "item_name",
+            "source_warehouse",
+            "target_warehouse",
+            "requested_qty",
+            "counted_qty",
+            "transfer_candidate_qty",
+            "blocked_qty",
+            "quarantine_qty",
+            "damaged_qty",
+            "short_qty",
+            "condition_grade",
+            "reason_code",
+            "evidence_reference",
+            "uom",
+        },
+        "Warehouse Internal Transfer Candidate Event": {
+            "event_type",
+            "event_label",
+            "event_by",
+            "event_at",
+            "request_id",
+            "details_json",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -1041,6 +1090,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             for key, value in filters.items():
                 rows = [row for row in rows if row.get(key) == value]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Internal Transfer Candidate":
+        rows = list(INTERNAL_TRANSFER_CANDIDATE_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Internal Transfer Candidate Event":
+        rows = []
+        for candidate in INTERNAL_TRANSFER_CANDIDATE_DOCS.values():
+            for event in list(getattr(candidate, "events", []) or []):
+                row = dict(event)
+                row["parent"] = candidate.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -1116,6 +1186,11 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Internal Transfer Candidate":
+            if not self.name:
+                self.name = f"WITC-{len(INTERNAL_TRANSFER_CANDIDATE_DOCS) + 1:05d}"
+            INTERNAL_TRANSFER_CANDIDATE_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Supplier Return Handoff Request":
             if not self.name:
                 self.name = f"WSRH-{len(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS) + 1:05d}"
@@ -1157,6 +1232,11 @@ class _FakeWorkflowDoc:
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Internal Transfer Candidate":
+            if not self.name:
+                self.name = f"WITC-{len(INTERNAL_TRANSFER_CANDIDATE_DOCS) + 1:05d}"
+            INTERNAL_TRANSFER_CANDIDATE_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Supplier Return Handoff Request":
             if not self.name:
                 self.name = f"WSRH-{len(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS) + 1:05d}"
@@ -1193,7 +1273,7 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request"}:
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request", "Warehouse Internal Transfer Candidate"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
@@ -1225,6 +1305,10 @@ def _get_doc(doctype, name=None, *args, **kwargs):
         if name not in SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS:
             raise Exception("Missing Warehouse Supplier Return Handoff Request")
         return SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS[name]
+    if doctype == "Warehouse Internal Transfer Candidate":
+        if name not in INTERNAL_TRANSFER_CANDIDATE_DOCS:
+            raise Exception("Missing Warehouse Internal Transfer Candidate")
+        return INTERNAL_TRANSFER_CANDIDATE_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -1316,6 +1400,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS.clear()
         SUPPLIER_RETURN_CANDIDATE_DOCS.clear()
         SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS.clear()
+        INTERNAL_TRANSFER_CANDIDATE_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -4818,6 +4903,179 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             set(event["field_order"]),
             {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
         )
+
+    def _save_internal_transfer_candidate(self, **overrides):
+        payload = {
+            "source_context": "movement_visibility_review",
+            "source_reference_text": "MOVEMENT-REVIEW-001",
+            "source_warehouse": "Stores - M",
+            "target_warehouse": "Main - M",
+            "transfer_reason": "Rebalance stock for customer demand.",
+            "transfer_priority": "Normal",
+            "evidence_status": "Count evidence captured",
+            "notes": "Internal transfer candidate only.",
+            "lines": [
+                {
+                    "item_code": "ITEM-103",
+                    "item_name": "Bluetooth Speaker",
+                    "source_warehouse": "Stores - M",
+                    "target_warehouse": "Main - M",
+                    "requested_qty": 3,
+                    "counted_qty": 4,
+                    "transfer_candidate_qty": 3,
+                    "condition_grade": "Good",
+                    "reason_code": "Demand rebalance",
+                    "evidence_reference": "TRANSFER-COUNT-001",
+                    "uom": "Nos",
+                }
+            ],
+            "request_id": "internal-transfer-candidate-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_internal_transfer_candidate_draft(**payload)
+
+    def test_w15g4_warehouse_and_stock_users_can_save_internal_transfer_candidate_draft(self):
+        payload = self._save_internal_transfer_candidate()
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "internal_transfer_candidate_draft")
+        self.assertEqual(payload["candidate"]["source_warehouse"], "Stores - M")
+        self.assertEqual(payload["candidate"]["target_warehouse"], "Main - M")
+        self.assertEqual(payload["candidate"]["line_count"], 1)
+        self.assertFalse(payload["candidate"]["idempotent"])
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_moved"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(len(INTERNAL_TRANSFER_CANDIDATE_DOCS), 1)
+        candidate = next(iter(INTERNAL_TRANSFER_CANDIDATE_DOCS.values()))
+        self.assertEqual(candidate.policy_version, service.INTERNAL_TRANSFER_CANDIDATE_POLICY_VERSION)
+        self.assertEqual(candidate.candidate_status, "Draft")
+        self.assertEqual(candidate.request_id, "internal-transfer-candidate-001")
+        self.assertEqual(candidate.total_candidate_qty, 3.0)
+        self.assertEqual(candidate.lines[0]["evidence_reference"], "TRANSFER-COUNT-001")
+        self.assertEqual(candidate.events[0]["event_type"], "saved_internal_transfer_candidate_draft")
+
+        INTERNAL_TRANSFER_CANDIDATE_DOCS.clear()
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        warehouse_payload = self._save_internal_transfer_candidate(request_id="internal-transfer-warehouse-user")
+        self.assertEqual(warehouse_payload["state"]["kind"], "ready")
+        self.assertEqual(len(INTERNAL_TRANSFER_CANDIDATE_DOCS), 1)
+
+    def test_w15g4_non_warehouse_user_denied_internal_transfer_candidate(self):
+        CURRENT_ROLES[:] = ["Accounts User"]
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(request_id="internal-transfer-denied")
+        self.assertEqual(INTERNAL_TRANSFER_CANDIDATE_DOCS, {})
+
+    def test_w15g4_internal_transfer_candidate_requires_visible_source_and_target(self):
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(source_warehouse="", request_id="internal-transfer-missing-source")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(target_warehouse="", request_id="internal-transfer-missing-target")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(target_warehouse="Stores - M", request_id="internal-transfer-same-warehouse")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(source_warehouse="Unknown - M", request_id="internal-transfer-unknown-source")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(source_context="", request_id="internal-transfer-missing-context")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(transfer_reason="", request_id="internal-transfer-missing-reason")
+        self.assertEqual(INTERNAL_TRANSFER_CANDIDATE_DOCS, {})
+
+    def test_w15g4_internal_transfer_candidate_line_validation(self):
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=[], request_id="internal-transfer-missing-lines")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=[{"source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 1, "counted_qty": 1, "transfer_candidate_qty": 1, "evidence_reference": "X"}], request_id="internal-transfer-missing-item")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 0, "counted_qty": 1, "transfer_candidate_qty": 1, "evidence_reference": "X"}], request_id="internal-transfer-zero-request")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 2, "counted_qty": 0, "transfer_candidate_qty": 1, "evidence_reference": "X"}], request_id="internal-transfer-zero-count")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 2, "counted_qty": 1, "transfer_candidate_qty": 2, "evidence_reference": "X"}], request_id="internal-transfer-over-count")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=[{"item_code": "ITEM-103", "source_warehouse": "Short - M", "target_warehouse": "Main - M", "requested_qty": 1, "counted_qty": 1, "transfer_candidate_qty": 1, "evidence_reference": "X"}], request_id="internal-transfer-wrong-source")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 2, "counted_qty": 2, "transfer_candidate_qty": 2, "blocked_qty": 1, "evidence_reference": "X"}], request_id="internal-transfer-over-sum")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 1, "counted_qty": 1, "transfer_candidate_qty": 1}], request_id="internal-transfer-missing-evidence")
+        too_many_lines = [
+            {"item_code": f"ITEM-TR-{idx}", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 1, "counted_qty": 1, "transfer_candidate_qty": 1, "evidence_reference": f"TR-EVID-{idx}"}
+            for idx in range(service.INTERNAL_TRANSFER_CANDIDATE_MAX_LINES + 1)
+        ]
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(lines=too_many_lines, request_id="internal-transfer-too-many-lines")
+        self.assertEqual(INTERNAL_TRANSFER_CANDIDATE_DOCS, {})
+
+    def test_w15g4_internal_transfer_exception_quantities_require_evidence(self):
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(
+                lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 3, "counted_qty": 3, "transfer_candidate_qty": 2, "blocked_qty": 1, "reason_code": "Blocked posture"}],
+                request_id="internal-transfer-blocked-no-evidence",
+            )
+        payload = self._save_internal_transfer_candidate(
+            lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 3, "counted_qty": 3, "transfer_candidate_qty": 2, "blocked_qty": 1, "reason_code": "Blocked posture", "evidence_reference": "TR-BLOCK-1"}],
+            request_id="internal-transfer-blocked-evidence",
+        )
+        self.assertEqual(payload["candidate"]["lines"][0]["evidence_reference"], "TR-BLOCK-1")
+        candidate = next(iter(INTERNAL_TRANSFER_CANDIDATE_DOCS.values()))
+        self.assertEqual(candidate.lines[0]["evidence_reference"], "TR-BLOCK-1")
+
+    def test_w15g4_internal_transfer_request_idempotency_and_changed_payload_rejection(self):
+        first = self._save_internal_transfer_candidate(request_id="internal-transfer-same-request")
+        second = self._save_internal_transfer_candidate(request_id="internal-transfer-same-request")
+
+        self.assertFalse(first["candidate"]["idempotent"])
+        self.assertTrue(second["candidate"]["idempotent"])
+        self.assertEqual(len(INTERNAL_TRANSFER_CANDIDATE_DOCS), 1)
+        candidate = next(iter(INTERNAL_TRANSFER_CANDIDATE_DOCS.values()))
+        self.assertEqual(len(candidate.events), 1)
+
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(notes="Changed transfer note.", request_id="internal-transfer-same-request")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(
+                target_warehouse="Short - M",
+                lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Short - M", "requested_qty": 1, "counted_qty": 1, "transfer_candidate_qty": 1, "evidence_reference": "TR-SHORT-1"}],
+                request_id="internal-transfer-same-request",
+            )
+
+    def test_w15g4_internal_transfer_forbidden_fields_and_safe_payload_boundaries(self):
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(stock_entry="MAT-STE-0001", request_id="internal-transfer-forbidden-stock-entry")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(cost="12.50", request_id="internal-transfer-forbidden-cost")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_candidate(
+                lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 1, "counted_qty": 1, "transfer_candidate_qty": 1, "evidence_reference": "X", "stock_entry": "MAT-STE-0001"}],
+                request_id="internal-transfer-forbidden-line-stock-entry",
+            )
+        self.assertEqual(INTERNAL_TRANSFER_CANDIDATE_DOCS, {})
+
+        payload = self._save_internal_transfer_candidate(request_id="internal-transfer-safe-response")
+        payload_text = str(payload).lower()
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_moved"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_entry_submitted"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["stock_reservation_created"])
+        self.assertFalse(payload["stock_ledger_updated"])
+        self.assertFalse(payload["stock_balance_updated"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reconciliation", "Stock Reservation"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
 
 if __name__ == "__main__":
