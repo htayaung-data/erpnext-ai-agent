@@ -5077,6 +5077,169 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
+    def _internal_transfer_candidate_id(self, **overrides):
+        payload = self._save_internal_transfer_candidate(**overrides)
+        return payload["candidate"]["candidate_id"]
+
+    def _save_internal_transfer_manager_decision(self, candidate_id, **overrides):
+        payload = {
+            "candidate_id": candidate_id,
+            "decision": "approve_transfer_candidate",
+            "note": "Manager reviewed internal transfer evidence.",
+            "request_id": "internal-transfer-manager-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_internal_transfer_manager_decision(**payload)
+
+    def test_w15g5_manager_roles_can_save_internal_transfer_decision(self):
+        candidate_id = self._internal_transfer_candidate_id(request_id="internal-transfer-manager-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+
+        payload = self._save_internal_transfer_manager_decision(candidate_id, request_id="internal-transfer-manager-decision")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "internal_transfer_manager_decision")
+        self.assertEqual(payload["candidate"]["candidate_status"], "Transfer Candidate")
+        self.assertEqual(payload["candidate"]["manager_review_status"], "Transfer Candidate")
+        self.assertFalse(payload["candidate"]["idempotent"])
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_moved"])
+        self.assertFalse(payload["stock_entry_created"])
+        candidate = INTERNAL_TRANSFER_CANDIDATE_DOCS[candidate_id]
+        self.assertEqual(candidate.candidate_status, "Transfer Candidate")
+        self.assertEqual(candidate.events[-1]["event_type"], "approved_transfer_candidate")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        stock_manager_candidate = self._internal_transfer_candidate_id(request_id="internal-transfer-stock-manager-draft")
+        CURRENT_ROLES[:] = ["Stock Manager"]
+        stock_payload = self._save_internal_transfer_manager_decision(stock_manager_candidate, request_id="internal-transfer-stock-manager-decision")
+        self.assertEqual(stock_payload["candidate"]["candidate_status"], "Transfer Candidate")
+
+    def test_w15g5_warehouse_and_stock_users_denied_internal_transfer_decision(self):
+        candidate_id = self._internal_transfer_candidate_id(request_id="internal-transfer-manager-deny-draft")
+
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(candidate_id, request_id="internal-transfer-manager-deny-warehouse")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(candidate_id, request_id="internal-transfer-manager-deny-stock")
+
+        candidate = INTERNAL_TRANSFER_CANDIDATE_DOCS[candidate_id]
+        self.assertEqual(candidate.candidate_status, "Draft")
+        self.assertEqual(len(candidate.events), 1)
+
+    def test_w15g5_internal_transfer_manager_decision_rules(self):
+        clean_candidate = self._internal_transfer_candidate_id(request_id="internal-transfer-rules-clean-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(clean_candidate, decision="unknown_decision", request_id="internal-transfer-rules-unknown")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(clean_candidate, decision="request_recount", note="", request_id="internal-transfer-rules-recount-no-note")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(clean_candidate, decision="mark_quarantine_review", note="", quarantine_review_reference="", request_id="internal-transfer-rules-quarantine-no-marker")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(clean_candidate, decision="escalate_to_inventory_admin", note="", inventory_admin_escalation_reference="", request_id="internal-transfer-rules-admin-no-note")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(clean_candidate, decision="reject_transfer_candidate", note="", request_id="internal-transfer-rules-reject-no-note")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(clean_candidate, decision="cancel_transfer_candidate", note="", request_id="internal-transfer-rules-cancel-no-note")
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(clean_candidate, decision="close_transfer_candidate", note="", request_id="internal-transfer-rules-close-no-note")
+
+        reinspection = self._save_internal_transfer_manager_decision(clean_candidate, decision="request_recount", note="Count evidence is unclear.", request_id="internal-transfer-rules-recount")
+        self.assertEqual(reinspection["candidate"]["candidate_status"], "Recount Requested")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        quarantine_candidate = self._internal_transfer_candidate_id(
+            request_id="internal-transfer-rules-quarantine-draft",
+            lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 3, "counted_qty": 3, "transfer_candidate_qty": 2, "quarantine_qty": 1, "reason_code": "Quality hold", "evidence_reference": "TR-QA-1"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(quarantine_candidate, decision="approve_transfer_candidate", request_id="internal-transfer-rules-approve-quarantine")
+        quarantine_payload = self._save_internal_transfer_manager_decision(quarantine_candidate, decision="mark_quarantine_review", note="", request_id="internal-transfer-rules-quarantine")
+        self.assertEqual(quarantine_payload["candidate"]["candidate_status"], "Quarantine Review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        short_candidate = self._internal_transfer_candidate_id(
+            request_id="internal-transfer-rules-short-draft",
+            lines=[{"item_code": "ITEM-104", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 3, "counted_qty": 3, "transfer_candidate_qty": 2, "short_qty": 1, "reason_code": "Short count", "evidence_reference": "TR-SHORT-1"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(short_candidate, decision="approve_transfer_candidate", note="", request_id="internal-transfer-rules-short-no-note")
+        short_payload = self._save_internal_transfer_manager_decision(short_candidate, decision="approve_transfer_candidate", note="Approve partial candidate only.", request_id="internal-transfer-rules-short-note")
+        self.assertEqual(short_payload["candidate"]["candidate_status"], "Transfer Candidate")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        admin_candidate = self._internal_transfer_candidate_id(request_id="internal-transfer-rules-admin-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        admin_payload = self._save_internal_transfer_manager_decision(
+            admin_candidate,
+            decision="escalate_to_inventory_admin",
+            note="Inventory/Admin should review stock document policy.",
+            inventory_admin_escalation_reference="INV-ADM-TR-001",
+            request_id="internal-transfer-rules-admin",
+        )
+        self.assertEqual(admin_payload["candidate"]["candidate_status"], "Inventory/Admin Review")
+        self.assertEqual(INTERNAL_TRANSFER_CANDIDATE_DOCS[admin_candidate].inventory_admin_escalation_reference, "INV-ADM-TR-001")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        reject_candidate = self._internal_transfer_candidate_id(request_id="internal-transfer-rules-reject-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        reject_payload = self._save_internal_transfer_manager_decision(reject_candidate, decision="reject_transfer_candidate", note="Transfer request is not valid.", request_id="internal-transfer-rules-reject")
+        self.assertEqual(reject_payload["candidate"]["candidate_status"], "Rejected")
+
+    def test_w15g5_internal_transfer_manager_idempotency_and_status_safety(self):
+        first_candidate = self._internal_transfer_candidate_id(request_id="internal-transfer-manager-idem-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        first = self._save_internal_transfer_manager_decision(first_candidate, request_id="internal-transfer-manager-idem")
+        second = self._save_internal_transfer_manager_decision(first_candidate, request_id="internal-transfer-manager-idem")
+
+        self.assertFalse(first["candidate"]["idempotent"])
+        self.assertTrue(second["candidate"]["idempotent"])
+        self.assertEqual(len(INTERNAL_TRANSFER_CANDIDATE_DOCS[first_candidate].events), 2)
+
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(first_candidate, decision="escalate_to_inventory_admin", request_id="internal-transfer-manager-idem")
+
+        second_candidate = self._internal_transfer_candidate_id(request_id="internal-transfer-manager-idem-second-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(second_candidate, request_id="internal-transfer-manager-idem")
+
+        with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(first_candidate, request_id="internal-transfer-manager-final-reject")
+
+    def test_w15g5_internal_transfer_manager_payload_has_no_stock_or_native_effects(self):
+        candidate_id = self._internal_transfer_candidate_id(request_id="internal-transfer-manager-safe-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        payload = self._save_internal_transfer_manager_decision(candidate_id, request_id="internal-transfer-manager-safe-decision")
+        payload_text = str(payload).lower()
+
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_moved"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_entry_submitted"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["stock_reservation_created"])
+        self.assertFalse(payload["stock_ledger_updated"])
+        self.assertFalse(payload["stock_balance_updated"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reconciliation", "Stock Reservation"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+
 
 if __name__ == "__main__":
     unittest.main()

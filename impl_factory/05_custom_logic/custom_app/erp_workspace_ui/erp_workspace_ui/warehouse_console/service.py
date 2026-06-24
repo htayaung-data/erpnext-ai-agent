@@ -533,6 +533,22 @@ INTERNAL_TRANSFER_CANDIDATE_LINE_ALLOWED_FIELDS = frozenset({
 	"evidence_reference",
 	"uom",
 })
+INTERNAL_TRANSFER_MANAGER_ROLES = frozenset({"Warehouse Manager", "Stock Manager", "System Manager"})
+INTERNAL_TRANSFER_MANAGER_DECISION_STATUSES = frozenset({
+	"Draft",
+	"Count In Progress",
+	"Submitted For Review",
+	"Recount Requested",
+})
+INTERNAL_TRANSFER_MANAGER_DECISIONS = {
+	"request_recount": ("Recount Requested", "requested_recount", "Recount requested"),
+	"approve_transfer_candidate": ("Transfer Candidate", "approved_transfer_candidate", "Transfer candidate recommended"),
+	"mark_quarantine_review": ("Quarantine Review", "marked_quarantine_review", "Quarantine review marked"),
+	"escalate_to_inventory_admin": ("Inventory/Admin Review", "escalated_to_inventory_admin", "Inventory/Admin review requested"),
+	"reject_transfer_candidate": ("Rejected", "rejected_transfer_candidate", "Transfer candidate rejected"),
+	"cancel_transfer_candidate": ("Cancelled", "cancelled_transfer_candidate", "Transfer candidate cancelled"),
+	"close_transfer_candidate": ("Closed", "closed_transfer_candidate", "Transfer candidate closed"),
+}
 
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
@@ -3420,6 +3436,197 @@ def _internal_transfer_candidate_event_payload(event) -> dict[str, object]:
 		"event_by": cstr(_child_value(event, "event_by")).strip(),
 		"event_at": cstr(_child_value(event, "event_at")).strip(),
 		"request_id": cstr(_child_value(event, "request_id")).strip(),
+	}
+
+
+@frappe.whitelist()
+def save_warehouse_internal_transfer_manager_decision(
+	candidate_id: str | None = None,
+	internal_transfer_candidate: str | None = None,
+	decision: str | None = None,
+	note: str | None = None,
+	inventory_admin_escalation_reference: str | None = None,
+	quarantine_review_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Save a manager decision on a custom Internal Transfer Candidate.
+
+	W15G5 writes only the custom Warehouse Internal Transfer Candidate and event
+	log. It does not create Stock Entry drafts, submit stock documents, reserve
+	stock, or mutate Stock Ledger/Balance/Reconciliation records.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	candidate_name = cstr(candidate_id or internal_transfer_candidate).strip()
+	decision_key = cstr(decision).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	manager_note = _bounded_text(note, INTERNAL_TRANSFER_CANDIDATE_MAX_NOTE_LENGTH)
+	inventory_ref = _bounded_text(inventory_admin_escalation_reference, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	quarantine_ref = _bounded_text(quarantine_review_reference, INTERNAL_TRANSFER_CANDIDATE_MAX_REFERENCE_LENGTH)
+	if not _has_internal_transfer_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not candidate_name:
+		frappe.throw(_("Internal transfer candidate is required."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for internal transfer manager decision."), ValueError)
+	if decision_key not in INTERNAL_TRANSFER_MANAGER_DECISIONS:
+		frappe.throw(_("Internal transfer manager decision is not allowed."), ValueError)
+	owner = _internal_transfer_manager_request_id_owner(server_request_id)
+	if owner and owner != candidate_name:
+		frappe.throw(_("Request id was already used for another internal transfer candidate."), ValueError)
+	candidate_doc = _get_internal_transfer_candidate_for_decision(candidate_name)
+	next_status, event_type, event_label = INTERNAL_TRANSFER_MANAGER_DECISIONS[decision_key]
+	existing_event = _internal_transfer_event_for_request(candidate_doc, server_request_id)
+	if existing_event:
+		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
+			frappe.throw(_("Request id was already used for another internal transfer manager decision."), ValueError)
+		return _internal_transfer_manager_decision_payload(context, candidate_doc, decision_key, existing_event, idempotent=True)
+	if cstr(getattr(candidate_doc, "request_id", "")).strip() == server_request_id:
+		frappe.throw(_("Request id was already used for this internal transfer candidate."), ValueError)
+	_validate_internal_transfer_manager_decision(candidate_doc, decision_key, manager_note, inventory_ref, quarantine_ref)
+	previous_status = cstr(getattr(candidate_doc, "candidate_status", "")).strip()
+	now_value = str(now_datetime())
+	event = {
+		"event_type": event_type,
+		"event_label": event_label,
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": server_request_id,
+		"details_json": json.dumps(_internal_transfer_manager_event_details(decision_key, manager_note, inventory_ref, quarantine_ref, previous_status, next_status), sort_keys=True),
+	}
+	candidate_doc.candidate_status = next_status
+	candidate_doc.manager_review_status = next_status
+	if inventory_ref:
+		candidate_doc.inventory_admin_escalation_reference = inventory_ref
+	if quarantine_ref:
+		candidate_doc.quarantine_review_reference = quarantine_ref
+	_append_child(candidate_doc, "events", event)
+	candidate_doc.save()
+	return _internal_transfer_manager_decision_payload(context, candidate_doc, decision_key, event, idempotent=False)
+
+
+def _has_internal_transfer_manager_access(context: dict[str, object]) -> bool:
+	roles = set(context.get("roles") or [])
+	return bool(roles.intersection(INTERNAL_TRANSFER_MANAGER_ROLES))
+
+
+def _get_internal_transfer_candidate_for_decision(candidate_name: str):
+	try:
+		return frappe.get_doc(INTERNAL_TRANSFER_CANDIDATE_DOCTYPE, candidate_name)
+	except Exception:
+		_clear_transient_frappe_messages()
+		frappe.throw(_("Internal transfer candidate is not available."), frappe.PermissionError)
+
+
+def _internal_transfer_manager_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			INTERNAL_TRANSFER_CANDIDATE_EVENT_DOCTYPE,
+			fields=["parent"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("parent")).strip() if rows else ""
+
+
+def _internal_transfer_event_for_request(candidate_doc, request_id: str):
+	for event in list(getattr(candidate_doc, "events", []) or []):
+		if cstr(_child_value(event, "request_id")).strip() == request_id:
+			return event
+	return None
+
+
+def _validate_internal_transfer_manager_decision(candidate_doc, decision_key: str, note: str, inventory_ref: str, quarantine_ref: str) -> None:
+	status = cstr(getattr(candidate_doc, "candidate_status", "")).strip()
+	if status not in INTERNAL_TRANSFER_MANAGER_DECISION_STATUSES:
+		frappe.throw(_("Internal transfer candidate is not ready for manager decision."), ValueError)
+	lines = list(getattr(candidate_doc, "lines", []) or [])
+	if not lines:
+		frappe.throw(_("Internal transfer candidate has no lines to review."), ValueError)
+	if decision_key == "request_recount" and not note:
+		frappe.throw(_("Manager note is required to request internal transfer recount."), ValueError)
+	if decision_key == "approve_transfer_candidate":
+		if not any(_internal_transfer_line_qty(line, "transfer_candidate_qty") > 0 for line in lines):
+			frappe.throw(_("Transfer candidate approval requires transfer candidate quantity."), ValueError)
+		if any(_internal_transfer_line_has_blocking_exception(line) for line in lines):
+			frappe.throw(_("Transfer candidate approval rejects blocked, damaged, or quarantine lines."), ValueError)
+		if any(_internal_transfer_line_qty(line, "short_qty") > 0 for line in lines) and not note:
+			frappe.throw(_("Short transfer candidate approval requires manager note."), ValueError)
+	if decision_key == "mark_quarantine_review" and not (any(_internal_transfer_line_has_quarantine_marker(line) for line in lines) or quarantine_ref or note):
+		frappe.throw(_("Quarantine review requires quarantine, damage, blocked evidence, reference, or manager note."), ValueError)
+	if decision_key == "escalate_to_inventory_admin" and not (inventory_ref or note):
+		frappe.throw(_("Inventory/Admin review requires reference or manager note."), ValueError)
+	if decision_key in {"reject_transfer_candidate", "cancel_transfer_candidate", "close_transfer_candidate"} and not note:
+		frappe.throw(_("Manager note is required to reject, cancel, or close internal transfer candidate."), ValueError)
+
+
+def _internal_transfer_line_qty(line, fieldname: str) -> float:
+	return flt(_child_value(line, fieldname) or 0)
+
+
+def _internal_transfer_line_has_blocking_exception(line) -> bool:
+	return any(_internal_transfer_line_qty(line, fieldname) > 0 for fieldname in ("blocked_qty", "damaged_qty", "quarantine_qty"))
+
+
+def _internal_transfer_line_has_quarantine_marker(line) -> bool:
+	return any(_internal_transfer_line_qty(line, fieldname) > 0 for fieldname in ("blocked_qty", "damaged_qty", "quarantine_qty"))
+
+
+def _internal_transfer_manager_event_details(decision_key: str, note: str, inventory_ref: str, quarantine_ref: str, previous_status: str, next_status: str) -> dict[str, object]:
+	return {
+		"decision": decision_key,
+		"note": note,
+		"inventory_admin_escalation_reference": inventory_ref,
+		"quarantine_review_reference": quarantine_ref,
+		"previous_status": previous_status,
+		"next_status": next_status,
+		"stock_effect": False,
+		"stock_entry_created": False,
+	}
+
+
+def _internal_transfer_manager_decision_payload(
+	context: dict[str, object],
+	candidate_doc,
+	decision_key: str,
+	event,
+	*,
+	idempotent: bool,
+) -> dict[str, object]:
+	lines = [_internal_transfer_candidate_line_payload(line) for line in list(getattr(candidate_doc, "lines", []) or [])]
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Internal Transfer Manager Decision", "key": "internal_transfer_manager_decision"},
+		"candidate": {
+			"candidate_id": cstr(getattr(candidate_doc, "name", "")).strip(),
+			"candidate_status": cstr(getattr(candidate_doc, "candidate_status", "")).strip(),
+			"manager_review_status": cstr(getattr(candidate_doc, "manager_review_status", "")).strip(),
+			"source_warehouse": cstr(getattr(candidate_doc, "source_warehouse", "")).strip(),
+			"target_warehouse": cstr(getattr(candidate_doc, "target_warehouse", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"decision": {"decision": decision_key, "idempotent": bool(idempotent)},
+		"event_summary": _internal_transfer_candidate_event_payload(event),
+		"stock_effect": False,
+		"stock_moved": False,
+		"stock_entry_created": False,
+		"stock_entry_submitted": False,
+		"stock_posted": False,
+		"stock_reservation_created": False,
+		"stock_ledger_updated": False,
+		"stock_balance_updated": False,
+		"stock_reconciliation_created": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
 	}
 
 
