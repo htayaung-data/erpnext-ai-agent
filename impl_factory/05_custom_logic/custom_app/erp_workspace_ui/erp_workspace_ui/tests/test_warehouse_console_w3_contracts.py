@@ -35,6 +35,7 @@ CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS = {}
 SUPPLIER_RETURN_CANDIDATE_DOCS = {}
 SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS = {}
 INTERNAL_TRANSFER_CANDIDATE_DOCS = {}
+INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS = {}
 
 PO_ROWS = [
     {
@@ -1111,6 +1112,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             for key, value in filters.items():
                 rows = [row for row in rows if row.get(key) == value]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Internal Transfer Handoff Request":
+        rows = list(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Internal Transfer Handoff Request Event":
+        rows = []
+        for request in INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS.values():
+            for event in list(getattr(request, "events", []) or []):
+                row = dict(event)
+                row["parent"] = request.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -1186,6 +1208,11 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Internal Transfer Handoff Request":
+            if not self.name:
+                self.name = f"WITH-{len(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS) + 1:05d}"
+            INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Internal Transfer Candidate":
             if not self.name:
                 self.name = f"WITC-{len(INTERNAL_TRANSFER_CANDIDATE_DOCS) + 1:05d}"
@@ -1232,6 +1259,11 @@ class _FakeWorkflowDoc:
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Internal Transfer Handoff Request":
+            if not self.name:
+                self.name = f"WITH-{len(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS) + 1:05d}"
+            INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Internal Transfer Candidate":
             if not self.name:
                 self.name = f"WITC-{len(INTERNAL_TRANSFER_CANDIDATE_DOCS) + 1:05d}"
@@ -1273,7 +1305,7 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request", "Warehouse Internal Transfer Candidate"}:
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request", "Warehouse Internal Transfer Candidate", "Warehouse Internal Transfer Handoff Request"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
@@ -1309,6 +1341,10 @@ def _get_doc(doctype, name=None, *args, **kwargs):
         if name not in INTERNAL_TRANSFER_CANDIDATE_DOCS:
             raise Exception("Missing Warehouse Internal Transfer Candidate")
         return INTERNAL_TRANSFER_CANDIDATE_DOCS[name]
+    if doctype == "Warehouse Internal Transfer Handoff Request":
+        if name not in INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS:
+            raise Exception("Missing Warehouse Internal Transfer Handoff Request")
+        return INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -1401,6 +1437,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         SUPPLIER_RETURN_CANDIDATE_DOCS.clear()
         SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS.clear()
         INTERNAL_TRANSFER_CANDIDATE_DOCS.clear()
+        INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -5384,6 +5421,203 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         candidate_id = self._internal_transfer_candidate_id(request_id="internal-transfer-manager-safe-draft")
         CURRENT_ROLES[:] = ["Warehouse Manager"]
         payload = self._save_internal_transfer_manager_decision(candidate_id, request_id="internal-transfer-manager-safe-decision")
+        payload_text = str(payload).lower()
+
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_moved"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_entry_submitted"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["stock_reservation_created"])
+        self.assertFalse(payload["stock_ledger_updated"])
+        self.assertFalse(payload["stock_balance_updated"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reconciliation", "Stock Reservation"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+
+    def _internal_transfer_handoff_ready_candidate(
+        self,
+        *,
+        candidate_request_id="internal-transfer-handoff-source",
+        decision="approve_transfer_candidate",
+        decision_request_id="internal-transfer-handoff-manager",
+        lines=None,
+        inventory_admin_escalation_reference=None,
+        quarantine_review_reference=None,
+    ):
+        CURRENT_ROLES[:] = ["Stock User"]
+        overrides = {"request_id": candidate_request_id}
+        if lines is not None:
+            overrides["lines"] = lines
+        candidate_id = self._internal_transfer_candidate_id(**overrides)
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        decision_kwargs = {"decision": decision, "request_id": decision_request_id}
+        if inventory_admin_escalation_reference:
+            decision_kwargs["inventory_admin_escalation_reference"] = inventory_admin_escalation_reference
+        if quarantine_review_reference:
+            decision_kwargs["quarantine_review_reference"] = quarantine_review_reference
+        if decision in {"request_recount", "escalate_to_inventory_admin", "reject_transfer_candidate", "cancel_transfer_candidate", "close_transfer_candidate"}:
+            decision_kwargs.setdefault("note", "Manager requests downstream Inventory/Admin review.")
+        self._save_internal_transfer_manager_decision(candidate_id, **decision_kwargs)
+        return candidate_id
+
+    def _request_internal_transfer_handoff(self, candidate_id, **overrides):
+        payload = {
+            "internal_transfer_candidate": candidate_id,
+            "handoff_type": "transfer_execution_review",
+            "handoff_note": "Manager requests transfer execution policy review only.",
+            "request_id": "internal-transfer-handoff-001",
+        }
+        payload.update(overrides)
+        return service.request_warehouse_internal_transfer_handoff(**payload)
+
+    def test_w15g8_manager_can_request_internal_transfer_handoff_from_reviewed_candidate(self):
+        candidate_id = self._internal_transfer_handoff_ready_candidate()
+
+        payload = self._request_internal_transfer_handoff(candidate_id)
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "internal_transfer_handoff_request")
+        self.assertEqual(payload["request"]["handoff_status"], "Requested")
+        self.assertEqual(payload["request"]["handoff_type"], "transfer_execution_review")
+        self.assertEqual(payload["request"]["internal_transfer_candidate"], candidate_id)
+        self.assertEqual(payload["request"]["source_warehouse"], "Stores - M")
+        self.assertEqual(payload["request"]["target_warehouse"], "Main - M")
+        self.assertFalse(payload["request"]["idempotent"])
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_moved"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_entry_submitted"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["stock_reservation_created"])
+        self.assertFalse(payload["stock_ledger_updated"])
+        self.assertFalse(payload["stock_balance_updated"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(len(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS), 1)
+        request = next(iter(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS.values()))
+        self.assertEqual(request.policy_version, service.INTERNAL_TRANSFER_HANDOFF_POLICY_VERSION)
+        self.assertEqual(request.internal_transfer_candidate, candidate_id)
+        self.assertEqual(request.handoff_status, "Requested")
+        self.assertEqual(request.manager_decision, "Transfer Candidate")
+        self.assertEqual(request.total_candidate_qty, 3.0)
+        self.assertEqual(len(request.lines), 1)
+        self.assertEqual(request.lines[0]["transfer_candidate_qty"], 3.0)
+        self.assertEqual(request.events[0]["event_type"], "requested_internal_transfer_handoff")
+
+    def test_w15g8_warehouse_and_stock_users_denied_internal_transfer_handoff(self):
+        candidate_id = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-deny-source",
+            decision_request_id="internal-transfer-handoff-deny-manager",
+        )
+
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(candidate_id, request_id="internal-transfer-handoff-deny-warehouse")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(candidate_id, request_id="internal-transfer-handoff-deny-stock")
+
+        self.assertEqual(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS, {})
+
+    def test_w15g8_internal_transfer_handoff_source_state_and_type_rules(self):
+        unreviewed_candidate = self._internal_transfer_candidate_id(request_id="internal-transfer-handoff-unreviewed-source")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(unreviewed_candidate, request_id="internal-transfer-handoff-unreviewed")
+
+        transfer_candidate = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-transfer-source",
+            decision_request_id="internal-transfer-handoff-transfer-manager",
+        )
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(transfer_candidate, handoff_type="close_or_cancel_review", request_id="internal-transfer-handoff-wrong-type")
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(transfer_candidate, handoff_note="", request_id="internal-transfer-handoff-missing-note")
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(transfer_candidate, stock_entry="MAT-STE-0001", request_id="internal-transfer-handoff-forbidden-stock-entry")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        inventory_candidate = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-admin-source",
+            decision="escalate_to_inventory_admin",
+            decision_request_id="internal-transfer-handoff-admin-manager",
+            inventory_admin_escalation_reference="INV-ADM-HANDOFF-001",
+        )
+        inventory_payload = self._request_internal_transfer_handoff(
+            inventory_candidate,
+            handoff_type="stock_document_policy_review",
+            inventory_admin_escalation_reference="INV-ADM-HANDOFF-001",
+            request_id="internal-transfer-handoff-admin",
+        )
+        self.assertEqual(inventory_payload["request"]["handoff_type"], "stock_document_policy_review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        quarantine_candidate = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-quarantine-source",
+            decision="mark_quarantine_review",
+            decision_request_id="internal-transfer-handoff-quarantine-manager",
+            lines=[{"item_code": "ITEM-103", "source_warehouse": "Stores - M", "target_warehouse": "Main - M", "requested_qty": 3, "counted_qty": 3, "transfer_candidate_qty": 2, "quarantine_qty": 1, "reason_code": "Quality hold", "evidence_reference": "TR-QA-HANDOFF-1"}],
+        )
+        quarantine_payload = self._request_internal_transfer_handoff(quarantine_candidate, handoff_type="quarantine_quality_review", request_id="internal-transfer-handoff-quarantine")
+        self.assertEqual(quarantine_payload["request"]["handoff_type"], "quarantine_quality_review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        closed_candidate = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-close-source",
+            decision="close_transfer_candidate",
+            decision_request_id="internal-transfer-handoff-close-manager",
+        )
+        closed_payload = self._request_internal_transfer_handoff(closed_candidate, handoff_type="close_or_cancel_review", request_id="internal-transfer-handoff-close")
+        self.assertEqual(closed_payload["request"]["handoff_type"], "close_or_cancel_review")
+
+    def test_w15g8_internal_transfer_handoff_line_validation_and_idempotency(self):
+        first_candidate = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-idem-source",
+            decision_request_id="internal-transfer-handoff-idem-manager",
+        )
+        first = self._request_internal_transfer_handoff(first_candidate, request_id="internal-transfer-handoff-idem")
+        second = self._request_internal_transfer_handoff(first_candidate, request_id="internal-transfer-handoff-idem")
+
+        self.assertFalse(first["request"]["idempotent"])
+        self.assertTrue(second["request"]["idempotent"])
+        self.assertEqual(first["request"]["request_id"], second["request"]["request_id"])
+        self.assertEqual(len(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS), 1)
+
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(first_candidate, handoff_note="Changed handoff note.", request_id="internal-transfer-handoff-idem")
+
+        second_candidate = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-idem-second-source",
+            decision_request_id="internal-transfer-handoff-idem-second-manager",
+        )
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(second_candidate, request_id="internal-transfer-handoff-idem")
+
+        invalid_candidate = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-invalid-line-source",
+            decision_request_id="internal-transfer-handoff-invalid-line-manager",
+        )
+        INTERNAL_TRANSFER_CANDIDATE_DOCS[invalid_candidate].lines[0]["target_warehouse"] = "Short - M"
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(invalid_candidate, request_id="internal-transfer-handoff-invalid-line")
+
+    def test_w15g8_internal_transfer_handoff_payload_has_no_stock_or_native_effects(self):
+        candidate_id = self._internal_transfer_handoff_ready_candidate(
+            candidate_request_id="internal-transfer-handoff-safe-source",
+            decision_request_id="internal-transfer-handoff-safe-manager",
+        )
+        payload = self._request_internal_transfer_handoff(candidate_id, request_id="internal-transfer-handoff-safe")
         payload_text = str(payload).lower()
 
         self.assertFalse(payload["stock_effect"])
