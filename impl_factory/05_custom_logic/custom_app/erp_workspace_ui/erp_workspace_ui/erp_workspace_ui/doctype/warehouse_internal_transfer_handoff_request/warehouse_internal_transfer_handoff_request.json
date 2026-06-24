@@ -1,0 +1,206 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "hash",
+  "creation": "2026-06-24 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "internal_transfer_candidate",
+    "source_context",
+    "source_reference_text",
+    "source_warehouse",
+    "target_warehouse",
+    "handoff_status",
+    "handoff_type",
+    "manager_decision",
+    "inventory_admin_escalation_reference",
+    "quarantine_review_reference",
+    "handoff_note",
+    "source_payload_hash",
+    "policy_version",
+    "line_count",
+    "total_candidate_qty",
+    "request_id",
+    "requested_by",
+    "requested_at",
+    "lines",
+    "events"
+  ],
+  "fields": [
+    {
+      "fieldname": "internal_transfer_candidate",
+      "fieldtype": "Data",
+      "label": "Internal Transfer Candidate",
+      "read_only": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "source_context",
+      "fieldtype": "Data",
+      "label": "Source Context",
+      "read_only": 1
+    },
+    {
+      "fieldname": "source_reference_text",
+      "fieldtype": "Data",
+      "label": "Source Reference Text",
+      "read_only": 1
+    },
+    {
+      "fieldname": "source_warehouse",
+      "fieldtype": "Data",
+      "label": "Source Warehouse",
+      "read_only": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "target_warehouse",
+      "fieldtype": "Data",
+      "label": "Target Warehouse",
+      "read_only": 1,
+      "reqd": 1
+    },
+    {
+      "default": "Requested",
+      "fieldname": "handoff_status",
+      "fieldtype": "Select",
+      "label": "Handoff Status",
+      "options": "Requested\nBlocked\nClosed\nCancelled",
+      "read_only": 1
+    },
+    {
+      "fieldname": "handoff_type",
+      "fieldtype": "Select",
+      "label": "Handoff Type",
+      "options": "stock_document_policy_review\nsource_target_policy_review\nquarantine_quality_review\nreservation_policy_review\nserial_batch_policy_review\ntransfer_execution_review\nclose_or_cancel_review",
+      "read_only": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "manager_decision",
+      "fieldtype": "Data",
+      "label": "Manager Decision",
+      "read_only": 1
+    },
+    {
+      "fieldname": "inventory_admin_escalation_reference",
+      "fieldtype": "Data",
+      "label": "Inventory Admin Escalation Reference",
+      "read_only": 1
+    },
+    {
+      "fieldname": "quarantine_review_reference",
+      "fieldtype": "Data",
+      "label": "Quarantine Review Reference",
+      "read_only": 1
+    },
+    {
+      "fieldname": "handoff_note",
+      "fieldtype": "Small Text",
+      "label": "Handoff Note",
+      "read_only": 1
+    },
+    {
+      "fieldname": "source_payload_hash",
+      "fieldtype": "Data",
+      "label": "Source Payload Hash",
+      "read_only": 1
+    },
+    {
+      "fieldname": "policy_version",
+      "fieldtype": "Data",
+      "label": "Policy Version",
+      "read_only": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "line_count",
+      "fieldtype": "Int",
+      "label": "Line Count",
+      "read_only": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "total_candidate_qty",
+      "fieldtype": "Float",
+      "label": "Total Candidate Qty",
+      "read_only": 1
+    },
+    {
+      "fieldname": "request_id",
+      "fieldtype": "Data",
+      "label": "Request Id",
+      "read_only": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "requested_by",
+      "fieldtype": "Data",
+      "label": "Requested By",
+      "read_only": 1
+    },
+    {
+      "fieldname": "requested_at",
+      "fieldtype": "Datetime",
+      "label": "Requested At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "lines",
+      "fieldtype": "Table",
+      "label": "Lines",
+      "options": "Warehouse Internal Transfer Handoff Request Line",
+      "read_only": 1
+    },
+    {
+      "fieldname": "events",
+      "fieldtype": "Table",
+      "label": "Events",
+      "options": "Warehouse Internal Transfer Handoff Request Event",
+      "read_only": 1
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "is_submittable": 0,
+  "istable": 0,
+  "links": [],
+  "modified": "2026-06-24 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "ERP Workspace UI",
+  "name": "Warehouse Internal Transfer Handoff Request",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "read": 1,
+      "role": "Warehouse User"
+    },
+    {
+      "read": 1,
+      "role": "Stock User"
+    },
+    {
+      "create": 1,
+      "read": 1,
+      "role": "Warehouse Manager",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "read": 1,
+      "role": "Stock Manager",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "read": 1,
+      "role": "System Manager",
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 0
+}

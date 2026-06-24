@@ -4904,6 +4904,173 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
         )
 
+    def test_w15g7_internal_transfer_handoff_request_doctypes_are_internal_request_only(self):
+        parent = self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request")
+        line = self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request_line")
+        event = self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request_event")
+
+        self.assertEqual(parent["name"], "Warehouse Internal Transfer Handoff Request")
+        self.assertEqual(line["name"], "Warehouse Internal Transfer Handoff Request Line")
+        self.assertEqual(event["name"], "Warehouse Internal Transfer Handoff Request Event")
+        self.assertEqual(parent["autoname"], "hash")
+        self.assertEqual(parent["istable"], 0)
+        self.assertEqual(line["istable"], 1)
+        self.assertEqual(event["istable"], 1)
+        for meta in (parent, line, event):
+            self.assertEqual(meta["module"], "ERP Workspace UI")
+            self.assertEqual(meta["is_submittable"], 0)
+            self.assertEqual(meta["index_web_pages_for_search"], 0)
+            self.assertEqual(meta["links"], [])
+            self.assertEqual(meta["actions"], [])
+
+        table_fields = {field["fieldname"]: field for field in parent["fields"] if field["fieldtype"] == "Table"}
+        self.assertEqual(table_fields["lines"]["options"], "Warehouse Internal Transfer Handoff Request Line")
+        self.assertEqual(table_fields["events"]["options"], "Warehouse Internal Transfer Handoff Request Event")
+        handoff_type = next(field for field in parent["fields"] if field["fieldname"] == "handoff_type")
+        self.assertEqual(
+            handoff_type["options"].splitlines(),
+            [
+                "stock_document_policy_review",
+                "source_target_policy_review",
+                "quarantine_quality_review",
+                "reservation_policy_review",
+                "serial_batch_policy_review",
+                "transfer_execution_review",
+                "close_or_cancel_review",
+            ],
+        )
+
+        permissions = {row["role"]: row for row in parent["permissions"]}
+        for role in {"Warehouse User", "Stock User"}:
+            self.assertEqual(permissions[role].get("read"), 1)
+            self.assertFalse(permissions[role].get("create"))
+            self.assertFalse(permissions[role].get("write"))
+        for role in {"Warehouse Manager", "Stock Manager", "System Manager"}:
+            self.assertEqual(permissions[role].get("read"), 1)
+            self.assertEqual(permissions[role].get("create"), 1)
+            self.assertEqual(permissions[role].get("write"), 1)
+        self.assertEqual(line["permissions"], [])
+        self.assertEqual(event["permissions"], [])
+
+    def test_w15g7_internal_transfer_handoff_doctypes_have_no_forbidden_fields(self):
+        metas = [
+            self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request"),
+            self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request_line"),
+            self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request_event"),
+        ]
+        forbidden_fieldnames = {
+            "route",
+            "native_route",
+            "url",
+            "file_url",
+            "stock_entry",
+            "stock_entry_id",
+            "stock_entry_draft",
+            "stock_entry_submitted",
+            "stock_entry_cancelled",
+            "stock_entry_amended",
+            "stock_ledger",
+            "stock_ledger_entry",
+            "stock_balance",
+            "stock_reconciliation",
+            "stock_reservation",
+            "reserve_stock",
+            "unreserve_stock",
+            "stock_posted",
+            "valuation_rate",
+            "stock_value",
+            "rate",
+            "amount",
+            "base_amount",
+            "tax",
+            "account",
+            "gl_entry",
+            "payable",
+            "payment",
+            "billing",
+            "landed_cost",
+            "margin",
+            "profit",
+            "cost",
+            "debit",
+            "credit",
+            "customer_email",
+            "supplier_email",
+            "notify_customer",
+            "notify_supplier",
+            "portal_user",
+        }
+        forbidden_fieldtypes = {"Link", "Dynamic Link", "Attach", "Attach Image", "HTML", "Button", "Currency"}
+
+        for meta in metas:
+            for field in meta["fields"]:
+                self.assertNotIn(field["fieldname"], forbidden_fieldnames)
+                self.assertNotIn(field["fieldtype"], forbidden_fieldtypes)
+                self.assertEqual(field.get("read_only"), 1)
+
+        text = json.dumps(metas).lower()
+        self.assertNotIn("/app", text)
+        self.assertNotIn("/desk/form", text)
+        self.assertNotIn("/desk/list", text)
+        self.assertNotIn("/desk/report", text)
+        self.assertNotIn("query-report", text)
+
+    def test_w15g7_internal_transfer_handoff_field_maps_match_policy(self):
+        parent = self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request")
+        line = self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request_line")
+        event = self._load_internal_transfer_doctype("warehouse_internal_transfer_handoff_request_event")
+
+        self.assertEqual(
+            set(parent["field_order"]),
+            {
+                "internal_transfer_candidate",
+                "source_context",
+                "source_reference_text",
+                "source_warehouse",
+                "target_warehouse",
+                "handoff_status",
+                "handoff_type",
+                "manager_decision",
+                "inventory_admin_escalation_reference",
+                "quarantine_review_reference",
+                "handoff_note",
+                "source_payload_hash",
+                "policy_version",
+                "line_count",
+                "total_candidate_qty",
+                "request_id",
+                "requested_by",
+                "requested_at",
+                "lines",
+                "events",
+            },
+        )
+        self.assertEqual(
+            set(line["field_order"]),
+            {
+                "candidate_line_reference",
+                "item_code",
+                "item_name",
+                "source_warehouse",
+                "target_warehouse",
+                "requested_qty",
+                "counted_qty",
+                "transfer_candidate_qty",
+                "blocked_qty",
+                "quarantine_qty",
+                "damaged_qty",
+                "short_qty",
+                "condition_grade",
+                "reason_code",
+                "evidence_reference",
+                "uom",
+            },
+        )
+        self.assertEqual(
+            set(event["field_order"]),
+            {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
+        )
+
     def _save_internal_transfer_candidate(self, **overrides):
         payload = {
             "source_context": "movement_visibility_review",
