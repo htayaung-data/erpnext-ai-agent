@@ -767,6 +767,14 @@ async function snapshot(page) {
       internalTransferPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-policy]")).filter(visible).length,
       internalTransferPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-planned-control]")).filter(visible).length,
       internalTransferActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-shell] button, [data-warehouse-internal-transfer-shell] a, [data-warehouse-internal-transfer-shell] [role=button]")).filter(visible).length,
+      cycleCountShellCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-shell]")).filter(visible).length,
+      cycleCountStatusCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-status]")).filter(visible).length,
+      cycleCountUserPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-user-preview]")).filter(visible).length,
+      cycleCountManagerPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-manager-preview]")).filter(visible).length,
+      cycleCountEvidencePreviewCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-evidence-preview]")).filter(visible).length,
+      cycleCountPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-policy]")).filter(visible).length,
+      cycleCountPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-planned-control]")).filter(visible).length,
+      cycleCountActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-shell] button, [data-warehouse-cycle-count-shell] a, [data-warehouse-cycle-count-shell] [role=button]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     };
@@ -829,17 +837,19 @@ function assertW14CManagerCenter(state, contextLabel) {
 
 function assertW15PlannedWorkflowGroup(state, contextLabel) {
   assert(state.plannedWorkflowGroupCount === 1, "Planned workflow group must render once", { context: contextLabel, state });
-  assert(state.plannedWorkflowCardCount === 3, "Planned workflow summary cards must render once each", { context: contextLabel, state });
-  assert(state.plannedWorkflowToggleCount === 3, "Planned workflow detail toggles must render once each", { context: contextLabel, state });
+  assert(state.plannedWorkflowCardCount === 4, "Planned workflow summary cards must render once each", { context: contextLabel, state });
+  assert(state.plannedWorkflowToggleCount === 4, "Planned workflow detail toggles must render once each", { context: contextLabel, state });
   assert(state.plannedWorkflowVisibleDetailCount === 0, "Planned workflow details should be collapsed by default", { context: contextLabel, state });
   assert(state.customerReturnShellCount === 0, "Customer Return detail shell should be collapsed by default", { context: contextLabel, state });
   assert(state.supplierReturnShellCount === 0, "Supplier Return detail shell should be collapsed by default", { context: contextLabel, state });
   assert(state.internalTransferShellCount === 0, "Internal Transfer detail shell should be collapsed by default", { context: contextLabel, state });
+  assert(state.cycleCountShellCount === 0, "Cycle Count detail shell should be collapsed by default", { context: contextLabel, state });
   assert((state.text || "").includes("Planned workflow shells"), "Planned workflow group title is missing", { context: contextLabel, state });
   assert((state.text || "").includes("Customer return intake"), "Customer Return summary card is missing", { context: contextLabel, state });
   assert((state.text || "").includes("Supplier return candidate"), "Supplier Return summary card is missing", { context: contextLabel, state });
   assert((state.text || "").includes("Internal transfer candidate"), "Internal Transfer summary card is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("No document created"), "Planned workflow request-only context is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Cycle count / inventory variance"), "Cycle Count summary card is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No ERP doc"), "Planned workflow no-document context is missing", { context: contextLabel, state });
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Planned workflow group exposed a native route", { context: contextLabel, state });
 }
 
@@ -892,6 +902,24 @@ function assertW15G2InternalTransferShell(state, contextLabel) {
 }
 
 
+function assertW15H2CycleCountShell(state, contextLabel) {
+  assert(state.cycleCountShellCount === 1, "Cycle Count / Inventory Variance shell must render once", { context: contextLabel, state });
+  assert(state.cycleCountStatusCount >= 6, "Cycle Count workflow states are missing", { context: contextLabel, state });
+  assert(state.cycleCountUserPreviewCount === 1, "Cycle Count user preview is missing", { context: contextLabel, state });
+  assert(state.cycleCountManagerPreviewCount === 1, "Cycle Count manager preview is missing", { context: contextLabel, state });
+  assert(state.cycleCountEvidencePreviewCount === 1, "Cycle Count evidence preview is missing", { context: contextLabel, state });
+  assert(state.cycleCountPolicyCount === 1, "Cycle Count future document policy is missing", { context: contextLabel, state });
+  assert(state.cycleCountPlannedControlCount >= 11, "Cycle Count planned controls are missing", { context: contextLabel, state });
+  assert(state.cycleCountActiveControlCount === 0, "Cycle Count planned controls must be inert", { context: contextLabel, state });
+  assert((state.text || "").includes("Cycle count / inventory variance"), "Cycle Count title is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Blind Count"), "Cycle Count blind-count context is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Inventory/Admin review"), "Cycle Count Inventory/Admin review context is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No stock quantity is adjusted"), "Cycle Count guardrail is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("no Stock Reconciliation or Stock Entry is created"), "Cycle Count stock document guardrail is missing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Cycle Count shell exposed a native route", { context: contextLabel, state });
+}
+
+
 function assertW15BActionCenter(state, contextLabel) {
   assert(state.actionCenterCount === 1, "Warehouse Action Center must render once", { context: contextLabel, state });
   assert(state.actionCenterGroupCount >= 2, "Warehouse Action Center groups are missing", { context: contextLabel, state });
@@ -941,6 +969,7 @@ async function exercisePlannedWorkflowDisclosure(page, contextLabel) {
     { key: "customer-return", shellSelector: "[data-warehouse-customer-return-shell]", assertShell: assertW15E2CustomerReturnShell },
     { key: "supplier-return", shellSelector: "[data-warehouse-supplier-return-shell]", assertShell: assertW15F2SupplierReturnShell },
     { key: "internal-transfer", shellSelector: "[data-warehouse-internal-transfer-shell]", assertShell: assertW15G2InternalTransferShell },
+    { key: "cycle-count", shellSelector: "[data-warehouse-cycle-count-shell]", assertShell: assertW15H2CycleCountShell },
   ];
   for (const workflow of workflows) {
     await page.locator(`[data-warehouse-planned-workflow-toggle="${workflow.key}"]`).click();
