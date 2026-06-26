@@ -4791,6 +4791,10 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "doctype" / folder / f"{folder}.json"
         return json.loads(path.read_text())
 
+    def _load_cycle_count_doctype(self, folder):
+        path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "doctype" / folder / f"{folder}.json"
+        return json.loads(path.read_text())
+
     def test_w15g3_internal_transfer_candidate_doctypes_are_internal_non_submittable(self):
         parent = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate")
         line = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate_line")
@@ -5107,6 +5111,183 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             set(event["field_order"]),
             {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
         )
+
+    def test_w15h3_cycle_count_task_doctypes_are_internal_non_submittable(self):
+        parent = self._load_cycle_count_doctype("warehouse_cycle_count_task")
+        line = self._load_cycle_count_doctype("warehouse_cycle_count_task_line")
+        event = self._load_cycle_count_doctype("warehouse_cycle_count_task_event")
+
+        self.assertEqual(parent["name"], "Warehouse Cycle Count Task")
+        self.assertEqual(line["name"], "Warehouse Cycle Count Task Line")
+        self.assertEqual(event["name"], "Warehouse Cycle Count Task Event")
+        self.assertEqual(parent["autoname"], "hash")
+        self.assertEqual(parent["istable"], 0)
+        self.assertEqual(line["istable"], 1)
+        self.assertEqual(event["istable"], 1)
+        for meta in (parent, line, event):
+            self.assertEqual(meta["module"], "ERP Workspace UI")
+            self.assertEqual(meta["is_submittable"], 0)
+            self.assertEqual(meta["index_web_pages_for_search"], 0)
+            self.assertEqual(meta["links"], [])
+            self.assertEqual(meta["actions"], [])
+
+        table_fields = {field["fieldname"]: field for field in parent["fields"] if field["fieldtype"] == "Table"}
+        self.assertEqual(table_fields["lines"]["options"], "Warehouse Cycle Count Task Line")
+        self.assertEqual(table_fields["events"]["options"], "Warehouse Cycle Count Task Event")
+
+    def test_w15h3_cycle_count_task_permissions_match_count_evidence_policy(self):
+        parent = self._load_cycle_count_doctype("warehouse_cycle_count_task")
+        line = self._load_cycle_count_doctype("warehouse_cycle_count_task_line")
+        event = self._load_cycle_count_doctype("warehouse_cycle_count_task_event")
+
+        permissions = {row["role"]: row for row in parent["permissions"]}
+        for role in {"Warehouse User", "Stock User", "Warehouse Manager", "Stock Manager", "System Manager"}:
+            self.assertIn(role, permissions)
+            self.assertEqual(permissions[role].get("read"), 1)
+            self.assertEqual(permissions[role].get("create"), 1)
+            self.assertEqual(permissions[role].get("write"), 1)
+        self.assertEqual(line["permissions"], [])
+        self.assertEqual(event["permissions"], [])
+
+    def test_w15h3_cycle_count_task_forbidden_fields_absent(self):
+        metas = [
+            self._load_cycle_count_doctype("warehouse_cycle_count_task"),
+            self._load_cycle_count_doctype("warehouse_cycle_count_task_line"),
+            self._load_cycle_count_doctype("warehouse_cycle_count_task_event"),
+        ]
+        forbidden_fieldnames = {
+            "route",
+            "native_route",
+            "url",
+            "file_url",
+            "stock_entry",
+            "stock_entry_id",
+            "stock_entry_draft",
+            "stock_entry_submitted",
+            "stock_entry_cancelled",
+            "stock_entry_amended",
+            "stock_reconciliation",
+            "stock_reconciliation_draft",
+            "stock_reconciliation_submitted",
+            "stock_ledger",
+            "stock_ledger_entry",
+            "stock_balance",
+            "stock_reservation",
+            "reserve_stock",
+            "unreserve_stock",
+            "stock_posted",
+            "stock_moved",
+            "valuation_rate",
+            "stock_value",
+            "rate",
+            "amount",
+            "base_amount",
+            "tax",
+            "account",
+            "gl_entry",
+            "payable",
+            "payment",
+            "billing",
+            "landed_cost",
+            "margin",
+            "profit",
+            "cost",
+            "debit",
+            "credit",
+            "sales_order",
+            "purchase_order",
+            "delivery_note",
+            "purchase_receipt",
+            "purchase_invoice",
+            "customer_email",
+            "supplier_email",
+            "notify_customer",
+            "notify_supplier",
+            "portal_user",
+        }
+        forbidden_fieldtypes = {"Link", "Dynamic Link", "Attach", "Attach Image", "HTML", "Button", "Currency"}
+
+        for meta in metas:
+            for field in meta["fields"]:
+                self.assertNotIn(field["fieldname"], forbidden_fieldnames)
+                self.assertNotIn(field["fieldtype"], forbidden_fieldtypes)
+                self.assertEqual(field.get("read_only"), 1)
+
+        text = json.dumps(metas).lower()
+        self.assertNotIn("/app", text)
+        self.assertNotIn("/desk/form", text)
+        self.assertNotIn("/desk/list", text)
+        self.assertNotIn("/desk/report", text)
+        self.assertNotIn("query-report", text)
+
+    def test_w15h3_cycle_count_task_field_maps_match_policy(self):
+        parent = self._load_cycle_count_doctype("warehouse_cycle_count_task")
+        line = self._load_cycle_count_doctype("warehouse_cycle_count_task_line")
+        event = self._load_cycle_count_doctype("warehouse_cycle_count_task_event")
+
+        self.assertEqual(
+            set(parent["field_order"]),
+            {
+                "count_source",
+                "count_scope",
+                "warehouse",
+                "location_reference_text",
+                "count_status",
+                "manager_review_status",
+                "variance_status",
+                "expected_quantity_visibility",
+                "count_reason",
+                "count_priority",
+                "assigned_user",
+                "evidence_status",
+                "notes",
+                "manager_note",
+                "inventory_admin_escalation_reference",
+                "source_payload_hash",
+                "policy_version",
+                "line_count",
+                "total_counted_qty",
+                "total_variance_qty",
+                "request_id",
+                "created_by",
+                "created_at",
+                "lines",
+                "events",
+            },
+        )
+        self.assertEqual(
+            set(line["field_order"]),
+            {
+                "item_code",
+                "item_name",
+                "warehouse",
+                "location_reference_text",
+                "uom",
+                "expected_qty_snapshot",
+                "counted_qty",
+                "variance_qty",
+                "variance_direction",
+                "condition_grade",
+                "reason_code",
+                "evidence_reference",
+                "serial_batch_reference_text",
+                "line_status",
+            },
+        )
+        self.assertEqual(
+            set(event["field_order"]),
+            {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
+        )
+
+        count_source = next(field for field in parent["fields"] if field["fieldname"] == "count_source")
+        visibility = next(field for field in parent["fields"] if field["fieldname"] == "expected_quantity_visibility")
+        variance_direction = next(field for field in line["fields"] if field["fieldname"] == "variance_direction")
+        self.assertIn("scheduled_cycle_count", count_source["options"].splitlines())
+        self.assertIn("spot_count", count_source["options"].splitlines())
+        self.assertIn("blind_count", visibility["options"].splitlines())
+        self.assertIn("inventory_admin_visible", visibility["options"].splitlines())
+        self.assertIn("Positive Variance", variance_direction["options"].splitlines())
+        self.assertIn("Missing Item", variance_direction["options"].splitlines())
 
     def _save_internal_transfer_candidate(self, **overrides):
         payload = {

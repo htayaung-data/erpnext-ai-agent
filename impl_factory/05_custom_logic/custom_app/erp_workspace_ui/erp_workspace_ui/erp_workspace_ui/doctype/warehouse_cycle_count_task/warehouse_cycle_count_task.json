@@ -1,0 +1,245 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-26 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "count_source",
+  "count_scope",
+  "warehouse",
+  "location_reference_text",
+  "count_status",
+  "manager_review_status",
+  "variance_status",
+  "expected_quantity_visibility",
+  "count_reason",
+  "count_priority",
+  "assigned_user",
+  "evidence_status",
+  "notes",
+  "manager_note",
+  "inventory_admin_escalation_reference",
+  "source_payload_hash",
+  "policy_version",
+  "line_count",
+  "total_counted_qty",
+  "total_variance_qty",
+  "request_id",
+  "created_by",
+  "created_at",
+  "lines",
+  "events"
+ ],
+ "fields": [
+  {
+   "fieldname": "count_source",
+   "fieldtype": "Select",
+   "label": "Count Source",
+   "options": "scheduled_cycle_count\nspot_count\nexception_count\nmanager_request\ninventory_admin_request\npost_movement_check\nreturn_exception_check\ninternal_transfer_check",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "count_scope",
+   "fieldtype": "Select",
+   "label": "Count Scope",
+   "options": "warehouse_scope\nlocation_reference\nitem_specific\nitem_group\nhigh_risk\nserial_batch\nquarantine_restricted\nmovement_exception",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Data",
+   "label": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "location_reference_text",
+   "fieldtype": "Data",
+   "label": "Location Reference Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "count_status",
+   "fieldtype": "Select",
+   "label": "Count Status",
+   "options": "Planned\nCount In Progress\nSubmitted For Review\nRecount Requested\nClean Count\nVariance Review\nQuarantine Review\nSerial/Batch Review\nBlocked Review\nInventory/Admin Review Requested\nRejected\nCancelled\nClosed",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "manager_review_status",
+   "fieldtype": "Data",
+   "label": "Manager Review Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variance_status",
+   "fieldtype": "Data",
+   "label": "Variance Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "expected_quantity_visibility",
+   "fieldtype": "Select",
+   "label": "Expected Quantity Visibility",
+   "options": "blind_count\nguided_count\nmanager_visible\ninventory_admin_visible",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "count_reason",
+   "fieldtype": "Data",
+   "label": "Count Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "count_priority",
+   "fieldtype": "Select",
+   "label": "Count Priority",
+   "options": "Normal\nHigh\nUrgent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "assigned_user",
+   "fieldtype": "Data",
+   "label": "Assigned User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "evidence_status",
+   "fieldtype": "Data",
+   "label": "Evidence Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manager_note",
+   "fieldtype": "Small Text",
+   "label": "Manager Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "inventory_admin_escalation_reference",
+   "fieldtype": "Data",
+   "label": "Inventory Admin Escalation Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload_hash",
+   "fieldtype": "Data",
+   "label": "Source Payload Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Data",
+   "label": "Policy Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Line Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_counted_qty",
+   "fieldtype": "Float",
+   "label": "Total Counted Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_variance_qty",
+   "fieldtype": "Float",
+   "label": "Total Variance Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "created_by",
+   "fieldtype": "Data",
+   "label": "Created By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "created_at",
+   "fieldtype": "Datetime",
+   "label": "Created At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Warehouse Cycle Count Task Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Warehouse Cycle Count Task Event",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-06-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "Warehouse Cycle Count Task",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Warehouse User",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Warehouse Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Stock User",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Stock Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
