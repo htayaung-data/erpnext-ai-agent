@@ -730,6 +730,38 @@ CYCLE_COUNT_MANAGER_DECISIONS = {
 	"cancel_cycle_count": ("Cancelled", "cancelled_cycle_count", "Cycle count cancelled"),
 	"close_cycle_count": ("Closed", "closed_cycle_count", "Cycle count closed"),
 }
+INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCTYPE = "Warehouse Inventory Variance Handoff Request"
+INVENTORY_VARIANCE_HANDOFF_REQUEST_LINE_DOCTYPE = "Warehouse Inventory Variance Handoff Request Line"
+INVENTORY_VARIANCE_HANDOFF_REQUEST_EVENT_DOCTYPE = "Warehouse Inventory Variance Handoff Request Event"
+INVENTORY_VARIANCE_HANDOFF_POLICY_VERSION = "W15H8-inventory-variance-handoff-request-v1"
+INVENTORY_VARIANCE_HANDOFF_ALLOWED_SOURCE_STATUSES = frozenset({
+	"Variance Review",
+	"Quarantine Review",
+	"Serial/Batch Review",
+	"Inventory/Admin Review Requested",
+	"Rejected",
+	"Cancelled",
+	"Closed",
+	"Clean Count",
+})
+INVENTORY_VARIANCE_HANDOFF_ALLOWED_TYPES = frozenset({
+	"variance_adjustment_policy_review",
+	"stock_reconciliation_policy_review",
+	"recount_policy_review",
+	"quarantine_quality_review",
+	"serial_batch_policy_review",
+	"location_policy_review",
+	"close_or_cancel_review",
+})
+INVENTORY_VARIANCE_HANDOFF_TYPE_SOURCE_STATUSES = {
+	"variance_adjustment_policy_review": frozenset({"Variance Review", "Inventory/Admin Review Requested"}),
+	"stock_reconciliation_policy_review": frozenset({"Variance Review", "Inventory/Admin Review Requested", "Quarantine Review", "Serial/Batch Review"}),
+	"recount_policy_review": frozenset({"Variance Review", "Quarantine Review", "Serial/Batch Review", "Inventory/Admin Review Requested"}),
+	"quarantine_quality_review": frozenset({"Quarantine Review"}),
+	"serial_batch_policy_review": frozenset({"Serial/Batch Review"}),
+	"location_policy_review": frozenset({"Variance Review", "Quarantine Review", "Serial/Batch Review", "Inventory/Admin Review Requested"}),
+	"close_or_cancel_review": frozenset({"Rejected", "Cancelled", "Closed", "Clean Count"}),
+}
 
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
@@ -4753,6 +4785,282 @@ def _cycle_count_manager_decision_payload(
 		"stock_balance_updated": False,
 		"valuation": {"visible": False, "fields": []},
 		"fetched_at": str(now_datetime()),
+	}
+
+
+@frappe.whitelist()
+def request_warehouse_inventory_variance_handoff(
+	cycle_count_task: str | None = None,
+	task_id: str | None = None,
+	handoff_type: str | None = None,
+	handoff_note: str | None = None,
+	inventory_admin_escalation_reference: str | None = None,
+	request_id: str | None = None,
+	**extra_fields,
+) -> dict[str, object]:
+	"""Create a custom request-only Inventory/Admin variance handoff.
+
+	W15H8 writes only custom Warehouse Inventory Variance Handoff Request
+	records. It does not create Stock Reconciliation or Stock Entry drafts,
+	post stock, reserve stock, or mutate Stock Ledger/Balance records.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	task_name = cstr(cycle_count_task or task_id).strip()
+	handoff_key = cstr(handoff_type).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	note = _bounded_text(handoff_note, CYCLE_COUNT_TASK_MAX_NOTE_LENGTH)
+	inventory_ref = _bounded_text(inventory_admin_escalation_reference, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	if not _has_cycle_count_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if _contains_forbidden_cycle_count_fields(extra_fields):
+		frappe.throw(_("Inventory variance handoff contains fields that are not allowed in Warehouse."), ValueError)
+	if not task_name:
+		frappe.throw(_("Cycle count task is required for Inventory/Admin handoff request."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for Inventory/Admin handoff request."), ValueError)
+	if handoff_key not in INVENTORY_VARIANCE_HANDOFF_ALLOWED_TYPES:
+		frappe.throw(_("Inventory/Admin handoff type is not allowed."), ValueError)
+	if not note:
+		frappe.throw(_("Handoff note is required for Inventory/Admin handoff request."), ValueError)
+	task_doc = _get_cycle_count_task_for_decision(task_name)
+	_validate_inventory_variance_handoff_source(task_doc, handoff_key)
+	request_lines = _inventory_variance_handoff_lines_from_task(task_doc)
+	fingerprint = _inventory_variance_handoff_payload_hash(task_doc, handoff_key, note, inventory_ref, request_lines)
+	owner = _inventory_variance_handoff_request_id_owner(server_request_id)
+	if owner:
+		owner_doc = frappe.get_doc(INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCTYPE, owner)
+		if cstr(getattr(owner_doc, "cycle_count_task", "")).strip() != task_name:
+			frappe.throw(_("Request id was already used for another Inventory/Admin handoff request."), ValueError)
+		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != fingerprint:
+			frappe.throw(_("Request id was already used with different Inventory/Admin handoff details."), ValueError)
+		return _inventory_variance_handoff_request_payload(context, owner_doc, idempotent=True)
+	request_doc = frappe.get_doc({"doctype": INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCTYPE})
+	_apply_inventory_variance_handoff_request(
+		request_doc,
+		task_doc,
+		handoff_key,
+		note,
+		inventory_ref,
+		request_lines,
+		server_request_id,
+		fingerprint,
+	)
+	return _inventory_variance_handoff_request_payload(context, request_doc, idempotent=False)
+
+
+def _validate_inventory_variance_handoff_source(task_doc, handoff_type: str) -> None:
+	status = cstr(getattr(task_doc, "count_status", "")).strip()
+	if status not in INVENTORY_VARIANCE_HANDOFF_ALLOWED_SOURCE_STATUSES:
+		frappe.throw(_("Cycle count task is not ready for Inventory/Admin handoff request."), ValueError)
+	allowed_statuses = INVENTORY_VARIANCE_HANDOFF_TYPE_SOURCE_STATUSES.get(handoff_type) or frozenset()
+	if status not in allowed_statuses:
+		frappe.throw(_("Inventory/Admin handoff type does not match the cycle count posture."), ValueError)
+	warehouse = cstr(getattr(task_doc, "warehouse", "")).strip()
+	if not warehouse:
+		frappe.throw(_("Inventory/Admin handoff requires warehouse context."), ValueError)
+	if not _cycle_count_warehouse_is_visible(warehouse):
+		frappe.throw(_("Inventory/Admin handoff warehouse context is not visible."), ValueError)
+	if not list(getattr(task_doc, "lines", []) or []):
+		frappe.throw(_("Cycle count task has no lines for Inventory/Admin handoff request."), ValueError)
+
+
+def _inventory_variance_handoff_lines_from_task(task_doc) -> list[dict[str, object]]:
+	lines = []
+	seen: set[tuple[str, str, str, str, str]] = set()
+	for source_line in list(getattr(task_doc, "lines", []) or [])[:CYCLE_COUNT_TASK_MAX_LINES]:
+		line = _inventory_variance_handoff_line_from_task(source_line, task_doc)
+		key = (
+			cstr(line.get("task_line_reference")).strip(),
+			cstr(line.get("item_code")).strip(),
+			cstr(line.get("warehouse")).strip(),
+			cstr(line.get("location_reference_text")).strip(),
+			cstr(line.get("uom")).strip(),
+		)
+		if key in seen:
+			frappe.throw(_("Duplicate Inventory/Admin handoff line in request."), ValueError)
+		seen.add(key)
+		lines.append(line)
+	if not lines:
+		frappe.throw(_("At least one Inventory/Admin handoff line is required."), ValueError)
+	return lines
+
+
+def _inventory_variance_handoff_line_from_task(source_line, task_doc) -> dict[str, object]:
+	item_code = cstr(_child_value(source_line, "item_code")).strip()
+	warehouse = cstr(_child_value(source_line, "warehouse") or getattr(task_doc, "warehouse", "")).strip()
+	if not item_code:
+		frappe.throw(_("Inventory/Admin handoff line requires item identity."), ValueError)
+	if warehouse != cstr(getattr(task_doc, "warehouse", "")).strip():
+		frappe.throw(_("Inventory/Admin handoff line warehouse must match the cycle count task."), ValueError)
+	if not _cycle_count_warehouse_is_visible(warehouse):
+		frappe.throw(_("Inventory/Admin handoff line warehouse context is not visible."), ValueError)
+	line_reference = cstr(_child_value(source_line, "name")).strip() or f"{item_code}::{warehouse}::{cstr(_child_value(source_line, 'uom')).strip()}"
+	return {
+		"task_line_reference": line_reference,
+		"item_code": item_code,
+		"item_name": cstr(_child_value(source_line, "item_name")).strip(),
+		"warehouse": warehouse,
+		"location_reference_text": cstr(_child_value(source_line, "location_reference_text")).strip(),
+		"uom": cstr(_child_value(source_line, "uom")).strip(),
+		"counted_qty": flt(_child_value(source_line, "counted_qty")),
+		"variance_qty": flt(_child_value(source_line, "variance_qty")),
+		"variance_direction": cstr(_child_value(source_line, "variance_direction")).strip(),
+		"condition_grade": cstr(_child_value(source_line, "condition_grade")).strip(),
+		"reason_code": cstr(_child_value(source_line, "reason_code")).strip(),
+		"evidence_reference": cstr(_child_value(source_line, "evidence_reference")).strip(),
+		"serial_batch_reference_text": cstr(_child_value(source_line, "serial_batch_reference_text")).strip(),
+		"line_status": cstr(_child_value(source_line, "line_status")).strip(),
+	}
+
+
+def _inventory_variance_handoff_payload_hash(
+	task_doc,
+	handoff_type: str,
+	handoff_note: str,
+	inventory_admin_escalation_reference: str,
+	lines: list[dict[str, object]],
+) -> str:
+	canonical = {
+		"cycle_count_task": cstr(getattr(task_doc, "name", "")).strip(),
+		"warehouse": cstr(getattr(task_doc, "warehouse", "")).strip(),
+		"source_count_status": cstr(getattr(task_doc, "count_status", "")).strip(),
+		"handoff_type": handoff_type,
+		"handoff_note": handoff_note,
+		"inventory_admin_escalation_reference": inventory_admin_escalation_reference,
+		"lines": sorted(
+			[
+				{
+					"task_line_reference": line.get("task_line_reference"),
+					"item_code": line.get("item_code"),
+					"warehouse": line.get("warehouse"),
+					"counted_qty": flt(line.get("counted_qty")),
+					"variance_qty": flt(line.get("variance_qty")),
+					"variance_direction": line.get("variance_direction"),
+					"line_status": line.get("line_status"),
+				}
+				for line in lines
+			],
+			key=lambda row: (
+				cstr(row.get("task_line_reference")),
+				cstr(row.get("item_code")),
+				cstr(row.get("warehouse")),
+			),
+		),
+	}
+	return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _inventory_variance_handoff_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCTYPE,
+			fields=["name"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_inventory_variance_handoff_request(
+	request_doc,
+	task_doc,
+	handoff_type: str,
+	handoff_note: str,
+	inventory_admin_escalation_reference: str,
+	request_lines: list[dict[str, object]],
+	request_id: str,
+	payload_hash: str,
+) -> None:
+	now_value = str(now_datetime())
+	request_doc.cycle_count_task = cstr(getattr(task_doc, "name", "")).strip()
+	request_doc.warehouse = cstr(getattr(task_doc, "warehouse", "")).strip()
+	request_doc.count_source = cstr(getattr(task_doc, "count_source", "")).strip()
+	request_doc.count_scope = cstr(getattr(task_doc, "count_scope", "")).strip()
+	request_doc.location_reference_text = cstr(getattr(task_doc, "location_reference_text", "")).strip()
+	request_doc.source_count_status = cstr(getattr(task_doc, "count_status", "")).strip()
+	request_doc.handoff_status = "Requested"
+	request_doc.handoff_type = handoff_type
+	request_doc.manager_decision = cstr(getattr(task_doc, "manager_review_status", "")).strip() or cstr(getattr(task_doc, "count_status", "")).strip()
+	request_doc.inventory_admin_escalation_reference = inventory_admin_escalation_reference or cstr(getattr(task_doc, "inventory_admin_escalation_reference", "")).strip()
+	request_doc.handoff_note = handoff_note
+	request_doc.source_payload_hash = payload_hash
+	request_doc.policy_version = INVENTORY_VARIANCE_HANDOFF_POLICY_VERSION
+	request_doc.line_count = len(request_lines)
+	request_doc.total_counted_qty = sum(flt(line.get("counted_qty")) for line in request_lines)
+	request_doc.total_variance_qty = sum(flt(line.get("variance_qty")) for line in request_lines)
+	request_doc.request_id = request_id
+	request_doc.requested_by = cstr(getattr(frappe.session, "user", "")).strip()
+	request_doc.requested_at = now_value
+	_set_child_table(request_doc, "lines", request_lines)
+	_append_child(request_doc, "events", {
+		"event_type": "requested_inventory_variance_handoff",
+		"event_label": "Inventory/Admin variance handoff requested",
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": request_id,
+		"details_json": json.dumps({"handoff_type": handoff_type, "line_count": len(request_lines), "stock_effect": False, "stock_reconciliation_created": False, "stock_entry_created": False}, sort_keys=True),
+	})
+	request_doc.insert()
+
+
+def _inventory_variance_handoff_request_payload(context: dict[str, object], request_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_inventory_variance_handoff_line_payload(line) for line in list(getattr(request_doc, "lines", []) or [])]
+	events = list(getattr(request_doc, "events", []) or [])
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Inventory Variance Handoff Request", "key": "inventory_variance_handoff_request"},
+		"request": {
+			"request_id": cstr(getattr(request_doc, "name", "")).strip(),
+			"handoff_status": cstr(getattr(request_doc, "handoff_status", "")).strip(),
+			"handoff_type": cstr(getattr(request_doc, "handoff_type", "")).strip(),
+			"cycle_count_task": cstr(getattr(request_doc, "cycle_count_task", "")).strip(),
+			"warehouse": cstr(getattr(request_doc, "warehouse", "")).strip(),
+			"source_count_status": cstr(getattr(request_doc, "source_count_status", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"event_summary": _cycle_count_task_event_payload(events[-1]) if events else {},
+		"stock_effect": False,
+		"stock_quantity_adjusted": False,
+		"stock_reconciliation_created": False,
+		"stock_reconciliation_submitted": False,
+		"stock_entry_created": False,
+		"stock_entry_submitted": False,
+		"stock_posted": False,
+		"stock_reservation_created": False,
+		"stock_ledger_updated": False,
+		"stock_balance_updated": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _inventory_variance_handoff_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"task_line_reference": cstr(getter("task_line_reference")).strip(),
+		"item_code": cstr(getter("item_code")).strip(),
+		"item_name": cstr(getter("item_name")).strip(),
+		"warehouse": cstr(getter("warehouse")).strip(),
+		"location_reference_text": cstr(getter("location_reference_text")).strip(),
+		"uom": cstr(getter("uom")).strip(),
+		"counted_qty": _number_text(getter("counted_qty")),
+		"variance_qty": _number_text(getter("variance_qty")),
+		"variance_direction": cstr(getter("variance_direction")).strip(),
+		"condition_grade": cstr(getter("condition_grade")).strip(),
+		"reason_code": cstr(getter("reason_code")).strip(),
+		"evidence_reference": cstr(getter("evidence_reference")).strip(),
+		"serial_batch_reference_text": cstr(getter("serial_batch_reference_text")).strip(),
+		"line_status": cstr(getter("line_status")).strip(),
 	}
 
 

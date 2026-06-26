@@ -37,6 +37,7 @@ SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS = {}
 INTERNAL_TRANSFER_CANDIDATE_DOCS = {}
 INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS = {}
 CYCLE_COUNT_TASK_DOCS = {}
+INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS = {}
 
 PO_ROWS = [
     {
@@ -1206,6 +1207,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             for key, value in filters.items():
                 rows = [row for row in rows if row.get(key) == value]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Inventory Variance Handoff Request":
+        rows = list(INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Inventory Variance Handoff Request Event":
+        rows = []
+        for request in INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS.values():
+            for event in list(getattr(request, "events", []) or []):
+                row = dict(event)
+                row["parent"] = request.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -1281,6 +1303,11 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Inventory Variance Handoff Request":
+            if not self.name:
+                self.name = f"WIVH-{len(INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS) + 1:05d}"
+            INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Cycle Count Task":
             if not self.name:
                 self.name = f"WCCT-{len(CYCLE_COUNT_TASK_DOCS) + 1:05d}"
@@ -1337,6 +1364,11 @@ class _FakeWorkflowDoc:
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Inventory Variance Handoff Request":
+            if not self.name:
+                self.name = f"WIVH-{len(INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS) + 1:05d}"
+            INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Cycle Count Task":
             if not self.name:
                 self.name = f"WCCT-{len(CYCLE_COUNT_TASK_DOCS) + 1:05d}"
@@ -1388,7 +1420,7 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request", "Warehouse Internal Transfer Candidate", "Warehouse Internal Transfer Handoff Request", "Warehouse Cycle Count Task"}:
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request", "Warehouse Internal Transfer Candidate", "Warehouse Internal Transfer Handoff Request", "Warehouse Cycle Count Task", "Warehouse Inventory Variance Handoff Request"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
@@ -1432,6 +1464,10 @@ def _get_doc(doctype, name=None, *args, **kwargs):
         if name not in INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS:
             raise Exception("Missing Warehouse Internal Transfer Handoff Request")
         return INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS[name]
+    if doctype == "Warehouse Inventory Variance Handoff Request":
+        if name not in INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS:
+            raise Exception("Missing Warehouse Inventory Variance Handoff Request")
+        return INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS[name]
     if doctype not in {"Purchase Order", "Sales Order", "Stock Entry"}:
         raise Exception("Unsupported DocType")
     if not _has_permission(doctype, "read"):
@@ -1526,6 +1562,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         INTERNAL_TRANSFER_CANDIDATE_DOCS.clear()
         INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS.clear()
         CYCLE_COUNT_TASK_DOCS.clear()
+        INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -5377,6 +5414,193 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertIn("Positive Variance", variance_direction["options"].splitlines())
         self.assertIn("Missing Item", variance_direction["options"].splitlines())
 
+    def test_w15h7_inventory_variance_handoff_doctypes_are_internal_request_only(self):
+        parent = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request")
+        line = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request_line")
+        event = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request_event")
+
+        self.assertEqual(parent["name"], "Warehouse Inventory Variance Handoff Request")
+        self.assertEqual(line["name"], "Warehouse Inventory Variance Handoff Request Line")
+        self.assertEqual(event["name"], "Warehouse Inventory Variance Handoff Request Event")
+        self.assertEqual(parent["autoname"], "hash")
+        self.assertEqual(parent["istable"], 0)
+        self.assertEqual(line["istable"], 1)
+        self.assertEqual(event["istable"], 1)
+        for meta in (parent, line, event):
+            self.assertEqual(meta["module"], "ERP Workspace UI")
+            self.assertEqual(meta["is_submittable"], 0)
+            self.assertEqual(meta["index_web_pages_for_search"], 0)
+            self.assertEqual(meta["links"], [])
+            self.assertEqual(meta["actions"], [])
+
+        table_fields = {field["fieldname"]: field for field in parent["fields"] if field["fieldtype"] == "Table"}
+        self.assertEqual(table_fields["lines"]["options"], "Warehouse Inventory Variance Handoff Request Line")
+        self.assertEqual(table_fields["events"]["options"], "Warehouse Inventory Variance Handoff Request Event")
+
+    def test_w15h7_inventory_variance_handoff_permissions_match_request_policy(self):
+        parent = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request")
+        line = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request_line")
+        event = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request_event")
+
+        permissions = {row["role"]: row for row in parent["permissions"]}
+        for role in {"Warehouse User", "Stock User"}:
+            self.assertIn(role, permissions)
+            self.assertEqual(permissions[role].get("read"), 1)
+            self.assertEqual(permissions[role].get("create", 0), 0)
+            self.assertEqual(permissions[role].get("write", 0), 0)
+        for role in {"Warehouse Manager", "Stock Manager", "System Manager"}:
+            self.assertIn(role, permissions)
+            self.assertEqual(permissions[role].get("read"), 1)
+            self.assertEqual(permissions[role].get("create"), 1)
+            self.assertEqual(permissions[role].get("write"), 1)
+        self.assertEqual(line["permissions"], [])
+        self.assertEqual(event["permissions"], [])
+
+    def test_w15h7_inventory_variance_handoff_forbidden_fields_absent(self):
+        metas = [
+            self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request"),
+            self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request_line"),
+            self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request_event"),
+        ]
+        forbidden_fieldnames = {
+            "route",
+            "native_route",
+            "url",
+            "file_url",
+            "attachment",
+            "stock_entry",
+            "stock_entry_id",
+            "stock_entry_draft",
+            "stock_entry_submitted",
+            "stock_entry_cancelled",
+            "stock_entry_amended",
+            "stock_reconciliation",
+            "stock_reconciliation_draft",
+            "stock_reconciliation_submitted",
+            "stock_ledger",
+            "stock_ledger_entry",
+            "stock_balance",
+            "stock_reservation",
+            "reserve_stock",
+            "unreserve_stock",
+            "stock_posted",
+            "stock_moved",
+            "valuation_rate",
+            "stock_value",
+            "rate",
+            "amount",
+            "base_amount",
+            "tax",
+            "account",
+            "gl_entry",
+            "payable",
+            "payment",
+            "billing",
+            "landed_cost",
+            "margin",
+            "profit",
+            "cost",
+            "debit",
+            "credit",
+            "sales_order",
+            "purchase_order",
+            "delivery_note",
+            "purchase_receipt",
+            "purchase_invoice",
+            "customer_email",
+            "supplier_email",
+            "notify_customer",
+            "notify_supplier",
+            "customer_notification",
+            "supplier_notification",
+            "portal_user",
+            "email",
+            "portal",
+        }
+        forbidden_fieldtypes = {"Link", "Dynamic Link", "Attach", "Attach Image", "HTML", "Button", "Currency"}
+
+        for meta in metas:
+            for field in meta["fields"]:
+                self.assertNotIn(field["fieldname"], forbidden_fieldnames)
+                self.assertNotIn(field["fieldtype"], forbidden_fieldtypes)
+                self.assertEqual(field.get("read_only"), 1)
+
+        text = json.dumps(metas).lower()
+        self.assertNotIn("/app", text)
+        self.assertNotIn("/desk/form", text)
+        self.assertNotIn("/desk/list", text)
+        self.assertNotIn("/desk/report", text)
+        self.assertNotIn("query-report", text)
+
+    def test_w15h7_inventory_variance_handoff_field_maps_match_policy(self):
+        parent = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request")
+        line = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request_line")
+        event = self._load_cycle_count_doctype("warehouse_inventory_variance_handoff_request_event")
+
+        self.assertEqual(
+            set(parent["field_order"]),
+            {
+                "cycle_count_task",
+                "warehouse",
+                "count_source",
+                "count_scope",
+                "location_reference_text",
+                "source_count_status",
+                "handoff_status",
+                "handoff_type",
+                "manager_decision",
+                "inventory_admin_escalation_reference",
+                "handoff_note",
+                "source_payload_hash",
+                "policy_version",
+                "line_count",
+                "total_counted_qty",
+                "total_variance_qty",
+                "request_id",
+                "requested_by",
+                "requested_at",
+                "lines",
+                "events",
+            },
+        )
+        self.assertEqual(
+            set(line["field_order"]),
+            {
+                "task_line_reference",
+                "item_code",
+                "item_name",
+                "warehouse",
+                "location_reference_text",
+                "uom",
+                "counted_qty",
+                "variance_qty",
+                "variance_direction",
+                "condition_grade",
+                "reason_code",
+                "evidence_reference",
+                "serial_batch_reference_text",
+                "line_status",
+            },
+        )
+        self.assertEqual(
+            set(event["field_order"]),
+            {"event_type", "event_label", "event_by", "event_at", "request_id", "details_json"},
+        )
+
+        handoff_type = next(field for field in parent["fields"] if field["fieldname"] == "handoff_type")
+        self.assertEqual(
+            set(handoff_type["options"].splitlines()),
+            {
+                "variance_adjustment_policy_review",
+                "stock_reconciliation_policy_review",
+                "recount_policy_review",
+                "quarantine_quality_review",
+                "serial_batch_policy_review",
+                "location_policy_review",
+                "close_or_cancel_review",
+            },
+        )
+
     def _save_cycle_count_task(self, **overrides):
         payload = {
             "warehouse": "Main - M",
@@ -5773,6 +5997,216 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("/desk/form", payload_text)
         forbidden_docs = {"Stock Reconciliation", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reservation"}
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+
+    def _inventory_variance_handoff_ready_task(
+        self,
+        *,
+        task_request_id="inventory-variance-handoff-source",
+        decision="mark_variance_review",
+        decision_request_id="inventory-variance-handoff-manager",
+        lines=None,
+        inventory_admin_escalation_reference=None,
+    ):
+        CURRENT_ROLES[:] = ["Stock User"]
+        task_kwargs = {
+            "request_id": task_request_id,
+            "expected_quantity_visibility": "guided_count",
+            "lines": lines or [
+                {
+                    "item_code": "ITEM-103",
+                    "item_name": "Bluetooth Speaker",
+                    "warehouse": "Main - M",
+                    "location_reference_text": "Aisle A",
+                    "expected_qty_snapshot": 5,
+                    "counted_qty": 4,
+                    "reason_code": "Shelf variance",
+                    "evidence_reference": "COUNT-HANDOFF-001",
+                    "uom": "Nos",
+                }
+            ],
+        }
+        task_id = self._cycle_count_task_id(**task_kwargs)
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        decision_kwargs = {
+            "decision": decision,
+            "request_id": decision_request_id,
+        }
+        if decision in {"request_recount", "mark_variance_review", "escalate_to_inventory_admin", "reject_cycle_count", "cancel_cycle_count", "close_cycle_count"}:
+            decision_kwargs.setdefault("note", "Manager requests Inventory/Admin variance review.")
+        if inventory_admin_escalation_reference:
+            decision_kwargs["inventory_admin_escalation_reference"] = inventory_admin_escalation_reference
+        self._save_cycle_count_manager_decision(task_id, **decision_kwargs)
+        return task_id
+
+    def _request_inventory_variance_handoff(self, task_id, **overrides):
+        payload = {
+            "cycle_count_task": task_id,
+            "handoff_type": "variance_adjustment_policy_review",
+            "handoff_note": "Manager requests Inventory/Admin variance policy review only.",
+            "request_id": "inventory-variance-handoff-001",
+        }
+        payload.update(overrides)
+        return service.request_warehouse_inventory_variance_handoff(**payload)
+
+    def test_w15h8_manager_can_request_inventory_variance_handoff_from_reviewed_task(self):
+        task_id = self._inventory_variance_handoff_ready_task()
+
+        payload = self._request_inventory_variance_handoff(task_id)
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "inventory_variance_handoff_request")
+        self.assertEqual(payload["request"]["handoff_status"], "Requested")
+        self.assertEqual(payload["request"]["handoff_type"], "variance_adjustment_policy_review")
+        self.assertEqual(payload["request"]["cycle_count_task"], task_id)
+        self.assertEqual(payload["request"]["warehouse"], "Main - M")
+        self.assertEqual(payload["request"]["source_count_status"], "Variance Review")
+        self.assertFalse(payload["request"]["idempotent"])
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_quantity_adjusted"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertFalse(payload["stock_reconciliation_submitted"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_entry_submitted"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["stock_reservation_created"])
+        self.assertFalse(payload["stock_ledger_updated"])
+        self.assertFalse(payload["stock_balance_updated"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(len(INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS), 1)
+        request = next(iter(INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS.values()))
+        self.assertEqual(request.policy_version, service.INVENTORY_VARIANCE_HANDOFF_POLICY_VERSION)
+        self.assertEqual(request.cycle_count_task, task_id)
+        self.assertEqual(request.handoff_status, "Requested")
+        self.assertEqual(request.manager_decision, "Variance Review")
+        self.assertEqual(request.total_counted_qty, 4.0)
+        self.assertEqual(request.total_variance_qty, -1.0)
+        self.assertEqual(len(request.lines), 1)
+        self.assertEqual(request.lines[0]["variance_direction"], "Negative Variance")
+        self.assertEqual(request.events[0]["event_type"], "requested_inventory_variance_handoff")
+
+    def test_w15h8_warehouse_and_stock_users_denied_inventory_variance_handoff(self):
+        task_id = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-deny-source",
+            decision_request_id="inventory-variance-handoff-deny-manager",
+        )
+
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(task_id, request_id="inventory-variance-handoff-deny-warehouse")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(task_id, request_id="inventory-variance-handoff-deny-stock")
+
+        self.assertEqual(INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS, {})
+
+    def test_w15h8_inventory_variance_handoff_source_state_and_type_rules(self):
+        unreviewed_task = self._cycle_count_task_id(request_id="inventory-variance-handoff-unreviewed-source")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(unreviewed_task, request_id="inventory-variance-handoff-unreviewed")
+
+        variance_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-variance-source",
+            decision_request_id="inventory-variance-handoff-variance-manager",
+        )
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(variance_task, handoff_type="close_or_cancel_review", request_id="inventory-variance-handoff-wrong-type")
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(variance_task, handoff_note="", request_id="inventory-variance-handoff-missing-note")
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(variance_task, stock_reconciliation="MAT-RECO-0001", request_id="inventory-variance-handoff-forbidden-reco")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        quarantine_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-quarantine-source",
+            decision="mark_quarantine_review",
+            decision_request_id="inventory-variance-handoff-quarantine-manager",
+            lines=[{"item_code": "ITEM-105", "warehouse": "Main - M", "counted_qty": 1, "variance_direction": "Quarantine Review", "reason_code": "Damaged pack", "evidence_reference": "COUNT-QA-HANDOFF-1"}],
+        )
+        quarantine_payload = self._request_inventory_variance_handoff(quarantine_task, handoff_type="quarantine_quality_review", request_id="inventory-variance-handoff-quarantine")
+        self.assertEqual(quarantine_payload["request"]["handoff_type"], "quarantine_quality_review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        serial_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-serial-source",
+            decision="mark_serial_batch_review",
+            decision_request_id="inventory-variance-handoff-serial-manager",
+            lines=[{"item_code": "ITEM-106", "warehouse": "Main - M", "counted_qty": 1, "variance_direction": "Serial/Batch Review", "serial_batch_reference_text": "BATCH-MISMATCH-1", "reason_code": "Batch mismatch"}],
+        )
+        serial_payload = self._request_inventory_variance_handoff(serial_task, handoff_type="serial_batch_policy_review", request_id="inventory-variance-handoff-serial")
+        self.assertEqual(serial_payload["request"]["handoff_type"], "serial_batch_policy_review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        closed_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-close-source",
+            decision="close_cycle_count",
+            decision_request_id="inventory-variance-handoff-close-manager",
+            lines=[{"item_code": "ITEM-107", "warehouse": "Main - M", "counted_qty": 2, "variance_direction": "No Variance", "reason_code": "Closure audit", "evidence_reference": "COUNT-CLOSE-HANDOFF-1"}],
+        )
+        close_payload = self._request_inventory_variance_handoff(closed_task, handoff_type="close_or_cancel_review", request_id="inventory-variance-handoff-close")
+        self.assertEqual(close_payload["request"]["handoff_type"], "close_or_cancel_review")
+
+    def test_w15h8_inventory_variance_handoff_line_validation_and_idempotency(self):
+        first_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-idem-source",
+            decision_request_id="inventory-variance-handoff-idem-manager",
+        )
+        first = self._request_inventory_variance_handoff(first_task, request_id="inventory-variance-handoff-idem")
+        second = self._request_inventory_variance_handoff(first_task, request_id="inventory-variance-handoff-idem")
+
+        self.assertFalse(first["request"]["idempotent"])
+        self.assertTrue(second["request"]["idempotent"])
+        self.assertEqual(first["request"]["request_id"], second["request"]["request_id"])
+        self.assertEqual(len(INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS), 1)
+
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(first_task, handoff_note="Changed handoff note.", request_id="inventory-variance-handoff-idem")
+
+        second_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-idem-second-source",
+            decision_request_id="inventory-variance-handoff-idem-second-manager",
+        )
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(second_task, request_id="inventory-variance-handoff-idem")
+
+        invalid_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-invalid-line-source",
+            decision_request_id="inventory-variance-handoff-invalid-line-manager",
+        )
+        CYCLE_COUNT_TASK_DOCS[invalid_task].lines[0]["warehouse"] = "Stores - M"
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(invalid_task, request_id="inventory-variance-handoff-invalid-line")
+
+    def test_w15h8_inventory_variance_handoff_payload_has_no_stock_or_native_effects(self):
+        task_id = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-safe-source",
+            decision_request_id="inventory-variance-handoff-safe-manager",
+        )
+        payload = self._request_inventory_variance_handoff(task_id, request_id="inventory-variance-handoff-safe")
+        payload_text = str(payload).lower()
+
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_quantity_adjusted"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertFalse(payload["stock_reconciliation_submitted"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_entry_submitted"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["stock_reservation_created"])
+        self.assertFalse(payload["stock_ledger_updated"])
+        self.assertFalse(payload["stock_balance_updated"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Stock Reconciliation", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reservation"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
     def _save_internal_transfer_candidate(self, **overrides):
         payload = {
