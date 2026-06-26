@@ -580,6 +580,140 @@ INTERNAL_TRANSFER_HANDOFF_TYPE_SOURCE_STATUSES = {
 	"close_or_cancel_review": frozenset({"Rejected", "Cancelled", "Closed"}),
 }
 
+CYCLE_COUNT_TASK_DOCTYPE = "Warehouse Cycle Count Task"
+CYCLE_COUNT_TASK_LINE_DOCTYPE = "Warehouse Cycle Count Task Line"
+CYCLE_COUNT_TASK_EVENT_DOCTYPE = "Warehouse Cycle Count Task Event"
+CYCLE_COUNT_TASK_POLICY_VERSION = "W15H4-cycle-count-task-draft-v1"
+CYCLE_COUNT_TASK_MAX_LINES = 100
+CYCLE_COUNT_TASK_MAX_NOTE_LENGTH = 500
+CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH = 180
+CYCLE_COUNT_TASK_ALLOWED_SOURCES = frozenset({
+	"scheduled_cycle_count",
+	"spot_count",
+	"exception_count",
+	"manager_request",
+	"inventory_admin_request",
+	"post_movement_check",
+	"return_exception_check",
+	"internal_transfer_check",
+})
+CYCLE_COUNT_TASK_ALLOWED_SCOPES = frozenset({
+	"warehouse_scope",
+	"location_reference",
+	"item_specific",
+	"item_group",
+	"high_risk",
+	"serial_batch",
+	"quarantine_restricted",
+	"movement_exception",
+})
+CYCLE_COUNT_TASK_ALLOWED_EXPECTED_VISIBILITY = frozenset({
+	"blind_count",
+	"guided_count",
+	"manager_visible",
+	"inventory_admin_visible",
+})
+CYCLE_COUNT_TASK_ALLOWED_PRIORITIES = frozenset({"Normal", "High", "Urgent"})
+CYCLE_COUNT_TASK_ALLOWED_VARIANCE_DIRECTIONS = frozenset({
+	"No Variance",
+	"Positive Variance",
+	"Negative Variance",
+	"Zero Count",
+	"Unexpected Item",
+	"Missing Item",
+	"Serial/Batch Review",
+	"Quarantine Review",
+	"Blocked Review",
+})
+CYCLE_COUNT_TASK_EVIDENCE_REQUIRED_DIRECTIONS = frozenset({
+	"Positive Variance",
+	"Negative Variance",
+	"Zero Count",
+	"Unexpected Item",
+	"Missing Item",
+	"Serial/Batch Review",
+	"Quarantine Review",
+	"Blocked Review",
+})
+CYCLE_COUNT_TASK_ALLOWED_LINE_STATUSES = frozenset({
+	"Pending Count",
+	"Counted",
+	"Submitted For Review",
+	"Recount Requested",
+	"Clean Count",
+	"Variance Review",
+	"Blocked Review",
+	"Closed",
+})
+CYCLE_COUNT_TASK_LINE_ALLOWED_FIELDS = frozenset({
+	"item_code",
+	"item_name",
+	"warehouse",
+	"location_reference_text",
+	"uom",
+	"expected_qty_snapshot",
+	"counted_qty",
+	"variance_qty",
+	"variance_direction",
+	"condition_grade",
+	"reason_code",
+	"evidence_reference",
+	"serial_batch_reference_text",
+	"line_status",
+})
+CYCLE_COUNT_TASK_FORBIDDEN_FIELDS = frozenset({
+	"stock_reconciliation",
+	"stock_reconciliation_id",
+	"stock_reconciliation_draft",
+	"stock_reconciliation_submitted",
+	"stock_entry",
+	"stock_entry_id",
+	"stock_entry_draft",
+	"stock_entry_submitted",
+	"stock_entry_cancelled",
+	"stock_entry_amended",
+	"stock_ledger_entry",
+	"stock_balance",
+	"stock_reservation",
+	"stock_posted",
+	"stock_moved",
+	"reserve_stock",
+	"unreserve_stock",
+	"valuation_rate",
+	"stock_value",
+	"rate",
+	"amount",
+	"base_amount",
+	"tax",
+	"account",
+	"gl_entry",
+	"gl",
+	"payable",
+	"payment",
+	"billing",
+	"landed_cost",
+	"margin",
+	"profit",
+	"cost",
+	"debit",
+	"credit",
+	"sales_order",
+	"purchase_order",
+	"delivery_note",
+	"purchase_receipt",
+	"purchase_invoice",
+	"procurement_reference",
+	"customer_email",
+	"supplier_email",
+	"notify_customer",
+	"notify_supplier",
+	"customer_notification",
+	"supplier_notification",
+	"portal_user",
+	"email",
+	"portal",
+})
+
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
 QUICK_FIND_DEFAULT_LIMIT = 12
@@ -3972,6 +4106,417 @@ def _internal_transfer_handoff_line_payload(line) -> dict[str, object]:
 		"reason_code": cstr(getter("reason_code")).strip(),
 		"evidence_reference": cstr(getter("evidence_reference")).strip(),
 		"uom": cstr(getter("uom")).strip(),
+	}
+
+
+@frappe.whitelist()
+def save_warehouse_cycle_count_task_draft(
+	warehouse: str | None = None,
+	lines: str | list[dict[str, object]] | None = None,
+	count_source: str | None = None,
+	count_scope: str | None = None,
+	location_reference_text: str | None = None,
+	count_reason: str | None = None,
+	count_priority: str | None = None,
+	expected_quantity_visibility: str | None = None,
+	evidence_status: str | None = None,
+	notes: str | None = None,
+	assigned_user: str | None = None,
+	request_id: str | None = None,
+	**extra_fields,
+) -> dict[str, object]:
+	"""Save a custom Cycle Count Task draft.
+
+	W15H4 writes only custom Warehouse Cycle Count Task records. It does not
+	create Stock Reconciliation or Stock Entry drafts, post stock, reserve stock,
+	or mutate Stock Ledger/Balance records.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	server_request_id = _bounded_text(request_id, 120)
+	task_warehouse = _bounded_text(warehouse, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	source_key = cstr(count_source).strip().lower()
+	scope_key = cstr(count_scope).strip().lower()
+	location_ref = _bounded_text(location_reference_text, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	reason = _bounded_text(count_reason, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	priority = _bounded_text(count_priority, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH) or "Normal"
+	visibility = cstr(expected_quantity_visibility).strip().lower() or "blind_count"
+	evidence = _bounded_text(evidence_status, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH) or "Draft count evidence"
+	note = _bounded_text(notes, CYCLE_COUNT_TASK_MAX_NOTE_LENGTH)
+	assignee = _bounded_text(assigned_user, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH) or cstr(getattr(frappe.session, "user", "")).strip()
+	if not has_warehouse_access(context):
+		frappe.throw(_("Warehouse access required"), frappe.PermissionError)
+	if _contains_forbidden_cycle_count_fields(extra_fields):
+		frappe.throw(_("Cycle count task contains fields that are not allowed in Warehouse."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for cycle count task draft."), ValueError)
+	if not task_warehouse:
+		frappe.throw(_("Warehouse is required for cycle count task draft."), ValueError)
+	if not _cycle_count_warehouse_is_visible(task_warehouse):
+		frappe.throw(_("Warehouse is not available for cycle count task."), ValueError)
+	if source_key not in CYCLE_COUNT_TASK_ALLOWED_SOURCES:
+		frappe.throw(_("Cycle count source is not allowed."), ValueError)
+	if scope_key not in CYCLE_COUNT_TASK_ALLOWED_SCOPES:
+		frappe.throw(_("Cycle count scope is not allowed."), ValueError)
+	if visibility not in CYCLE_COUNT_TASK_ALLOWED_EXPECTED_VISIBILITY:
+		frappe.throw(_("Expected quantity visibility is not allowed for cycle count task."), ValueError)
+	if priority not in CYCLE_COUNT_TASK_ALLOWED_PRIORITIES:
+		frappe.throw(_("Cycle count priority is not allowed."), ValueError)
+	if scope_key in {"location_reference", "serial_batch", "quarantine_restricted"} and not location_ref:
+		frappe.throw(_("Location or scope reference is required for this cycle count scope."), ValueError)
+	if not reason:
+		frappe.throw(_("Count reason is required for cycle count task draft."), ValueError)
+	task_lines = _normalize_cycle_count_task_lines(lines, task_warehouse, visibility)
+	payload_hash = _cycle_count_task_payload_hash(
+		task_warehouse,
+		source_key,
+		scope_key,
+		location_ref,
+		reason,
+		priority,
+		visibility,
+		evidence,
+		note,
+		assignee,
+		task_lines,
+	)
+	owner = _cycle_count_task_request_id_owner(server_request_id)
+	if owner:
+		owner_doc = frappe.get_doc(CYCLE_COUNT_TASK_DOCTYPE, owner)
+		if cstr(getattr(owner_doc, "warehouse", "")).strip() != task_warehouse:
+			frappe.throw(_("Request id was already used for another cycle count task."), ValueError)
+		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != payload_hash:
+			frappe.throw(_("Request id was already used with different cycle count details."), ValueError)
+		return _cycle_count_task_payload(context, owner_doc, idempotent=True)
+	task_doc = frappe.get_doc({"doctype": CYCLE_COUNT_TASK_DOCTYPE})
+	_apply_cycle_count_task_draft(
+		task_doc,
+		task_warehouse,
+		source_key,
+		scope_key,
+		location_ref,
+		reason,
+		priority,
+		visibility,
+		evidence,
+		note,
+		assignee,
+		task_lines,
+		server_request_id,
+		payload_hash,
+	)
+	return _cycle_count_task_payload(context, task_doc, idempotent=False)
+
+
+def _contains_forbidden_cycle_count_fields(extra_fields: dict[str, object]) -> bool:
+	for key, value in (extra_fields or {}).items():
+		if key in CYCLE_COUNT_TASK_FORBIDDEN_FIELDS and cstr(value).strip():
+			return True
+		if key not in CYCLE_COUNT_TASK_FORBIDDEN_FIELDS and cstr(value).strip():
+			return True
+	return False
+
+
+def _cycle_count_warehouse_is_visible(warehouse: str) -> bool:
+	return _customer_return_warehouse_is_visible(warehouse)
+
+
+def _normalize_cycle_count_task_lines(lines: str | list[dict[str, object]] | None, warehouse: str, expected_quantity_visibility: str) -> list[dict[str, object]]:
+	raw_lines = _decode_cycle_count_task_lines(lines)
+	if not raw_lines:
+		frappe.throw(_("At least one cycle count task line is required."), ValueError)
+	if len(raw_lines) > CYCLE_COUNT_TASK_MAX_LINES:
+		frappe.throw(_("Cycle count task draft has too many lines."), ValueError)
+	normalized: list[dict[str, object]] = []
+	seen: set[tuple[str, str, str, str, str]] = set()
+	for raw in raw_lines:
+		if not isinstance(raw, dict):
+			frappe.throw(_("Cycle count task line payload is invalid."), ValueError)
+		line = _normalize_cycle_count_task_line(raw, warehouse, expected_quantity_visibility)
+		key = (
+			cstr(line.get("item_code")).strip(),
+			cstr(line.get("warehouse")).strip(),
+			cstr(line.get("location_reference_text")).strip(),
+			cstr(line.get("uom")).strip(),
+			cstr(line.get("serial_batch_reference_text")).strip(),
+		)
+		if key in seen:
+			frappe.throw(_("Duplicate cycle count task line in draft."), ValueError)
+		seen.add(key)
+		normalized.append(line)
+	return normalized
+
+
+def _decode_cycle_count_task_lines(lines: str | list[dict[str, object]] | None) -> list[dict[str, object]]:
+	if isinstance(lines, str):
+		try:
+			decoded = json.loads(lines)
+		except Exception:
+			frappe.throw(_("Cycle count task line payload is invalid JSON."), ValueError)
+		if isinstance(decoded, dict):
+			decoded = decoded.get("lines")
+		return list(decoded or []) if isinstance(decoded, list) else []
+	return list(lines or []) if isinstance(lines, list) else []
+
+
+def _normalize_cycle_count_task_line(raw: dict[str, object], warehouse: str, expected_quantity_visibility: str) -> dict[str, object]:
+	for key, value in (raw or {}).items():
+		if key not in CYCLE_COUNT_TASK_LINE_ALLOWED_FIELDS and cstr(value).strip():
+			frappe.throw(_("Cycle count task line contains fields that are not allowed in Warehouse."), ValueError)
+	item_code = _bounded_text(raw.get("item_code"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	if not item_code:
+		frappe.throw(_("Item identity is required for cycle count task line."), ValueError)
+	line_warehouse = _bounded_text(raw.get("warehouse") or warehouse, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	if line_warehouse != warehouse:
+		frappe.throw(_("Cycle count task line warehouse must match the task warehouse."), ValueError)
+	counted_qty = _non_negative_qty(raw.get("counted_qty"), "Counted quantity")
+	has_expected_snapshot = cstr(raw.get("expected_qty_snapshot")).strip() != ""
+	if expected_quantity_visibility == "blind_count" and has_expected_snapshot:
+		frappe.throw(_("Expected quantity snapshot is not allowed for blind cycle counts."), ValueError)
+	expected_qty = _non_negative_qty(raw.get("expected_qty_snapshot"), "Expected quantity snapshot") if has_expected_snapshot else 0
+	has_variance_qty = cstr(raw.get("variance_qty")).strip() != ""
+	variance_qty = flt(raw.get("variance_qty")) if has_variance_qty else counted_qty - expected_qty if has_expected_snapshot else 0
+	direction = _bounded_text(raw.get("variance_direction"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	if not direction:
+		direction = _cycle_count_variance_direction(expected_qty, counted_qty, variance_qty, has_expected_snapshot)
+	if direction not in CYCLE_COUNT_TASK_ALLOWED_VARIANCE_DIRECTIONS:
+		frappe.throw(_("Cycle count variance direction is not allowed."), ValueError)
+	if direction == "No Variance" and abs(variance_qty) > 0:
+		frappe.throw(_("Cycle count variance direction must match variance quantity."), ValueError)
+	if direction in {"Positive Variance", "Negative Variance"} and variance_qty == 0:
+		frappe.throw(_("Cycle count variance quantity is required for variance review lines."), ValueError)
+	reason_code = _bounded_text(raw.get("reason_code"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	evidence_reference = _bounded_text(raw.get("evidence_reference"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	condition_grade = _bounded_text(raw.get("condition_grade"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	serial_batch_reference = _bounded_text(raw.get("serial_batch_reference_text"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	if _cycle_count_line_requires_evidence(direction, counted_qty, variance_qty) and not (evidence_reference or reason_code or condition_grade or serial_batch_reference):
+		frappe.throw(_("Cycle count variance, zero, missing, unexpected, or blocked lines require evidence or reason."), ValueError)
+	line_status = _bounded_text(raw.get("line_status"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH) or "Counted"
+	if line_status not in CYCLE_COUNT_TASK_ALLOWED_LINE_STATUSES:
+		frappe.throw(_("Cycle count line status is not allowed."), ValueError)
+	return {
+		"item_code": item_code,
+		"item_name": _bounded_text(raw.get("item_name"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH),
+		"warehouse": line_warehouse,
+		"location_reference_text": _bounded_text(raw.get("location_reference_text"), CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH),
+		"uom": _bounded_text(raw.get("uom"), 40),
+		"expected_qty_snapshot": expected_qty,
+		"counted_qty": counted_qty,
+		"variance_qty": variance_qty,
+		"variance_direction": direction,
+		"condition_grade": condition_grade,
+		"reason_code": reason_code,
+		"evidence_reference": evidence_reference,
+		"serial_batch_reference_text": serial_batch_reference,
+		"line_status": line_status,
+	}
+
+
+def _cycle_count_variance_direction(expected_qty: float, counted_qty: float, variance_qty: float, has_expected_snapshot: bool) -> str:
+	if not has_expected_snapshot:
+		return "No Variance"
+	if counted_qty == 0 and expected_qty > 0:
+		return "Zero Count"
+	if counted_qty > 0 and expected_qty == 0:
+		return "Unexpected Item"
+	if variance_qty > 0:
+		return "Positive Variance"
+	if variance_qty < 0:
+		return "Negative Variance"
+	return "No Variance"
+
+
+def _cycle_count_line_requires_evidence(direction: str, counted_qty: float, variance_qty: float) -> bool:
+	return direction in CYCLE_COUNT_TASK_EVIDENCE_REQUIRED_DIRECTIONS or counted_qty == 0 or abs(variance_qty) > 0
+
+
+def _cycle_count_task_payload_hash(
+	warehouse: str,
+	count_source: str,
+	count_scope: str,
+	location_reference_text: str,
+	count_reason: str,
+	count_priority: str,
+	expected_quantity_visibility: str,
+	evidence_status: str,
+	notes: str,
+	assigned_user: str,
+	lines: list[dict[str, object]],
+) -> str:
+	canonical = {
+		"warehouse": warehouse,
+		"count_source": count_source,
+		"count_scope": count_scope,
+		"location_reference_text": location_reference_text,
+		"count_reason": count_reason,
+		"count_priority": count_priority,
+		"expected_quantity_visibility": expected_quantity_visibility,
+		"evidence_status": evidence_status,
+		"notes": notes,
+		"assigned_user": assigned_user,
+		"lines": sorted([
+			{
+				"item_code": line.get("item_code"),
+				"item_name": line.get("item_name"),
+				"warehouse": line.get("warehouse"),
+				"location_reference_text": line.get("location_reference_text"),
+				"uom": line.get("uom"),
+				"expected_qty_snapshot": flt(line.get("expected_qty_snapshot")),
+				"counted_qty": flt(line.get("counted_qty")),
+				"variance_qty": flt(line.get("variance_qty")),
+				"variance_direction": line.get("variance_direction"),
+				"condition_grade": line.get("condition_grade"),
+				"reason_code": line.get("reason_code"),
+				"evidence_reference": line.get("evidence_reference"),
+				"serial_batch_reference_text": line.get("serial_batch_reference_text"),
+				"line_status": line.get("line_status"),
+			}
+			for line in lines
+		], key=lambda row: (cstr(row.get("item_code")), cstr(row.get("warehouse")), cstr(row.get("location_reference_text")), cstr(row.get("uom")), cstr(row.get("serial_batch_reference_text")))),
+	}
+	return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _cycle_count_task_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			CYCLE_COUNT_TASK_DOCTYPE,
+			fields=["name"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _apply_cycle_count_task_draft(
+	task_doc,
+	warehouse: str,
+	count_source: str,
+	count_scope: str,
+	location_reference_text: str,
+	count_reason: str,
+	count_priority: str,
+	expected_quantity_visibility: str,
+	evidence_status: str,
+	notes: str,
+	assigned_user: str,
+	lines: list[dict[str, object]],
+	request_id: str,
+	payload_hash: str,
+) -> None:
+	now_value = str(now_datetime())
+	task_doc.count_source = count_source
+	task_doc.count_scope = count_scope
+	task_doc.warehouse = warehouse
+	task_doc.location_reference_text = location_reference_text
+	task_doc.count_status = "Count In Progress"
+	task_doc.manager_review_status = "Not submitted"
+	task_doc.variance_status = _cycle_count_task_variance_status(lines)
+	task_doc.expected_quantity_visibility = expected_quantity_visibility
+	task_doc.count_reason = count_reason
+	task_doc.count_priority = count_priority
+	task_doc.assigned_user = assigned_user
+	task_doc.evidence_status = evidence_status
+	task_doc.notes = notes
+	task_doc.manager_note = ""
+	task_doc.inventory_admin_escalation_reference = ""
+	task_doc.source_payload_hash = payload_hash
+	task_doc.policy_version = CYCLE_COUNT_TASK_POLICY_VERSION
+	task_doc.line_count = len(lines)
+	task_doc.total_counted_qty = sum(flt(line.get("counted_qty")) for line in lines)
+	task_doc.total_variance_qty = sum(flt(line.get("variance_qty")) for line in lines)
+	task_doc.request_id = request_id
+	task_doc.created_by = cstr(getattr(frappe.session, "user", "")).strip()
+	task_doc.created_at = now_value
+	_set_child_table(task_doc, "lines", lines)
+	_append_child(task_doc, "events", {
+		"event_type": "saved_cycle_count_task_draft",
+		"event_label": "Cycle count task draft saved",
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": request_id,
+		"details_json": json.dumps({"line_count": len(lines), "stock_effect": False, "stock_reconciliation_created": False, "stock_entry_created": False}, sort_keys=True),
+	})
+	task_doc.insert()
+
+
+def _cycle_count_task_variance_status(lines: list[dict[str, object]]) -> str:
+	if any(cstr(line.get("variance_direction")).strip() in {"Quarantine Review", "Blocked Review", "Serial/Batch Review"} for line in lines):
+		return "Exception Review"
+	if any(cstr(line.get("variance_direction")).strip() != "No Variance" or abs(flt(line.get("variance_qty"))) > 0 for line in lines):
+		return "Variance Review"
+	return "No variance"
+
+
+def _cycle_count_task_payload(context: dict[str, object], task_doc, *, idempotent: bool) -> dict[str, object]:
+	lines = [_cycle_count_task_line_payload(line) for line in list(getattr(task_doc, "lines", []) or [])]
+	events = list(getattr(task_doc, "events", []) or [])
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Cycle Count Task Draft", "key": "cycle_count_task_draft"},
+		"task": {
+			"task_id": cstr(getattr(task_doc, "name", "")).strip(),
+			"count_status": cstr(getattr(task_doc, "count_status", "")).strip(),
+			"warehouse": cstr(getattr(task_doc, "warehouse", "")).strip(),
+			"count_source": cstr(getattr(task_doc, "count_source", "")).strip(),
+			"count_scope": cstr(getattr(task_doc, "count_scope", "")).strip(),
+			"expected_quantity_visibility": cstr(getattr(task_doc, "expected_quantity_visibility", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"event_summary": _cycle_count_task_event_payload(events[-1]) if events else {},
+		"stock_effect": False,
+		"stock_quantity_adjusted": False,
+		"stock_reconciliation_created": False,
+		"stock_reconciliation_submitted": False,
+		"stock_entry_created": False,
+		"stock_entry_submitted": False,
+		"stock_posted": False,
+		"stock_reservation_created": False,
+		"stock_ledger_updated": False,
+		"stock_balance_updated": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
+	}
+
+
+def _cycle_count_task_line_payload(line) -> dict[str, object]:
+	getter = line.get if hasattr(line, "get") else lambda key, default=None: getattr(line, key, default)
+	return {
+		"item_code": cstr(getter("item_code")).strip(),
+		"item_name": cstr(getter("item_name")).strip(),
+		"warehouse": cstr(getter("warehouse")).strip(),
+		"location_reference_text": cstr(getter("location_reference_text")).strip(),
+		"uom": cstr(getter("uom")).strip(),
+		"expected_qty_snapshot": _number_text(getter("expected_qty_snapshot")),
+		"counted_qty": _number_text(getter("counted_qty")),
+		"variance_qty": _number_text(getter("variance_qty")),
+		"variance_direction": cstr(getter("variance_direction")).strip(),
+		"condition_grade": cstr(getter("condition_grade")).strip(),
+		"reason_code": cstr(getter("reason_code")).strip(),
+		"evidence_reference": cstr(getter("evidence_reference")).strip(),
+		"serial_batch_reference_text": cstr(getter("serial_batch_reference_text")).strip(),
+		"line_status": cstr(getter("line_status")).strip(),
+	}
+
+
+def _cycle_count_task_event_payload(event) -> dict[str, object]:
+	if not event:
+		return {}
+	return {
+		"event_type": cstr(_child_value(event, "event_type")).strip(),
+		"event_label": cstr(_child_value(event, "event_label")).strip(),
+		"event_by": cstr(_child_value(event, "event_by")).strip(),
+		"event_at": cstr(_child_value(event, "event_at")).strip(),
+		"request_id": cstr(_child_value(event, "request_id")).strip(),
 	}
 
 

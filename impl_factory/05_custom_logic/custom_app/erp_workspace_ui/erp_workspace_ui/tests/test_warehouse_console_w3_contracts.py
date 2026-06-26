@@ -36,6 +36,7 @@ SUPPLIER_RETURN_CANDIDATE_DOCS = {}
 SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS = {}
 INTERNAL_TRANSFER_CANDIDATE_DOCS = {}
 INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS = {}
+CYCLE_COUNT_TASK_DOCS = {}
 
 PO_ROWS = [
     {
@@ -845,6 +846,57 @@ def _get_meta(doctype):
             "request_id",
             "details_json",
         },
+        "Warehouse Cycle Count Task": {
+            "count_source",
+            "count_scope",
+            "warehouse",
+            "location_reference_text",
+            "count_status",
+            "manager_review_status",
+            "variance_status",
+            "expected_quantity_visibility",
+            "count_reason",
+            "count_priority",
+            "assigned_user",
+            "evidence_status",
+            "notes",
+            "manager_note",
+            "inventory_admin_escalation_reference",
+            "source_payload_hash",
+            "policy_version",
+            "line_count",
+            "total_counted_qty",
+            "total_variance_qty",
+            "request_id",
+            "created_by",
+            "created_at",
+            "lines",
+            "events",
+        },
+        "Warehouse Cycle Count Task Line": {
+            "item_code",
+            "item_name",
+            "warehouse",
+            "location_reference_text",
+            "uom",
+            "expected_qty_snapshot",
+            "counted_qty",
+            "variance_qty",
+            "variance_direction",
+            "condition_grade",
+            "reason_code",
+            "evidence_reference",
+            "serial_batch_reference_text",
+            "line_status",
+        },
+        "Warehouse Cycle Count Task Event": {
+            "event_type",
+            "event_label",
+            "event_by",
+            "event_at",
+            "request_id",
+            "details_json",
+        },
     }
     return _FakeMeta(fields.get(doctype, set()))
 
@@ -1133,6 +1185,27 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
             for key, value in filters.items():
                 rows = [row for row in rows if row.get(key) == value]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Cycle Count Task":
+        rows = list(CYCLE_COUNT_TASK_DOCS.values())
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                if isinstance(value, list) and value[0] == "in":
+                    allowed = set(value[1])
+                    rows = [row for row in rows if getattr(row, key, None) in allowed]
+                else:
+                    rows = [row for row in rows if getattr(row, key, None) == value]
+        return [_selected(row.__dict__, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    if doctype == "Warehouse Cycle Count Task Event":
+        rows = []
+        for task in CYCLE_COUNT_TASK_DOCS.values():
+            for event in list(getattr(task, "events", []) or []):
+                row = dict(event)
+                row["parent"] = task.name
+                rows.append(row)
+        if isinstance(filters, dict):
+            for key, value in filters.items():
+                rows = [row for row in rows if row.get(key) == value]
+        return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
         parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
         if isinstance(parent_filter, list) and parent_filter[0] == "in":
@@ -1208,6 +1281,11 @@ class _FakeWorkflowDoc:
         return rows[-1]
 
     def insert(self):
+        if self.doctype == "Warehouse Cycle Count Task":
+            if not self.name:
+                self.name = f"WCCT-{len(CYCLE_COUNT_TASK_DOCS) + 1:05d}"
+            CYCLE_COUNT_TASK_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Internal Transfer Handoff Request":
             if not self.name:
                 self.name = f"WITH-{len(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS) + 1:05d}"
@@ -1259,6 +1337,11 @@ class _FakeWorkflowDoc:
         return self
 
     def save(self):
+        if self.doctype == "Warehouse Cycle Count Task":
+            if not self.name:
+                self.name = f"WCCT-{len(CYCLE_COUNT_TASK_DOCS) + 1:05d}"
+            CYCLE_COUNT_TASK_DOCS[self.name] = self
+            return self
         if self.doctype == "Warehouse Internal Transfer Handoff Request":
             if not self.name:
                 self.name = f"WITH-{len(INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS) + 1:05d}"
@@ -1305,10 +1388,14 @@ class _FakeWorkflowDoc:
 
 def _get_doc(doctype, name=None, *args, **kwargs):
     if isinstance(doctype, dict):
-        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request", "Warehouse Internal Transfer Candidate", "Warehouse Internal Transfer Handoff Request"}:
+        if doctype.get("doctype") in {"Warehouse Receiving Task", "Warehouse Picking Task", "Warehouse Dispatch Handoff Request", "Warehouse Customer Return Intake", "Warehouse Customer Return Handoff Request", "Warehouse Supplier Return Candidate", "Warehouse Supplier Return Handoff Request", "Warehouse Internal Transfer Candidate", "Warehouse Internal Transfer Handoff Request", "Warehouse Cycle Count Task"}:
             return _FakeWorkflowDoc(doctype)
         raise Exception("Unsupported DocType")
     GET_DOC_CALLS.append({"doctype": doctype, "name": name})
+    if doctype == "Warehouse Cycle Count Task":
+        if name not in CYCLE_COUNT_TASK_DOCS:
+            raise Exception("Missing Warehouse Cycle Count Task")
+        return CYCLE_COUNT_TASK_DOCS[name]
     if doctype == "Warehouse Receiving Task":
         if name not in RECEIVING_TASK_DOCS:
             raise Exception("Missing Warehouse Receiving Task")
@@ -1438,6 +1525,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS.clear()
         INTERNAL_TRANSFER_CANDIDATE_DOCS.clear()
         INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS.clear()
+        CYCLE_COUNT_TASK_DOCS.clear()
 
     def test_warehouse_workspace_registry_definition_has_w8c_transfer_visibility_route(self):
         workspace = get_warehouse_workspace_definition()
@@ -5288,6 +5376,205 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertIn("inventory_admin_visible", visibility["options"].splitlines())
         self.assertIn("Positive Variance", variance_direction["options"].splitlines())
         self.assertIn("Missing Item", variance_direction["options"].splitlines())
+
+    def _save_cycle_count_task(self, **overrides):
+        payload = {
+            "warehouse": "Main - M",
+            "count_source": "spot_count",
+            "count_scope": "item_specific",
+            "count_reason": "Shelf count verification.",
+            "count_priority": "Normal",
+            "expected_quantity_visibility": "blind_count",
+            "evidence_status": "Draft count evidence",
+            "notes": "Cycle count draft only.",
+            "lines": [
+                {
+                    "item_code": "ITEM-103",
+                    "item_name": "Bluetooth Speaker",
+                    "warehouse": "Main - M",
+                    "location_reference_text": "Aisle A",
+                    "counted_qty": 12,
+                    "variance_direction": "No Variance",
+                    "reason_code": "Spot count",
+                    "evidence_reference": "COUNT-EVID-001",
+                    "uom": "Nos",
+                }
+            ],
+            "request_id": "cycle-count-task-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_cycle_count_task_draft(**payload)
+
+    def test_w15h4_warehouse_and_stock_users_can_save_cycle_count_task_draft(self):
+        payload = self._save_cycle_count_task()
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "cycle_count_task_draft")
+        self.assertEqual(payload["task"]["warehouse"], "Main - M")
+        self.assertEqual(payload["task"]["count_source"], "spot_count")
+        self.assertEqual(payload["task"]["line_count"], 1)
+        self.assertFalse(payload["task"]["idempotent"])
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_quantity_adjusted"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertEqual(len(CYCLE_COUNT_TASK_DOCS), 1)
+        task = next(iter(CYCLE_COUNT_TASK_DOCS.values()))
+        self.assertEqual(task.policy_version, service.CYCLE_COUNT_TASK_POLICY_VERSION)
+        self.assertEqual(task.count_status, "Count In Progress")
+        self.assertEqual(task.manager_review_status, "Not submitted")
+        self.assertEqual(task.request_id, "cycle-count-task-001")
+        self.assertEqual(task.total_counted_qty, 12.0)
+        self.assertEqual(task.lines[0]["evidence_reference"], "COUNT-EVID-001")
+        self.assertEqual(task.events[0]["event_type"], "saved_cycle_count_task_draft")
+
+        CYCLE_COUNT_TASK_DOCS.clear()
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        warehouse_payload = self._save_cycle_count_task(request_id="cycle-count-warehouse-user")
+        self.assertEqual(warehouse_payload["state"]["kind"], "ready")
+        self.assertEqual(len(CYCLE_COUNT_TASK_DOCS), 1)
+
+    def test_w15h4_non_warehouse_user_denied_cycle_count_task(self):
+        CURRENT_ROLES[:] = ["Accounts User"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(request_id="cycle-count-denied")
+        self.assertEqual(CYCLE_COUNT_TASK_DOCS, {})
+
+    def test_w15h4_cycle_count_task_requires_valid_context(self):
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(warehouse="", request_id="cycle-count-missing-warehouse")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(warehouse="Unknown - M", request_id="cycle-count-unknown-warehouse")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(count_source="", request_id="cycle-count-missing-source")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(count_source="stock_reconciliation", request_id="cycle-count-invalid-source")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(count_scope="", request_id="cycle-count-missing-scope")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(count_scope="native_stock_adjustment", request_id="cycle-count-invalid-scope")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(count_scope="location_reference", location_reference_text="", request_id="cycle-count-missing-location")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(expected_quantity_visibility="stock_balance_visible", request_id="cycle-count-invalid-visibility")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(count_priority="Post stock", request_id="cycle-count-invalid-priority")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(count_reason="", request_id="cycle-count-missing-reason")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(request_id="")
+        self.assertEqual(CYCLE_COUNT_TASK_DOCS, {})
+
+    def test_w15h4_cycle_count_task_line_validation(self):
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[], request_id="cycle-count-missing-lines")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[{"warehouse": "Main - M", "counted_qty": 1, "evidence_reference": "X"}], request_id="cycle-count-missing-item")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[{"item_code": "ITEM-103", "warehouse": "Stores - M", "counted_qty": 1, "evidence_reference": "X"}], request_id="cycle-count-wrong-warehouse")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "counted_qty": -1, "evidence_reference": "X"}], request_id="cycle-count-negative-count")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "expected_qty_snapshot": 12, "counted_qty": 12, "evidence_reference": "X"}], request_id="cycle-count-blind-expected")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(expected_quantity_visibility="guided_count", lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "expected_qty_snapshot": -1, "counted_qty": 1, "evidence_reference": "X"}], request_id="cycle-count-negative-expected")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "counted_qty": 1, "variance_direction": "Stock Posted", "evidence_reference": "X"}], request_id="cycle-count-invalid-direction")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "counted_qty": 1, "variance_qty": 2, "variance_direction": "No Variance", "evidence_reference": "X"}], request_id="cycle-count-direction-mismatch")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "counted_qty": 1, "line_status": "Stock Posted", "evidence_reference": "X"}], request_id="cycle-count-invalid-line-status")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=[
+                {"item_code": "ITEM-103", "warehouse": "Main - M", "counted_qty": 1, "evidence_reference": "X"},
+                {"item_code": "ITEM-103", "warehouse": "Main - M", "counted_qty": 1, "evidence_reference": "Y"},
+            ], request_id="cycle-count-duplicate-line")
+        too_many_lines = [
+            {"item_code": f"ITEM-COUNT-{idx}", "warehouse": "Main - M", "counted_qty": 1, "evidence_reference": f"COUNT-EVID-{idx}"}
+            for idx in range(service.CYCLE_COUNT_TASK_MAX_LINES + 1)
+        ]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(lines=too_many_lines, request_id="cycle-count-too-many-lines")
+        self.assertEqual(CYCLE_COUNT_TASK_DOCS, {})
+
+    def test_w15h4_cycle_count_variance_and_zero_count_require_evidence(self):
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(
+                lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "expected_qty_snapshot": 5, "counted_qty": 0}],
+                expected_quantity_visibility="guided_count",
+                request_id="cycle-count-zero-no-evidence",
+            )
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(
+                lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "expected_qty_snapshot": 5, "counted_qty": 4, "variance_direction": "Negative Variance"}],
+                expected_quantity_visibility="guided_count",
+                request_id="cycle-count-variance-no-evidence",
+            )
+        payload = self._save_cycle_count_task(
+            lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "expected_qty_snapshot": 5, "counted_qty": 4, "reason_code": "Damaged case", "evidence_reference": "COUNT-VAR-1"}],
+            expected_quantity_visibility="guided_count",
+            request_id="cycle-count-variance-evidence",
+        )
+        self.assertEqual(payload["task"]["lines"][0]["variance_direction"], "Negative Variance")
+        self.assertEqual(payload["task"]["lines"][0]["evidence_reference"], "COUNT-VAR-1")
+        task = next(iter(CYCLE_COUNT_TASK_DOCS.values()))
+        self.assertEqual(task.variance_status, "Variance Review")
+
+    def test_w15h4_cycle_count_request_idempotency_and_changed_payload_rejection(self):
+        first = self._save_cycle_count_task(request_id="cycle-count-same-request")
+        second = self._save_cycle_count_task(request_id="cycle-count-same-request")
+
+        self.assertFalse(first["task"]["idempotent"])
+        self.assertTrue(second["task"]["idempotent"])
+        self.assertEqual(len(CYCLE_COUNT_TASK_DOCS), 1)
+        task = next(iter(CYCLE_COUNT_TASK_DOCS.values()))
+        self.assertEqual(len(task.events), 1)
+
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(notes="Changed cycle note.", request_id="cycle-count-same-request")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(
+                warehouse="Stores - M",
+                lines=[{"item_code": "ITEM-101", "warehouse": "Stores - M", "counted_qty": 8, "evidence_reference": "COUNT-STORES-1"}],
+                request_id="cycle-count-same-request",
+            )
+
+    def test_w15h4_cycle_count_forbidden_fields_and_safe_payload_boundaries(self):
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(stock_reconciliation="MAT-RECO-0001", request_id="cycle-count-forbidden-reco")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(amount="12.50", request_id="cycle-count-forbidden-amount")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_task(
+                lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "counted_qty": 12, "evidence_reference": "X", "stock_entry": "MAT-STE-0001"}],
+                request_id="cycle-count-forbidden-line-stock-entry",
+            )
+        self.assertEqual(CYCLE_COUNT_TASK_DOCS, {})
+
+        payload = self._save_cycle_count_task(request_id="cycle-count-safe-response")
+        payload_text = str(payload).lower()
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_quantity_adjusted"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertFalse(payload["stock_reconciliation_submitted"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_entry_submitted"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["stock_reservation_created"])
+        self.assertFalse(payload["stock_ledger_updated"])
+        self.assertFalse(payload["stock_balance_updated"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Stock Reconciliation", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reservation"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
 
     def _save_internal_transfer_candidate(self, **overrides):
         payload = {
