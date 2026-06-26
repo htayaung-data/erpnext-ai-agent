@@ -713,6 +713,23 @@ CYCLE_COUNT_TASK_FORBIDDEN_FIELDS = frozenset({
 	"email",
 	"portal",
 })
+CYCLE_COUNT_MANAGER_ROLES = frozenset({"Warehouse Manager", "Stock Manager", "System Manager"})
+CYCLE_COUNT_MANAGER_DECISION_STATUSES = frozenset({
+	"Count In Progress",
+	"Submitted For Review",
+	"Recount Requested",
+})
+CYCLE_COUNT_MANAGER_DECISIONS = {
+	"request_recount": ("Recount Requested", "requested_cycle_count_recount", "Cycle count recount requested"),
+	"mark_clean_count": ("Clean Count", "marked_cycle_count_clean", "Cycle count marked clean"),
+	"mark_variance_review": ("Variance Review", "marked_cycle_count_variance_review", "Cycle count variance review marked"),
+	"mark_quarantine_review": ("Quarantine Review", "marked_cycle_count_quarantine_review", "Cycle count quarantine review marked"),
+	"mark_serial_batch_review": ("Serial/Batch Review", "marked_cycle_count_serial_batch_review", "Cycle count serial/batch review marked"),
+	"escalate_to_inventory_admin": ("Inventory/Admin Review Requested", "escalated_cycle_count_inventory_admin", "Cycle count Inventory/Admin review requested"),
+	"reject_cycle_count": ("Rejected", "rejected_cycle_count", "Cycle count rejected"),
+	"cancel_cycle_count": ("Cancelled", "cancelled_cycle_count", "Cycle count cancelled"),
+	"close_cycle_count": ("Closed", "closed_cycle_count", "Cycle count closed"),
+}
 
 
 QUICK_FIND_MIN_QUERY_LENGTH = 2
@@ -4517,6 +4534,225 @@ def _cycle_count_task_event_payload(event) -> dict[str, object]:
 		"event_by": cstr(_child_value(event, "event_by")).strip(),
 		"event_at": cstr(_child_value(event, "event_at")).strip(),
 		"request_id": cstr(_child_value(event, "request_id")).strip(),
+	}
+
+
+@frappe.whitelist()
+def save_warehouse_cycle_count_manager_decision(
+	task_id: str | None = None,
+	cycle_count_task: str | None = None,
+	decision: str | None = None,
+	note: str | None = None,
+	inventory_admin_escalation_reference: str | None = None,
+	request_id: str | None = None,
+) -> dict[str, object]:
+	"""Save a manager decision on a custom Cycle Count Task.
+
+	W15H5 writes only the custom Warehouse Cycle Count Task and event log. It
+	does not create Stock Reconciliation or Stock Entry drafts, post stock,
+	reserve stock, or mutate Stock Ledger/Balance records.
+	"""
+	ensure_authenticated()
+	context = build_context()
+	task_name = cstr(task_id or cycle_count_task).strip()
+	decision_key = cstr(decision).strip().lower()
+	server_request_id = _bounded_text(request_id, 120)
+	manager_note = _bounded_text(note, CYCLE_COUNT_TASK_MAX_NOTE_LENGTH)
+	inventory_ref = _bounded_text(inventory_admin_escalation_reference, CYCLE_COUNT_TASK_MAX_REFERENCE_LENGTH)
+	if not _has_cycle_count_manager_access(context):
+		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if not task_name:
+		frappe.throw(_("Cycle count task is required."), ValueError)
+	if not server_request_id:
+		frappe.throw(_("Request id is required for cycle count manager decision."), ValueError)
+	if decision_key not in CYCLE_COUNT_MANAGER_DECISIONS:
+		frappe.throw(_("Cycle count manager decision is not allowed."), ValueError)
+	owner = _cycle_count_manager_request_id_owner(server_request_id)
+	if owner and owner != task_name:
+		frappe.throw(_("Request id was already used for another cycle count task."), ValueError)
+	task_doc = _get_cycle_count_task_for_decision(task_name)
+	next_status, event_type, event_label = CYCLE_COUNT_MANAGER_DECISIONS[decision_key]
+	existing_event = _cycle_count_event_for_request(task_doc, server_request_id)
+	if existing_event:
+		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
+			frappe.throw(_("Request id was already used for another cycle count manager decision."), ValueError)
+		return _cycle_count_manager_decision_payload(context, task_doc, decision_key, existing_event, idempotent=True)
+	if cstr(getattr(task_doc, "request_id", "")).strip() == server_request_id:
+		frappe.throw(_("Request id was already used for this cycle count task draft."), ValueError)
+	_validate_cycle_count_manager_decision(task_doc, decision_key, manager_note, inventory_ref)
+	previous_status = cstr(getattr(task_doc, "count_status", "")).strip()
+	now_value = str(now_datetime())
+	event = {
+		"event_type": event_type,
+		"event_label": event_label,
+		"event_by": cstr(getattr(frappe.session, "user", "")).strip(),
+		"event_at": now_value,
+		"request_id": server_request_id,
+		"details_json": json.dumps(_cycle_count_manager_event_details(decision_key, manager_note, inventory_ref, previous_status, next_status), sort_keys=True),
+	}
+	task_doc.count_status = next_status
+	task_doc.manager_review_status = next_status
+	task_doc.variance_status = _cycle_count_variance_status_for_decision(task_doc, decision_key, next_status)
+	if manager_note:
+		task_doc.manager_note = manager_note
+	if inventory_ref:
+		task_doc.inventory_admin_escalation_reference = inventory_ref
+	_append_child(task_doc, "events", event)
+	task_doc.save()
+	return _cycle_count_manager_decision_payload(context, task_doc, decision_key, event, idempotent=False)
+
+
+def _has_cycle_count_manager_access(context: dict[str, object]) -> bool:
+	roles = set(context.get("roles") or [])
+	return bool(roles.intersection(CYCLE_COUNT_MANAGER_ROLES))
+
+
+def _get_cycle_count_task_for_decision(task_name: str):
+	try:
+		return frappe.get_doc(CYCLE_COUNT_TASK_DOCTYPE, task_name)
+	except Exception:
+		_clear_transient_frappe_messages()
+		frappe.throw(_("Cycle count task is not available."), frappe.PermissionError)
+
+
+def _cycle_count_manager_request_id_owner(request_id: str) -> str:
+	if not request_id:
+		return ""
+	try:
+		rows = frappe.get_all(
+			CYCLE_COUNT_TASK_EVENT_DOCTYPE,
+			fields=["parent"],
+			filters={"request_id": request_id},
+			limit_page_length=2,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("parent")).strip() if rows else ""
+
+
+def _cycle_count_event_for_request(task_doc, request_id: str):
+	for event in list(getattr(task_doc, "events", []) or []):
+		if cstr(_child_value(event, "request_id")).strip() == request_id:
+			return event
+	return None
+
+
+def _validate_cycle_count_manager_decision(task_doc, decision_key: str, note: str, inventory_ref: str) -> None:
+	status = cstr(getattr(task_doc, "count_status", "")).strip()
+	if status not in CYCLE_COUNT_MANAGER_DECISION_STATUSES:
+		frappe.throw(_("Cycle count task is not ready for manager decision."), ValueError)
+	lines = list(getattr(task_doc, "lines", []) or [])
+	if not lines:
+		frappe.throw(_("Cycle count task has no lines to review."), ValueError)
+	if decision_key == "request_recount" and not note:
+		frappe.throw(_("Manager note is required to request cycle count recount."), ValueError)
+	if decision_key == "mark_clean_count":
+		if any(_cycle_count_line_has_variance_or_exception(line) for line in lines):
+			frappe.throw(_("Clean count rejects variance, zero, missing, unexpected, quarantine, or blocked lines."), ValueError)
+	if decision_key == "mark_variance_review":
+		if not any(_cycle_count_line_has_variance(line) for line in lines):
+			frappe.throw(_("Variance review requires variance evidence."), ValueError)
+		if not note:
+			frappe.throw(_("Manager note is required for cycle count variance review."), ValueError)
+	if decision_key == "mark_quarantine_review" and not (any(_cycle_count_line_has_marker(line, {"Quarantine Review", "Blocked Review"}) for line in lines) or note):
+		frappe.throw(_("Quarantine review requires quarantine or blocked evidence, or manager note."), ValueError)
+	if decision_key == "mark_serial_batch_review" and not (any(_cycle_count_line_has_marker(line, {"Serial/Batch Review"}) or cstr(_child_value(line, "serial_batch_reference_text")).strip() for line in lines) or note):
+		frappe.throw(_("Serial/batch review requires serial/batch evidence or manager note."), ValueError)
+	if decision_key == "escalate_to_inventory_admin" and not (inventory_ref or note):
+		frappe.throw(_("Inventory/Admin review requires reference or manager note."), ValueError)
+	if decision_key in {"reject_cycle_count", "cancel_cycle_count", "close_cycle_count"} and not note:
+		frappe.throw(_("Manager note is required to reject, cancel, or close cycle count task."), ValueError)
+
+
+def _cycle_count_line_has_variance(line) -> bool:
+	return abs(flt(_child_value(line, "variance_qty") or 0)) > 0 or cstr(_child_value(line, "variance_direction")).strip() in {
+		"Positive Variance",
+		"Negative Variance",
+		"Zero Count",
+		"Unexpected Item",
+		"Missing Item",
+	}
+
+
+def _cycle_count_line_has_variance_or_exception(line) -> bool:
+	return (
+		_cycle_count_line_has_variance(line)
+		or flt(_child_value(line, "counted_qty") or 0) == 0
+		or cstr(_child_value(line, "line_status")).strip() in {"Recount Requested", "Variance Review", "Blocked Review"}
+		or cstr(_child_value(line, "variance_direction")).strip() in {
+			"Serial/Batch Review",
+			"Quarantine Review",
+			"Blocked Review",
+		}
+	)
+
+
+def _cycle_count_line_has_marker(line, directions: set[str]) -> bool:
+	return cstr(_child_value(line, "variance_direction")).strip() in directions
+
+
+def _cycle_count_manager_event_details(decision_key: str, note: str, inventory_ref: str, previous_status: str, next_status: str) -> dict[str, object]:
+	return {
+		"decision": decision_key,
+		"note": note,
+		"inventory_admin_escalation_reference": inventory_ref,
+		"previous_status": previous_status,
+		"next_status": next_status,
+		"stock_effect": False,
+		"stock_reconciliation_created": False,
+		"stock_entry_created": False,
+	}
+
+
+def _cycle_count_variance_status_for_decision(task_doc, decision_key: str, next_status: str) -> str:
+	if decision_key == "mark_clean_count":
+		return "No variance"
+	if decision_key == "mark_variance_review":
+		return "Variance Review"
+	if decision_key in {"mark_quarantine_review", "mark_serial_batch_review", "escalate_to_inventory_admin"}:
+		return next_status
+	return cstr(getattr(task_doc, "variance_status", "")).strip()
+
+
+def _cycle_count_manager_decision_payload(
+	context: dict[str, object],
+	task_doc,
+	decision_key: str,
+	event,
+	*,
+	idempotent: bool,
+) -> dict[str, object]:
+	lines = [_cycle_count_task_line_payload(line) for line in list(getattr(task_doc, "lines", []) or [])]
+	return {
+		"workspace": warehouse_workspace_public_context(),
+		"context": context,
+		"state": ready_state(),
+		"page": {"title": "Cycle Count Manager Decision", "key": "cycle_count_manager_decision"},
+		"task": {
+			"task_id": cstr(getattr(task_doc, "name", "")).strip(),
+			"count_status": cstr(getattr(task_doc, "count_status", "")).strip(),
+			"manager_review_status": cstr(getattr(task_doc, "manager_review_status", "")).strip(),
+			"variance_status": cstr(getattr(task_doc, "variance_status", "")).strip(),
+			"warehouse": cstr(getattr(task_doc, "warehouse", "")).strip(),
+			"line_count": len(lines),
+			"lines": lines,
+			"idempotent": bool(idempotent),
+		},
+		"decision": {"decision": decision_key, "idempotent": bool(idempotent)},
+		"event_summary": _cycle_count_task_event_payload(event),
+		"stock_effect": False,
+		"stock_quantity_adjusted": False,
+		"stock_reconciliation_created": False,
+		"stock_reconciliation_submitted": False,
+		"stock_entry_created": False,
+		"stock_entry_submitted": False,
+		"stock_posted": False,
+		"stock_reservation_created": False,
+		"stock_ledger_updated": False,
+		"stock_balance_updated": False,
+		"valuation": {"visible": False, "fields": []},
+		"fetched_at": str(now_datetime()),
 	}
 
 

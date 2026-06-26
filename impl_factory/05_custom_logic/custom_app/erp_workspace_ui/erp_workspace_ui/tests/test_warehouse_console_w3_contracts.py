@@ -5576,6 +5576,204 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         forbidden_docs = {"Stock Reconciliation", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reservation"}
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
 
+    def _cycle_count_task_id(self, **overrides):
+        payload = self._save_cycle_count_task(**overrides)
+        return payload["task"]["task_id"]
+
+    def _save_cycle_count_manager_decision(self, task_id, **overrides):
+        payload = {
+            "task_id": task_id,
+            "decision": "mark_clean_count",
+            "note": "Manager reviewed cycle count evidence.",
+            "request_id": "cycle-count-manager-001",
+        }
+        payload.update(overrides)
+        return service.save_warehouse_cycle_count_manager_decision(**payload)
+
+    def test_w15h5_manager_roles_can_save_cycle_count_decision(self):
+        task_id = self._cycle_count_task_id(request_id="cycle-count-manager-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+
+        payload = self._save_cycle_count_manager_decision(task_id, request_id="cycle-count-manager-decision")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["page"]["key"], "cycle_count_manager_decision")
+        self.assertEqual(payload["task"]["count_status"], "Clean Count")
+        self.assertEqual(payload["task"]["manager_review_status"], "Clean Count")
+        self.assertFalse(payload["task"]["idempotent"])
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_quantity_adjusted"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertFalse(payload["stock_entry_created"])
+        task = CYCLE_COUNT_TASK_DOCS[task_id]
+        self.assertEqual(task.count_status, "Clean Count")
+        self.assertEqual(task.events[-1]["event_type"], "marked_cycle_count_clean")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        stock_manager_task = self._cycle_count_task_id(request_id="cycle-count-stock-manager-draft")
+        CURRENT_ROLES[:] = ["Stock Manager"]
+        stock_payload = self._save_cycle_count_manager_decision(stock_manager_task, request_id="cycle-count-stock-manager-decision")
+        self.assertEqual(stock_payload["task"]["count_status"], "Clean Count")
+
+    def test_w15h5_warehouse_and_stock_users_denied_cycle_count_decision(self):
+        task_id = self._cycle_count_task_id(request_id="cycle-count-manager-deny-draft")
+
+        CURRENT_ROLES[:] = ["Warehouse User"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(task_id, request_id="cycle-count-manager-deny-warehouse")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(task_id, request_id="cycle-count-manager-deny-stock")
+
+        task = CYCLE_COUNT_TASK_DOCS[task_id]
+        self.assertEqual(task.count_status, "Count In Progress")
+        self.assertEqual(len(task.events), 1)
+
+    def test_w15h5_cycle_count_manager_decision_rules(self):
+        clean_task = self._cycle_count_task_id(request_id="cycle-count-rules-clean-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="unknown_decision", request_id="cycle-count-rules-unknown")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="request_recount", note="", request_id="cycle-count-rules-recount-no-note")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="mark_variance_review", note="", request_id="cycle-count-rules-variance-no-marker")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="mark_quarantine_review", note="", request_id="cycle-count-rules-quarantine-no-marker")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="mark_serial_batch_review", note="", request_id="cycle-count-rules-serial-no-marker")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="escalate_to_inventory_admin", note="", inventory_admin_escalation_reference="", request_id="cycle-count-rules-admin-no-note")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="reject_cycle_count", note="", request_id="cycle-count-rules-reject-no-note")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="cancel_cycle_count", note="", request_id="cycle-count-rules-cancel-no-note")
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(clean_task, decision="close_cycle_count", note="", request_id="cycle-count-rules-close-no-note")
+
+        recount = self._save_cycle_count_manager_decision(clean_task, decision="request_recount", note="Count evidence is unclear.", request_id="cycle-count-rules-recount")
+        self.assertEqual(recount["task"]["count_status"], "Recount Requested")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        variance_task = self._cycle_count_task_id(
+            request_id="cycle-count-rules-variance-draft",
+            expected_quantity_visibility="guided_count",
+            lines=[{"item_code": "ITEM-103", "warehouse": "Main - M", "expected_qty_snapshot": 5, "counted_qty": 4, "reason_code": "Short shelf count", "evidence_reference": "COUNT-VAR-2"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(variance_task, decision="mark_clean_count", request_id="cycle-count-rules-clean-with-variance")
+        variance_payload = self._save_cycle_count_manager_decision(variance_task, decision="mark_variance_review", note="Variance requires Inventory review later.", request_id="cycle-count-rules-variance")
+        self.assertEqual(variance_payload["task"]["count_status"], "Variance Review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        zero_count_task = self._cycle_count_task_id(
+            request_id="cycle-count-rules-zero-clean-draft",
+            lines=[{"item_code": "ITEM-104", "warehouse": "Main - M", "counted_qty": 0, "variance_direction": "No Variance", "reason_code": "Shelf empty", "evidence_reference": "COUNT-ZERO-1"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(zero_count_task, decision="mark_clean_count", request_id="cycle-count-rules-clean-with-zero")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        blocked_status_task = self._cycle_count_task_id(
+            request_id="cycle-count-rules-blocked-status-draft",
+            lines=[{"item_code": "ITEM-104", "warehouse": "Main - M", "counted_qty": 1, "variance_direction": "No Variance", "line_status": "Blocked Review", "reason_code": "Blocked location", "evidence_reference": "COUNT-BLOCK-1"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(blocked_status_task, decision="mark_clean_count", request_id="cycle-count-rules-clean-with-blocked-status")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        quarantine_task = self._cycle_count_task_id(
+            request_id="cycle-count-rules-quarantine-draft",
+            lines=[{"item_code": "ITEM-105", "warehouse": "Main - M", "counted_qty": 1, "variance_direction": "Quarantine Review", "reason_code": "Damaged pack", "evidence_reference": "COUNT-QA-1"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        quarantine_payload = self._save_cycle_count_manager_decision(quarantine_task, decision="mark_quarantine_review", note="", request_id="cycle-count-rules-quarantine")
+        self.assertEqual(quarantine_payload["task"]["count_status"], "Quarantine Review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        serial_task = self._cycle_count_task_id(
+            request_id="cycle-count-rules-serial-draft",
+            count_scope="serial_batch",
+            location_reference_text="Batch shelf A",
+            lines=[{"item_code": "ITEM-106", "warehouse": "Main - M", "counted_qty": 1, "variance_direction": "Serial/Batch Review", "serial_batch_reference_text": "BATCH-001"}],
+        )
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        serial_payload = self._save_cycle_count_manager_decision(serial_task, decision="mark_serial_batch_review", note="", request_id="cycle-count-rules-serial")
+        self.assertEqual(serial_payload["task"]["count_status"], "Serial/Batch Review")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        admin_task = self._cycle_count_task_id(request_id="cycle-count-rules-admin-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        admin_payload = self._save_cycle_count_manager_decision(
+            admin_task,
+            decision="escalate_to_inventory_admin",
+            note="Inventory/Admin should review adjustment policy.",
+            inventory_admin_escalation_reference="INV-ADM-COUNT-001",
+            request_id="cycle-count-rules-admin",
+        )
+        self.assertEqual(admin_payload["task"]["count_status"], "Inventory/Admin Review Requested")
+        self.assertEqual(CYCLE_COUNT_TASK_DOCS[admin_task].inventory_admin_escalation_reference, "INV-ADM-COUNT-001")
+
+        CURRENT_ROLES[:] = ["Stock User"]
+        reject_task = self._cycle_count_task_id(request_id="cycle-count-rules-reject-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        reject_payload = self._save_cycle_count_manager_decision(reject_task, decision="reject_cycle_count", note="Count request is invalid.", request_id="cycle-count-rules-reject")
+        self.assertEqual(reject_payload["task"]["count_status"], "Rejected")
+
+    def test_w15h5_cycle_count_manager_idempotency_and_status_safety(self):
+        first_task = self._cycle_count_task_id(request_id="cycle-count-manager-idem-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(first_task, request_id="cycle-count-manager-idem-draft")
+        first = self._save_cycle_count_manager_decision(first_task, request_id="cycle-count-manager-idem")
+        second = self._save_cycle_count_manager_decision(first_task, request_id="cycle-count-manager-idem")
+
+        self.assertFalse(first["task"]["idempotent"])
+        self.assertTrue(second["task"]["idempotent"])
+        self.assertEqual(len(CYCLE_COUNT_TASK_DOCS[first_task].events), 2)
+
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(first_task, decision="escalate_to_inventory_admin", request_id="cycle-count-manager-idem")
+
+        second_task = self._cycle_count_task_id(request_id="cycle-count-manager-idem-second-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(second_task, request_id="cycle-count-manager-idem")
+
+        with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(first_task, request_id="cycle-count-manager-final-reject")
+
+    def test_w15h5_cycle_count_manager_payload_has_no_stock_or_native_effects(self):
+        task_id = self._cycle_count_task_id(request_id="cycle-count-manager-safe-draft")
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        payload = self._save_cycle_count_manager_decision(task_id, request_id="cycle-count-manager-safe-decision")
+        payload_text = str(payload).lower()
+
+        self.assertFalse(payload["stock_effect"])
+        self.assertFalse(payload["stock_quantity_adjusted"])
+        self.assertFalse(payload["stock_reconciliation_created"])
+        self.assertFalse(payload["stock_reconciliation_submitted"])
+        self.assertFalse(payload["stock_entry_created"])
+        self.assertFalse(payload["stock_entry_submitted"])
+        self.assertFalse(payload["stock_posted"])
+        self.assertFalse(payload["stock_reservation_created"])
+        self.assertFalse(payload["stock_ledger_updated"])
+        self.assertFalse(payload["stock_balance_updated"])
+        self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
+        self.assertNotIn("valuation_rate", payload_text)
+        self.assertNotIn("stock_value", payload_text)
+        self.assertNotIn("amount", payload_text)
+        self.assertNotIn("tax", payload_text)
+        self.assertNotIn("account", payload_text)
+        self.assertNotIn("/app/", payload_text)
+        self.assertNotIn("/desk/form", payload_text)
+        forbidden_docs = {"Stock Reconciliation", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reservation"}
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+
     def _save_internal_transfer_candidate(self, **overrides):
         payload = {
             "source_context": "movement_visibility_review",
