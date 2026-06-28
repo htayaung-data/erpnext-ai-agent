@@ -334,6 +334,24 @@ CUSTOMER_RETURN_INTAKE_FORBIDDEN_FIELDS = frozenset({
 	"notify_customer",
 	"portal_user",
 })
+CUSTOMER_RETURN_INTAKE_LINE_ALLOWED_FIELDS = frozenset({
+	"item_code",
+	"item_name",
+	"warehouse",
+	"returned_qty",
+	"accepted_qty",
+	"damaged_qty",
+	"quarantine_qty",
+	"repair_qty",
+	"scrap_candidate_qty",
+	"rejected_qty",
+	"condition_grade",
+	"disposition",
+	"evidence_reference",
+	"condition_note",
+	"note",
+	"uom",
+})
 CUSTOMER_RETURN_MANAGER_ROLES = frozenset({"Warehouse Manager", "Stock Manager", "System Manager"})
 CUSTOMER_RETURN_MANAGER_DECISION_STATUSES = frozenset({
 	"Intake Draft",
@@ -413,6 +431,23 @@ SUPPLIER_RETURN_CANDIDATE_FORBIDDEN_FIELDS = frozenset({
 	"supplier_email",
 	"notify_supplier",
 	"portal_user",
+})
+SUPPLIER_RETURN_CANDIDATE_LINE_ALLOWED_FIELDS = frozenset({
+	"item_code",
+	"item_name",
+	"warehouse",
+	"candidate_qty",
+	"quarantine_qty",
+	"damaged_qty",
+	"wrong_item_qty",
+	"overage_qty",
+	"quality_hold_qty",
+	"condition_grade",
+	"disposition",
+	"evidence_reference",
+	"condition_note",
+	"note",
+	"uom",
 })
 SUPPLIER_RETURN_MANAGER_ROLES = frozenset({"Warehouse Manager", "Stock Manager", "System Manager"})
 SUPPLIER_RETURN_MANAGER_DECISION_STATUSES = frozenset({
@@ -2182,6 +2217,56 @@ def _child_value(row, fieldname: str, default: object = None) -> object:
 	return getattr(row, fieldname, default)
 
 
+def _event_details_dict(event) -> dict[str, object]:
+	raw = cstr(_child_value(event, "details_json")).strip()
+	if not raw:
+		return {}
+	try:
+		payload = json.loads(raw)
+	except Exception:
+		return {}
+	return payload if isinstance(payload, dict) else {}
+
+
+def _event_details_match(event, expected: dict[str, object], keys: tuple[str, ...]) -> bool:
+	actual = _event_details_dict(event)
+	for key in keys:
+		if cstr(actual.get(key)).strip() != cstr(expected.get(key)).strip():
+			return False
+	return True
+
+
+def _request_id_used_by_source_record_or_event(source_doc, request_id: str) -> bool:
+	if not request_id:
+		return False
+	if cstr(getattr(source_doc, "request_id", "")).strip() == request_id:
+		return True
+	for event in list(getattr(source_doc, "events", []) or []):
+		if cstr(_child_value(event, "request_id")).strip() == request_id:
+			return True
+	return False
+
+
+def _request_id_owner_from_rows(rows: list[dict[str, object]], owner_field: str, duplicate_message: str) -> str:
+	if len(rows) > 1:
+		frappe.throw(_(duplicate_message), ValueError)
+	return cstr(rows[0].get(owner_field)).strip() if rows else ""
+
+
+def _has_non_empty_value(value: object) -> bool:
+	if value is None:
+		return False
+	if isinstance(value, str):
+		return bool(value.strip())
+	if isinstance(value, (list, tuple, set, dict)):
+		return bool(value)
+	return True
+
+
+def _has_non_empty_unknown_fields(raw: dict[str, object], allowed_fields: frozenset[str]) -> bool:
+	return any(key not in allowed_fields and _has_non_empty_value(value) for key, value in raw.items())
+
+
 def _receiving_task_manager_decision_payload(
 	context: dict[str, object],
 	task_doc,
@@ -2816,6 +2901,7 @@ def save_warehouse_customer_return_manager_decision(
 	note: str | None = None,
 	sales_escalation_reference: str | None = None,
 	request_id: str | None = None,
+	**extra_fields,
 ) -> dict[str, object]:
 	"""Save a manager disposition decision on a custom Customer Return Intake.
 
@@ -2832,6 +2918,8 @@ def save_warehouse_customer_return_manager_decision(
 	sales_ref = _bounded_text(sales_escalation_reference, CUSTOMER_RETURN_INTAKE_MAX_REFERENCE_LENGTH)
 	if not _has_customer_return_manager_access(context):
 		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if _contains_forbidden_customer_return_fields(extra_fields):
+		frappe.throw(_("Customer return manager decision contains fields that are not allowed in Warehouse."), ValueError)
 	if not intake_name:
 		frappe.throw(_("Customer return intake is required."), ValueError)
 	if not server_request_id:
@@ -2847,6 +2935,9 @@ def save_warehouse_customer_return_manager_decision(
 	if existing_event:
 		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
 			frappe.throw(_("Request id was already used for another customer return manager decision."), ValueError)
+		expected_details = _customer_return_manager_event_details(decision_key, manager_note, sales_ref, "", "")
+		if not _event_details_match(existing_event, expected_details, ("decision", "note", "sales_escalation_reference")):
+			frappe.throw(_("Request id was already used with different customer return manager decision details."), ValueError)
 		return _customer_return_manager_decision_payload(context, intake_doc, decision_key, existing_event, idempotent=True)
 	if cstr(getattr(intake_doc, "request_id", "")).strip() == server_request_id:
 		frappe.throw(_("Request id was already used for this customer return intake."), ValueError)
@@ -2879,6 +2970,7 @@ def request_warehouse_customer_return_handoff(
 	sales_escalation_reference: str | None = None,
 	finance_escalation_reference: str | None = None,
 	request_id: str | None = None,
+	**extra_fields,
 ) -> dict[str, object]:
 	"""Create a custom request-only customer return handoff record.
 
@@ -2896,6 +2988,8 @@ def request_warehouse_customer_return_handoff(
 	finance_ref = _bounded_text(finance_escalation_reference, CUSTOMER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH)
 	if not _has_customer_return_manager_access(context):
 		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if _contains_forbidden_customer_return_fields(extra_fields):
+		frappe.throw(_("Customer return handoff contains fields that are not allowed in Warehouse."), ValueError)
 	if not intake_name:
 		frappe.throw(_("Customer return intake is required for handoff request."), ValueError)
 	if not server_request_id:
@@ -2916,6 +3010,8 @@ def request_warehouse_customer_return_handoff(
 		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != fingerprint:
 			frappe.throw(_("Request id was already used with different customer return handoff details."), ValueError)
 		return _customer_return_handoff_request_payload(context, owner_doc, idempotent=True)
+	if _request_id_used_by_source_record_or_event(intake_doc, server_request_id):
+		frappe.throw(_("Request id was already used for the source customer return intake."), ValueError)
 	request_doc = frappe.get_doc({"doctype": CUSTOMER_RETURN_HANDOFF_REQUEST_DOCTYPE})
 	_apply_customer_return_handoff_request(
 		request_doc,
@@ -3039,6 +3135,8 @@ def _normalize_supplier_return_candidate_lines(lines: str | list[dict[str, objec
 	for raw in raw_lines:
 		if not isinstance(raw, dict):
 			frappe.throw(_("Supplier return candidate line payload is invalid."), ValueError)
+		if _has_non_empty_unknown_fields(raw, SUPPLIER_RETURN_CANDIDATE_LINE_ALLOWED_FIELDS):
+			frappe.throw(_("Supplier return candidate line contains fields that are not allowed in Warehouse."), ValueError)
 		line = _normalize_supplier_return_candidate_line(raw, warehouse)
 		key = (cstr(line.get("item_code")).strip(), cstr(line.get("warehouse")).strip(), cstr(line.get("uom")).strip())
 		if key in seen:
@@ -3162,7 +3260,7 @@ def _supplier_return_candidate_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "name", "Duplicate supplier return candidate request id records found.")
 
 
 def _apply_supplier_return_candidate_draft(
@@ -3536,7 +3634,7 @@ def _internal_transfer_candidate_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "name", "Duplicate internal transfer candidate request id records found.")
 
 
 def _apply_internal_transfer_candidate_draft(
@@ -3693,6 +3791,9 @@ def save_warehouse_internal_transfer_manager_decision(
 	if existing_event:
 		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
 			frappe.throw(_("Request id was already used for another internal transfer manager decision."), ValueError)
+		expected_details = _internal_transfer_manager_event_details(decision_key, manager_note, inventory_ref, quarantine_ref, "", "")
+		if not _event_details_match(existing_event, expected_details, ("decision", "note", "inventory_admin_escalation_reference", "quarantine_review_reference")):
+			frappe.throw(_("Request id was already used with different internal transfer manager decision details."), ValueError)
 		return _internal_transfer_manager_decision_payload(context, candidate_doc, decision_key, existing_event, idempotent=True)
 	if cstr(getattr(candidate_doc, "request_id", "")).strip() == server_request_id:
 		frappe.throw(_("Request id was already used for this internal transfer candidate."), ValueError)
@@ -3744,7 +3845,7 @@ def _internal_transfer_manager_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("parent")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "parent", "Duplicate internal transfer manager request id events found.")
 
 
 def _internal_transfer_event_for_request(candidate_doc, request_id: str):
@@ -3892,6 +3993,8 @@ def request_warehouse_internal_transfer_handoff(
 		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != fingerprint:
 			frappe.throw(_("Request id was already used with different internal transfer handoff details."), ValueError)
 		return _internal_transfer_handoff_request_payload(context, owner_doc, idempotent=True)
+	if _request_id_used_by_source_record_or_event(candidate_doc, server_request_id):
+		frappe.throw(_("Request id was already used for the source internal transfer candidate."), ValueError)
 	request_doc = frappe.get_doc({"doctype": INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCTYPE})
 	_apply_internal_transfer_handoff_request(
 		request_doc,
@@ -4057,7 +4160,7 @@ def _internal_transfer_handoff_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "name", "Duplicate internal transfer handoff request id records found.")
 
 
 def _apply_internal_transfer_handoff_request(
@@ -4439,7 +4542,7 @@ def _cycle_count_task_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "name", "Duplicate cycle count task request id records found.")
 
 
 def _apply_cycle_count_task_draft(
@@ -4608,6 +4711,9 @@ def save_warehouse_cycle_count_manager_decision(
 	if existing_event:
 		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
 			frappe.throw(_("Request id was already used for another cycle count manager decision."), ValueError)
+		expected_details = _cycle_count_manager_event_details(decision_key, manager_note, inventory_ref, "", "")
+		if not _event_details_match(existing_event, expected_details, ("decision", "note", "inventory_admin_escalation_reference")):
+			frappe.throw(_("Request id was already used with different cycle count manager decision details."), ValueError)
 		return _cycle_count_manager_decision_payload(context, task_doc, decision_key, existing_event, idempotent=True)
 	if cstr(getattr(task_doc, "request_id", "")).strip() == server_request_id:
 		frappe.throw(_("Request id was already used for this cycle count task draft."), ValueError)
@@ -4660,7 +4766,7 @@ def _cycle_count_manager_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("parent")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "parent", "Duplicate cycle count manager request id events found.")
 
 
 def _cycle_count_event_for_request(task_doc, request_id: str):
@@ -4835,6 +4941,8 @@ def request_warehouse_inventory_variance_handoff(
 		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != fingerprint:
 			frappe.throw(_("Request id was already used with different Inventory/Admin handoff details."), ValueError)
 		return _inventory_variance_handoff_request_payload(context, owner_doc, idempotent=True)
+	if _request_id_used_by_source_record_or_event(task_doc, server_request_id):
+		frappe.throw(_("Request id was already used for the source cycle count task."), ValueError)
 	request_doc = frappe.get_doc({"doctype": INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCTYPE})
 	_apply_inventory_variance_handoff_request(
 		request_doc,
@@ -4895,6 +5003,7 @@ def _inventory_variance_handoff_line_from_task(source_line, task_doc) -> dict[st
 		frappe.throw(_("Inventory/Admin handoff line warehouse must match the cycle count task."), ValueError)
 	if not _cycle_count_warehouse_is_visible(warehouse):
 		frappe.throw(_("Inventory/Admin handoff line warehouse context is not visible."), ValueError)
+	_validate_inventory_variance_handoff_source_line(source_line)
 	line_reference = cstr(_child_value(source_line, "name")).strip() or f"{item_code}::{warehouse}::{cstr(_child_value(source_line, 'uom')).strip()}"
 	return {
 		"task_line_reference": line_reference,
@@ -4912,6 +5021,27 @@ def _inventory_variance_handoff_line_from_task(source_line, task_doc) -> dict[st
 		"serial_batch_reference_text": cstr(_child_value(source_line, "serial_batch_reference_text")).strip(),
 		"line_status": cstr(_child_value(source_line, "line_status")).strip(),
 	}
+
+
+def _validate_inventory_variance_handoff_source_line(source_line) -> None:
+	counted_qty = flt(_child_value(source_line, "counted_qty"))
+	variance_qty = flt(_child_value(source_line, "variance_qty"))
+	direction = cstr(_child_value(source_line, "variance_direction")).strip()
+	line_status = cstr(_child_value(source_line, "line_status")).strip()
+	reason_code = cstr(_child_value(source_line, "reason_code")).strip()
+	evidence_reference = cstr(_child_value(source_line, "evidence_reference")).strip()
+	condition_grade = cstr(_child_value(source_line, "condition_grade")).strip()
+	serial_batch_reference = cstr(_child_value(source_line, "serial_batch_reference_text")).strip()
+	if counted_qty < 0:
+		frappe.throw(_("Inventory/Admin handoff source line counted quantity cannot be negative."), ValueError)
+	if direction not in CYCLE_COUNT_TASK_ALLOWED_VARIANCE_DIRECTIONS:
+		frappe.throw(_("Inventory/Admin handoff source line variance direction is not allowed."), ValueError)
+	if direction == "No Variance" and abs(variance_qty) > 0:
+		frappe.throw(_("Inventory/Admin handoff source line cannot mark non-zero variance as no variance."), ValueError)
+	if line_status not in CYCLE_COUNT_TASK_ALLOWED_LINE_STATUSES:
+		frappe.throw(_("Inventory/Admin handoff source line status is not allowed."), ValueError)
+	if _cycle_count_line_requires_evidence(direction, counted_qty, variance_qty) and not (evidence_reference or reason_code or condition_grade or serial_batch_reference):
+		frappe.throw(_("Inventory/Admin handoff source variance line requires evidence, reason, condition, or serial/batch reference."), ValueError)
 
 
 def _inventory_variance_handoff_payload_hash(
@@ -4964,7 +5094,7 @@ def _inventory_variance_handoff_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "name", "Duplicate Inventory/Admin handoff request id records found.")
 
 
 def _apply_inventory_variance_handoff_request(
@@ -5073,6 +5203,7 @@ def save_warehouse_supplier_return_manager_decision(
 	procurement_escalation_reference: str | None = None,
 	finance_escalation_reference: str | None = None,
 	request_id: str | None = None,
+	**extra_fields,
 ) -> dict[str, object]:
 	"""Save a manager decision on a custom Supplier Return Candidate.
 
@@ -5090,6 +5221,8 @@ def save_warehouse_supplier_return_manager_decision(
 	finance_ref = _bounded_text(finance_escalation_reference, SUPPLIER_RETURN_CANDIDATE_MAX_REFERENCE_LENGTH)
 	if not _has_supplier_return_manager_access(context):
 		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if _contains_forbidden_supplier_return_fields(extra_fields):
+		frappe.throw(_("Supplier return manager decision contains fields that are not allowed in Warehouse."), ValueError)
 	if not candidate_name:
 		frappe.throw(_("Supplier return candidate is required."), ValueError)
 	if not server_request_id:
@@ -5105,6 +5238,9 @@ def save_warehouse_supplier_return_manager_decision(
 	if existing_event:
 		if cstr(_child_value(existing_event, "event_type")).strip() != event_type:
 			frappe.throw(_("Request id was already used for another supplier return manager decision."), ValueError)
+		expected_details = _supplier_return_manager_event_details(decision_key, manager_note, procurement_ref, finance_ref, "", "")
+		if not _event_details_match(existing_event, expected_details, ("decision", "note", "procurement_escalation_reference", "finance_escalation_reference")):
+			frappe.throw(_("Request id was already used with different supplier return manager decision details."), ValueError)
 		return _supplier_return_manager_decision_payload(context, candidate_doc, decision_key, existing_event, idempotent=True)
 	if cstr(getattr(candidate_doc, "request_id", "")).strip() == server_request_id:
 		frappe.throw(_("Request id was already used for this supplier return candidate."), ValueError)
@@ -5140,6 +5276,7 @@ def request_warehouse_supplier_return_handoff(
 	finance_escalation_reference: str | None = None,
 	supplier_claim_reference: str | None = None,
 	request_id: str | None = None,
+	**extra_fields,
 ) -> dict[str, object]:
 	"""Create a custom request-only supplier return handoff record.
 
@@ -5158,6 +5295,8 @@ def request_warehouse_supplier_return_handoff(
 	claim_ref = _bounded_text(supplier_claim_reference, SUPPLIER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH)
 	if not _has_supplier_return_manager_access(context):
 		frappe.throw(_("Warehouse manager access required"), frappe.PermissionError)
+	if _contains_forbidden_supplier_return_fields(extra_fields):
+		frappe.throw(_("Supplier return handoff contains fields that are not allowed in Warehouse."), ValueError)
 	if not candidate_name:
 		frappe.throw(_("Supplier return candidate is required for handoff request."), ValueError)
 	if not server_request_id:
@@ -5178,6 +5317,8 @@ def request_warehouse_supplier_return_handoff(
 		if cstr(getattr(owner_doc, "source_payload_hash", "")).strip() != fingerprint:
 			frappe.throw(_("Request id was already used with different supplier return handoff details."), ValueError)
 		return _supplier_return_handoff_request_payload(context, owner_doc, idempotent=True)
+	if _request_id_used_by_source_record_or_event(candidate_doc, server_request_id):
+		frappe.throw(_("Request id was already used for the source supplier return candidate."), ValueError)
 	request_doc = frappe.get_doc({"doctype": SUPPLIER_RETURN_HANDOFF_REQUEST_DOCTYPE})
 	_apply_supplier_return_handoff_request(
 		request_doc,
@@ -5210,6 +5351,9 @@ def _get_supplier_return_candidate_for_decision(candidate_name: str):
 def _supplier_return_manager_request_id_owner(request_id: str) -> str:
 	if not request_id:
 		return ""
+	owner = _supplier_return_candidate_request_id_owner(request_id)
+	if owner:
+		return owner
 	try:
 		rows = frappe.get_all(
 			SUPPLIER_RETURN_CANDIDATE_EVENT_DOCTYPE,
@@ -5220,7 +5364,7 @@ def _supplier_return_manager_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("parent")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "parent", "Duplicate supplier return manager request id events found.")
 
 
 def _supplier_return_event_for_request(candidate_doc, request_id: str):
@@ -5371,6 +5515,8 @@ def _supplier_return_handoff_line_from_candidate(source_line, candidate_doc) -> 
 	damaged_qty = flt(_child_value(source_line, "damaged_qty"))
 	wrong_item_qty = flt(_child_value(source_line, "wrong_item_qty"))
 	quarantine_qty = flt(_child_value(source_line, "quarantine_qty"))
+	overage_qty = flt(_child_value(source_line, "overage_qty"))
+	quality_hold_qty = flt(_child_value(source_line, "quality_hold_qty"))
 	condition_grade = cstr(_child_value(source_line, "condition_grade")).strip()
 	reason_code = cstr(_child_value(source_line, "disposition")).strip()
 	evidence_reference = cstr(_child_value(source_line, "evidence_reference")).strip()
@@ -5380,9 +5526,11 @@ def _supplier_return_handoff_line_from_candidate(source_line, candidate_doc) -> 
 		frappe.throw(_("Supplier return handoff line warehouse must match candidate warehouse."), ValueError)
 	if candidate_qty <= 0:
 		frappe.throw(_("Supplier return handoff line requires candidate quantity."), ValueError)
-	if damaged_qty + wrong_item_qty + quarantine_qty > candidate_qty:
+	if min(damaged_qty, wrong_item_qty, quarantine_qty, overage_qty, quality_hold_qty) < 0:
+		frappe.throw(_("Supplier return handoff exception quantities cannot be negative."), ValueError)
+	if damaged_qty + wrong_item_qty + quarantine_qty + overage_qty + quality_hold_qty > candidate_qty:
 		frappe.throw(_("Supplier return handoff exception quantities cannot exceed candidate quantity."), ValueError)
-	if (damaged_qty > 0 or wrong_item_qty > 0 or quarantine_qty > 0) and not (evidence_reference or condition_grade or reason_code):
+	if (damaged_qty > 0 or wrong_item_qty > 0 or quarantine_qty > 0 or overage_qty > 0 or quality_hold_qty > 0) and not (evidence_reference or condition_grade or reason_code):
 		frappe.throw(_("Supplier return handoff exception line requires evidence, condition, or reason."), ValueError)
 	line_reference = cstr(_child_value(source_line, "name")).strip() or f"{item_code}::{warehouse}::{uom}"
 	return {
@@ -5395,6 +5543,8 @@ def _supplier_return_handoff_line_from_candidate(source_line, candidate_doc) -> 
 		"damaged_qty": damaged_qty,
 		"wrong_item_qty": wrong_item_qty,
 		"quarantine_qty": quarantine_qty,
+		"overage_qty": overage_qty,
+		"quality_hold_qty": quality_hold_qty,
 		"rejected_qty": 0,
 		"condition_grade": condition_grade,
 		"reason_code": reason_code,
@@ -5433,6 +5583,8 @@ def _supplier_return_handoff_payload_hash(
 					"damaged_qty": flt(line.get("damaged_qty")),
 					"wrong_item_qty": flt(line.get("wrong_item_qty")),
 					"quarantine_qty": flt(line.get("quarantine_qty")),
+					"overage_qty": flt(line.get("overage_qty")),
+					"quality_hold_qty": flt(line.get("quality_hold_qty")),
 					"rejected_qty": flt(line.get("rejected_qty")),
 				}
 				for line in lines
@@ -5456,7 +5608,7 @@ def _supplier_return_handoff_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "name", "Duplicate supplier return handoff request id records found.")
 
 
 def _apply_supplier_return_handoff_request(
@@ -5552,6 +5704,8 @@ def _supplier_return_handoff_line_payload(line) -> dict[str, object]:
 		"damaged_qty": _number_text(getter("damaged_qty")),
 		"wrong_item_qty": _number_text(getter("wrong_item_qty")),
 		"quarantine_qty": _number_text(getter("quarantine_qty")),
+		"overage_qty": _number_text(getter("overage_qty")),
+		"quality_hold_qty": _number_text(getter("quality_hold_qty")),
 		"rejected_qty": _number_text(getter("rejected_qty")),
 		"condition_grade": cstr(getter("condition_grade")).strip(),
 		"reason_code": cstr(getter("reason_code")).strip(),
@@ -5589,11 +5743,15 @@ def _normalize_customer_return_intake_lines(lines: str | list[dict[str, object]]
 	raw_lines = _decode_customer_return_intake_lines(lines)
 	if not raw_lines:
 		frappe.throw(_("At least one customer return line is required."), ValueError)
+	if len(raw_lines) > CUSTOMER_RETURN_INTAKE_MAX_LINES:
+		frappe.throw(_("Customer return intake draft has too many lines."), ValueError)
 	normalized: list[dict[str, object]] = []
 	seen: set[tuple[str, str, str]] = set()
-	for raw in raw_lines[:CUSTOMER_RETURN_INTAKE_MAX_LINES]:
+	for raw in raw_lines:
 		if not isinstance(raw, dict):
 			frappe.throw(_("Customer return line payload is invalid."), ValueError)
+		if _has_non_empty_unknown_fields(raw, CUSTOMER_RETURN_INTAKE_LINE_ALLOWED_FIELDS):
+			frappe.throw(_("Customer return line contains fields that are not allowed in Warehouse."), ValueError)
 		line = _normalize_customer_return_intake_line(raw, warehouse)
 		key = (cstr(line.get("item_code")).strip(), cstr(line.get("warehouse")).strip(), cstr(line.get("uom")).strip())
 		if key in seen:
@@ -5717,7 +5875,7 @@ def _customer_return_intake_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "name", "Duplicate customer return intake request id records found.")
 
 
 def _apply_customer_return_intake_draft(
@@ -5858,7 +6016,7 @@ def _customer_return_manager_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("parent") or rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "parent", "Duplicate customer return manager request id events found.")
 
 
 def _customer_return_event_for_request(intake_doc, request_id: str):
@@ -6152,7 +6310,7 @@ def _customer_return_handoff_request_id_owner(request_id: str) -> str:
 	except Exception:
 		_clear_transient_frappe_messages()
 		rows = []
-	return cstr(rows[0].get("name")).strip() if rows else ""
+	return _request_id_owner_from_rows(rows, "name", "Duplicate customer return handoff request id records found.")
 
 
 def _apply_customer_return_handoff_request(

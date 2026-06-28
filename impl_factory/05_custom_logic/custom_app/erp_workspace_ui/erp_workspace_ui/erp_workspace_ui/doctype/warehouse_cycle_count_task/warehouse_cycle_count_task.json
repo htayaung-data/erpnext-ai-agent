@@ -168,7 +168,8 @@
    "fieldname": "request_id",
    "fieldtype": "Data",
    "label": "Request ID",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "created_by",
@@ -241,5 +242,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 0
+ "track_changes": 0,
+ "allow_web_indexing": 0
 }

@@ -15,6 +15,8 @@
   "damaged_qty",
   "wrong_item_qty",
   "quarantine_qty",
+  "overage_qty",
+  "quality_hold_qty",
   "rejected_qty",
   "condition_grade",
   "reason_code",
@@ -82,6 +84,20 @@
    "default": "0"
   },
   {
+   "fieldname": "overage_qty",
+   "fieldtype": "Float",
+   "label": "Overage Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "quality_hold_qty",
+   "fieldtype": "Float",
+   "label": "Quality Hold Qty",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
    "fieldname": "rejected_qty",
    "fieldtype": "Float",
    "label": "Rejected Qty",
@@ -126,5 +142,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 0
+ "track_changes": 0,
+ "allow_web_indexing": 0
 }

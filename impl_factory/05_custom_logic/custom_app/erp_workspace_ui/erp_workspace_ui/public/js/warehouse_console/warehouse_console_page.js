@@ -8363,7 +8363,7 @@
       ["Stock Entry", "Future policy only, blocked now"],
       ["Stock Ledger / Stock Balance", "Future policy only, blocked now"],
       ["Stock Reservation", "Future policy only, blocked now"],
-      ["Native routes", "Blocked now"],
+      ["System document access", "Blocked now"],
       ["Reference handling", "Plain text/status only if later approved"],
     ];
     const plannedMarkup = (items) => items.map((item) => `

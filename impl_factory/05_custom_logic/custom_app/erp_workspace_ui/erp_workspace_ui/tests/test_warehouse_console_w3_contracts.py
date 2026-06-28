@@ -3779,6 +3779,18 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             self._save_customer_return_intake(lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 2, "accepted_qty": 2, "damaged_qty": 1, "condition_grade": "Good"}], request_id="return-over-sum")
         with self.assertRaises(Exception):
             self._save_customer_return_intake(lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 1}], request_id="return-missing-condition")
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(
+                lines=[{"item_code": "ITEM-102", "warehouse": "Main - M", "returned_qty": 1, "condition_grade": "Good", "stock_entry": "MAT-STE-0001"}],
+                request_id="return-forbidden-line-stock-entry",
+            )
+        too_many_lines = [
+            {"item_code": f"ITEM-RET-{idx}", "warehouse": "Main - M", "returned_qty": 1, "condition_grade": "Good"}
+            for idx in range(service.CUSTOMER_RETURN_INTAKE_MAX_LINES + 1)
+        ]
+        too_many_lines[-1]["stock_entry"] = "MAT-STE-0001"
+        with self.assertRaises(Exception):
+            self._save_customer_return_intake(lines=too_many_lines, request_id="return-too-many-lines")
         self.assertEqual(CUSTOMER_RETURN_INTAKE_DOCS, {})
 
     def test_w15e3_exception_quantities_require_evidence_or_condition_note(self):
@@ -3982,6 +3994,9 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(len(CUSTOMER_RETURN_INTAKE_DOCS[first_intake].events), 2)
 
         with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(first_intake, note="Changed manager note.", request_id="return-idempotency-manager")
+
+        with self.assertRaises(Exception):
             self._save_customer_return_manager_decision(first_intake, decision="reject_intake", note="Changed decision.", request_id="return-idempotency-manager")
 
         CURRENT_ROLES[:] = ["Stock User"]
@@ -3995,6 +4010,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         CURRENT_ROLES[:] = ["Warehouse Manager"]
         with self.assertRaises(Exception):
             self._save_customer_return_manager_decision(intake_id, decision="approve_restock", request_id="return-unknown-decision")
+        with self.assertRaises(Exception):
+            self._save_customer_return_manager_decision(intake_id, unexpected_payload="unexpected", request_id="return-unknown-top-level-field")
 
         self._save_customer_return_manager_decision(intake_id, request_id="return-final-decision")
         with self.assertRaises(Exception):
@@ -4198,6 +4215,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             self._request_customer_return_handoff(restock_intake, handoff_type="quarantine_quality_review", request_id="return-handoff-wrong-type")
         with self.assertRaises(Exception):
             self._request_customer_return_handoff(restock_intake, handoff_note="", request_id="return-handoff-missing-note")
+        with self.assertRaises(Exception):
+            self._request_customer_return_handoff(restock_intake, unexpected_payload="unexpected", request_id="return-handoff-unknown-top-level-field")
 
         CURRENT_ROLES[:] = ["Stock User"]
         quarantine_intake = self._customer_return_handoff_ready_intake(
@@ -4225,6 +4244,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         second_intake = self._customer_return_handoff_ready_intake(intake_request_id="return-handoff-idem-second-source", decision_request_id="return-handoff-idem-second-manager")
         with self.assertRaises(Exception):
             self._request_customer_return_handoff(second_intake, request_id="return-handoff-idem")
+
+        with self.assertRaises(Exception):
+            self._request_customer_return_handoff(first_intake, request_id="return-handoff-idem-source")
+        with self.assertRaises(Exception):
+            self._request_customer_return_handoff(first_intake, request_id="return-handoff-idem-manager")
 
     def test_w15e7_customer_return_handoff_payload_has_no_stock_customer_or_native_effects(self):
         intake_id = self._customer_return_handoff_ready_intake(intake_request_id="return-handoff-safe-source", decision_request_id="return-handoff-safe-manager")
@@ -4333,6 +4357,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             self._save_supplier_return_candidate(lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 2, "quarantine_qty": 2, "damaged_qty": 1, "condition_grade": "Damaged", "evidence_reference": "SUP-EVID-1"}], request_id="supplier-return-over-sum")
         with self.assertRaises(Exception):
             self._save_supplier_return_candidate(lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 1}], request_id="supplier-return-missing-condition")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_candidate(
+                lines=[{"item_code": "ITEM-201", "warehouse": "Main - M", "candidate_qty": 1, "condition_grade": "Good", "stock_entry": "MAT-STE-0001"}],
+                request_id="supplier-return-forbidden-line-stock-entry",
+            )
         too_many_lines = [
             {"item_code": f"ITEM-OVER-{idx}", "warehouse": "Main - M", "candidate_qty": 1, "condition_grade": "Good"}
             for idx in range(service.SUPPLIER_RETURN_CANDIDATE_MAX_LINES + 1)
@@ -4486,6 +4515,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         with self.assertRaises(Exception):
             self._save_supplier_return_manager_decision(clean_candidate, decision="unknown_decision", request_id="supplier-rules-unknown")
         with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(clean_candidate, unexpected_payload="unexpected", request_id="supplier-rules-unknown-top-level-field")
+        with self.assertRaises(Exception):
             self._save_supplier_return_manager_decision(clean_candidate, decision="request_reinspection", note="", request_id="supplier-rules-reinspect-no-note")
         with self.assertRaises(Exception):
             self._save_supplier_return_manager_decision(clean_candidate, decision="mark_quarantine_review", note="", request_id="supplier-rules-quarantine-no-marker")
@@ -4547,12 +4578,17 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(len(SUPPLIER_RETURN_CANDIDATE_DOCS[first_candidate].events), 2)
 
         with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(first_candidate, note="Changed supplier manager note.", request_id="supplier-manager-idem")
+
+        with self.assertRaises(Exception):
             self._save_supplier_return_manager_decision(first_candidate, decision="escalate_to_procurement", request_id="supplier-manager-idem")
 
         second_candidate = self._supplier_return_candidate_id(request_id="supplier-manager-idem-second-draft")
         CURRENT_ROLES[:] = ["Warehouse Manager"]
         with self.assertRaises(Exception):
             self._save_supplier_return_manager_decision(second_candidate, request_id="supplier-manager-idem")
+        with self.assertRaises(Exception):
+            self._save_supplier_return_manager_decision(second_candidate, request_id="supplier-manager-idem-draft")
 
         with self.assertRaises(Exception):
             self._save_supplier_return_manager_decision(first_candidate, request_id="supplier-manager-final-reject")
@@ -4735,6 +4771,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
                 "damaged_qty",
                 "wrong_item_qty",
                 "quarantine_qty",
+                "overage_qty",
+                "quality_hold_qty",
                 "rejected_qty",
                 "condition_grade",
                 "reason_code",
@@ -4808,6 +4846,35 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(request.lines[0]["supplier_return_candidate_qty"], 2.0)
         self.assertEqual(request.events[0]["event_type"], "requested_supplier_return_handoff")
 
+    def test_w15f7_supplier_return_handoff_preserves_overage_and_quality_hold_quantities(self):
+        candidate_id = self._supplier_return_handoff_ready_candidate(
+            candidate_request_id="supplier-handoff-preserve-source",
+            decision_request_id="supplier-handoff-preserve-manager",
+            lines=[
+                {
+                    "item_code": "ITEM-203",
+                    "item_name": "Supplier Review Item",
+                    "warehouse": "Main - M",
+                    "candidate_qty": 4,
+                    "quarantine_qty": 1,
+                    "overage_qty": 1,
+                    "quality_hold_qty": 1,
+                    "condition_grade": "Quality Hold",
+                    "evidence_reference": "SUP-HANDOFF-EVID-1",
+                    "uom": "Nos",
+                }
+            ],
+        )
+
+        payload = self._request_supplier_return_handoff(candidate_id, request_id="supplier-handoff-preserve")
+
+        line = payload["request"]["lines"][0]
+        self.assertEqual(line["overage_qty"], "1")
+        self.assertEqual(line["quality_hold_qty"], "1")
+        request = next(iter(SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS.values()))
+        self.assertEqual(request.lines[0]["overage_qty"], 1.0)
+        self.assertEqual(request.lines[0]["quality_hold_qty"], 1.0)
+
     def test_w15f7_warehouse_and_stock_users_denied_supplier_return_handoff(self):
         candidate_id = self._supplier_return_handoff_ready_candidate(candidate_request_id="supplier-handoff-deny-source", decision_request_id="supplier-handoff-deny-manager")
 
@@ -4832,6 +4899,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             self._request_supplier_return_handoff(supplier_candidate, handoff_type="finance_debit_review", request_id="supplier-handoff-wrong-type")
         with self.assertRaises(Exception):
             self._request_supplier_return_handoff(supplier_candidate, handoff_note="", request_id="supplier-handoff-missing-note")
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(supplier_candidate, unexpected_payload="unexpected", request_id="supplier-handoff-unknown-top-level-field")
 
         CURRENT_ROLES[:] = ["Stock User"]
         procurement_candidate = self._supplier_return_handoff_ready_candidate(
@@ -4885,6 +4954,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         with self.assertRaises(Exception):
             self._request_supplier_return_handoff(second_candidate, request_id="supplier-handoff-idem")
 
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(first_candidate, request_id="supplier-handoff-idem-source")
+        with self.assertRaises(Exception):
+            self._request_supplier_return_handoff(first_candidate, request_id="supplier-handoff-idem-manager")
+
     def test_w15f7_supplier_return_handoff_payload_has_no_stock_supplier_or_native_effects(self):
         candidate_id = self._supplier_return_handoff_ready_candidate(candidate_request_id="supplier-handoff-safe-source", decision_request_id="supplier-handoff-safe-manager")
         payload = self._request_supplier_return_handoff(candidate_id, request_id="supplier-handoff-safe")
@@ -4919,6 +4993,56 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
     def _load_cycle_count_doctype(self, folder):
         path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "doctype" / folder / f"{folder}.json"
         return json.loads(path.read_text())
+
+    def _load_warehouse_workflow_doctype(self, folder):
+        path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "doctype" / folder / f"{folder}.json"
+        return json.loads(path.read_text())
+
+    def test_w15i5_workflow_doctypes_explicitly_disable_web_indexing_and_require_core_audit_fields(self):
+        workflow_folders = [
+            "warehouse_customer_return_intake",
+            "warehouse_customer_return_intake_line",
+            "warehouse_customer_return_intake_event",
+            "warehouse_customer_return_handoff_request",
+            "warehouse_customer_return_handoff_request_line",
+            "warehouse_customer_return_handoff_request_event",
+            "warehouse_supplier_return_candidate",
+            "warehouse_supplier_return_candidate_line",
+            "warehouse_supplier_return_candidate_event",
+            "warehouse_supplier_return_handoff_request",
+            "warehouse_supplier_return_handoff_request_line",
+            "warehouse_supplier_return_handoff_request_event",
+            "warehouse_internal_transfer_candidate",
+            "warehouse_internal_transfer_candidate_line",
+            "warehouse_internal_transfer_candidate_event",
+            "warehouse_internal_transfer_handoff_request",
+            "warehouse_internal_transfer_handoff_request_line",
+            "warehouse_internal_transfer_handoff_request_event",
+            "warehouse_cycle_count_task",
+            "warehouse_cycle_count_task_line",
+            "warehouse_cycle_count_task_event",
+            "warehouse_inventory_variance_handoff_request",
+            "warehouse_inventory_variance_handoff_request_line",
+            "warehouse_inventory_variance_handoff_request_event",
+        ]
+        event_folders = [folder for folder in workflow_folders if folder.endswith("_event")]
+
+        for folder in workflow_folders:
+            meta = self._load_warehouse_workflow_doctype(folder)
+            self.assertEqual(meta["index_web_pages_for_search"], 0)
+            self.assertEqual(meta.get("allow_web_indexing"), 0)
+
+        for folder in event_folders:
+            fields = {field["fieldname"]: field for field in self._load_warehouse_workflow_doctype(folder)["fields"]}
+            for fieldname in {"event_type", "event_by", "event_at", "request_id"}:
+                self.assertEqual(fields[fieldname].get("reqd"), 1)
+                self.assertEqual(fields[fieldname].get("read_only"), 1)
+
+        cycle_count_fields = {
+            field["fieldname"]: field
+            for field in self._load_warehouse_workflow_doctype("warehouse_cycle_count_task")["fields"]
+        }
+        self.assertEqual(cycle_count_fields["request_id"].get("reqd"), 1)
 
     def test_w15g3_internal_transfer_candidate_doctypes_are_internal_non_submittable(self):
         parent = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate")
@@ -5799,6 +5923,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("/desk/form", payload_text)
         forbidden_docs = {"Stock Reconciliation", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reservation"}
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
     def _cycle_count_task_id(self, **overrides):
         payload = self._save_cycle_count_task(**overrides)
@@ -5961,6 +6086,9 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(len(CYCLE_COUNT_TASK_DOCS[first_task].events), 2)
 
         with self.assertRaises(Exception):
+            self._save_cycle_count_manager_decision(first_task, note="Changed cycle count manager note.", request_id="cycle-count-manager-idem")
+
+        with self.assertRaises(Exception):
             self._save_cycle_count_manager_decision(first_task, decision="escalate_to_inventory_admin", request_id="cycle-count-manager-idem")
 
         second_task = self._cycle_count_task_id(request_id="cycle-count-manager-idem-second-draft")
@@ -5997,6 +6125,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("/desk/form", payload_text)
         forbidden_docs = {"Stock Reconciliation", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reservation"}
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
 
     def _inventory_variance_handoff_ready_task(
         self,
@@ -6170,6 +6299,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         with self.assertRaises(Exception):
             self._request_inventory_variance_handoff(second_task, request_id="inventory-variance-handoff-idem")
 
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(first_task, request_id="inventory-variance-handoff-idem-source")
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(first_task, request_id="inventory-variance-handoff-idem-manager")
+
         invalid_task = self._inventory_variance_handoff_ready_task(
             task_request_id="inventory-variance-handoff-invalid-line-source",
             decision_request_id="inventory-variance-handoff-invalid-line-manager",
@@ -6177,6 +6311,51 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         CYCLE_COUNT_TASK_DOCS[invalid_task].lines[0]["warehouse"] = "Stores - M"
         with self.assertRaises(Exception):
             self._request_inventory_variance_handoff(invalid_task, request_id="inventory-variance-handoff-invalid-line")
+
+        negative_qty_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-negative-qty-source",
+            decision_request_id="inventory-variance-handoff-negative-qty-manager",
+        )
+        CYCLE_COUNT_TASK_DOCS[negative_qty_task].lines[0]["counted_qty"] = -1
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(negative_qty_task, request_id="inventory-variance-handoff-negative-qty")
+
+        invalid_direction_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-invalid-direction-source",
+            decision_request_id="inventory-variance-handoff-invalid-direction-manager",
+        )
+        CYCLE_COUNT_TASK_DOCS[invalid_direction_task].lines[0]["variance_direction"] = "Stock Reconciliation Ready"
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(invalid_direction_task, request_id="inventory-variance-handoff-invalid-direction")
+
+        inconsistent_variance_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-inconsistent-variance-source",
+            decision_request_id="inventory-variance-handoff-inconsistent-variance-manager",
+        )
+        CYCLE_COUNT_TASK_DOCS[inconsistent_variance_task].lines[0]["variance_direction"] = "No Variance"
+        CYCLE_COUNT_TASK_DOCS[inconsistent_variance_task].lines[0]["variance_qty"] = 1
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(inconsistent_variance_task, request_id="inventory-variance-handoff-inconsistent-variance")
+
+        invalid_status_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-invalid-status-source",
+            decision_request_id="inventory-variance-handoff-invalid-status-manager",
+        )
+        CYCLE_COUNT_TASK_DOCS[invalid_status_task].lines[0]["line_status"] = "Stock Posted"
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(invalid_status_task, request_id="inventory-variance-handoff-invalid-status")
+
+        missing_evidence_task = self._inventory_variance_handoff_ready_task(
+            task_request_id="inventory-variance-handoff-missing-evidence-source",
+            decision_request_id="inventory-variance-handoff-missing-evidence-manager",
+        )
+        source_line = CYCLE_COUNT_TASK_DOCS[missing_evidence_task].lines[0]
+        source_line["evidence_reference"] = ""
+        source_line["reason_code"] = ""
+        source_line["condition_grade"] = ""
+        source_line["serial_batch_reference_text"] = ""
+        with self.assertRaises(Exception):
+            self._request_inventory_variance_handoff(missing_evidence_task, request_id="inventory-variance-handoff-missing-evidence")
 
     def test_w15h8_inventory_variance_handoff_payload_has_no_stock_or_native_effects(self):
         task_id = self._inventory_variance_handoff_ready_task(
@@ -6207,6 +6386,37 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         forbidden_docs = {"Stock Reconciliation", "Stock Entry", "Stock Ledger Entry", "Stock Balance", "Stock Reservation"}
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_DOC_CALLS))
         self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+
+    def test_w15i4_request_id_owner_helpers_fail_closed_on_duplicate_rows(self):
+        parent_cases = [
+            (CUSTOMER_RETURN_INTAKE_DOCS, service.CUSTOMER_RETURN_INTAKE_DOCTYPE, "WCRI-DUP", service._customer_return_intake_request_id_owner),
+            (CUSTOMER_RETURN_HANDOFF_REQUEST_DOCS, service.CUSTOMER_RETURN_HANDOFF_REQUEST_DOCTYPE, "WCRH-DUP", service._customer_return_handoff_request_id_owner),
+            (SUPPLIER_RETURN_CANDIDATE_DOCS, service.SUPPLIER_RETURN_CANDIDATE_DOCTYPE, "WSRC-DUP", service._supplier_return_candidate_request_id_owner),
+            (SUPPLIER_RETURN_HANDOFF_REQUEST_DOCS, service.SUPPLIER_RETURN_HANDOFF_REQUEST_DOCTYPE, "WSRH-DUP", service._supplier_return_handoff_request_id_owner),
+            (INTERNAL_TRANSFER_CANDIDATE_DOCS, service.INTERNAL_TRANSFER_CANDIDATE_DOCTYPE, "WITC-DUP", service._internal_transfer_candidate_request_id_owner),
+            (INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCS, service.INTERNAL_TRANSFER_HANDOFF_REQUEST_DOCTYPE, "WITH-DUP", service._internal_transfer_handoff_request_id_owner),
+            (CYCLE_COUNT_TASK_DOCS, service.CYCLE_COUNT_TASK_DOCTYPE, "WCCT-DUP", service._cycle_count_task_request_id_owner),
+            (INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCS, service.INVENTORY_VARIANCE_HANDOFF_REQUEST_DOCTYPE, "WIVH-DUP", service._inventory_variance_handoff_request_id_owner),
+        ]
+        for docs, doctype, prefix, owner_func in parent_cases:
+            request_id = f"{prefix.lower()}-request"
+            docs[f"{prefix}-A"] = _FakeWorkflowDoc({"doctype": doctype, "name": f"{prefix}-A", "request_id": request_id})
+            docs[f"{prefix}-B"] = _FakeWorkflowDoc({"doctype": doctype, "name": f"{prefix}-B", "request_id": request_id})
+            with self.assertRaises(Exception):
+                owner_func(request_id)
+
+        event_cases = [
+            (CUSTOMER_RETURN_INTAKE_DOCS, service.CUSTOMER_RETURN_INTAKE_DOCTYPE, "WCRI-EVENT-DUP", service._customer_return_manager_request_id_owner),
+            (SUPPLIER_RETURN_CANDIDATE_DOCS, service.SUPPLIER_RETURN_CANDIDATE_DOCTYPE, "WSRC-EVENT-DUP", service._supplier_return_manager_request_id_owner),
+            (INTERNAL_TRANSFER_CANDIDATE_DOCS, service.INTERNAL_TRANSFER_CANDIDATE_DOCTYPE, "WITC-EVENT-DUP", service._internal_transfer_manager_request_id_owner),
+            (CYCLE_COUNT_TASK_DOCS, service.CYCLE_COUNT_TASK_DOCTYPE, "WCCT-EVENT-DUP", service._cycle_count_manager_request_id_owner),
+        ]
+        for docs, doctype, prefix, owner_func in event_cases:
+            request_id = f"{prefix.lower()}-request"
+            docs[f"{prefix}-A"] = _FakeWorkflowDoc({"doctype": doctype, "name": f"{prefix}-A", "request_id": f"{request_id}-draft-a", "events": [{"request_id": request_id}]})
+            docs[f"{prefix}-B"] = _FakeWorkflowDoc({"doctype": doctype, "name": f"{prefix}-B", "request_id": f"{request_id}-draft-b", "events": [{"request_id": request_id}]})
+            with self.assertRaises(Exception):
+                owner_func(request_id)
 
     def _save_internal_transfer_candidate(self, **overrides):
         payload = {
@@ -6507,6 +6717,9 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(len(INTERNAL_TRANSFER_CANDIDATE_DOCS[first_candidate].events), 2)
 
         with self.assertRaises(Exception):
+            self._save_internal_transfer_manager_decision(first_candidate, note="Changed internal transfer manager note.", request_id="internal-transfer-manager-idem")
+
+        with self.assertRaises(Exception):
             self._save_internal_transfer_manager_decision(first_candidate, decision="escalate_to_inventory_admin", request_id="internal-transfer-manager-idem")
 
         second_candidate = self._internal_transfer_candidate_id(request_id="internal-transfer-manager-idem-second-draft")
@@ -6703,6 +6916,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         )
         with self.assertRaises(Exception):
             self._request_internal_transfer_handoff(second_candidate, request_id="internal-transfer-handoff-idem")
+
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(first_candidate, request_id="internal-transfer-handoff-idem-source")
+        with self.assertRaises(Exception):
+            self._request_internal_transfer_handoff(first_candidate, request_id="internal-transfer-handoff-idem-manager")
 
         invalid_candidate = self._internal_transfer_handoff_ready_candidate(
             candidate_request_id="internal-transfer-handoff-invalid-line-source",

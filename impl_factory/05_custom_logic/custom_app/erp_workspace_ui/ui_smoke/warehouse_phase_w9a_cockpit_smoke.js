@@ -916,6 +916,8 @@ function assertW15H2CycleCountShell(state, contextLabel) {
   assert((state.text || "").includes("Inventory/Admin review"), "Cycle Count Inventory/Admin review context is missing", { context: contextLabel, state });
   assert((state.text || "").includes("No stock quantity is adjusted"), "Cycle Count guardrail is missing", { context: contextLabel, state });
   assert((state.text || "").includes("no Stock Reconciliation or Stock Entry is created"), "Cycle Count stock document guardrail is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("System document access"), "Cycle Count document-access policy wording is missing", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Native routes"), "Cycle Count shell should avoid raw native-route wording", { context: contextLabel, state });
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Cycle Count shell exposed a native route", { context: contextLabel, state });
 }
 

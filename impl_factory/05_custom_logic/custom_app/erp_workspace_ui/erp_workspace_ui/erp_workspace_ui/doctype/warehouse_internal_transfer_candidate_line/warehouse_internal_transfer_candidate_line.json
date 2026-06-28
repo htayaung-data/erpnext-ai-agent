@@ -135,5 +135,6 @@
  ],
  "istable": 1,
  "name": "Warehouse Internal Transfer Candidate Line",
- "permissions": []
+ "permissions": [],
+ "allow_web_indexing": 0
 }

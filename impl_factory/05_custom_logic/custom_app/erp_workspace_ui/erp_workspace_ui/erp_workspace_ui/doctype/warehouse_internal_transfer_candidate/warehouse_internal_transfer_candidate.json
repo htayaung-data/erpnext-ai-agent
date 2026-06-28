@@ -214,5 +214,6 @@
    "write": 1,
    "role": "System Manager"
   }
- ]
+ ],
+ "allow_web_indexing": 0
 }
