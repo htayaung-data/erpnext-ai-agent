@@ -67,7 +67,7 @@
    "fieldname": "count_status",
    "fieldtype": "Select",
    "label": "Count Status",
-   "options": "Planned\nCount In Progress\nSubmitted For Review\nRecount Requested\nClean Count\nVariance Review\nQuarantine Review\nSerial/Batch Review\nBlocked Review\nInventory/Admin Review Requested\nRejected\nCancelled\nClosed",
+   "options": "Planned\nCount In Progress\nSubmitted For Review\nRecount Requested\nClean Count\nVariance Review\nQuarantine Review\nSerial/Batch Review\nBlocked Review\nInventory/Admin Review Needed\nRejected\nCancelled\nClosed",
    "read_only": 1,
    "reqd": 1
   },
@@ -131,7 +131,7 @@
   {
    "fieldname": "inventory_admin_escalation_reference",
    "fieldtype": "Data",
-   "label": "Inventory Admin Escalation Reference",
+   "label": "Inventory/Admin Review Reference",
    "read_only": 1
   },
   {

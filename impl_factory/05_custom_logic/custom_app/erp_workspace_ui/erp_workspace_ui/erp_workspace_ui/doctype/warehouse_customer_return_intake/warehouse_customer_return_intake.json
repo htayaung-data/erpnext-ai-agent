@@ -48,7 +48,7 @@
    "fieldname": "intake_status",
    "fieldtype": "Select",
    "label": "Intake Status",
-   "options": "Intake Draft\nReceived For Inspection\nInspection In Progress\nSubmitted For Manager Review\nRestock Review\nQuarantine Review\nRepair Review\nScrap Review\nEscalated To Sales\nRejected / Return To Customer\nClosed\nCancelled",
+   "options": "Intake Draft\nReceived For Inspection\nInspection In Progress\nSubmitted For Manager Review\nReinspection Requested\nRestock Candidate\nQuarantine Review\nRepair Candidate\nScrap Candidate\nSales Review Needed\nRejected Intake\nClosed\nCancelled",
    "default": "Intake Draft",
    "read_only": 1
   },
@@ -110,7 +110,7 @@
   {
    "fieldname": "sales_escalation_reference",
    "fieldtype": "Data",
-   "label": "Sales Escalation Reference",
+   "label": "Sales Review Reference",
    "read_only": 1
   },
   {

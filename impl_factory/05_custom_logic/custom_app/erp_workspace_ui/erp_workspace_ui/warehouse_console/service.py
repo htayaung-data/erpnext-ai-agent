@@ -65,6 +65,9 @@ ACTION_CENTER_WORKLIST_ROUTE_PARTS = frozenset({
 	"stock-exceptions",
 	"movement-visibility",
 	"transfer-visibility",
+	"returns-work-hub",
+	"internal-transfer-workflow",
+	"cycle-count-workflow",
 })
 
 PURCHASE_ORDER_INBOUND_FIELDS = [
@@ -215,7 +218,7 @@ RECEIVING_TASK_MANAGER_DECISIONS = {
 	"approve_clean": ("Approved Clean", "approved_clean"),
 	"approve_discrepancy": ("Approved With Discrepancy", "approved_with_discrepancy"),
 	"mark_quarantine_review": ("Quarantine Review", "marked_quarantine_review"),
-	"escalate_to_procurement": ("Escalated To Procurement", "escalated_to_procurement"),
+	"escalate_to_procurement": ("Procurement Review Needed", "escalated_to_procurement"),
 }
 RECEIVING_TASK_MAX_LINES = 80
 RECEIVING_TASK_MAX_NOTE_LENGTH = 500
@@ -271,7 +274,7 @@ PICKING_TASK_MANAGER_DECISION_STATUSES = frozenset({
 	"Submitted For Review",
 	"Repick Requested",
 	"Shortage Review",
-	"Sales Escalation",
+	"Sales Review Needed",
 	"Clean Pick Approved",
 	"Partial Pick Approved",
 	"Pack Ready",
@@ -281,9 +284,9 @@ PICKING_TASK_MANAGER_DECISIONS = {
 	"approve_clean_pick": ("Clean Pick Approved", "approved_clean_pick", "Clean pick approved"),
 	"approve_partial_pick": ("Partial Pick Approved", "approved_partial_pick", "Partial pick approved"),
 	"mark_shortage_review": ("Shortage Review", "marked_shortage_review", "Shortage review marked"),
-	"escalate_to_sales": ("Sales Escalation", "escalated_to_sales", "Sales escalation marked"),
+	"escalate_to_sales": ("Sales Review Needed", "escalated_to_sales", "Sales review posture marked"),
 	"mark_pack_ready": ("Pack Ready", "marked_pack_ready", "Pack readiness marked"),
-	"mark_dispatch_handoff": ("Dispatch Handoff Ready", "marked_dispatch_handoff", "Dispatch handoff marked"),
+	"mark_dispatch_handoff": ("Outbound Review Ready", "marked_dispatch_handoff", "Outbound readiness posture marked"),
 }
 PICKING_TASK_SALES_ESCALATION_TYPES = frozenset({
 	"short",
@@ -297,7 +300,7 @@ DISPATCH_HANDOFF_REQUEST_DOCTYPE = "Warehouse Dispatch Handoff Request"
 DISPATCH_HANDOFF_REQUEST_LINE_DOCTYPE = "Warehouse Dispatch Handoff Request Line"
 DISPATCH_HANDOFF_REQUEST_EVENT_DOCTYPE = "Warehouse Dispatch Handoff Request Event"
 DISPATCH_HANDOFF_POLICY_VERSION = "W15D6-dispatch-handoff-request-v1"
-DISPATCH_HANDOFF_ALLOWED_TASK_STATUS = "Dispatch Handoff Ready"
+DISPATCH_HANDOFF_ALLOWED_TASK_STATUS = "Outbound Review Ready"
 DISPATCH_HANDOFF_MAX_LINES = 80
 DISPATCH_HANDOFF_MAX_NOTE_LENGTH = 500
 DISPATCH_HANDOFF_MAX_REFERENCE_LENGTH = 180
@@ -365,7 +368,7 @@ CUSTOMER_RETURN_MANAGER_DECISIONS = {
 	"mark_repair_candidate": ("Repair Candidate", "marked_repair_candidate", "Repair candidate marked"),
 	"mark_scrap_candidate": ("Scrap Candidate", "marked_scrap_candidate", "Scrap candidate marked"),
 	"reject_intake": ("Rejected Intake", "rejected_intake", "Customer return intake rejected"),
-	"escalate_to_sales": ("Sales Escalation", "escalated_to_sales", "Sales escalation marked"),
+	"escalate_to_sales": ("Sales Review Needed", "escalated_to_sales", "Sales review posture marked"),
 }
 
 CUSTOMER_RETURN_HANDOFF_REQUEST_DOCTYPE = "Warehouse Customer Return Handoff Request"
@@ -381,7 +384,7 @@ CUSTOMER_RETURN_HANDOFF_ALLOWED_SOURCE_STATUSES = frozenset({
 	"Repair Candidate",
 	"Scrap Candidate",
 	"Rejected Intake",
-	"Sales Escalation",
+	"Sales Review Needed",
 })
 CUSTOMER_RETURN_HANDOFF_ALLOWED_TYPES = frozenset({
 	"sales_authorization_review",
@@ -393,9 +396,9 @@ CUSTOMER_RETURN_HANDOFF_ALLOWED_TYPES = frozenset({
 	"scrap_writeoff_review",
 })
 CUSTOMER_RETURN_HANDOFF_TYPE_SOURCE_STATUSES = {
-	"sales_authorization_review": frozenset({"Sales Escalation", "Rejected Intake"}),
-	"customer_resolution_review": frozenset({"Sales Escalation", "Rejected Intake"}),
-	"finance_credit_review": frozenset({"Restock Candidate", "Repair Candidate", "Scrap Candidate", "Rejected Intake", "Sales Escalation"}),
+	"sales_authorization_review": frozenset({"Sales Review Needed", "Rejected Intake"}),
+	"customer_resolution_review": frozenset({"Sales Review Needed", "Rejected Intake"}),
+	"finance_credit_review": frozenset({"Restock Candidate", "Repair Candidate", "Scrap Candidate", "Rejected Intake", "Sales Review Needed"}),
 	"stock_governance_review": frozenset({"Restock Candidate"}),
 	"quarantine_quality_review": frozenset({"Quarantine Review"}),
 	"repair_review": frozenset({"Repair Candidate"}),
@@ -460,8 +463,8 @@ SUPPLIER_RETURN_MANAGER_DECISIONS = {
 	"request_reinspection": ("Reinspection Requested", "requested_reinspection", "Reinspection requested"),
 	"mark_quarantine_review": ("Quarantine Review", "marked_quarantine_review", "Quarantine review marked"),
 	"mark_supplier_return_candidate": ("Supplier Return Candidate", "marked_supplier_return_candidate", "Supplier return candidate marked"),
-	"escalate_to_procurement": ("Procurement Escalation", "escalated_to_procurement", "Procurement escalation marked"),
-	"escalate_to_finance_admin": ("Finance/Admin Escalation", "escalated_to_finance_admin", "Finance/Admin escalation marked"),
+	"escalate_to_procurement": ("Procurement Review Needed", "escalated_to_procurement", "Procurement review posture marked"),
+	"escalate_to_finance_admin": ("Finance/Admin Review Needed", "escalated_to_finance_admin", "Finance/Admin review posture marked"),
 	"reject_supplier_return_candidate": ("Rejected Candidate", "rejected_supplier_return_candidate", "Supplier return candidate rejected"),
 }
 SUPPLIER_RETURN_HANDOFF_REQUEST_DOCTYPE = "Warehouse Supplier Return Handoff Request"
@@ -473,8 +476,8 @@ SUPPLIER_RETURN_HANDOFF_MAX_NOTE_LENGTH = 500
 SUPPLIER_RETURN_HANDOFF_MAX_REFERENCE_LENGTH = 180
 SUPPLIER_RETURN_HANDOFF_ALLOWED_SOURCE_STATUSES = frozenset({
 	"Supplier Return Candidate",
-	"Procurement Escalation",
-	"Finance/Admin Escalation",
+	"Procurement Review Needed",
+	"Finance/Admin Review Needed",
 	"Quarantine Review",
 	"Rejected Candidate",
 })
@@ -489,14 +492,14 @@ SUPPLIER_RETURN_HANDOFF_ALLOWED_TYPES = frozenset({
 	"supplier_handoff_review",
 })
 SUPPLIER_RETURN_HANDOFF_TYPE_SOURCE_STATUSES = {
-	"supplier_authorization_review": frozenset({"Supplier Return Candidate", "Procurement Escalation", "Rejected Candidate"}),
-	"supplier_claim_review": frozenset({"Supplier Return Candidate", "Procurement Escalation"}),
-	"po_correction_review": frozenset({"Procurement Escalation"}),
-	"replacement_or_credit_review": frozenset({"Supplier Return Candidate", "Procurement Escalation"}),
-	"finance_debit_review": frozenset({"Finance/Admin Escalation"}),
-	"stock_document_policy_review": frozenset({"Supplier Return Candidate", "Finance/Admin Escalation", "Quarantine Review", "Rejected Candidate"}),
+	"supplier_authorization_review": frozenset({"Supplier Return Candidate", "Procurement Review Needed", "Rejected Candidate"}),
+	"supplier_claim_review": frozenset({"Supplier Return Candidate", "Procurement Review Needed"}),
+	"po_correction_review": frozenset({"Procurement Review Needed"}),
+	"replacement_or_credit_review": frozenset({"Supplier Return Candidate", "Procurement Review Needed"}),
+	"finance_debit_review": frozenset({"Finance/Admin Review Needed"}),
+	"stock_document_policy_review": frozenset({"Supplier Return Candidate", "Finance/Admin Review Needed", "Quarantine Review", "Rejected Candidate"}),
 	"quality_quarantine_review": frozenset({"Quarantine Review"}),
-	"supplier_handoff_review": frozenset({"Procurement Escalation"}),
+	"supplier_handoff_review": frozenset({"Procurement Review Needed"}),
 }
 
 INTERNAL_TRANSFER_CANDIDATE_DOCTYPE = "Warehouse Internal Transfer Candidate"
@@ -579,7 +582,7 @@ INTERNAL_TRANSFER_MANAGER_DECISIONS = {
 	"request_recount": ("Recount Requested", "requested_recount", "Recount requested"),
 	"approve_transfer_candidate": ("Transfer Candidate", "approved_transfer_candidate", "Transfer candidate recommended"),
 	"mark_quarantine_review": ("Quarantine Review", "marked_quarantine_review", "Quarantine review marked"),
-	"escalate_to_inventory_admin": ("Inventory/Admin Review", "escalated_to_inventory_admin", "Inventory/Admin review requested"),
+	"escalate_to_inventory_admin": ("Inventory/Admin Review Needed", "escalated_to_inventory_admin", "Inventory/Admin review posture marked"),
 	"reject_transfer_candidate": ("Rejected", "rejected_transfer_candidate", "Transfer candidate rejected"),
 	"cancel_transfer_candidate": ("Cancelled", "cancelled_transfer_candidate", "Transfer candidate cancelled"),
 	"close_transfer_candidate": ("Closed", "closed_transfer_candidate", "Transfer candidate closed"),
@@ -590,7 +593,7 @@ INTERNAL_TRANSFER_HANDOFF_REQUEST_EVENT_DOCTYPE = "Warehouse Internal Transfer H
 INTERNAL_TRANSFER_HANDOFF_POLICY_VERSION = "W15G8-internal-transfer-handoff-request-v1"
 INTERNAL_TRANSFER_HANDOFF_ALLOWED_SOURCE_STATUSES = frozenset({
 	"Transfer Candidate",
-	"Inventory/Admin Review",
+	"Inventory/Admin Review Needed",
 	"Quarantine Review",
 	"Rejected",
 	"Cancelled",
@@ -606,12 +609,12 @@ INTERNAL_TRANSFER_HANDOFF_ALLOWED_TYPES = frozenset({
 	"close_or_cancel_review",
 })
 INTERNAL_TRANSFER_HANDOFF_TYPE_SOURCE_STATUSES = {
-	"stock_document_policy_review": frozenset({"Transfer Candidate", "Inventory/Admin Review", "Quarantine Review"}),
-	"source_target_policy_review": frozenset({"Transfer Candidate", "Inventory/Admin Review", "Rejected"}),
+	"stock_document_policy_review": frozenset({"Transfer Candidate", "Inventory/Admin Review Needed", "Quarantine Review"}),
+	"source_target_policy_review": frozenset({"Transfer Candidate", "Inventory/Admin Review Needed", "Rejected"}),
 	"quarantine_quality_review": frozenset({"Quarantine Review"}),
-	"reservation_policy_review": frozenset({"Transfer Candidate", "Inventory/Admin Review"}),
-	"serial_batch_policy_review": frozenset({"Transfer Candidate", "Inventory/Admin Review"}),
-	"transfer_execution_review": frozenset({"Transfer Candidate", "Inventory/Admin Review"}),
+	"reservation_policy_review": frozenset({"Transfer Candidate", "Inventory/Admin Review Needed"}),
+	"serial_batch_policy_review": frozenset({"Transfer Candidate", "Inventory/Admin Review Needed"}),
+	"transfer_execution_review": frozenset({"Transfer Candidate", "Inventory/Admin Review Needed"}),
 	"close_or_cancel_review": frozenset({"Rejected", "Cancelled", "Closed"}),
 }
 
@@ -760,7 +763,7 @@ CYCLE_COUNT_MANAGER_DECISIONS = {
 	"mark_variance_review": ("Variance Review", "marked_cycle_count_variance_review", "Cycle count variance review marked"),
 	"mark_quarantine_review": ("Quarantine Review", "marked_cycle_count_quarantine_review", "Cycle count quarantine review marked"),
 	"mark_serial_batch_review": ("Serial/Batch Review", "marked_cycle_count_serial_batch_review", "Cycle count serial/batch review marked"),
-	"escalate_to_inventory_admin": ("Inventory/Admin Review Requested", "escalated_cycle_count_inventory_admin", "Cycle count Inventory/Admin review requested"),
+	"escalate_to_inventory_admin": ("Inventory/Admin Review Needed", "escalated_cycle_count_inventory_admin", "Cycle count Inventory/Admin review posture marked"),
 	"reject_cycle_count": ("Rejected", "rejected_cycle_count", "Cycle count rejected"),
 	"cancel_cycle_count": ("Cancelled", "cancelled_cycle_count", "Cycle count cancelled"),
 	"close_cycle_count": ("Closed", "closed_cycle_count", "Cycle count closed"),
@@ -773,7 +776,7 @@ INVENTORY_VARIANCE_HANDOFF_ALLOWED_SOURCE_STATUSES = frozenset({
 	"Variance Review",
 	"Quarantine Review",
 	"Serial/Batch Review",
-	"Inventory/Admin Review Requested",
+	"Inventory/Admin Review Needed",
 	"Rejected",
 	"Cancelled",
 	"Closed",
@@ -789,12 +792,12 @@ INVENTORY_VARIANCE_HANDOFF_ALLOWED_TYPES = frozenset({
 	"close_or_cancel_review",
 })
 INVENTORY_VARIANCE_HANDOFF_TYPE_SOURCE_STATUSES = {
-	"variance_adjustment_policy_review": frozenset({"Variance Review", "Inventory/Admin Review Requested"}),
-	"stock_reconciliation_policy_review": frozenset({"Variance Review", "Inventory/Admin Review Requested", "Quarantine Review", "Serial/Batch Review"}),
-	"recount_policy_review": frozenset({"Variance Review", "Quarantine Review", "Serial/Batch Review", "Inventory/Admin Review Requested"}),
+	"variance_adjustment_policy_review": frozenset({"Variance Review", "Inventory/Admin Review Needed"}),
+	"stock_reconciliation_policy_review": frozenset({"Variance Review", "Inventory/Admin Review Needed", "Quarantine Review", "Serial/Batch Review"}),
+	"recount_policy_review": frozenset({"Variance Review", "Quarantine Review", "Serial/Batch Review", "Inventory/Admin Review Needed"}),
 	"quarantine_quality_review": frozenset({"Quarantine Review"}),
 	"serial_batch_policy_review": frozenset({"Serial/Batch Review"}),
-	"location_policy_review": frozenset({"Variance Review", "Quarantine Review", "Serial/Batch Review", "Inventory/Admin Review Requested"}),
+	"location_policy_review": frozenset({"Variance Review", "Quarantine Review", "Serial/Batch Review", "Inventory/Admin Review Needed"}),
 	"close_or_cancel_review": frozenset({"Rejected", "Cancelled", "Closed", "Clean Count"}),
 }
 
@@ -976,6 +979,209 @@ def get_warehouse_console_overview() -> dict[str, object]:
 			"Warehouse Console has no stock activity yet",
 			"No warehouse activity is visible for your role right now.",
 		)
+	return payload
+
+
+CUSTOM_WORKFLOW_RECALL_LIMIT = 5
+
+
+def _custom_workflow_no_effect_flags() -> dict[str, object]:
+	return {
+		"record_recall_only": True,
+		"native_routes": [],
+		"stock_effect": False,
+		"stock_moved": False,
+		"stock_quantity_adjusted": False,
+		"stock_posted": False,
+		"stock_entry_created": False,
+		"stock_entry_submitted": False,
+		"stock_reconciliation_created": False,
+		"stock_reconciliation_submitted": False,
+		"stock_reservation_created": False,
+		"stock_ledger_updated": False,
+		"stock_balance_updated": False,
+		"valuation": {"visible": False, "fields": []},
+	}
+
+
+def _custom_workflow_base_payload(context: dict[str, object], page_key: str, title: str) -> dict[str, object]:
+	payload = _base_payload(context, ready_state() if has_warehouse_access(context) else restricted_state())
+	payload["page"] = {"title": title, "key": page_key}
+	payload["workflow"] = {
+		"key": page_key,
+		"record_recall_only": True,
+		"records": {},
+		"selected": {},
+		"manager": {},
+	}
+	payload.update(_custom_workflow_no_effect_flags())
+	return payload
+
+
+def _can_recall_custom_workflow_records(context: dict[str, object]) -> bool:
+	return has_warehouse_access(context) and _can_read("Warehouse")
+
+
+def _custom_workflow_fetch_rows(doctype: str, fields: list[str], filters: dict[str, object] | None = None) -> list[dict[str, object]]:
+	if not _can_read(doctype):
+		return []
+	# Recall summaries must remain permission-aware; never use frappe.get_all here.
+	return _safe_get_list(
+		doctype,
+		fields=fields,
+		filters=filters or {},
+		order_by="modified desc",
+		limit=CUSTOM_WORKFLOW_RECALL_LIMIT,
+	)
+
+
+def _custom_workflow_line_count(value: object) -> int:
+	try:
+		return max(0, int(flt(value)))
+	except Exception:
+		return 0
+
+
+def _custom_workflow_summary_value(row: dict[str, object], key: str) -> str:
+	return cstr(row.get(key, "")).strip()
+
+
+def _customer_return_intake_recall_row(row: dict[str, object]) -> dict[str, object]:
+	return {
+		"intake_id": _custom_workflow_summary_value(row, "name"),
+		"intake_status": _custom_workflow_summary_value(row, "intake_status"),
+		"manager_review_status": _custom_workflow_summary_value(row, "manager_review_status"),
+		"customer": _custom_workflow_summary_value(row, "customer"),
+		"warehouse": _custom_workflow_summary_value(row, "warehouse"),
+		"line_count": _custom_workflow_line_count(row.get("line_count")),
+		"request_id": _custom_workflow_summary_value(row, "request_id"),
+	}
+
+
+def _supplier_return_candidate_recall_row(row: dict[str, object]) -> dict[str, object]:
+	return {
+		"candidate_id": _custom_workflow_summary_value(row, "name"),
+		"candidate_status": _custom_workflow_summary_value(row, "candidate_status"),
+		"manager_review_status": _custom_workflow_summary_value(row, "manager_review_status"),
+		"supplier": _custom_workflow_summary_value(row, "supplier"),
+		"warehouse": _custom_workflow_summary_value(row, "warehouse"),
+		"line_count": _custom_workflow_line_count(row.get("line_count")),
+		"request_id": _custom_workflow_summary_value(row, "request_id"),
+	}
+
+
+def _internal_transfer_candidate_recall_row(row: dict[str, object]) -> dict[str, object]:
+	return {
+		"candidate_id": _custom_workflow_summary_value(row, "name"),
+		"candidate_status": _custom_workflow_summary_value(row, "candidate_status"),
+		"manager_review_status": _custom_workflow_summary_value(row, "manager_review_status"),
+		"source_warehouse": _custom_workflow_summary_value(row, "source_warehouse"),
+		"target_warehouse": _custom_workflow_summary_value(row, "target_warehouse"),
+		"source_context": _custom_workflow_summary_value(row, "source_context"),
+		"line_count": _custom_workflow_line_count(row.get("line_count")),
+		"total_candidate_qty": _number_text(row.get("total_candidate_qty")),
+		"request_id": _custom_workflow_summary_value(row, "request_id"),
+	}
+
+
+def _cycle_count_task_recall_row(row: dict[str, object]) -> dict[str, object]:
+	return {
+		"task_id": _custom_workflow_summary_value(row, "name"),
+		"count_status": _custom_workflow_summary_value(row, "count_status"),
+		"manager_review_status": _custom_workflow_summary_value(row, "manager_review_status"),
+		"variance_status": _custom_workflow_summary_value(row, "variance_status"),
+		"warehouse": _custom_workflow_summary_value(row, "warehouse"),
+		"count_source": _custom_workflow_summary_value(row, "count_source"),
+		"count_scope": _custom_workflow_summary_value(row, "count_scope"),
+		"line_count": _custom_workflow_line_count(row.get("line_count")),
+		"request_id": _custom_workflow_summary_value(row, "request_id"),
+	}
+
+
+def _filter_recall_rows_by_visible_warehouse(rows: list[dict[str, object]], warehouse_key: str) -> list[dict[str, object]]:
+	visible_rows = []
+	for row in rows:
+		warehouse = _custom_workflow_summary_value(row, warehouse_key)
+		if warehouse and _customer_return_warehouse_is_visible(warehouse):
+			visible_rows.append(row)
+	return visible_rows
+
+
+def _filter_internal_transfer_recall_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+	visible_rows = []
+	for row in rows:
+		source_warehouse = _custom_workflow_summary_value(row, "source_warehouse")
+		target_warehouse = _custom_workflow_summary_value(row, "target_warehouse")
+		if source_warehouse and target_warehouse and _internal_transfer_warehouse_is_visible(source_warehouse) and _internal_transfer_warehouse_is_visible(target_warehouse):
+			visible_rows.append(row)
+	return visible_rows
+
+
+@frappe.whitelist()
+def get_warehouse_returns_work_hub() -> dict[str, object]:
+	"""Read-only recall state for the custom Returns Work Hub."""
+	ensure_authenticated()
+	context = build_context()
+	payload = _custom_workflow_base_payload(context, "returns_work_hub", "Returns Work Hub")
+	if not _can_recall_custom_workflow_records(context):
+		return payload
+	customer_rows = _filter_recall_rows_by_visible_warehouse(_custom_workflow_fetch_rows(
+		CUSTOMER_RETURN_INTAKE_DOCTYPE,
+		["name", "intake_status", "manager_review_status", "customer", "warehouse", "line_count", "request_id", "modified"],
+	), "warehouse")
+	supplier_rows = _filter_recall_rows_by_visible_warehouse(_custom_workflow_fetch_rows(
+		SUPPLIER_RETURN_CANDIDATE_DOCTYPE,
+		["name", "candidate_status", "manager_review_status", "supplier", "warehouse", "line_count", "request_id", "modified"],
+	), "warehouse")
+	customer_records = [_customer_return_intake_recall_row(row) for row in customer_rows]
+	supplier_records = [_supplier_return_candidate_recall_row(row) for row in supplier_rows]
+	payload["workflow"].update({
+		"records": {"customer_intakes": customer_records, "supplier_candidates": supplier_records},
+		"selected": {"customer_intake": customer_records[0] if customer_records else {}, "supplier_candidate": supplier_records[0] if supplier_records else {}},
+		"manager": {"can_manage_customer": _has_customer_return_manager_access(context), "can_manage_supplier": _has_supplier_return_manager_access(context)},
+	})
+	return payload
+
+
+@frappe.whitelist()
+def get_warehouse_internal_transfer_workflow() -> dict[str, object]:
+	"""Read-only recall state for the custom Internal Transfer workflow."""
+	ensure_authenticated()
+	context = build_context()
+	payload = _custom_workflow_base_payload(context, "internal_transfer_workflow", "Internal Transfer Workflow")
+	if not _can_recall_custom_workflow_records(context):
+		return payload
+	rows = _filter_internal_transfer_recall_rows(_custom_workflow_fetch_rows(
+		INTERNAL_TRANSFER_CANDIDATE_DOCTYPE,
+		["name", "candidate_status", "manager_review_status", "source_warehouse", "target_warehouse", "source_context", "line_count", "total_candidate_qty", "request_id", "modified"],
+	))
+	records = [_internal_transfer_candidate_recall_row(row) for row in rows]
+	payload["workflow"].update({
+		"records": {"candidates": records},
+		"selected": {"candidate": records[0] if records else {}},
+		"manager": {"can_manage": _has_internal_transfer_manager_access(context)},
+	})
+	return payload
+
+
+@frappe.whitelist()
+def get_warehouse_cycle_count_workflow() -> dict[str, object]:
+	"""Read-only recall state for the custom Cycle Count workflow."""
+	ensure_authenticated()
+	context = build_context()
+	payload = _custom_workflow_base_payload(context, "cycle_count_workflow", "Cycle Count Workflow")
+	if not _can_recall_custom_workflow_records(context):
+		return payload
+	rows = _filter_recall_rows_by_visible_warehouse(_custom_workflow_fetch_rows(
+		CYCLE_COUNT_TASK_DOCTYPE,
+		["name", "count_status", "manager_review_status", "variance_status", "warehouse", "count_source", "count_scope", "line_count", "request_id", "modified"],
+	), "warehouse")
+	records = [_cycle_count_task_recall_row(row) for row in rows]
+	payload["workflow"].update({
+		"records": {"tasks": records},
+		"selected": {"task": records[0] if records else {}},
+		"manager": {"can_manage": _has_cycle_count_manager_access(context)},
+	})
 	return payload
 
 
@@ -1179,16 +1385,17 @@ def _build_action_center(
 
 	return {
 		"key": "w15b_action_center",
-		"title": "Warehouse Action Center",
-		"subtitle": "Controlled entry points for future Warehouse work; current cards open custom review queues only.",
-		"mode": "shell_only",
-		"state": "planning",
+		"title": "Warehouse Command Center",
+		"subtitle": "Start governed Warehouse work, open review pages, and inspect visibility routes without leaving custom workflow boundaries.",
+		"mode": "custom_workflow",
+		"mode_label": "Custom records only",
+		"state": "active",
 		"role_mode": "manager" if manager_mode else "operator",
 		"sections": [
 			{
 				"key": "work_entry",
-				"title": "Work Entry",
-				"summary": "Operational work starts here before any approved ERP document step.",
+				"title": "Start Work",
+				"summary": "Open the page where the Warehouse user records or reviews custom workflow evidence.",
 				"cards": [
 					_action_center_card(
 						"arrival_checks",
@@ -1196,6 +1403,8 @@ def _build_action_center(
 						inbound_attention,
 						"Supplier arrivals and count review start from the inbound queue.",
 						route_part="inbound-receiving",
+						card_role="queue",
+						role_label="Queue",
 						button_label="Open inbound",
 					),
 					_action_center_card(
@@ -1204,28 +1413,52 @@ def _build_action_center(
 						outbound_attention,
 						"Customer demand and stock blockers start from the outbound queue.",
 						route_part="outbound-picking",
+						card_role="queue",
+						role_label="Queue",
 						button_label="Open picking",
 					),
 					_action_center_card(
 						"return_intake",
-						"Return intake",
-						"Planned",
-						"Customer and supplier return intake will be designed after receiving and picking actions.",
-						state_value="planned",
+						"Returns Work Hub",
+						"Custom",
+						"Customer and supplier returns continue in the dedicated Returns Work Hub.",
+						route_part="returns-work-hub",
+						state_value="live",
+						card_role="custom_workflow",
+						role_label="Custom workflow",
+						status_label="Returns page",
+						button_label="Open returns",
+					),
+					_action_center_card(
+						"internal_transfer",
+						"Internal transfer",
+						"Custom",
+						"Transfer intent and source count evidence continue on the dedicated Internal Transfer page.",
+						route_part="internal-transfer-workflow",
+						state_value="live",
+						card_role="custom_workflow",
+						role_label="Custom workflow",
+						status_label="Transfer page",
+						button_label="Open transfer",
 					),
 					_action_center_card(
 						"cycle_counts",
-						"Cycle counts",
-						"Planned",
-						"Count tasks and variance review will stay controlled by approval policy.",
-						state_value="planned",
+						"Cycle Count",
+						"Custom",
+						"Blind count evidence and variance posture continue on the dedicated Cycle Count page.",
+						route_part="cycle-count-workflow",
+						state_value="live",
+						card_role="custom_workflow",
+						role_label="Custom workflow",
+						status_label="Cycle Count page",
+						button_label="Open cycle count",
 					),
 				],
 			},
 			{
 				"key": "manager_decisions",
-				"title": "Manager Decisions",
-				"summary": "Decision lanes for approval, release, discrepancy, and variance review.",
+				"title": "Manager Review",
+				"summary": "Open review queues and workflow pages; manager actions appear only after custom evidence exists.",
 				"cards": [
 					_action_center_card(
 						"arrival_review",
@@ -1233,14 +1466,18 @@ def _build_action_center(
 						inbound_attention,
 						"Review supplier-side arrivals before any separate receiving document step.",
 						route_part="inbound-receiving",
+						card_role="queue",
+						role_label="Review queue",
 						button_label="Review arrivals",
 					),
 					_action_center_card(
 						"picking_blockers",
 						"Picking blockers",
 						outbound_attention,
-						"Review outbound demand and shortage blockers before release design.",
+						"Review outbound demand and shortage blockers before release posture.",
 						route_part="outbound-picking",
+						card_role="queue",
+						role_label="Review queue",
 						button_label="Review blockers",
 					),
 					_action_center_card(
@@ -1249,36 +1486,81 @@ def _build_action_center(
 						exception_attention,
 						"Shortage and posture issues stay inside custom Warehouse review routes.",
 						route_part="stock-exceptions",
+						card_role="queue",
+						role_label="Review queue",
 						button_label="Review exceptions",
-					),
-					_action_center_card(
-						"movement_visibility",
-						"Transfer visibility",
-						transfer_attention,
-						"Review posted movement and transfer posture before action workflow design.",
-						route_part="transfer-visibility",
-						button_label="Review transfers",
 					),
 					_action_center_card(
 						"return_decisions",
 						"Return decisions",
-						"Planned",
-						"Restock, quarantine, repair, or supplier-return decisions are not executable yet.",
-						state_value="planned",
+						"Custom",
+						"Manager return posture stays inside the Returns Work Hub; separate handoff requests remain outside this active page.",
+						route_part="returns-work-hub",
+						state_value="live",
+						card_role="custom_workflow",
+						role_label="Workflow page",
+						status_label="Returns",
+						button_label="Open returns",
+					),
+					_action_center_card(
+						"internal_transfer_decisions",
+						"Transfer decisions",
+						"Custom",
+						"Manager transfer posture stays inside the Internal Transfer page.",
+						route_part="internal-transfer-workflow",
+						state_value="live",
+						card_role="custom_workflow",
+						role_label="Workflow page",
+						status_label="Transfer",
+						button_label="Open transfer",
 					),
 					_action_center_card(
 						"inventory_variance",
 						"Inventory variance",
-						"Planned",
-						"Variance approval and adjustment preparation are reserved for the count workflow.",
-						state_value="planned",
+						"Custom",
+						"Manager variance posture stays inside the dedicated Cycle Count page; adjustment documents remain blocked.",
+						route_part="cycle-count-workflow",
+						state_value="live",
+						card_role="custom_workflow",
+						role_label="Workflow page",
+						status_label="Cycle Count",
+						button_label="Open cycle count",
+					),
+				],
+			},
+			{
+				"key": "visibility",
+				"title": "Visibility",
+				"summary": "Inspect posted movement and transfer posture without opening native ERP document routes.",
+				"cards": [
+					_action_center_card(
+						"movement_visibility",
+						"Movement visibility",
+						transfer_attention,
+						"Trace posted movement evidence and item posture from the custom visibility page.",
+						route_part="movement-visibility",
+						card_role="visibility",
+						role_label="Read-only",
+						status_label="Visibility",
+						button_label="Open movements",
+					),
+					_action_center_card(
+						"transfer_visibility",
+						"Transfer visibility",
+						transfer_attention,
+						"Review inter-warehouse movement posture before any separate transfer action policy.",
+						route_part="transfer-visibility",
+						card_role="visibility",
+						role_label="Read-only",
+						status_label="Visibility",
+						button_label="Review transfers",
 					),
 				],
 			},
 		],
 		"guardrail": {
-			"title": "Action shell only",
-			"detail": "No ERPNext stock document is created here. Cards either open custom Warehouse review queues or mark a planned workflow lane.",
+			"title": "Custom workflow only",
+			"detail": "No ERPNext stock document is created here. Cards open custom Warehouse workflows or review queues only.",
 		},
 	}
 
@@ -1291,6 +1573,10 @@ def _action_center_card(
 	route_part: str | None = None,
 	state_value: str = "live",
 	button_label: str | None = None,
+	status_label: str | None = None,
+	target_section: str | None = None,
+	card_role: str = "queue",
+	role_label: str | None = None,
 ) -> dict[str, object]:
 	card: dict[str, object] = {
 		"key": key,
@@ -1298,13 +1584,20 @@ def _action_center_card(
 		"value": value,
 		"state": state_value,
 		"note": note,
-		"status_label": "Review queue" if route_part else "Planned",
+		"card_role": card_role,
+		"role_label": role_label or ("Review queue" if card_role == "queue" else card_role.replace("_", " ").title()),
+		"status_label": status_label or ("Review queue" if route_part else "Custom workflow"),
 	}
 	if route_part and route_part in ACTION_CENTER_WORKLIST_ROUTE_PARTS:
 		card.update({
 			"route": "warehouse-console-worklist",
 			"route_part": route_part,
 			"button_label": button_label or "Open queue",
+		})
+	if target_section:
+		card.update({
+			"target_section": target_section,
+			"button_label": button_label or "Open section",
 		})
 	return card
 
@@ -1726,6 +2019,7 @@ def get_warehouse_receiving_review(purchase_order: str | None = None) -> dict[st
 			],
 			"lines": lines,
 			"receipt_history": _receiving_receipt_history(po_name),
+			"workflow_task": _receiving_review_workflow_task_payload(po_name, record, lines),
 		}
 	)
 	return payload
@@ -2042,6 +2336,79 @@ def _active_receiving_task_name(purchase_order: str, target_warehouse: str) -> s
 	return cstr(rows[0].get("name")).strip() if rows else ""
 
 
+def _latest_receiving_task_name(purchase_order: str, target_warehouse: str) -> str:
+	try:
+		rows = frappe.get_all(
+			RECEIVING_TASK_DOCTYPE,
+			fields=["name"],
+			filters={
+				"purchase_order": purchase_order,
+				"target_warehouse": target_warehouse,
+			},
+			order_by="modified desc",
+			limit_page_length=1,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
+
+
+def _receiving_review_workflow_task_payload(po_name: str, order_record: dict[str, object], review_lines: list[dict[str, object]]) -> dict[str, object]:
+	target_warehouse = _receiving_review_workflow_target_warehouse(order_record, review_lines)
+	payload: dict[str, object] = {
+		"available": False,
+		"task_id": "",
+		"purchase_order": po_name,
+		"target_warehouse": target_warehouse,
+		"status": "",
+		"decision": "",
+		"line_count": 0,
+		"manager_decision_available": False,
+		"lines": [],
+		"stock_effect": {
+			"stock_posted": False,
+			"purchase_receipt_created": False,
+			"purchase_receipt_submitted": False,
+		},
+		"valuation": {"visible": False, "fields": []},
+	}
+	if not po_name or not target_warehouse:
+		return payload
+	task_name = _latest_receiving_task_name(po_name, target_warehouse)
+	if not task_name:
+		return payload
+	try:
+		task_doc = frappe.get_doc(RECEIVING_TASK_DOCTYPE, task_name)
+	except Exception:
+		_clear_transient_frappe_messages()
+		return payload
+	lines = [_receiving_task_line_payload(line) for line in list(getattr(task_doc, "lines", []) or [])]
+	status = cstr(getattr(task_doc, "status", "")).strip()
+	payload.update(
+		{
+			"available": True,
+			"task_id": cstr(getattr(task_doc, "name", "")).strip(),
+			"purchase_order": cstr(getattr(task_doc, "purchase_order", "")).strip(),
+			"target_warehouse": cstr(getattr(task_doc, "target_warehouse", "")).strip(),
+			"status": status,
+			"decision": cstr(getattr(task_doc, "decision", "")).strip(),
+			"line_count": len(lines),
+			"manager_decision_available": status in RECEIVING_TASK_MANAGER_DECISION_STATUSES,
+			"lines": lines,
+		}
+	)
+	return payload
+
+
+def _receiving_review_workflow_target_warehouse(order_record: dict[str, object], review_lines: list[dict[str, object]]) -> str:
+	warehouses = {cstr(line.get("target_warehouse")).strip() for line in review_lines if cstr(line.get("target_warehouse")).strip()}
+	default_warehouse = cstr(order_record.get("set_warehouse")).strip()
+	if default_warehouse and (not warehouses or default_warehouse in warehouses):
+		return default_warehouse
+	return next(iter(warehouses)) if len(warehouses) == 1 else ""
+
+
 def _apply_receiving_task_draft(
 	task_doc,
 	order_record: dict[str, object],
@@ -2176,7 +2543,7 @@ def _validate_receiving_manager_decision(task_doc, decision_key: str) -> None:
 	if decision_key == "mark_quarantine_review" and not has_quarantine_marker:
 		frappe.throw(_("Quarantine review requires damaged, quarantine, or wrong-item evidence."), ValueError)
 	if decision_key == "escalate_to_procurement" and not has_procurement_marker:
-		frappe.throw(_("Procurement escalation requires a Procurement-owned receiving issue."), ValueError)
+		frappe.throw(_("Procurement review posture requires a Procurement-owned receiving issue."), ValueError)
 
 
 def _receiving_task_line_has_discrepancy(line) -> bool:
@@ -2615,6 +2982,7 @@ def get_warehouse_picking_review(sales_order: str | None = None) -> dict[str, ob
 				{"key": "stock_readiness", "label": "Stock Readiness", "count": len(lines)},
 			],
 			"lines": lines,
+			"workflow_task": _picking_review_workflow_task_payload(order_name, record, lines),
 		}
 	)
 	return payload
@@ -5389,9 +5757,9 @@ def _validate_supplier_return_manager_decision(candidate_doc, decision_key: str,
 	if decision_key == "mark_supplier_return_candidate" and not (has_supplier_return_evidence or note):
 		frappe.throw(_("Supplier return candidate marking requires supplier-return evidence or manager note."), ValueError)
 	if decision_key == "escalate_to_procurement" and not (procurement_ref or note or has_supplier_return_evidence):
-		frappe.throw(_("Procurement escalation requires supplier-return evidence, reference, or manager note."), ValueError)
+		frappe.throw(_("Procurement review posture requires supplier-return evidence, reference, or manager note."), ValueError)
 	if decision_key == "escalate_to_finance_admin" and not (finance_ref or note):
-		frappe.throw(_("Finance/Admin escalation requires reference or manager note."), ValueError)
+		frappe.throw(_("Finance/Admin review posture requires reference or manager note."), ValueError)
 	if decision_key == "reject_supplier_return_candidate" and not note:
 		frappe.throw(_("Manager note is required to reject supplier return candidate."), ValueError)
 
@@ -5726,16 +6094,12 @@ def _contains_forbidden_customer_return_fields(extra_fields: dict[str, object]) 
 def _customer_return_warehouse_is_visible(warehouse: str) -> bool:
 	if not _can_read("Warehouse"):
 		return False
-	try:
-		rows = frappe.get_all(
-			"Warehouse",
-			fields=["name"],
-			filters={"name": warehouse},
-			limit_page_length=1,
-		)
-	except Exception:
-		_clear_transient_frappe_messages()
-		rows = []
+	rows = _safe_get_list(
+		"Warehouse",
+		fields=["name"],
+		filters={"name": warehouse},
+		limit=1,
+	)
 	return bool(rows)
 
 
@@ -6056,7 +6420,7 @@ def _validate_customer_return_manager_decision(intake_doc, decision_key: str, no
 	if decision_key == "reject_intake" and not (has_rejected_marker or note):
 		frappe.throw(_("Rejecting a customer return intake requires rejected quantity or manager note."), ValueError)
 	if decision_key == "escalate_to_sales" and not (has_sales_issue or note or sales_ref):
-		frappe.throw(_("Sales escalation requires customer-facing return issue, Sales reference, or manager note."), ValueError)
+		frappe.throw(_("Sales review posture requires customer-facing return issue, Sales reference, or manager note."), ValueError)
 
 
 def _customer_return_line_has_exception(line) -> bool:
@@ -7068,7 +7432,7 @@ def _validate_picking_manager_decision(task_doc, decision_key: str, note: str) -
 	if decision_key == "mark_shortage_review" and not has_shortage:
 		frappe.throw(_("Shortage review requires short or not-found evidence."), ValueError)
 	if decision_key == "escalate_to_sales" and not (has_sales_issue or note):
-		frappe.throw(_("Sales escalation requires a Sales-facing issue or manager reason."), ValueError)
+		frappe.throw(_("Sales review posture requires a Sales-facing issue or manager reason."), ValueError)
 	if decision_key == "mark_pack_ready":
 		if has_damage_or_not_found:
 			frappe.throw(_("Pack readiness cannot be marked while damage or not-found issues are unresolved."), ValueError)
@@ -7405,6 +7769,72 @@ def _picking_summary_cards(header: dict[str, object]) -> list[dict[str, object]]
 		{"key": "open_lines", "label": "Open Lines", "value": header.get("line_count") or 0, "note": header.get("remaining_summary") or ""},
 		{"key": "readiness", "label": "Readiness", "value": header.get("ready_line_count") or 0, "note": f"{header.get('review_line_count') or 0} lines need review"},
 	]
+
+
+def _picking_review_workflow_task_payload(order_name: str, order_record: dict[str, object], review_lines: list[dict[str, object]]) -> dict[str, object]:
+	source_warehouse = _picking_task_default_warehouse(_picking_task_source_lines(order_name), order_record)
+	if not source_warehouse:
+		warehouses = {cstr(line.get("source_warehouse")).strip() for line in review_lines if cstr(line.get("source_warehouse")).strip()}
+		source_warehouse = next(iter(warehouses)) if len(warehouses) == 1 else ""
+	payload: dict[str, object] = {
+		"available": False,
+		"task_id": "",
+		"sales_order": order_name,
+		"source_warehouse": source_warehouse,
+		"status": "",
+		"workflow_state": "",
+		"line_count": 0,
+		"manager_decision_available": False,
+		"lines": [],
+		"stock_effect": {
+			"delivery_note_created": False,
+			"pick_list_created": False,
+			"stock_reserved": False,
+			"stock_posted": False,
+		},
+		"valuation": {"visible": False, "fields": []},
+	}
+	if not order_name or not source_warehouse:
+		return payload
+	task_name = _latest_picking_task_name(order_name, source_warehouse)
+	if not task_name:
+		return payload
+	try:
+		task_doc = frappe.get_doc(PICKING_TASK_DOCTYPE, task_name)
+	except Exception:
+		_clear_transient_frappe_messages()
+		return payload
+	lines = [_picking_task_line_payload(line) for line in list(getattr(task_doc, "lines", []) or [])]
+	status = cstr(getattr(task_doc, "task_status", "")).strip()
+	payload.update(
+		{
+			"available": True,
+			"task_id": cstr(getattr(task_doc, "name", "")).strip(),
+			"sales_order": cstr(getattr(task_doc, "sales_order", "")).strip(),
+			"source_warehouse": cstr(getattr(task_doc, "source_warehouse", "")).strip(),
+			"status": status,
+			"workflow_state": cstr(getattr(task_doc, "workflow_state", "")).strip(),
+			"line_count": len(lines),
+			"manager_decision_available": status in PICKING_TASK_MANAGER_DECISION_STATUSES,
+			"lines": lines,
+		}
+	)
+	return payload
+
+
+def _latest_picking_task_name(sales_order: str, source_warehouse: str) -> str:
+	try:
+		rows = frappe.get_all(
+			PICKING_TASK_DOCTYPE,
+			fields=["name"],
+			filters={"sales_order": sales_order, "source_warehouse": source_warehouse},
+			order_by="modified desc",
+			limit_page_length=1,
+		)
+	except Exception:
+		_clear_transient_frappe_messages()
+		rows = []
+	return cstr(rows[0].get("name")).strip() if rows else ""
 
 
 def _normalize_queue_key(value: str | None) -> str:
@@ -10618,14 +11048,31 @@ def _quick_find_picking_results(query: str, limit: int) -> list[dict[str, object
 
 
 def _quick_find_stock_exception_results(query: str, limit: int) -> list[dict[str, object]]:
-	if not _can_read("Sales Order Item"):
+	if not _can_read("Sales Order") or not _can_read("Sales Order Item"):
+		return []
+	candidate_parent_names = _quick_find_child_parent_names(
+		"Sales Order Item",
+		query,
+		search_fields=["item_code", "item_name", "warehouse"],
+		limit=max(limit * 3, 10),
+	)
+	visible_parent_rows = _quick_find_parent_rows_by_name(
+		"Sales Order",
+		candidate_parent_names,
+		["name"],
+		_sales_order_outbound_filters({}),
+		max(limit * 2, 8),
+	)
+	visible_parent_names = {cstr(row.get("name")).strip() for row in visible_parent_rows if cstr(row.get("name")).strip()}
+	if not visible_parent_names:
 		return []
 	rows = _quick_find_child_rows(
 		"Sales Order Item",
 		query,
 		fields=SALES_ORDER_ITEM_OUTBOUND_FIELDS,
 		search_fields=["item_code", "item_name", "warehouse"],
-		limit=limit,
+		base_filters=[["Sales Order Item", "parent", "in", sorted(visible_parent_names)]],
+		limit=max(limit * 2, 6),
 	)
 	results: list[dict[str, object]] = []
 	for row in rows:
@@ -10633,6 +11080,8 @@ def _quick_find_stock_exception_results(query: str, limit: int) -> list[dict[str
 		item_code = cstr(row.get("item_code")).strip()
 		warehouse = cstr(row.get("warehouse")).strip()
 		if not sales_order or not item_code:
+			continue
+		if sales_order not in visible_parent_names:
 			continue
 		token = _stock_exception_context_token(sales_order, item_code, warehouse)
 		results.append(_quick_find_result(
@@ -10810,6 +11259,7 @@ def _quick_find_child_rows(
 	*,
 	fields: list[str],
 	search_fields: list[str],
+	base_filters: list | None = None,
 	limit: int,
 ) -> list[dict[str, object]]:
 	if not _can_read(doctype):
@@ -10817,10 +11267,12 @@ def _quick_find_child_rows(
 	rows: list[dict[str, object]] = []
 	seen: set[str] = set()
 	for field in _quick_find_search_fields(doctype, search_fields):
+		filters = list(base_filters or [])
+		filters.append([doctype, field, "like", f"%{query}%"])
 		for row in _safe_get_all(
 			doctype,
 			fields=_available_fields(doctype, fields),
-			filters=[[doctype, field, "like", f"%{query}%"]],
+			filters=filters,
 			order_by=None,
 			limit=limit,
 		):

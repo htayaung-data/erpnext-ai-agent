@@ -53,7 +53,7 @@
    "fieldname": "task_status",
    "fieldtype": "Select",
    "label": "Task Status",
-   "options": "Draft\nIn Progress\nSubmitted For Review\nRepick Requested\nApproved Clean\nApproved Partial\nShortage Review\nPack Ready\nDispatch Handoff Ready\nEscalated To Sales\nDelivery Draft Prepared\nClosed\nCancelled",
+   "options": "Draft\nIn Progress\nSubmitted For Review\nRepick Requested\nClean Pick Approved\nPartial Pick Approved\nShortage Review\nPack Ready\nOutbound Review Ready\nSales Review Needed\nSeparate Document Policy\nClosed\nCancelled",
    "read_only": 1
   },
   {
@@ -185,4 +185,3 @@
  "states": [],
  "track_changes": 0
 }
-

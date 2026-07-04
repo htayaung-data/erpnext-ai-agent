@@ -49,7 +49,7 @@
    "fieldname": "candidate_status",
    "fieldtype": "Select",
    "label": "Candidate Status",
-   "options": "Candidate Draft\nPhysical Evidence Captured\nSubmitted For Manager Review\nReinspection Requested\nQuarantine Review\nSupplier Return Candidate\nProcurement Escalation\nFinance/Admin Escalation\nRejected Candidate\nClosed\nCancelled",
+   "options": "Candidate Draft\nPhysical Evidence Captured\nSubmitted For Manager Review\nReinspection Requested\nQuarantine Review\nSupplier Return Candidate\nProcurement Review Needed\nFinance/Admin Review Needed\nRejected Candidate\nClosed\nCancelled",
    "default": "Candidate Draft",
    "read_only": 1
   },
@@ -111,13 +111,13 @@
   {
    "fieldname": "procurement_escalation_reference",
    "fieldtype": "Data",
-   "label": "Procurement Escalation Reference",
+   "label": "Procurement Review Reference",
    "read_only": 1
   },
   {
    "fieldname": "finance_escalation_reference",
    "fieldtype": "Data",
-   "label": "Finance Escalation Reference",
+   "label": "Finance/Admin Review Reference",
    "read_only": 1
   },
   {

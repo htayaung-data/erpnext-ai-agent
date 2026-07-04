@@ -214,11 +214,91 @@
       .replace(/'/g, "&#39;");
   }
 
+  function sidebarIconMarkup(name) {
+    const icons = {
+      report: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 4.5h12v15H6z"></path>
+          <path d="M9 9h6"></path>
+          <path d="M9 12.5h6"></path>
+          <path d="M9 16h3"></path>
+        </svg>
+      `,
+      return: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 7H5v4"></path>
+          <path d="M5 11a7 7 0 1 0 2.1-5"></path>
+        </svg>
+      `,
+      stock: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3l7 4-7 4-7-4 7-4z"></path>
+          <path d="M5 7v6l7 4 7-4V7"></path>
+          <path d="M8 17.5h8"></path>
+          <path d="M16 15.5l2 2-2 2"></path>
+        </svg>
+      `,
+    };
+    return icons[name] || "";
+  }
+
   function iconMarkup(name) {
+    const localIcon = sidebarIconMarkup(name);
+    if (localIcon) return localIcon;
     if (typeof consoleRuntime.iconMarkup === "function") {
       return consoleRuntime.iconMarkup(name);
     }
     return "";
+  }
+
+  function sidebarItemIconMarkup(item) {
+    const key = String(item && item.key || "");
+    const iconsByKey = {
+      stock_exceptions: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 4.5l8 15H4z"></path>
+          <path d="M12 9v4.3"></path>
+          <path d="M12 17h.01"></path>
+        </svg>
+      `,
+      returns_work_hub: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 7H5v4"></path>
+          <path d="M5 11a7 7 0 1 0 2.1-5"></path>
+        </svg>
+      `,
+      internal_transfer_workflow: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M7 7h10"></path>
+          <path d="M14 4l3 3-3 3"></path>
+          <path d="M17 17H7"></path>
+          <path d="M10 14l-3 3 3 3"></path>
+        </svg>
+      `,
+      cycle_count_workflow: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18.5 8.5A7 7 0 1 0 20 13"></path>
+          <path d="M18.5 4.5v4h-4"></path>
+          <path d="M8.5 12.5l2.1 2.1 4.4-5"></path>
+        </svg>
+      `,
+      movement_visibility: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 17c3.2-6.5 7.8 2.5 16-7"></path>
+          <path d="M16 10h4v4"></path>
+          <path d="M5 7h4"></path>
+        </svg>
+      `,
+      transfer_visibility: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 8h12"></path>
+          <path d="M15 5l3 3-3 3"></path>
+          <path d="M18 16H6"></path>
+          <path d="M9 13l-3 3 3 3"></path>
+        </svg>
+      `,
+    };
+    return iconsByKey[key] || iconMarkup(item && item.icon || "square");
   }
 
   function ensureStyles() {
@@ -1511,8 +1591,7 @@
           <span class="erpw-sales-console-sidebar-utility-shortcut">${escapeHtml(shortcutLabel())}</span>
         </button>
     ` : "";
-    const utilitiesMarkup = `
-      <div class="erpw-sales-console-sidebar-utilities">
+    const notificationUtilityMarkup = config.workspaceId === "warehouse" ? "" : `
         <button
           type="button"
           class="erpw-sales-console-sidebar-utility"
@@ -1525,6 +1604,10 @@
             <span class="erpw-sales-console-sidebar-utility-title">Notification</span>
           </span>
         </button>
+    `;
+    const utilitiesMarkup = `
+      <div class="erpw-sales-console-sidebar-utilities">
+        ${notificationUtilityMarkup}
         ${searchUtilityMarkup}
       </div>
     `;
@@ -1552,7 +1635,7 @@
                 aria-label="${escapeHtml(itemLabel)}"
                 title="${escapeHtml(itemLabel)}"
               >
-                <span class="erpw-sales-console-sidebar-icon" aria-hidden="true">${iconMarkup(item.icon || "square")}</span>
+                <span class="erpw-sales-console-sidebar-icon" aria-hidden="true">${sidebarItemIconMarkup(item)}</span>
                 <span class="erpw-sales-console-sidebar-copy">
                   <span class="erpw-sales-console-sidebar-text">${escapeHtml(itemLabel)}</span>
                 </span>

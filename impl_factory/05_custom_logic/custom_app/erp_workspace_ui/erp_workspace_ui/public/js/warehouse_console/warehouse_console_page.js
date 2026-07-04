@@ -17,6 +17,9 @@
   const STOCK_EXCEPTIONS_KEY = "stock_exceptions";
   const MOVEMENT_VISIBILITY_KEY = "movement_visibility";
   const TRANSFER_VISIBILITY_KEY = "transfer_visibility";
+  const RETURNS_WORK_HUB_KEY = "returns_work_hub";
+  const INTERNAL_TRANSFER_WORKFLOW_KEY = "internal_transfer_workflow";
+  const CYCLE_COUNT_WORKFLOW_KEY = "cycle_count_workflow";
   const OVERVIEW_METHOD = warehouseMethods.overview || "erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview";
   const INBOUND_METHOD = warehouseMethods.inboundQueue || warehouseMethods.inbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue";
   const OUTBOUND_METHOD = warehouseMethods.outboundQueue || warehouseMethods.outbound_queue || "erp_workspace_ui.warehouse_console.service.get_warehouse_outbound_picking_queue";
@@ -24,7 +27,22 @@
   const MOVEMENT_VISIBILITY_METHOD = warehouseMethods.movementVisibility || warehouseMethods.movement_visibility || "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_visibility_queue";
   const TRANSFER_VISIBILITY_METHOD = warehouseMethods.transferVisibility || warehouseMethods.transfer_visibility || "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue";
   const RECEIVING_METHOD = warehouseMethods.receivingDetail || warehouseMethods.receiving_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review";
+  const RECEIVING_TASK_DRAFT_METHOD = warehouseMethods.receivingTaskDraft || warehouseMethods.receiving_task_draft || "erp_workspace_ui.warehouse_console.service.save_warehouse_receiving_task_draft";
+  const RECEIVING_MANAGER_DECISION_METHOD = warehouseMethods.receivingManagerDecision || warehouseMethods.receiving_manager_decision || "erp_workspace_ui.warehouse_console.service.save_warehouse_receiving_manager_decision";
   const PICKING_METHOD = warehouseMethods.pickingDetail || warehouseMethods.picking_detail || "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review";
+  const PICKING_TASK_DRAFT_METHOD = warehouseMethods.pickingTaskDraft || warehouseMethods.picking_task_draft || "erp_workspace_ui.warehouse_console.service.save_warehouse_picking_task_draft";
+  const PICKING_MANAGER_DECISION_METHOD = warehouseMethods.pickingManagerDecision || warehouseMethods.picking_manager_decision || "erp_workspace_ui.warehouse_console.service.save_warehouse_picking_manager_decision";
+  const CUSTOMER_RETURN_INTAKE_DRAFT_METHOD = warehouseMethods.customerReturnIntakeDraft || warehouseMethods.customer_return_intake_draft || "erp_workspace_ui.warehouse_console.service.save_warehouse_customer_return_intake_draft";
+  const CUSTOMER_RETURN_MANAGER_DECISION_METHOD = warehouseMethods.customerReturnManagerDecision || warehouseMethods.customer_return_manager_decision || "erp_workspace_ui.warehouse_console.service.save_warehouse_customer_return_manager_decision";
+  const SUPPLIER_RETURN_CANDIDATE_DRAFT_METHOD = warehouseMethods.supplierReturnCandidateDraft || warehouseMethods.supplier_return_candidate_draft || "erp_workspace_ui.warehouse_console.service.save_warehouse_supplier_return_candidate_draft";
+  const SUPPLIER_RETURN_MANAGER_DECISION_METHOD = warehouseMethods.supplierReturnManagerDecision || warehouseMethods.supplier_return_manager_decision || "erp_workspace_ui.warehouse_console.service.save_warehouse_supplier_return_manager_decision";
+  const INTERNAL_TRANSFER_CANDIDATE_DRAFT_METHOD = warehouseMethods.internalTransferCandidateDraft || warehouseMethods.internal_transfer_candidate_draft || "erp_workspace_ui.warehouse_console.service.save_warehouse_internal_transfer_candidate_draft";
+  const INTERNAL_TRANSFER_MANAGER_DECISION_METHOD = warehouseMethods.internalTransferManagerDecision || warehouseMethods.internal_transfer_manager_decision || "erp_workspace_ui.warehouse_console.service.save_warehouse_internal_transfer_manager_decision";
+  const CYCLE_COUNT_TASK_DRAFT_METHOD = warehouseMethods.cycleCountTaskDraft || warehouseMethods.cycle_count_task_draft || "erp_workspace_ui.warehouse_console.service.save_warehouse_cycle_count_task_draft";
+  const CYCLE_COUNT_MANAGER_DECISION_METHOD = warehouseMethods.cycleCountManagerDecision || warehouseMethods.cycle_count_manager_decision || "erp_workspace_ui.warehouse_console.service.save_warehouse_cycle_count_manager_decision";
+  const RETURNS_WORK_HUB_METHOD = warehouseMethods.returnsWorkHub || warehouseMethods.returns_work_hub || "erp_workspace_ui.warehouse_console.service.get_warehouse_returns_work_hub";
+  const INTERNAL_TRANSFER_WORKFLOW_METHOD = warehouseMethods.internalTransferWorkflow || warehouseMethods.internal_transfer_workflow || "erp_workspace_ui.warehouse_console.service.get_warehouse_internal_transfer_workflow";
+  const CYCLE_COUNT_WORKFLOW_METHOD = warehouseMethods.cycleCountWorkflow || warehouseMethods.cycle_count_workflow || "erp_workspace_ui.warehouse_console.service.get_warehouse_cycle_count_workflow";
   const STOCK_EXCEPTION_REVIEW_METHOD = warehouseMethods.stockExceptionReview || warehouseMethods.stock_exception_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review";
   const STOCK_POSTURE_REVIEW_METHOD = warehouseMethods.stockPostureReview || warehouseMethods.stock_posture_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review";
   const MOVEMENT_REVIEW_METHOD = warehouseMethods.movementReview || warehouseMethods.movement_review || "erp_workspace_ui.warehouse_console.service.get_warehouse_movement_review";
@@ -60,7 +78,7 @@
     if (hasConsoleRuntime()) return Promise.resolve(consoleRuntime());
     if (consoleRuntimePromise) return consoleRuntimePromise;
     consoleRuntimePromise = new Promise((resolve, reject) => {
-      frappe.require(CONSOLE_RUNTIME_URL, () => {
+      frappe.require([CONSOLE_RUNTIME_URL], () => {
         if (hasConsoleRuntime()) {
           resolve(consoleRuntime());
           return;
@@ -116,7 +134,7 @@
 
   function isSupportedWorklistQueue(queueKey) {
     const key = normalizeQueueKey(queueKey);
-    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY || key === STOCK_EXCEPTIONS_KEY || key === MOVEMENT_VISIBILITY_KEY || key === TRANSFER_VISIBILITY_KEY;
+    return key === INBOUND_QUEUE_KEY || key === OUTBOUND_QUEUE_KEY || key === STOCK_EXCEPTIONS_KEY || key === MOVEMENT_VISIBILITY_KEY || key === TRANSFER_VISIBILITY_KEY || key === RETURNS_WORK_HUB_KEY || key === INTERNAL_TRANSFER_WORKFLOW_KEY || key === CYCLE_COUNT_WORKFLOW_KEY;
   }
 
   function worklistViewName(queueKey) {
@@ -125,7 +143,11 @@
     if (key === STOCK_EXCEPTIONS_KEY) return "stock-exceptions";
     if (key === MOVEMENT_VISIBILITY_KEY) return "movement-visibility";
     if (key === TRANSFER_VISIBILITY_KEY) return "transfer-visibility";
-    return "inbound-receiving";
+    if (key === RETURNS_WORK_HUB_KEY) return "returns-work-hub";
+    if (key === INTERNAL_TRANSFER_WORKFLOW_KEY) return "internal-transfer-workflow";
+    if (key === CYCLE_COUNT_WORKFLOW_KEY) return "cycle-count-workflow";
+    if (!key || key === INBOUND_QUEUE_KEY) return "inbound-receiving";
+    return "unsupported-worklist";
   }
 
   function stableObjectSignature(value) {
@@ -380,22 +402,23 @@
       .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-chip-row {
         display: flex;
         flex-wrap: wrap;
-        gap: 7px;
+        gap: 5px;
       }
       .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-chip {
         display: inline-flex;
         align-items: center;
-        min-height: 24px;
-        padding: 0 9px;
-        border: 1px solid rgba(188, 211, 200, 0.88);
+        min-height: 21px;
+        padding: 0 7px;
+        border: 1px solid rgba(203, 213, 225, 0.86);
         border-radius: 999px;
-        background: rgba(244, 250, 247, 0.92);
-        color: #29463c;
-        font-size: 10.5px;
-        font-weight: 760;
-        letter-spacing: 0.04em;
-        line-height: 1.2;
+        background: rgba(255, 255, 255, 0.82);
+        color: #334155;
+        font-size: 10px;
+        font-weight: 720;
+        letter-spacing: 0.025em;
+        line-height: 1.15;
         text-transform: uppercase;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
       }
       .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-fact-strip,
       .sales-console-shell[data-erpw-workspace="warehouse"] .warehouse-visual-summary-grid,
@@ -1241,7 +1264,7 @@
       .warehouse-receiving-head {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        gap: 16px;
+        gap: 18px;
         align-items: start;
       }
       .warehouse-receiving-command {
@@ -1276,7 +1299,7 @@
       .warehouse-receiving-chip-row {
         display: flex;
         flex-wrap: wrap;
-        gap: 7px;
+        gap: 5px;
       }
       .warehouse-receiving-chip,
       .warehouse-receiving-history-pill,
@@ -1285,36 +1308,79 @@
         align-items: center;
         width: fit-content;
         max-width: 100%;
-        min-height: 24px;
-        padding: 0 9px;
-        border: 1px solid rgba(195, 215, 206, 0.92);
+        min-height: 21px;
+        padding: 0 7px;
+        border: 1px solid rgba(203, 213, 225, 0.86);
         border-radius: 999px;
-        background: #f5faf7;
-        color: #25483c;
-        font-size: 11px;
-        font-weight: 760;
-        line-height: 1.2;
+        background: rgba(255, 255, 255, 0.82);
+        color: #334155;
+        font-size: 10px;
+        font-weight: 720;
+        line-height: 1.15;
         overflow-wrap: anywhere;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
       }
       .warehouse-receiving-chip.is-read-only {
-        border-color: rgba(55, 100, 85, 0.2);
-        background: #eaf6f0;
+        border-color: rgba(20, 184, 166, 0.28);
+        background: rgba(240, 253, 250, 0.78);
+        color: #0f766e;
+      }
+      .warehouse-receiving-header .warehouse-receiving-chip-row {
+        gap: 6px;
+        align-items: center;
+      }
+      .warehouse-receiving-header .warehouse-receiving-chip,
+      .warehouse-receiving-header .warehouse-visual-chip {
+        min-height: 23px;
+        padding: 0 9px;
+        border-color: rgba(124, 154, 143, 0.34);
+        border-radius: 8px;
+        background: #f5faf7;
+        color: #2f4c43;
+        font-size: 10.5px;
+        font-weight: 650;
+        letter-spacing: 0.004em;
+        line-height: 1.18;
+        text-transform: none;
+        box-shadow: none;
+      }
+      .warehouse-receiving-header .warehouse-receiving-chip.is-read-only,
+      .warehouse-receiving-header .warehouse-visual-chip.is-read-only {
+        border-color: rgba(13, 148, 136, 0.34);
+        background: #e9f8f4;
+        color: #0d6b63;
       }
       .warehouse-receiving-actions {
         display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
+        flex-wrap: nowrap;
+        align-items: center;
         justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
       }
       .warehouse-receiving-button {
-        min-height: 34px;
-        padding: 0 12px;
-        border: 1px solid rgba(177, 199, 189, 0.95);
-        border-radius: 8px;
-        background: #ffffff;
-        color: #1f3b31;
+        box-sizing: border-box;
+        min-height: 33px;
+        padding: 0 13px;
+        border: 1px solid rgba(74, 117, 101, 0.34);
+        border-radius: 11px;
+        background: #fbfdfc;
+        color: #183c34;
+        cursor: pointer;
         font-size: 12px;
         font-weight: 720;
+        line-height: 1;
+        white-space: nowrap;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
+        transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+      }
+      .warehouse-receiving-button:hover,
+      .warehouse-receiving-button:focus-visible {
+        border-color: rgba(15, 118, 110, 0.42);
+        background: #eef7f4;
+        outline: none;
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.055);
+        transform: translateY(-1px);
       }
       .warehouse-receiving-command-grid,
       .warehouse-receiving-cards,
@@ -1365,17 +1431,25 @@
       .warehouse-receiving-command-fact strong,
       .warehouse-receiving-line-fact strong {
         display: block;
-        margin-top: 7px;
+        margin-top: 6px;
         color: #17231f;
-        font-size: 20px;
-        font-weight: 760;
-        line-height: 1.08;
+        font-size: 15px;
+        font-weight: 690;
+        line-height: 1.16;
         overflow-wrap: anywhere;
       }
       .warehouse-receiving-command-fact strong,
       .warehouse-receiving-line-fact strong {
         font-size: 13px;
         line-height: 1.25;
+      }
+      .warehouse-receiving-command-fact strong.warehouse-receiving-status-value,
+      .warehouse-receiving-card-value.warehouse-receiving-status-value {
+        color: #0f172a;
+        font-size: 13.5px;
+        font-weight: 650;
+        letter-spacing: -0.002em;
+        line-height: 1.2;
       }
       .warehouse-receiving-card-note {
         margin-top: 6px;
@@ -2614,7 +2688,7 @@
           overflow-wrap: break-word;
         }
       }
-      /* W15C2 shell-only receiving workflow preview. */
+      /* W16 custom receiving workflow controls. */
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-shell {
         display: grid;
         gap: 14px;
@@ -2672,6 +2746,24 @@
         color: #3f2f10;
         font-weight: 760;
       }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-task-summary {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 11px 12px;
+        border: 1px solid rgba(20, 184, 166, 0.24);
+        border-radius: 13px;
+        background: #f8fffd;
+        color: #0f766e;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-task-summary strong {
+        color: #0f172a;
+        font-weight: 760;
+      }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-status {
         display: grid;
         grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -2687,6 +2779,11 @@
         font-size: 11.5px;
         font-weight: 680;
         line-height: 1.28;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-status-step.is-active {
+        border-color: rgba(20, 184, 166, 0.42);
+        background: #f0fdfa;
+        color: #115e59;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-grid {
         display: grid;
@@ -2713,7 +2810,7 @@
         font-size: 12px;
         line-height: 1.4;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-actions,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-actions,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-discrepancy-grid,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-grid,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-grid {
@@ -2723,7 +2820,63 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-control,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-card-head > div {
+        min-width: 0;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex: 0 0 auto;
+        padding-top: 1px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-save {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 8px 14px;
+        border: 1px solid rgba(15, 118, 110, 0.42);
+        border-radius: 10px;
+        background: #0f766e;
+        color: #ffffff;
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 760;
+        letter-spacing: -0.01em;
+        line-height: 1;
+        box-shadow: 0 7px 15px rgba(15, 118, 110, 0.16);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-save::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #ccfbf1;
+        box-shadow: 0 0 0 3px rgba(204, 251, 241, 0.24);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-save:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-save:focus-visible {
+        border-color: rgba(15, 118, 110, 0.58);
+        background: #115e59;
+        outline: none;
+        box-shadow: 0 9px 18px rgba(15, 118, 110, 0.2);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-save:disabled {
+        opacity: 0.62;
+        cursor: wait;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-control,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-discrepancy-card,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-card,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-row {
@@ -2734,11 +2887,72 @@
         background: #f8fafc;
         color: #334155;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-control {
-        opacity: 0.86;
-        cursor: default;
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-control {
+        width: 100%;
+        text-align: left;
+        font: inherit;
+        cursor: pointer;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-control strong,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-card {
+        display: grid;
+        gap: 3px;
+        width: 100%;
+        min-height: 58px;
+        text-align: left;
+        align-content: center;
+        justify-items: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell button.warehouse-receiving-workflow-control,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell button.warehouse-receiving-manager-card {
+        appearance: none;
+        border-style: solid;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell button.warehouse-receiving-workflow-control:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell button.warehouse-receiving-manager-card:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell button.warehouse-receiving-workflow-control:focus-visible,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell button.warehouse-receiving-manager-card:focus-visible {
+        border-color: rgba(20, 184, 166, 0.44);
+        background: #f0fdfa;
+        outline: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell button.warehouse-receiving-manager-card:disabled {
+        opacity: 1;
+        background: #f8fafc;
+        color: #64748b;
+        cursor: not-allowed;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field input,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field select {
+        width: 100%;
+        min-width: 0;
+        margin-top: 4px;
+        padding: 6px 7px;
+        border: 1px solid rgba(203, 213, 225, 0.9);
+        border-radius: 9px;
+        background: #ffffff;
+        color: #0f172a;
+        font: inherit;
+        font-size: 11.5px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field input:focus,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field select:focus {
+        border-color: rgba(20, 184, 166, 0.55);
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.12);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field select {
+        appearance: none;
+        padding-right: 30px;
+        background-color: #ffffff;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        background-size: 12px 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-field.is-wide {
+        grid-column: span 2;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-control strong,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-discrepancy-card strong,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-card strong,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-row-title {
@@ -2748,7 +2962,7 @@
         font-weight: 700;
         line-height: 1.28;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-planned-control span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-control span,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-discrepancy-card span,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-manager-card span {
         display: block;
@@ -2788,6 +3002,13 @@
         line-height: 1.25;
       }
       @media (max-width: 900px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-card-head {
+          display: grid;
+        }
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-actions,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-save {
+          width: 100%;
+        }
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-status,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-workflow-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell .warehouse-receiving-count-grid {
@@ -3044,14 +3265,8 @@
         box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 12px 28px rgba(15, 23, 42, 0.04);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid.sales-console-action-groups {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 10px;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid .sales-console-action-strip.primary {
         grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid .sales-console-action-strip.secondary {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px 14px;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-action-card.sales-console-action {
         border-color: rgba(241, 245, 249, 0.96);
@@ -3239,43 +3454,84 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card {
         position: relative;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 128px;
+        grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
         gap: 18px;
         min-height: 102px;
         padding: 16px 17px;
-        border: 1px solid rgba(225, 232, 240, 0.95);
-        border-left: 3px solid rgba(20, 184, 166, 0.3);
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-left: 2px solid rgba(20, 184, 166, 0.32);
         border-radius: 16px;
         background: #ffffff;
-        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.035);
+        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.026);
         transition: border-color 140ms ease, border-left-width 140ms ease, box-shadow 140ms ease, transform 140ms ease;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-planned {
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-custom-pending {
         border-left-color: rgba(148, 163, 184, 0.34);
-        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+        background: #ffffff;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card:hover,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card:focus-within {
-        border-color: rgba(203, 213, 225, 0.98);
-        border-left-width: 4px;
-        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 16px 28px rgba(15, 23, 42, 0.06);
+        border-color: rgba(148, 163, 184, 0.52);
+        border-left-width: 3px;
+        box-shadow: 0 14px 24px rgba(15, 23, 42, 0.045);
         transform: translateY(-1px);
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.is-planned:hover {
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.is-custom-pending:hover {
         border-left-color: rgba(148, 163, 184, 0.46);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side {
-        width: 128px;
+        width: 142px;
         min-height: 70px;
-        padding: 10px 12px;
-        border: 1px solid rgba(210, 225, 225, 0.95);
+        padding: 10px;
+        border: 1px solid rgba(226, 232, 240, 0.88);
         border-radius: 14px;
-        background: linear-gradient(180deg, #fbfefd 0%, #f8fbfb 100%);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+        background: #fbfdff;
+        box-shadow: none;
         display: grid;
         align-content: center;
         justify-items: center;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side.is-textual {
+        width: 142px;
+        min-height: 68px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-role-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 22px;
+        padding: 0 9px;
+        border: 1px solid rgba(203, 213, 225, 0.72);
+        border-radius: 999px;
+        background: #ffffff;
+        color: #334155;
+        font-size: 10.5px;
+        font-weight: 780;
+        letter-spacing: 0.035em;
+        line-height: 22px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side.is-custom-workflow,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side.is-visibility {
+        width: auto;
+        min-width: 118px;
+        min-height: auto;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        justify-items: end;
+        text-align: right;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side.is-custom-workflow .warehouse-action-center-role-badge,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side.is-visibility .warehouse-action-center-role-badge {
+        justify-self: start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side.is-textual .sales-console-queue-count {
+        color: #0f172a;
+        font-size: 16px;
+        line-height: 1;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side .sales-console-queue-side-label {
         white-space: nowrap;
@@ -3286,7 +3542,7 @@
         min-width: 96px;
         min-height: 26px;
         padding: 0 9px;
-        border: 1px solid rgba(203, 213, 225, 0.95);
+        border: 1px solid rgba(180, 198, 218, 0.76);
         border-radius: 9px;
         background: #ffffff;
         color: #0f172a;
@@ -3297,9 +3553,13 @@
         white-space: nowrap;
         box-shadow: 0 6px 12px rgba(15, 23, 42, 0.04);
       }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side.is-custom-workflow .warehouse-action-center-open,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-side.is-visibility .warehouse-action-center-open {
+        margin-top: 0;
+      }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-open:hover,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-open:focus-visible {
-        border-color: rgba(148, 163, 184, 0.9);
+        border-color: rgba(15, 118, 110, 0.48);
         outline: 0;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-guardrail {
@@ -3317,6 +3577,622 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-guardrail strong {
         color: #0f172a;
         white-space: nowrap;
+      }
+
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.is-hub {
+        border-left-color: rgba(13, 148, 136, 0.42);
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub {
+        display: grid;
+        gap: 14px;
+        padding: 18px 20px 20px;
+        border: 1px solid rgba(203, 213, 225, 0.94);
+        border-radius: 18px;
+        background: #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 12px 28px rgba(15, 23, 42, 0.035);
+        scroll-margin-top: 24px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-copy {
+        display: grid;
+        gap: 6px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-title {
+        margin: 0;
+        color: #0f172a;
+        font-size: 17px;
+        font-weight: 780;
+        line-height: 1.24;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-subtitle {
+        max-width: 790px;
+        color: #52637a;
+        font-size: 12.5px;
+        line-height: 1.48;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-mode {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(13, 148, 136, 0.26);
+        border-radius: 999px;
+        background: #f0fdfa;
+        color: #0f766e;
+        font-size: 11px;
+        font-weight: 760;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-guardrail {
+        padding: 11px 12px;
+        border: 1px solid rgba(153, 196, 188, 0.52);
+        border-radius: 14px;
+        background: #f8fdfa;
+        color: #334155;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-card {
+        display: grid;
+        gap: 14px;
+        padding: 18px 20px 20px;
+        border: 1px solid rgba(203, 213, 225, 0.9);
+        border-radius: 18px;
+        background: #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 12px 28px rgba(15, 23, 42, 0.035);
+        scroll-margin-top: 24px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-copy {
+        display: grid;
+        gap: 6px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-title {
+        margin: 0;
+        color: #0f172a;
+        font-size: 17px;
+        font-weight: 780;
+        line-height: 1.24;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-subtitle {
+        max-width: 790px;
+        color: #52637a;
+        font-size: 12.5px;
+        line-height: 1.48;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-mode {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(13, 148, 136, 0.24);
+        border-radius: 999px;
+        background: #ffffff;
+        color: #0f766e;
+        font-size: 11px;
+        font-weight: 760;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-guardrail {
+        padding: 11px 12px;
+        border: 1px solid rgba(153, 196, 188, 0.48);
+        border-radius: 14px;
+        background: #fbfefd;
+        color: #334155;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-body {
+        display: grid;
+        gap: 0;
+        margin-top: 12px;
+        border: 1px solid rgba(203, 213, 225, 0.92);
+        border-radius: 18px;
+        background: #ffffff;
+        overflow: hidden;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-panel {
+        display: grid;
+        gap: 14px;
+        padding: 16px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-panel[hidden] {
+        display: none !important;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-panel-head {
+        display: grid;
+        gap: 5px;
+        max-width: 820px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-kicker {
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-panel-title {
+        color: #0f172a;
+        font-size: 14px;
+        font-weight: 760;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-panel-note {
+        color: #52637a;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-tags {
+        display: flex;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 8px 12px;
+        min-height: 38px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(226, 232, 240, 0.72);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-tags span {
+        display: inline-flex;
+        align-items: center;
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 720;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-workflow-tags span::before {
+        content: "";
+        display: inline-block;
+        flex: 0 0 auto;
+        width: 4px;
+        height: 4px;
+        margin-right: 6px;
+        border-radius: 999px;
+        background: rgba(100, 116, 139, 0.52);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        align-items: stretch;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-lane {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 198px;
+        padding: 15px;
+        border: 1px solid rgba(226, 232, 240, 0.94);
+        border-radius: 16px;
+        background: #ffffff;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.026);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-lane-head {
+        display: grid;
+        gap: 5px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-kicker {
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-lane-title {
+        color: #0f172a;
+        font-size: 14px;
+        font-weight: 760;
+        line-height: 1.25;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-lane-note {
+        color: #52637a;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-steps,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-steps span,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-tags span {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 10.5px;
+        font-weight: 700;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-tags {
+        align-content: flex-start;
+        gap: 8px 12px;
+        min-height: 38px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(226, 232, 240, 0.72);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-tags span {
+        min-height: auto;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 720;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-tags span::before {
+        content: "";
+        display: inline-block;
+        flex: 0 0 auto;
+        width: 4px;
+        height: 4px;
+        margin-right: 6px;
+        border-radius: 999px;
+        background: rgba(100, 116, 139, 0.52);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-lane.is-active {
+        border-color: rgba(13, 148, 136, 0.26);
+        background: #ffffff;
+        box-shadow: 0 12px 26px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 34px;
+        padding: 8px 10px;
+        border: 1px solid rgba(153, 196, 188, 0.52);
+        border-radius: 12px;
+        background: #f8fdfa;
+        color: #475569;
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status strong {
+        color: #0f172a;
+        font-weight: 780;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-customer-return-tone='success'],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-supplier-return-tone='success'],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-return-decision-tone='success'] {
+        border-color: rgba(13, 148, 136, 0.42);
+        background: #f0fdfa;
+        color: #0f766e;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-customer-return-tone='error'],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-supplier-return-tone='error'],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-return-decision-tone='error'] {
+        border-color: rgba(190, 24, 93, 0.28);
+        background: #fff7f9;
+        color: #9f1239;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-customer-return-tone='pending'],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-supplier-return-tone='pending'],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-status[data-warehouse-return-decision-tone='pending'] {
+        border-color: rgba(191, 126, 32, 0.3);
+        background: #fffaf1;
+        color: #6a4417;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-form {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        gap: 10px;
+        padding-top: 2px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-fields,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-line-fields {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-line-fields {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-field {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-field.is-wide {
+        grid-column: span 2;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-field label {
+        color: #43546a;
+        font-size: 9.5px;
+        font-weight: 780;
+        letter-spacing: 0.06em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-field input,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-field select {
+        width: 100%;
+        min-width: 0;
+        min-height: 36px;
+        padding: 0 10px;
+        border: 1px solid rgba(203, 213, 225, 0.98);
+        border-radius: 10px;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 12px;
+        font-weight: 620;
+        outline: none;
+        transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-field input:focus,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-field select:focus {
+        border-color: rgba(13, 148, 136, 0.52);
+        box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: auto;
+        padding-top: 2px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-save {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        padding: 0 14px;
+        border: 1px solid rgba(13, 148, 136, 0.42);
+        border-radius: 12px;
+        background: #0f766e;
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 780;
+        letter-spacing: -0.01em;
+        box-shadow: 0 10px 22px rgba(15, 118, 110, 0.14);
+        cursor: pointer;
+        transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-save:hover {
+        border-color: rgba(15, 118, 110, 0.64);
+        background: #115e59;
+        box-shadow: 0 12px 26px rgba(15, 118, 110, 0.18);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-intake-save:disabled {
+        border-color: rgba(203, 213, 225, 0.96);
+        background: #e2e8f0;
+        color: #64748b;
+        box-shadow: none;
+        cursor: not-allowed;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-grid {
+        display: grid;
+        gap: 9px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-section {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 13px;
+        background: #fbfcfd;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-section-title {
+        color: #0f172a;
+        font-size: 12px;
+        font-weight: 780;
+        line-height: 1.2;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-section-note {
+        color: #64748b;
+        font-size: 10.5px;
+        line-height: 1.35;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-controls {
+        display: grid;
+        gap: 7px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-button {
+        display: grid;
+        gap: 3px;
+        width: 100%;
+        min-height: 46px;
+        padding: 9px 10px;
+        border: 1px solid rgba(203, 213, 225, 0.9);
+        border-radius: 12px;
+        background: #ffffff;
+        color: #0f172a;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-button strong {
+        font-size: 11.5px;
+        font-weight: 780;
+        line-height: 1.2;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-button span {
+        color: #64748b;
+        font-size: 10.5px;
+        line-height: 1.3;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-button:not(:disabled):hover {
+        border-color: rgba(13, 148, 136, 0.45);
+        background: #f8fdfa;
+        box-shadow: 0 8px 18px rgba(15, 118, 110, 0.08);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-button:disabled {
+        background: #f8fafc;
+        color: #94a3b8;
+        cursor: not-allowed;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-return-decision-button:disabled span {
+        color: #94a3b8;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-lane {
+        appearance: none;
+        min-height: 128px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-lane:hover {
+        border-color: rgba(13, 148, 136, 0.28);
+        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.045);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-lane.is-selected {
+        border-color: rgba(13, 148, 136, 0.46);
+        box-shadow: 0 12px 28px rgba(15, 118, 110, 0.075);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: auto;
+        padding-top: 8px;
+        border-top: 1px solid rgba(226, 232, 240, 0.78);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-card-meta {
+        color: #64748b;
+        font-size: 10.5px;
+        font-weight: 740;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-hub-card-action {
+        color: #0f766e;
+        font-size: 11px;
+        font-weight: 780;
+        white-space: nowrap;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench {
+        display: grid;
+        gap: 0;
+        margin-top: 12px;
+        border: 1px solid rgba(203, 213, 225, 0.92);
+        border-radius: 18px;
+        background: #ffffff;
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.04);
+        overflow: hidden;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench-panel {
+        display: grid;
+        gap: 14px;
+        padding: 16px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench-panel[hidden] {
+        display: none !important;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench-panel .warehouse-returns-hub-lane-head {
+        max-width: 820px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench-panel .warehouse-return-intake-status {
+        align-items: flex-start;
+        justify-content: flex-start;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench-panel .warehouse-return-intake-fields {
+        grid-template-columns: repeat(3, minmax(170px, 1fr));
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench-panel .warehouse-return-intake-line-fields {
+        grid-template-columns: repeat(5, minmax(124px, 1fr));
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench-panel .warehouse-return-decision-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-returns-workbench-panel .warehouse-return-intake-actions {
+        padding-top: 8px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell {
+        gap: 16px;
+        padding: 18px 24px 28px;
+        background:
+          radial-gradient(circle at 0% 0%, rgba(240, 253, 250, 0.38) 0, rgba(240, 253, 250, 0) 320px),
+          #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-inbound-queue-header {
+        border-color: rgba(203, 213, 225, 0.88);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 14px 34px rgba(15, 23, 42, 0.052);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-inbound-queue-title {
+        font-size: 23px;
+        letter-spacing: -0.04em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-inbound-queue-note {
+        max-width: 760px;
+        font-size: 12.5px;
+        line-height: 1.48;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-returns-hub {
+        gap: 16px;
+        padding: 20px 22px 22px;
+        border-color: rgba(203, 213, 225, 0.9);
+        border-radius: 20px;
+        box-shadow: 0 18px 38px rgba(15, 23, 42, 0.045);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-returns-hub-mode {
+        background: #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-workflow-card {
+        gap: 16px;
+        padding: 20px 22px 22px;
+        border-color: rgba(203, 213, 225, 0.9);
+        border-radius: 20px;
+        box-shadow: 0 18px 38px rgba(15, 23, 42, 0.045);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-workflow-head {
+        align-items: center;
+        padding-bottom: 4px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-workflow-title {
+        font-size: 19px;
+        letter-spacing: -0.035em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-workflow-body {
+        margin-top: 6px;
+        border-radius: 20px;
+        box-shadow: 0 16px 34px rgba(15, 23, 42, 0.042);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-workflow-panel {
+        padding: 18px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-returns-hub-grid {
+        gap: 12px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-returns-hub-lane {
+        min-height: 146px;
+        border-color: rgba(215, 224, 235, 0.94);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.032);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-returns-workbench {
+        margin-top: 6px;
+        border-radius: 20px;
+        box-shadow: 0 16px 34px rgba(15, 23, 42, 0.042);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-returns-workbench-panel {
+        padding: 18px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-returns-page-shell .warehouse-customer-return-shell {
+        border-color: rgba(203, 213, 225, 0.88);
+        border-radius: 18px;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.035);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-shell {
         display: grid;
@@ -3429,30 +4305,6 @@
         display: grid;
         gap: 7px;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-planned {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        min-height: 36px;
-        padding: 8px 10px;
-        border: 1px solid rgba(226, 232, 240, 0.9);
-        border-radius: 11px;
-        background: #f8fafc;
-        color: #334155;
-        font-size: 12px;
-        font-weight: 680;
-        line-height: 1.25;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-planned::after {
-        content: "Planned";
-        color: #64748b;
-        font-size: 10px;
-        font-weight: 760;
-        letter-spacing: 0.025em;
-        text-transform: uppercase;
-        white-space: nowrap;
-      }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-evidence-grid,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-owner-grid,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-grid {
@@ -3514,183 +4366,186 @@
         border-color: rgba(203, 213, 225, 0.9);
         background: #f8fafc;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows {
-        display: grid;
-        gap: 14px;
-        padding: 18px 20px 20px;
-        border: 1px solid rgba(203, 213, 225, 0.94);
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-customer-return-shell,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-customer-return-panel,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-return-decision-section {
+        border-color: rgba(203, 213, 225, 0.88);
         border-radius: 18px;
-        background:
-          linear-gradient(180deg, rgba(248, 250, 252, 0.88) 0%, rgba(255, 255, 255, 0.98) 42%),
-          #ffffff;
-        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 12px 28px rgba(15, 23, 42, 0.04);
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-head {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 14px;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-copy {
-        display: grid;
-        gap: 5px;
-        min-width: 0;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-title {
-        margin: 0;
-        color: #0f172a;
-        font-size: 17px;
-        font-weight: 780;
-        line-height: 1.25;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-subtitle {
-        max-width: 760px;
-        color: #52637a;
-        font-size: 12.5px;
-        line-height: 1.48;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-mode {
-        display: inline-flex;
-        align-items: center;
-        min-height: 28px;
-        padding: 0 10px;
-        border: 1px solid rgba(148, 163, 184, 0.34);
-        border-radius: 999px;
-        background: rgba(248, 250, 252, 0.9);
-        color: #475569;
-        font-size: 11px;
-        font-weight: 760;
-        letter-spacing: 0.02em;
-        text-transform: uppercase;
-        white-space: nowrap;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 8px;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card {
-        display: grid;
-        position: relative;
-        grid-template-rows: auto 1fr auto;
-        gap: 13px;
-        min-height: 176px;
-        overflow: hidden;
-        padding: 17px 15px 14px;
-        border: 1px solid rgba(214, 223, 235, 0.9);
-        border-radius: 17px;
         background: #ffffff;
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.034);
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        right: 16px;
-        left: 16px;
-        height: 2px;
-        border-radius: 0 0 999px 999px;
-        background: rgba(100, 116, 139, 0.34);
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card[data-warehouse-planned-workflow-card='customer-return']::before {
-        background: rgba(180, 83, 9, 0.36);
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card[data-warehouse-planned-workflow-card='supplier-return']::before {
-        background: rgba(37, 99, 235, 0.32);
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card[data-warehouse-planned-workflow-card='internal-transfer']::before {
-        background: rgba(15, 118, 110, 0.32);
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card[data-warehouse-planned-workflow-card='cycle-count']::before {
-        background: rgba(14, 116, 144, 0.32);
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card.is-expanded {
-        border-color: rgba(15, 118, 110, 0.32);
-        background: #ffffff;
-        box-shadow: 0 12px 26px rgba(15, 23, 42, 0.055);
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-card-head {
-        display: grid;
-        gap: 7px;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-title {
-        color: #0f172a;
-        font-size: 13.5px;
-        font-weight: 760;
-        line-height: 1.2;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-kicker {
-        display: inline-flex;
-        align-items: center;
-        justify-self: start;
-        min-height: 18px;
-        color: #94a3b8;
-        font-size: 9.5px;
-        font-weight: 760;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-note,
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-guardrail {
-        color: #52637a;
-        font-size: 12px;
-        line-height: 1.46;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-guardrail {
-        padding: 8px 9px;
-        border: 1px dashed rgba(203, 213, 225, 0.9);
-        border-radius: 12px;
-        background: rgba(248, 250, 252, 0.78);
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        align-content: start;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-meta span {
-        display: inline-flex;
-        align-items: center;
-        min-height: 22px;
-        padding: 0 8px;
-        border: 1px solid rgba(226, 232, 240, 0.9);
-        border-radius: 999px;
-        color: #64748b;
-        font-size: 10.5px;
-        font-weight: 700;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-summary {
-        display: grid;
-        align-content: start;
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-return-intake-fields,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-return-intake-line-fields {
         gap: 10px;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-toggle {
-        justify-self: stretch;
-        min-height: 32px;
-        padding: 0 12px;
-        border: 1px solid rgba(203, 213, 225, 0.95);
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-return-intake-field input,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-return-intake-field select {
+        min-height: 40px;
         border-radius: 12px;
-        background: #ffffff;
-        color: #0f172a;
-        font-size: 11px;
-        font-weight: 760;
-        cursor: pointer;
+        font-size: 12.5px;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-toggle:hover {
-        border-color: rgba(20, 184, 166, 0.38);
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] {
+        gap: 18px;
+        padding: 22px;
+        border-color: rgba(203, 213, 225, 0.88);
         background: #ffffff;
-        color: #0f766e;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-details {
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-workflow-body,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-workflow-body {
         display: grid;
-        gap: 12px;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-detail[hidden] {
-        display: none;
-      }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflow-detail > .warehouse-customer-return-shell {
+        grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.82fr);
+        align-items: start;
+        gap: 16px;
         margin-top: 0;
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.026);
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        overflow: visible;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-workflow-panel,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-workflow-panel {
+        padding: 18px;
+        border: 1px solid rgba(203, 213, 225, 0.9);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 16px 32px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-workflow-panel:first-child,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-workflow-panel:first-child {
+        border-left: 3px solid rgba(13, 148, 136, 0.38);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-workflow-panel:last-child,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-workflow-panel:last-child {
+        background: #fbfdff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-workflow-panel-head,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-workflow-panel-head {
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.82);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-return-intake-fields,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-return-intake-fields {
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-return-intake-line-fields,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-return-intake-line-fields {
+        grid-template-columns: repeat(3, minmax(140px, 1fr));
+        padding: 14px;
+        border: 1px solid rgba(226, 232, 240, 0.84);
+        border-radius: 16px;
+        background: #f8fafc;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-return-intake-actions,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-return-intake-actions {
+        justify-content: flex-start;
+        padding-top: 12px;
+        border-top: 1px solid rgba(226, 232, 240, 0.78);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-return-decision-grid,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-return-decision-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      @media (max-width: 1180px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'] .warehouse-workflow-body,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] .warehouse-workflow-body {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow {
+        gap: 18px;
+        padding: 22px;
+        border-color: rgba(203, 213, 225, 0.88);
+        background:
+          radial-gradient(circle at 100% 0%, rgba(240, 253, 250, 0.48) 0, rgba(240, 253, 250, 0) 320px),
+          #ffffff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-hub-head,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-hub-head {
+        align-items: center;
+        padding-bottom: 4px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-hub-title,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-hub-title {
+        font-size: 19px;
+        letter-spacing: -0.035em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-hub-guardrail,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-hub-guardrail {
+        border-style: dashed;
+        background: #fbfefd;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-workbench,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-workbench {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.82fr);
+        align-items: start;
+        gap: 16px;
+        margin-top: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        overflow: visible;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-workbench-panel,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-workbench-panel {
+        padding: 18px;
+        border: 1px solid rgba(203, 213, 225, 0.9);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 16px 32px rgba(15, 23, 42, 0.04);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-workbench-panel:first-child,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-workbench-panel:first-child {
+        border-left: 3px solid rgba(13, 148, 136, 0.38);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-workbench-panel:last-child,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-workbench-panel:last-child {
+        background: #fbfdff;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-hub-lane-head,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-hub-lane-head {
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.82);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-return-intake-form,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-return-intake-form {
+        gap: 14px;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-return-intake-fields,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-return-intake-fields {
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-return-intake-line-fields,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-return-intake-line-fields {
+        grid-template-columns: repeat(3, minmax(140px, 1fr));
+        padding: 14px;
+        border: 1px solid rgba(226, 232, 240, 0.84);
+        border-radius: 16px;
+        background: #f8fafc;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-return-intake-actions,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-return-intake-actions {
+        justify-content: flex-start;
+        padding-top: 12px;
+        border-top: 1px solid rgba(226, 232, 240, 0.78);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-return-decision-grid,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-return-decision-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      @media (max-width: 1180px) {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-internal-transfer-workflow .warehouse-returns-workbench,
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-cycle-count-workflow .warehouse-returns-workbench {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='internal_transfer'],
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared.warehouse-returns-page-shell .warehouse-workflow-card[data-warehouse-workflow-kind='cycle_count'] {
+        background: #ffffff;
       }
       /* W15B overview hierarchy refinement: status, navigation, task, risk, movement, and control lanes must read differently. */
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-pulse-section {
@@ -3766,10 +4621,8 @@
         border-left-color: rgba(37, 99, 235, 0.66);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-section {
-        border-color: rgba(203, 213, 225, 0.94);
-        background:
-          linear-gradient(180deg, rgba(248, 250, 252, 0.92) 0%, #ffffff 38%),
-          #ffffff;
+        border-color: rgba(226, 232, 240, 0.78);
+        background: #ffffff;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-section::before {
         background: rgba(71, 85, 105, 0.48);
@@ -3780,16 +4633,19 @@
         gap: 16px;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group {
-        padding: 13px;
-        border: 1px solid rgba(226, 232, 240, 0.94);
+        padding: 14px;
+        border: 1px solid rgba(226, 232, 240, 0.72);
         border-radius: 16px;
-        background: rgba(255, 255, 255, 0.78);
+        background: #ffffff;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group[data-warehouse-action-center-group='work_entry'] {
-        background: linear-gradient(180deg, rgba(240, 253, 250, 0.48) 0%, rgba(255, 255, 255, 0.9) 46%);
+        border-left: 2px solid rgba(13, 148, 136, 0.28);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group[data-warehouse-action-center-group='manager_decisions'] {
-        background: linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(255, 255, 255, 0.92) 46%);
+        border-left: 2px solid rgba(37, 99, 235, 0.24);
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group[data-warehouse-action-center-group='visibility'] {
+        border-left: 2px solid rgba(100, 116, 139, 0.24);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3797,25 +4653,22 @@
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card {
         min-height: 94px;
-        border-left-color: rgba(20, 184, 166, 0.42);
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.026);
+        border-left-color: rgba(20, 184, 166, 0.34);
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.02);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group[data-warehouse-action-center-group='manager_decisions'] .warehouse-action-center-card.is-live {
-        border-left-color: rgba(37, 99, 235, 0.42);
+        border-left-color: rgba(37, 99, 235, 0.32);
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-planned {
-        border-style: dashed;
-        border-left-style: solid;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-        opacity: 0.9;
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-group[data-warehouse-action-center-group='visibility'] .warehouse-action-center-card.is-live {
+        border-left-color: rgba(100, 116, 139, 0.32);
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-planned:hover {
-        transform: none;
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.026);
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-custom-workflow,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-visibility {
+        background: #ffffff;
       }
-      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.is-planned .sales-console-queue-count {
-        color: #64748b;
-        font-size: 13px;
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-custom-workflow:hover,
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-card.sales-console-queue-card.is-visibility:hover {
+        box-shadow: 0 12px 22px rgba(15, 23, 42, 0.04);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-card-action {
         display: none;
@@ -3829,11 +4682,6 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-guardrail .warehouse-visual-guardrail-title {
         color: #0f172a;
       }
-      @media (max-width: 1020px) {
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-      }
       @media (max-width: 740px) {
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-command-row,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-console-kpi-grid.sales-console-kpi-grid,
@@ -3842,7 +4690,6 @@
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-route-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-work-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-action-center-grid,
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-status-strip,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-grid,
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-evidence-grid,
@@ -3850,14 +4697,9 @@
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-policy-grid {
           grid-template-columns: minmax(0, 1fr);
         }
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-head,
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-planned-workflows-head {
+        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-customer-return-head {
           display: grid;
           align-items: start;
-        }
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid .sales-console-action-strip.primary,
-        .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-start-grid .sales-console-action-strip.secondary {
-          grid-template-columns: minmax(0, 1fr);
         }
         .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-overview-shared .warehouse-cockpit-section-head {
           display: grid;
@@ -5666,17 +6508,18 @@
         gap: 8px;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-button {
-        min-height: 34px;
+        min-height: 33px;
         padding: 0 13px;
-        border-color: rgba(203, 213, 225, 0.98);
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.94);
-        color: #0f172a;
+        border-color: rgba(74, 117, 101, 0.34);
+        border-radius: 11px;
+        background: #fbfdfc;
+        color: #183c34;
         box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-button:hover,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-button:focus-visible {
-        border-color: rgba(148, 163, 184, 0.92);
+        border-color: rgba(15, 118, 110, 0.42);
+        background: #eef7f4;
         box-shadow: 0 10px 22px rgba(15, 23, 42, 0.055);
         transform: translateY(-1px);
       }
@@ -5792,10 +6635,17 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-card-value {
         margin-top: 5px;
         color: #020617;
-        font-size: 18px;
+        font-size: 15px;
         font-weight: 690;
-        line-height: 1.12;
-        letter-spacing: -0.01em;
+        line-height: 1.16;
+        letter-spacing: -0.004em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-card-value.warehouse-receiving-status-value {
+        color: #10261f;
+        font-size: 13px;
+        font-weight: 640;
+        line-height: 1.2;
+        letter-spacing: 0;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-receiving-shell[data-warehouse-view='receiving-review'] .warehouse-receiving-card-note {
         margin-top: 5px;
@@ -5959,38 +6809,62 @@
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-chip-row {
         display: flex;
-        margin-top: 4px;
-        gap: 6px;
+        margin-top: 5px;
+        gap: 5px;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-chip {
-        min-height: 22px;
-        padding: 0 8px;
-        border-color: rgba(203, 213, 225, 0.78);
-        background: rgba(248, 250, 252, 0.74);
-        color: #475569;
-        font-size: 10.5px;
-        font-weight: 680;
+        min-height: 21px;
+        padding: 0 7px;
+        border-color: rgba(203, 213, 225, 0.82);
+        background: rgba(255, 255, 255, 0.86);
+        color: #334155;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.018em;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-chip.is-read-only {
         border-color: rgba(20, 184, 166, 0.22);
         background: rgba(240, 253, 250, 0.72);
         color: #0f766e;
       }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-header .warehouse-receiving-chip {
+        min-height: 23px;
+        padding: 0 9px;
+        border-color: rgba(124, 154, 143, 0.34);
+        border-radius: 8px;
+        background: #f5faf7;
+        color: #2f4c43;
+        font-size: 10.5px;
+        font-weight: 650;
+        letter-spacing: 0.004em;
+        line-height: 1.18;
+        text-transform: none;
+        box-shadow: none;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-header .warehouse-receiving-chip.is-read-only {
+        border-color: rgba(13, 148, 136, 0.34);
+        background: #e9f8f4;
+        color: #0d6b63;
+      }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-actions {
         gap: 8px;
+        align-self: start;
+        padding-top: 1px;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-button {
-        min-height: 34px;
+        min-height: 33px;
         padding: 0 13px;
-        border-color: rgba(203, 213, 225, 0.98);
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.94);
-        color: #0f172a;
+        border-color: rgba(74, 117, 101, 0.34);
+        border-radius: 11px;
+        background: #fbfdfc;
+        color: #183c34;
         box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-button:hover,
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-button:focus-visible {
-        border-color: rgba(148, 163, 184, 0.92);
+        border-color: rgba(15, 118, 110, 0.42);
+        background: #eef7f4;
         box-shadow: 0 10px 22px rgba(15, 23, 42, 0.055);
         transform: translateY(-1px);
       }
@@ -6106,10 +6980,17 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-card-value {
         margin-top: 5px;
         color: #020617;
-        font-size: 18px;
-        font-weight: 690;
-        line-height: 1.12;
-        letter-spacing: -0.01em;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.14;
+        letter-spacing: -0.004em;
+      }
+      .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-card-value.warehouse-receiving-status-value {
+        color: #10261f;
+        font-size: 13px;
+        font-weight: 640;
+        line-height: 1.2;
+        letter-spacing: 0;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-picking-shell[data-warehouse-view='picking-review'] .warehouse-receiving-card-note {
         margin-top: 5px;
@@ -6410,10 +7291,10 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-card-value {
         margin-top: 5px;
         color: #020617;
-        font-size: 18px;
-        font-weight: 690;
-        line-height: 1.12;
-        letter-spacing: -0.01em;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.14;
+        letter-spacing: -0.004em;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-exception-review-shell[data-warehouse-view='stock-exception-review'] .warehouse-receiving-card-note {
         margin-top: 5px;
@@ -6686,10 +7567,10 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-card-value {
         margin-top: 5px;
         color: #020617;
-        font-size: 18px;
-        font-weight: 690;
-        line-height: 1.12;
-        letter-spacing: -0.01em;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.14;
+        letter-spacing: -0.004em;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-stock-posture-shell[data-warehouse-view='stock-posture-review'] .warehouse-receiving-card-note {
         margin-top: 5px;
@@ -6967,10 +7848,10 @@
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-card-value {
         margin-top: 5px;
         color: #020617;
-        font-size: 18px;
-        font-weight: 690;
-        line-height: 1.12;
-        letter-spacing: -0.01em;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.14;
+        letter-spacing: -0.004em;
       }
       .sales-console-shell[data-erpw-workspace='warehouse'].warehouse-movement-review-shell[data-warehouse-view='movement-review'] .warehouse-receiving-card-note {
         margin-top: 5px;
@@ -7654,11 +8535,8 @@
   function renderCockpitStart(payload, kpis) {
     const inbound = payload.inbound || {};
     const outbound = payload.outbound || {};
-    const stockExceptions = payload.stock_exceptions || {};
     const receivingAttention = countFrom(inbound, "overdue") + countFrom(inbound, "due_today");
     const pickingAttention = countFrom(outbound, "overdue") + countFrom(outbound, "due_today") + countFrom(outbound, "short_stock");
-    const exceptionTotal = metricNumber(cardByKey(stockExceptions.cards || [], "total_exceptions"));
-    const movementMetric = metricByKey(kpis, "transfer_requests");
     const cards = [
       {
         key: "inbound_due",
@@ -7681,51 +8559,43 @@
         target: "warehouse-console-worklist/outbound-picking",
       },
       {
-        key: "stock_exceptions",
-        kicker: exceptionTotal ? `${exceptionTotal} visible` : "Risk review",
-        title: "Stock Exceptions",
-        note: "Shortage risk, inbound cover, and posture gaps.",
-        action: "Open stock exceptions",
-        actionAttr: "data-warehouse-open-stock-exceptions",
+        key: "returns_work_hub",
+        kicker: "Custom returns",
+        title: "Returns",
+        note: "Customer and supplier return evidence, candidates, and manager posture.",
+        action: "Open returns",
+        actionAttr: "data-warehouse-open-returns",
         icon: "risk",
-        variant: "is-risk",
-        target: "warehouse-console-worklist/stock-exceptions",
+        target: "warehouse-console-worklist/returns-work-hub",
       },
       {
-        key: "movement_visibility",
-        kicker: metricText(movementMetric),
-        title: "Movement Visibility",
-        note: "Posted movement evidence and item posture drilldowns.",
-        action: "Open movement visibility",
-        actionAttr: "data-warehouse-open-movement",
-        icon: "movement",
-        variant: "is-movement",
-        target: "warehouse-console-worklist/movement-visibility",
-      },
-      {
-        key: "transfer_visibility",
-        kicker: "Transfer posture",
-        title: "Transfer Visibility",
-        note: "Visibility across warehouses from posted movement records.",
-        action: "Open transfer visibility",
-        actionAttr: "data-warehouse-open-transfer",
+        key: "internal_transfer_workflow",
+        kicker: "Custom transfer",
+        title: "Internal Transfer",
+        note: "Transfer intent and count evidence stay in custom candidate records.",
+        action: "Open internal transfer",
+        actionAttr: "data-warehouse-open-internal-transfer",
         icon: "transfer",
-        variant: "is-movement",
-        target: "warehouse-console-worklist/transfer-visibility",
+        target: "warehouse-console-worklist/internal-transfer-workflow",
+      },
+      {
+        key: "cycle_count_workflow",
+        kicker: "Custom count",
+        title: "Cycle Count",
+        note: "Blind counts and variance posture stay in custom task records.",
+        action: "Open cycle count",
+        actionAttr: "data-warehouse-open-cycle-count",
+        icon: "risk",
+        target: "warehouse-console-worklist/cycle-count-workflow",
       },
     ];
-    const primaryCards = cards.slice(0, 3);
-    const secondaryCards = cards.slice(3);
     return `
       <section class="sales-console-card sales-console-section warehouse-cockpit-start" data-warehouse-cockpit-start>
         <div class="sales-console-section-head warehouse-cockpit-section-head">
           <h2 class="sales-console-section-title warehouse-cockpit-section-title">Start Warehouse Work</h2>
-          <div class="sales-console-section-note warehouse-cockpit-section-note">Only review routes available in this workspace</div>
+          <div class="sales-console-section-note warehouse-cockpit-section-note">Open the pages where warehouse work starts.</div>
         </div>
-        <div class="sales-console-action-groups warehouse-cockpit-start-grid warehouse-visual-related-grid">
-          <div class="sales-console-action-strip primary">${primaryCards.map((card) => renderCockpitActionCard(card, "primary")).join("")}</div>
-          <div class="sales-console-action-strip secondary">${secondaryCards.map((card) => renderCockpitActionCard(card, "secondary")).join("")}</div>
-        </div>
+        <div class="sales-console-action-groups warehouse-cockpit-start-grid warehouse-visual-related-grid">${cards.map((card) => renderCockpitActionCard(card, "primary")).join("")}</div>
       </section>
     `;
   }
@@ -7734,26 +8604,35 @@
     const payload = card || {};
     const route = payload.route || "";
     const routePart = payload.route_part || "";
+    const targetSection = payload.target_section || "";
+    const cardRole = payload.card_role || "queue";
     const hasRoute = route === WORKLIST_PAGE_KEY && isSupportedWorklistQueue(routePart);
-    const routeView = hasRoute ? worklistViewName(routePart) : "";
-    const routeTarget = hasRoute ? `${route}/${routeView}` : "";
+    const hasTargetSection = targetSection === "returns-work-hub";
+    const isReturnsTarget = hasTargetSection || normalizeQueueKey(routePart) === RETURNS_WORK_HUB_KEY;
+    const routeView = hasRoute ? worklistViewName(routePart) : (isReturnsTarget ? worklistViewName(RETURNS_WORK_HUB_KEY) : "");
+    const routeTarget = (hasRoute || isReturnsTarget) ? `${WORKLIST_PAGE_KEY}/${routeView}` : "";
     const value = payload.value == null || payload.value === "" ? "--" : String(payload.value);
-    const sideLabel = payload.status_label || (hasRoute ? "Review queue" : "Planned");
-    const stateClass = hasRoute ? "is-live" : "is-planned";
-    const sideMarkup = hasRoute ? `
-      <div class="sales-console-queue-side warehouse-action-center-side">
-        <div class="sales-console-queue-count">${escapeHtml(value)}</div>
-        <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
-        <button class="warehouse-action-center-open" type="button" data-warehouse-action-center-open>${escapeHtml(payload.button_label || "Open queue")}</button>
+    const isTextualValue = /[A-Za-z]/.test(value);
+    const sideLabel = payload.status_label || (hasRoute ? (isReturnsTarget ? "Returns Work Hub" : "Review queue") : hasTargetSection ? "Returns Work Hub" : "Custom workflow");
+    const isQueueRole = cardRole === "queue";
+    const stateClass = hasRoute ? "is-live" : hasTargetSection ? "is-hub" : "is-custom-pending";
+    const roleClass = cardRole === "custom_workflow" ? " is-custom-workflow" : cardRole === "visibility" ? " is-visibility" : " is-queue";
+    const actionMarkup = (hasRoute || hasTargetSection || isReturnsTarget) ? `<button class="warehouse-action-center-open" type="button" data-warehouse-action-center-open>${escapeHtml(payload.button_label || "Open queue")}</button>` : "";
+    const sideMarkup = (hasRoute || hasTargetSection || isReturnsTarget) ? `
+      <div class="sales-console-queue-side warehouse-action-center-side${isTextualValue ? " is-textual" : ""}${roleClass}" data-warehouse-action-center-role="${escapeHtml(cardRole)}">
+        ${isQueueRole ? `
+          <div class="sales-console-queue-count">${escapeHtml(value)}</div>
+          <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
+        ` : ""}
+        ${actionMarkup}
       </div>
     ` : `
-      <div class="sales-console-queue-side warehouse-action-center-side">
-        <div class="sales-console-queue-count">${escapeHtml(value)}</div>
-        <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
+      <div class="sales-console-queue-side warehouse-action-center-side${isTextualValue ? " is-textual" : ""}${roleClass}" data-warehouse-action-center-role="${escapeHtml(cardRole)}">
+        ${isQueueRole ? `<div class="sales-console-queue-count">${escapeHtml(value)}</div><div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>` : ""}
       </div>
     `;
     return `
-      <article class="sales-console-queue-card regular warehouse-action-center-card ${stateClass}" data-warehouse-action-center-card="${escapeHtml(payload.key || "")}" data-warehouse-action-center-route="${escapeHtml(route)}" data-warehouse-action-center-route-part="${escapeHtml(routePart)}" data-warehouse-cockpit-route-target="${escapeHtml(routeTarget)}">
+      <article class="sales-console-queue-card regular warehouse-action-center-card ${stateClass}${roleClass}" data-warehouse-action-center-card="${escapeHtml(payload.key || "")}" data-warehouse-action-center-route="${escapeHtml(route)}" data-warehouse-action-center-route-part="${escapeHtml(routePart)}" data-warehouse-action-center-target-section="${escapeHtml(targetSection)}" data-warehouse-action-center-card-role="${escapeHtml(cardRole)}" data-warehouse-cockpit-route-target="${escapeHtml(routeTarget)}">
         <div class="sales-console-queue-main">
           <div class="sales-console-queue-title warehouse-cockpit-card-title">${escapeHtml(payload.title || "")}</div>
           <div class="sales-console-queue-meta warehouse-cockpit-card-note">${escapeHtml(payload.note || "")}</div>
@@ -7779,193 +8658,28 @@
 
   function renderCockpitActionCenter(actionCenter) {
     const payload = actionCenter || {};
-    const sections = Array.isArray(payload.sections) ? payload.sections : [];
+    const sections = (Array.isArray(payload.sections) ? payload.sections : []).filter((section) => (section && section.key) !== "work_entry");
     if (!sections.length) return "";
+    const title = payload.title === "Warehouse Command Center" ? "Review and Visibility" : (payload.title || "Review and Visibility");
+    const subtitle = payload.title === "Warehouse Command Center"
+      ? "Review manager queues and visibility routes. Start work remains in the lane above."
+      : (payload.subtitle || "");
     return `
-      <section class="sales-console-card sales-console-section warehouse-cockpit-route-section warehouse-action-center-section" data-warehouse-action-center data-warehouse-action-center-state="${escapeHtml(payload.state || "planning")}" data-warehouse-action-center-mode="${escapeHtml(payload.mode || "shell_only")}">
+      <section class="sales-console-card sales-console-section warehouse-cockpit-route-section warehouse-action-center-section" data-warehouse-action-center data-warehouse-action-center-state="${escapeHtml(payload.state || "active")}" data-warehouse-action-center-mode="${escapeHtml(payload.mode || "custom_workflow")}">
         <div class="sales-console-section-head warehouse-cockpit-section-head">
           <div>
-            <h2 class="sales-console-section-title warehouse-cockpit-section-title">${escapeHtml(payload.title || "Warehouse Action Center")}</h2>
-            <div class="sales-console-section-note warehouse-cockpit-section-note warehouse-action-center-subtitle">${escapeHtml(payload.subtitle || "")}</div>
+            <h2 class="sales-console-section-title warehouse-cockpit-section-title">${escapeHtml(title)}</h2>
+            <div class="sales-console-section-note warehouse-cockpit-section-note warehouse-action-center-subtitle">${escapeHtml(subtitle)}</div>
           </div>
-          <span class="warehouse-action-center-mode">Shell only</span>
+          <span class="warehouse-action-center-mode">${escapeHtml(payload.mode_label || "Custom workflows")}</span>
         </div>
         <div class="warehouse-action-center-groups">${sections.map(renderActionCenterGroup).join("")}</div>
         ${payload.guardrail ? `
           <div class="warehouse-action-center-guardrail" data-warehouse-action-center-guardrail>
-            <strong>${escapeHtml(payload.guardrail.title || "Action shell only")}</strong>
+            <strong>${escapeHtml(payload.guardrail.title || "Custom workflow only")}</strong>
             <span>${escapeHtml(payload.guardrail.detail || "")}</span>
           </div>
         ` : ""}
-      </section>
-    `;
-  }
-
-  function renderCustomerReturnIntakeShell() {
-    const statuses = [
-      "Return Requested",
-      "Physical Intake",
-      "Inspection",
-      "Manager Review",
-      "Disposition Recommendation",
-      "Sales / Finance Handoff",
-    ];
-    const userPreview = [
-      "Receive returned goods",
-      "Count returned quantity",
-      "Record condition",
-      "Add evidence reference",
-      "Send to manager review",
-    ];
-    const managerPreview = [
-      "Request reinspection",
-      "Mark restock candidate",
-      "Mark quarantine review",
-      "Mark repair review",
-      "Mark scrap candidate",
-      "Reject return intake",
-      "Escalate to Sales",
-    ];
-    const evidence = [
-      ["Customer/source reference", "Sales-visible intake source"],
-      ["Item identity", "Item and returned unit posture"],
-      ["Returned quantity", "Physical count evidence"],
-      ["Condition grade", "Inspection posture"],
-      ["Evidence reference", "Future attachment or note reference"],
-      ["Manager event", "Disposition review trail"],
-      ["Sales escalation reference", "Customer-facing follow-up marker"],
-    ];
-    const ownership = [
-      ["Warehouse", "Physical evidence"],
-      ["Warehouse Manager", "Internal disposition recommendation"],
-      ["Sales", "Customer authorization, communication, replacement, and refund decision"],
-      ["Finance/Admin", "Credit, refund, write-off, and document governance"],
-    ];
-    const policy = [
-      ["Sales Return", "Future policy only, blocked now"],
-      ["Credit Note", "Future policy only, blocked now"],
-      ["Return Delivery Note", "Future policy only, blocked now"],
-      ["Stock Entry", "Future policy only, blocked now"],
-      ["Reference handling", "Plain text/status only if later approved"],
-    ];
-    const plannedMarkup = (items) => items.map((item) => `
-      <div class="warehouse-customer-return-planned" data-warehouse-customer-return-planned-control aria-disabled="true">${escapeHtml(item)}</div>
-    `).join("");
-    const miniMarkup = (items) => items.map((item) => `
-      <div class="warehouse-customer-return-mini">
-        ${escapeHtml(item[0])}
-        <span>${escapeHtml(item[1])}</span>
-      </div>
-    `).join("");
-    return `
-      <section class="sales-console-card sales-console-section warehouse-customer-return-shell" data-warehouse-customer-return-shell>
-        <div class="warehouse-customer-return-head">
-          <div class="warehouse-customer-return-copy">
-            <h2 class="warehouse-customer-return-title">Customer return intake</h2>
-            <div class="warehouse-customer-return-subtitle">Planned workflow shell for physical return intake evidence, inspection posture, manager recommendation, and Sales or Finance handoff.</div>
-          </div>
-          <span class="warehouse-customer-return-badge">Shell only</span>
-        </div>
-        <div class="warehouse-customer-return-guardrail">
-          No stock is increased, no Sales Return, Credit Note, Delivery Note, Stock Entry, or Stock Ledger entry is created from this shell.
-        </div>
-        <div class="warehouse-customer-return-status-strip">
-          ${statuses.map((status) => `<div class="warehouse-customer-return-status-chip" data-warehouse-customer-return-status>${escapeHtml(status)}</div>`).join("")}
-        </div>
-        <div class="warehouse-customer-return-grid">
-          <section class="warehouse-customer-return-panel" data-warehouse-customer-return-user-preview>
-            <h3>Warehouse user preview</h3>
-            <div class="warehouse-customer-return-items">${plannedMarkup(userPreview)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel" data-warehouse-customer-return-manager-preview>
-            <h3>Manager preview</h3>
-            <div class="warehouse-customer-return-items">${plannedMarkup(managerPreview)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel" data-warehouse-customer-return-evidence-preview>
-            <h3>Evidence preview</h3>
-            <div class="warehouse-customer-return-evidence-grid">${miniMarkup(evidence)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel">
-            <h3>Role ownership</h3>
-            <div class="warehouse-customer-return-owner-grid">${miniMarkup(ownership)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel warehouse-customer-return-policy-panel" data-warehouse-customer-return-policy>
-            <h3>Future document policy</h3>
-            <div class="warehouse-customer-return-policy-grid">${miniMarkup(policy)}</div>
-          </section>
-        </div>
-      </section>
-    `;
-  }
-
-  function renderCockpitRiskSection() {
-    const cards = [
-      {
-        key: "stock_exceptions",
-        kicker: "Risk",
-        title: "Stock Exceptions",
-        note: "Shortage risk, inbound cover, and missing warehouse posture.",
-        action: "Open stock exceptions",
-        actionAttr: "data-warehouse-open-stock-exceptions",
-        variant: "is-risk",
-        target: "warehouse-console-worklist/stock-exceptions",
-      },
-      {
-        key: "stock_posture_context",
-        kicker: "Context detail",
-        title: "Stock Posture",
-        note: "Item and warehouse posture opens from protected review pages. It is not a top-level lookup.",
-        variant: "is-risk",
-      },
-    ];
-    return `
-      <section class="sales-console-card sales-console-section warehouse-cockpit-route-section" data-warehouse-cockpit-risk>
-        <div class="sales-console-section-head warehouse-cockpit-section-head">
-          <h2 class="sales-console-section-title warehouse-cockpit-section-title">Risks To Resolve</h2>
-          <div class="sales-console-section-note warehouse-cockpit-section-note">Understand blockers before warehouse work stalls.</div>
-        </div>
-        <div class="sales-console-queue-grid warehouse-cockpit-route-grid warehouse-visual-related-grid is-two">${cards.map(renderCockpitRouteCard).join("")}</div>
-      </section>
-    `;
-  }
-
-  function renderCockpitMovementSection() {
-    const cards = [
-      {
-        key: "movement_visibility",
-        kicker: "Visibility",
-        title: "Movement Visibility",
-        note: "Posted movement records grouped for operational review.",
-        action: "Open movement visibility",
-        actionAttr: "data-warehouse-open-movement",
-        variant: "is-movement",
-        target: "warehouse-console-worklist/movement-visibility",
-      },
-      {
-        key: "transfer_visibility",
-        kicker: "Transfer posture",
-        title: "Transfer Visibility",
-        note: "Visibility across warehouses from submitted movement records.",
-        action: "Open transfer visibility",
-        actionAttr: "data-warehouse-open-transfer",
-        variant: "is-movement",
-        target: "warehouse-console-worklist/transfer-visibility",
-      },
-      {
-        key: "movement_review_context",
-        kicker: "Context detail",
-        title: "Movement Review",
-        note: "Detailed read-only review opens from Movement Visibility rows.",
-        variant: "is-movement",
-      },
-    ];
-    return `
-      <section class="sales-console-card sales-console-section warehouse-cockpit-route-section" data-warehouse-cockpit-movement>
-        <div class="sales-console-section-head warehouse-cockpit-section-head">
-          <h2 class="sales-console-section-title warehouse-cockpit-section-title">Movement To Understand</h2>
-          <div class="sales-console-section-note warehouse-cockpit-section-note">Review what already changed without leaving this read-only workspace.</div>
-        </div>
-        <div class="sales-console-queue-grid warehouse-cockpit-route-grid warehouse-visual-related-grid">${cards.map(renderCockpitRouteCard).join("")}</div>
       </section>
     `;
   }
@@ -8067,33 +8781,6 @@
     `;
   }
 
-  function renderStockExceptionsOverviewPanel(stockExceptions) {
-    const payload = stockExceptions || {};
-    const cards = Array.isArray(payload.cards) ? payload.cards.slice(0, 4) : [
-      { key: "total_exceptions", label: "Total Exceptions", value: 0, note: "Rows needing warehouse review.", state: "live" },
-      { key: "shortage_risk", label: "Shortage Risk", value: 0, note: "Demand short of visible stock posture.", state: "live" },
-      { key: "inbound_cover_soon", label: "Inbound Cover Soon", value: 0, note: "Supplier stock expected soon.", state: "live" },
-      { key: "missing_posture", label: "Missing Warehouse Posture", value: 0, note: "Warehouse or stock posture is incomplete.", state: "live" },
-    ];
-    const statePayload = payload.state || {};
-    const emptyMessage = statePayload.kind === "empty" ? statePayload.detail : "Review stock exceptions across outbound blockers and inbound cover.";
-    return `
-      <section class="warehouse-console-inbound-panel warehouse-console-stock-exception-panel" data-warehouse-section="stock_exception_priority">
-        <div class="warehouse-console-inbound-head">
-          <div>
-            <h2 class="warehouse-console-inbound-title">Stock Exceptions</h2>
-            <div class="warehouse-console-inbound-note">Outbound blockers, inbound cover, and warehouse posture gaps.</div>
-          </div>
-          <button class="warehouse-console-inbound-open" type="button" data-warehouse-open-stock-exceptions>Open stock exceptions</button>
-        </div>
-        <div class="warehouse-console-inbound-cards warehouse-visual-summary-grid">${cards.map(renderStockExceptionCard).join("")}</div>
-        <div class="warehouse-console-inbound-preview">
-          <div class="warehouse-console-inbound-row"><span>${escapeHtml(emptyMessage)}</span></div>
-        </div>
-      </section>
-    `;
-  }
-
   function renderSection(section) {
     const cards = Array.isArray(section.cards) ? section.cards.slice(0, 4) : [];
     const cardMarkup = cards.length ? cards.map((card) => `
@@ -8122,367 +8809,1438 @@
       </section>
     `;
   }
-  function renderSupplierReturnCandidateShell() {
-    const statuses = [
-      "Candidate Source",
-      "Physical Evidence",
-      "Manager Review",
-      "Procurement Review",
-      "Finance/Admin Review",
-      "Supplier Handoff Request",
-    ];
-    const userPreview = [
-      "Identify supplier-return goods",
-      "Count candidate quantity",
-      "Record condition",
-      "Add evidence reference",
-      "Send to manager review",
-    ];
-    const managerPreview = [
-      "Request reinspection",
-      "Mark quarantine review",
-      "Mark supplier-return candidate",
-      "Escalate to Procurement",
-      "Escalate to Finance/Admin",
-      "Reject supplier-return candidate",
-    ];
-    const evidence = [
-      ["Supplier/source reference", "PO, receipt, quarantine, or Procurement instruction"],
-      ["Item identity", "Item and unit posture"],
-      ["Candidate quantity", "Physical count evidence"],
-      ["Condition grade", "Damage, wrong item, quality, or quarantine posture"],
-      ["Evidence reference", "Future attachment or note reference"],
-      ["Manager event", "Supplier-return review trail"],
-      ["Procurement marker", "Supplier-facing follow-up marker"],
-    ];
-    const ownership = [
-      ["Warehouse", "Physical evidence and candidate posture"],
-      ["Warehouse Manager", "Internal return recommendation"],
-      ["Procurement", "Supplier communication, claim, and PO decision"],
-      ["Finance/Admin", "Debit, payable, and document governance"],
-    ];
-    const policy = [
-      ["Return Purchase Receipt", "Future policy only, blocked now"],
-      ["Purchase Invoice return", "Future policy only, blocked now"],
-      ["Stock Entry", "Future policy only, blocked now"],
-      ["Stock Ledger / Stock Balance", "Future policy only, blocked now"],
-      ["Supplier notification", "Procurement-owned, blocked now"],
-      ["Reference handling", "Plain text/status only if later approved"],
-    ];
-    const plannedMarkup = (items) => items.map((item) => `
-      <div class="warehouse-customer-return-planned" data-warehouse-supplier-return-planned-control aria-disabled="true">${escapeHtml(item)}</div>
-    `).join("");
-    const miniMarkup = (items) => items.map((item) => `
-      <div class="warehouse-customer-return-mini">
-        ${escapeHtml(item[0])}
-        <span>${escapeHtml(item[1])}</span>
-      </div>
-    `).join("");
+  function customerReturnIntakeRequestId(prefix, reference) {
+    const base = `${prefix}-${reference || "return"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return base.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 120);
+  }
+
+  function customerReturnNumberValue(value) {
+    const number = Number(String(value == null ? "" : value).replace(/,/g, ""));
+    return Number.isFinite(number) && number >= 0 ? number : 0;
+  }
+
+  function customerReturnFieldValue($root, fieldname) {
+    const field = $root.find(`[data-warehouse-customer-return-field="${fieldname}"]`).first();
+    return field.length ? field.val() : "";
+  }
+
+  function setCustomerReturnStatus($root, message, tone) {
+    const $status = $root.find("[data-warehouse-customer-return-status-message]").first();
+    if (!$status.length) return;
+    $status.attr("data-warehouse-customer-return-tone", tone || "info");
+    $status.find("span").text(message || "");
+  }
+
+  function setCustomerReturnBusy($root, busy) {
+    $root.find("[data-warehouse-customer-return-action]").prop("disabled", Boolean(busy));
+  }
+
+  function customerReturnCall(method, args) {
+    return Promise.resolve(frappe.call({ method, args })).then((response) => response && response.message ? response.message : {});
+  }
+
+  function customerReturnDraftPayloadFromInputs($root) {
+    const customer = String(customerReturnFieldValue($root, "customer") || "").trim();
+    const warehouse = String(customerReturnFieldValue($root, "warehouse") || "").trim();
+    const returnReference = String(customerReturnFieldValue($root, "return_authorization_reference") || "").trim();
+    const itemCode = String(customerReturnFieldValue($root, "item_code") || "").trim();
+    const uom = String(customerReturnFieldValue($root, "uom") || "Nos").trim();
+    const returnedQty = customerReturnNumberValue(customerReturnFieldValue($root, "returned_qty"));
+    const acceptedQty = customerReturnNumberValue(customerReturnFieldValue($root, "accepted_qty"));
+    const damagedQty = customerReturnNumberValue(customerReturnFieldValue($root, "damaged_qty"));
+    const quarantineQty = customerReturnNumberValue(customerReturnFieldValue($root, "quarantine_qty"));
+    const conditionGrade = String(customerReturnFieldValue($root, "condition_grade") || "").trim();
+    const conditionNote = String(customerReturnFieldValue($root, "condition_note") || "").trim();
+    const evidenceReference = String(customerReturnFieldValue($root, "evidence_reference") || "").trim();
+    return {
+      customer,
+      warehouse,
+      return_authorization_reference: returnReference,
+      source_reference_note: "Recorded from Warehouse Console Returns Work Hub.",
+      notes: "Custom customer return intake evidence recorded from Warehouse Console.",
+      lines: [
+        {
+          item_code: itemCode,
+          warehouse,
+          returned_qty: returnedQty,
+          accepted_qty: acceptedQty,
+          damaged_qty: damagedQty,
+          quarantine_qty: quarantineQty,
+          condition_grade: conditionGrade,
+          condition_note: conditionNote,
+          disposition: conditionGrade || "Inspection recorded",
+          evidence_reference: evidenceReference,
+          uom: uom || "Nos",
+        },
+      ],
+    };
+  }
+
+  function customerReturnStableRequestId($root, payload) {
+    const keyPayload = { ...payload, request_id: undefined };
+    const key = JSON.stringify(keyPayload);
+    const storedKey = $root.data("warehouseCustomerReturnRequestKey") || "";
+    let requestId = $root.data("warehouseCustomerReturnRequestId") || "";
+    if (!requestId || storedKey !== key) {
+      const reference = payload.return_authorization_reference || payload.customer || (payload.lines && payload.lines[0] ? payload.lines[0].item_code : "");
+      requestId = customerReturnIntakeRequestId("customer-return-intake", reference);
+      $root.data("warehouseCustomerReturnRequestKey", key);
+      $root.data("warehouseCustomerReturnRequestId", requestId);
+    }
+    return requestId;
+  }
+
+  function clearCustomerReturnStableRequestId($root) {
+    $root.removeData("warehouseCustomerReturnRequestKey");
+    $root.removeData("warehouseCustomerReturnRequestId");
+  }
+
+  function validateCustomerReturnDraftPayload(payload) {
+    const line = payload && Array.isArray(payload.lines) ? payload.lines[0] || {} : {};
+    if (!payload.customer || !payload.warehouse || !payload.return_authorization_reference) {
+      return "Customer, warehouse, and return reference are required.";
+    }
+    if (!line.item_code || line.returned_qty <= 0) {
+      return "Item code and returned quantity greater than zero are required.";
+    }
+    if (!line.condition_grade && !line.condition_note) {
+      return "Condition grade or condition note is required.";
+    }
+    if (line.accepted_qty + line.damaged_qty + line.quarantine_qty > line.returned_qty) {
+      return "Accepted, damaged, and quarantine quantities cannot exceed returned quantity.";
+    }
+    if ((line.damaged_qty > 0 || line.quarantine_qty > 0) && !line.evidence_reference) {
+      return "Evidence reference is required for damaged or quarantine quantity.";
+    }
+    return "";
+  }
+
+  function saveCustomerReturnIntakeDraft($root) {
+    const payload = customerReturnDraftPayloadFromInputs($root);
+    const validationMessage = validateCustomerReturnDraftPayload(payload);
+    if (validationMessage) {
+      setCustomerReturnStatus($root, validationMessage, "error");
+      return Promise.resolve();
+    }
+    payload.request_id = customerReturnStableRequestId($root, payload);
+    setCustomerReturnBusy($root, true);
+    setCustomerReturnStatus($root, "Recording custom customer return intake draft...", "pending");
+    markWarehouseDiagnostic("customerReturnIntakeDraftCallAttempted");
+    return customerReturnCall(CUSTOMER_RETURN_INTAKE_DRAFT_METHOD, payload).then((responsePayload) => {
+      clearCustomerReturnStableRequestId($root);
+      markWarehouseDiagnostic("customerReturnIntakeDraftSaved");
+      const intakeId = responsePayload && responsePayload.intake ? responsePayload.intake.intake_id || responsePayload.intake.name || "" : "";
+      if (intakeId) {
+        $root.data("warehouseCustomerReturnIntakeId", intakeId);
+        syncReturnDecisionControls($root);
+      }
+      const suffix = intakeId ? ` Intake ${intakeId} recorded.` : " Intake recorded.";
+      setCustomerReturnStatus($root, `Custom customer return draft saved.${suffix} No Sales Return, Credit Note, Delivery Note, or stock record was created.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic("customerReturnIntakeDraftFailed");
+      setCustomerReturnStatus($root, error && error.message ? error.message : "Could not record customer return intake draft.", "error");
+    }).finally(() => {
+      setCustomerReturnBusy($root, false);
+    });
+  }
+
+  function renderCustomerReturnIntakePanel() {
     return `
-      <section class="sales-console-card sales-console-section warehouse-customer-return-shell warehouse-supplier-return-shell" data-warehouse-supplier-return-shell>
-        <div class="warehouse-customer-return-head">
-          <div class="warehouse-customer-return-copy">
-            <h2 class="warehouse-customer-return-title">Supplier return candidate</h2>
-            <div class="warehouse-customer-return-subtitle">Planned workflow shell for supplier-return evidence, manager recommendation, Procurement review, and Finance/Admin handoff.</div>
+      <section class="warehouse-returns-workbench-panel is-active" data-warehouse-returns-workbench-panel="customer" data-warehouse-customer-return-intake-panel>
+        <div class="warehouse-returns-hub-lane-head">
+          <span class="warehouse-returns-hub-kicker">Custom intake</span>
+          <div class="warehouse-returns-hub-lane-title">Customer return intake</div>
+          <div class="warehouse-returns-hub-lane-note">Record customer return evidence into custom Warehouse intake records only.</div>
+        </div>
+        <div class="warehouse-return-intake-status" data-warehouse-customer-return-status-message data-warehouse-customer-return-tone="info">
+          <strong>Custom intake not recorded</strong>
+          <span>No Sales Return, Credit Note, Delivery Note, or stock record is created.</span>
+        </div>
+        <div class="warehouse-return-intake-form" data-warehouse-customer-return-form>
+          <div class="warehouse-return-intake-fields">
+            <div class="warehouse-return-intake-field">
+              <label>Customer</label>
+              <input type="text" value="" placeholder="Customer name or code" data-warehouse-customer-return-field="customer">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Warehouse</label>
+              <input type="text" value="Yangon Main Warehouse - MMOB" placeholder="Visible warehouse" data-warehouse-customer-return-field="warehouse">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Return reference</label>
+              <input type="text" value="" placeholder="RMA, approval, or note" data-warehouse-customer-return-field="return_authorization_reference">
+            </div>
           </div>
-          <span class="warehouse-customer-return-badge">Shell only</span>
+          <div class="warehouse-return-intake-line-fields" data-warehouse-customer-return-line>
+            <div class="warehouse-return-intake-field">
+              <label>Item code</label>
+              <input type="text" value="" placeholder="Item code" data-warehouse-customer-return-field="item_code">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>UOM</label>
+              <input type="text" value="Nos" placeholder="Nos" data-warehouse-customer-return-field="uom">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Returned</label>
+              <input type="number" min="0" step="any" value="1" data-warehouse-customer-return-field="returned_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Accepted</label>
+              <input type="number" min="0" step="any" value="0" data-warehouse-customer-return-field="accepted_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Damaged</label>
+              <input type="number" min="0" step="any" value="0" data-warehouse-customer-return-field="damaged_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Quarantine</label>
+              <input type="number" min="0" step="any" value="0" data-warehouse-customer-return-field="quarantine_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Condition</label>
+              <select data-warehouse-customer-return-field="condition_grade">
+                <option value="Good">Good</option>
+                <option value="Damaged">Damaged</option>
+                <option value="Wrong item">Wrong item</option>
+                <option value="Quarantine">Quarantine</option>
+                <option value="Needs inspection">Needs inspection</option>
+              </select>
+            </div>
+            <div class="warehouse-return-intake-field is-wide">
+              <label>Evidence</label>
+              <input type="text" value="" placeholder="Photo, note, tag, or bench reference" data-warehouse-customer-return-field="evidence_reference">
+            </div>
+            <div class="warehouse-return-intake-field is-wide">
+              <label>Condition note</label>
+              <input type="text" value="" placeholder="Optional return condition note" data-warehouse-customer-return-field="condition_note">
+            </div>
+          </div>
+          <div class="warehouse-return-intake-actions">
+            <button class="warehouse-return-intake-save" type="button" data-warehouse-customer-return-action data-warehouse-customer-return-save>Save intake draft</button>
+          </div>
         </div>
-        <div class="warehouse-customer-return-guardrail" data-warehouse-supplier-return-guardrail>
-          No supplier is notified, no stock is decreased, and no return Purchase Receipt, Purchase Invoice return, Stock Entry, Stock Ledger, or Stock Balance record is created from this shell.
-        </div>
-        <div class="warehouse-customer-return-status-strip">
-          ${statuses.map((status) => `<div class="warehouse-customer-return-status-chip" data-warehouse-supplier-return-status>${escapeHtml(status)}</div>`).join("")}
-        </div>
-        <div class="warehouse-customer-return-grid">
-          <section class="warehouse-customer-return-panel" data-warehouse-supplier-return-user-preview>
-            <h3>Warehouse user preview</h3>
-            <div class="warehouse-customer-return-items">${plannedMarkup(userPreview)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel" data-warehouse-supplier-return-manager-preview>
-            <h3>Manager preview</h3>
-            <div class="warehouse-customer-return-items">${plannedMarkup(managerPreview)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel" data-warehouse-supplier-return-evidence-preview>
-            <h3>Evidence preview</h3>
-            <div class="warehouse-customer-return-evidence-grid">${miniMarkup(evidence)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel">
-            <h3>Role ownership</h3>
-            <div class="warehouse-customer-return-owner-grid">${miniMarkup(ownership)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel warehouse-customer-return-policy-panel" data-warehouse-supplier-return-policy>
-            <h3>Future document policy</h3>
-            <div class="warehouse-customer-return-policy-grid">${miniMarkup(policy)}</div>
-          </section>
-        </div>
+        <div class="warehouse-returns-hub-tags"><span>No stock increased</span><span>No Sales Return</span><span>No Credit Note</span></div>
       </section>
     `;
   }
 
+  function supplierReturnCandidateRequestId(prefix, reference) {
+    const base = `${prefix}-${reference || "supplier-return"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return base.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 120);
+  }
+
+  function supplierReturnNumberValue(value) {
+    const number = Number(String(value == null ? "" : value).replace(/,/g, ""));
+    return Number.isFinite(number) && number >= 0 ? number : 0;
+  }
+
+  function supplierReturnFieldValue($root, fieldname) {
+    const field = $root.find(`[data-warehouse-supplier-return-field="${fieldname}"]`).first();
+    return field.length ? field.val() : "";
+  }
+
+  function setSupplierReturnStatus($root, message, tone) {
+    const $status = $root.find("[data-warehouse-supplier-return-status-message]").first();
+    if (!$status.length) return;
+    $status.attr("data-warehouse-supplier-return-tone", tone || "info");
+    $status.find("span").text(message || "");
+  }
+
+  function setSupplierReturnBusy($root, busy) {
+    $root.find("[data-warehouse-supplier-return-action]").prop("disabled", Boolean(busy));
+  }
+
+  function supplierReturnCall(method, args) {
+    return Promise.resolve(frappe.call({ method, args })).then((response) => response && response.message ? response.message : {});
+  }
+
+  function supplierReturnCandidatePayloadFromInputs($root) {
+    const supplier = String(supplierReturnFieldValue($root, "supplier") || "").trim();
+    const warehouse = String(supplierReturnFieldValue($root, "warehouse") || "").trim();
+    const supplierReference = String(supplierReturnFieldValue($root, "supplier_return_reference") || "").trim();
+    const itemCode = String(supplierReturnFieldValue($root, "item_code") || "").trim();
+    const itemName = String(supplierReturnFieldValue($root, "item_name") || "").trim();
+    const uom = String(supplierReturnFieldValue($root, "uom") || "Nos").trim();
+    const candidateQty = supplierReturnNumberValue(supplierReturnFieldValue($root, "candidate_qty"));
+    const quarantineQty = supplierReturnNumberValue(supplierReturnFieldValue($root, "quarantine_qty"));
+    const damagedQty = supplierReturnNumberValue(supplierReturnFieldValue($root, "damaged_qty"));
+    const wrongItemQty = supplierReturnNumberValue(supplierReturnFieldValue($root, "wrong_item_qty"));
+    const overageQty = supplierReturnNumberValue(supplierReturnFieldValue($root, "overage_qty"));
+    const qualityHoldQty = supplierReturnNumberValue(supplierReturnFieldValue($root, "quality_hold_qty"));
+    const conditionGrade = String(supplierReturnFieldValue($root, "condition_grade") || "").trim();
+    const conditionNote = String(supplierReturnFieldValue($root, "condition_note") || "").trim();
+    const evidenceReference = String(supplierReturnFieldValue($root, "evidence_reference") || "").trim();
+    return {
+      supplier,
+      warehouse,
+      supplier_return_reference: supplierReference,
+      source_reference_note: "Recorded from Warehouse Console Returns Work Hub.",
+      notes: "Custom supplier return candidate evidence recorded from Warehouse Console.",
+      lines: [
+        {
+          item_code: itemCode,
+          item_name: itemName,
+          warehouse,
+          candidate_qty: candidateQty,
+          quarantine_qty: quarantineQty,
+          damaged_qty: damagedQty,
+          wrong_item_qty: wrongItemQty,
+          overage_qty: overageQty,
+          quality_hold_qty: qualityHoldQty,
+          condition_grade: conditionGrade,
+          condition_note: conditionNote,
+          disposition: conditionGrade || "Supplier return evidence recorded",
+          evidence_reference: evidenceReference,
+          uom: uom || "Nos",
+        },
+      ],
+    };
+  }
+
+  function supplierReturnStableRequestId($root, payload) {
+    const keyPayload = { ...payload, request_id: undefined };
+    const key = JSON.stringify(keyPayload);
+    const storedKey = $root.data("warehouseSupplierReturnRequestKey") || "";
+    let requestId = $root.data("warehouseSupplierReturnRequestId") || "";
+    if (!requestId || storedKey !== key) {
+      const reference = payload.supplier_return_reference || payload.supplier || (payload.lines && payload.lines[0] ? payload.lines[0].item_code : "");
+      requestId = supplierReturnCandidateRequestId("supplier-return-candidate", reference);
+      $root.data("warehouseSupplierReturnRequestKey", key);
+      $root.data("warehouseSupplierReturnRequestId", requestId);
+    }
+    return requestId;
+  }
+
+  function clearSupplierReturnStableRequestId($root) {
+    $root.removeData("warehouseSupplierReturnRequestKey");
+    $root.removeData("warehouseSupplierReturnRequestId");
+  }
+
+  function validateSupplierReturnCandidatePayload(payload) {
+    const line = payload && Array.isArray(payload.lines) ? payload.lines[0] || {} : {};
+    if (!payload.supplier || !payload.warehouse || !payload.supplier_return_reference) {
+      return "Supplier, warehouse, and supplier return reference are required.";
+    }
+    if (!line.item_code || line.candidate_qty <= 0) {
+      return "Item code and candidate quantity greater than zero are required.";
+    }
+    if (!line.condition_grade && !line.condition_note) {
+      return "Condition grade or condition note is required.";
+    }
+    const exceptionQty = line.quarantine_qty + line.damaged_qty + line.wrong_item_qty + line.overage_qty + line.quality_hold_qty;
+    if (exceptionQty > line.candidate_qty) {
+      return "Exception quantities cannot exceed candidate quantity.";
+    }
+    if (exceptionQty > 0 && !line.evidence_reference) {
+      return "Evidence reference is required for supplier return exception quantity.";
+    }
+    return "";
+  }
+
+  function saveSupplierReturnCandidateDraft($root) {
+    const payload = supplierReturnCandidatePayloadFromInputs($root);
+    const validationMessage = validateSupplierReturnCandidatePayload(payload);
+    if (validationMessage) {
+      setSupplierReturnStatus($root, validationMessage, "error");
+      return Promise.resolve();
+    }
+    payload.request_id = supplierReturnStableRequestId($root, payload);
+    setSupplierReturnBusy($root, true);
+    setSupplierReturnStatus($root, "Recording custom supplier return candidate draft...", "pending");
+    markWarehouseDiagnostic("supplierReturnCandidateDraftCallAttempted");
+    return supplierReturnCall(SUPPLIER_RETURN_CANDIDATE_DRAFT_METHOD, payload).then((responsePayload) => {
+      clearSupplierReturnStableRequestId($root);
+      markWarehouseDiagnostic("supplierReturnCandidateDraftSaved");
+      const candidateId = responsePayload && responsePayload.candidate ? responsePayload.candidate.candidate_id || responsePayload.candidate.name || "" : "";
+      if (candidateId) {
+        $root.data("warehouseSupplierReturnCandidateId", candidateId);
+        syncReturnDecisionControls($root);
+      }
+      const suffix = candidateId ? ` Candidate ${candidateId} recorded.` : " Candidate recorded.";
+      setSupplierReturnStatus($root, `Custom supplier return candidate saved.${suffix} No supplier notification, return purchase receipt, debit note, or stock decrease was created.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic("supplierReturnCandidateDraftFailed");
+      setSupplierReturnStatus($root, error && error.message ? error.message : "Could not record supplier return candidate draft.", "error");
+    }).finally(() => {
+      setSupplierReturnBusy($root, false);
+    });
+  }
 
 
-  function renderInternalTransferCandidateShell() {
-    const statuses = [
-      "Transfer Source",
-      "Target Warehouse",
-      "Physical Count",
-      "Manager Review",
-      "Inventory/Admin Review",
-      "Document Policy",
-    ];
-    const userPreview = [
-      "Start transfer check",
-      "Count source quantity",
-      "Record target warehouse",
-      "Add evidence reference",
-      "Send to manager review",
-    ];
-    const managerPreview = [
-      "Request recount",
-      "Mark transfer candidate",
-      "Mark quarantine review",
-      "Request Inventory/Admin review",
-      "Reject transfer candidate",
-      "Close transfer candidate",
-    ];
-    const evidence = [
-      ["Source warehouse", "Where the stock is physically counted"],
-      ["Target warehouse", "Requested internal destination"],
-      ["Item identity", "Item and unit posture"],
-      ["Requested quantity", "Transfer intent quantity"],
-      ["Counted quantity", "Physical count evidence"],
-      ["Evidence reference", "Future attachment or note reference"],
-      ["Manager event", "Transfer candidate review trail"],
-    ];
-    const ownership = [
-      ["Warehouse", "Physical count and transfer intent"],
-      ["Warehouse Manager", "Internal transfer recommendation"],
-      ["Inventory/Admin", "Stock document policy governance"],
-      ["System/Admin", "Native-submit containment and policy"],
-    ];
-    const policy = [
-      ["Stock Entry", "Future policy only, blocked now"],
-      ["Stock Ledger / Stock Balance", "Future policy only, blocked now"],
-      ["Stock Reconciliation", "Future policy only, blocked now"],
-      ["Stock Reservation", "Future policy only, blocked now"],
-      ["Stock movement", "Blocked now"],
-      ["Reference handling", "Plain text/status only if later approved"],
-    ];
-    const plannedMarkup = (items) => items.map((item) => `
-      <div class="warehouse-customer-return-planned" data-warehouse-internal-transfer-planned-control aria-disabled="true">${escapeHtml(item)}</div>
-    `).join("");
-    const miniMarkup = (items) => items.map((item) => `
-      <div class="warehouse-customer-return-mini">
-        ${escapeHtml(item[0])}
-        <span>${escapeHtml(item[1])}</span>
-      </div>
-    `).join("");
+  function returnsCanManage(context) {
+    const roles = Array.isArray(context && context.roles) ? context.roles : [];
+    const roleVariant = String(context && context.role_variant || "");
+    return roleVariant === "warehouse_manager"
+      || roleVariant === "stock_manager"
+      || roleVariant === "system_manager"
+      || roles.includes("Warehouse Manager")
+      || roles.includes("Stock Manager")
+      || roles.includes("System Manager");
+  }
+
+  function returnDecisionRequestId(prefix, sourceId, decision) {
+    const base = `${prefix}-${sourceId || "return"}-${decision || "decision"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return base.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 120);
+  }
+
+  function returnDecisionSourceId($root, source) {
+    return source === "supplier"
+      ? String($root.data("warehouseSupplierReturnCandidateId") || "").trim()
+      : String($root.data("warehouseCustomerReturnIntakeId") || "").trim();
+  }
+
+  function setReturnDecisionStatus($root, message, tone) {
+    const $status = $root.find("[data-warehouse-return-decision-status-message]").first();
+    if (!$status.length) return;
+    $status.attr("data-warehouse-return-decision-tone", tone || "info");
+    $status.find("span").text(message || "");
+  }
+
+  function syncReturnDecisionControls($root) {
+    const canManage = Boolean($root.data("warehouseReturnsCanManage"));
+    $root.find("[data-warehouse-return-decision-action]").each(function () {
+      const source = String(this.getAttribute("data-warehouse-return-decision-source") || "");
+      const sourceId = returnDecisionSourceId($root, source);
+      const enabled = canManage && Boolean(sourceId);
+      $(this).prop("disabled", !enabled).attr("aria-disabled", enabled ? "false" : "true");
+    });
+  }
+
+  function workflowSelectedRecord(payload, key) {
+    const workflow = payload && payload.workflow ? payload.workflow : {};
+    const selected = workflow && workflow.selected ? workflow.selected : {};
+    return selected && selected[key] ? selected[key] : {};
+  }
+
+  function applyReturnsWorkflowRecall($root, payload) {
+    const customer = workflowSelectedRecord(payload, "customer_intake");
+    const supplier = workflowSelectedRecord(payload, "supplier_candidate");
+    const customerId = String(customer.intake_id || customer.name || "").trim();
+    const supplierId = String(supplier.candidate_id || supplier.name || "").trim();
+    const loaded = [];
+    if (customerId) {
+      $root.data("warehouseCustomerReturnIntakeId", customerId);
+      loaded.push("customer intake");
+      setCustomerReturnStatus($root, `Loaded saved custom customer return intake ${customerId}. No Sales Return, Credit Note, Delivery Note, or stock record was created.`, "info");
+    }
+    if (supplierId) {
+      $root.data("warehouseSupplierReturnCandidateId", supplierId);
+      loaded.push("supplier candidate");
+      setSupplierReturnStatus($root, `Loaded saved custom supplier return candidate ${supplierId}. No supplier notification, stock decrease, debit note, or return purchase receipt was created.`, "info");
+    }
+    if (loaded.length) {
+      setReturnDecisionStatus($root, `Loaded saved custom return ${loaded.join(" and ")} for manager posture.`, "info");
+      markWarehouseDiagnostic("returnsWorkflowRecallHydrated");
+    }
+    syncReturnDecisionControls($root);
+  }
+
+  function setReturnDecisionBusy($root, busy) {
+    if (busy) {
+      $root.find("[data-warehouse-return-decision-action]").prop("disabled", true).attr("aria-disabled", "true");
+    } else {
+      syncReturnDecisionControls($root);
+    }
+  }
+
+  function saveReturnManagerDecision($root, source, decision) {
+    if (!Boolean($root.data("warehouseReturnsCanManage"))) {
+      setReturnDecisionStatus($root, "Manager decisions are available only to Warehouse Manager, Stock Manager, or System Manager.", "error");
+      return Promise.resolve();
+    }
+    const sourceId = returnDecisionSourceId($root, source);
+    if (!sourceId) {
+      setReturnDecisionStatus($root, "Save the related custom return record before recording manager posture.", "error");
+      return Promise.resolve();
+    }
+    const isSupplier = source === "supplier";
+    const method = isSupplier ? SUPPLIER_RETURN_MANAGER_DECISION_METHOD : CUSTOMER_RETURN_MANAGER_DECISION_METHOD;
+    const args = isSupplier
+      ? {
+          supplier_return_candidate: sourceId,
+          decision,
+          note: "Recorded from Warehouse Console Returns Work Hub.",
+      procurement_escalation_reference: decision === "escalate_to_procurement" ? "Warehouse Console posture only" : "",
+          finance_escalation_reference: "",
+          request_id: returnDecisionRequestId("supplier-return-manager", sourceId, decision),
+        }
+      : {
+          customer_return_intake: sourceId,
+          decision,
+          note: "Recorded from Warehouse Console Returns Work Hub.",
+      sales_escalation_reference: decision === "escalate_to_sales" ? "Warehouse Console posture only" : "",
+          request_id: returnDecisionRequestId("customer-return-manager", sourceId, decision),
+        };
+    setReturnDecisionBusy($root, true);
+    setReturnDecisionStatus($root, "Recording manager posture on custom return record...", "pending");
+    markWarehouseDiagnostic(isSupplier ? "supplierReturnManagerDecisionCallAttempted" : "customerReturnManagerDecisionCallAttempted");
+    return customerReturnCall(method, args).then((responsePayload) => {
+      markWarehouseDiagnostic(isSupplier ? "supplierReturnManagerDecisionSaved" : "customerReturnManagerDecisionSaved");
+      const status = responsePayload && (responsePayload.status || (responsePayload.candidate && responsePayload.candidate.candidate_status) || (responsePayload.intake && responsePayload.intake.intake_status)) || decision;
+      if (isSupplier) {
+        $root.removeData("warehouseSupplierReturnCandidateId");
+      } else {
+        $root.removeData("warehouseCustomerReturnIntakeId");
+      }
+      setReturnDecisionStatus($root, `Manager posture recorded: ${status}. Custom record only; no ERP document, notification, or stock movement was created.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic(isSupplier ? "supplierReturnManagerDecisionFailed" : "customerReturnManagerDecisionFailed");
+      setReturnDecisionStatus($root, error && error.message ? error.message : "Could not record manager return posture.", "error");
+    }).finally(() => {
+      setReturnDecisionBusy($root, false);
+    });
+  }
+
+  function renderReturnDecisionButton(source, decision, label, note) {
     return `
-      <section class="sales-console-card sales-console-section warehouse-customer-return-shell warehouse-internal-transfer-shell" data-warehouse-internal-transfer-shell>
-        <div class="warehouse-customer-return-head">
-          <div class="warehouse-customer-return-copy">
-            <h2 class="warehouse-customer-return-title">Internal transfer candidate</h2>
-            <div class="warehouse-customer-return-subtitle">Planned workflow shell for internal transfer intent, source count evidence, manager recommendation, and Inventory/Admin review.</div>
-          </div>
-          <span class="warehouse-customer-return-badge">Shell only</span>
+      <button class="warehouse-return-decision-button" type="button" disabled aria-disabled="true" data-warehouse-return-decision-action data-warehouse-return-decision-source="${escapeHtml(source)}" data-warehouse-return-decision-decision="${escapeHtml(decision)}">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(note)}</span>
+      </button>
+    `;
+  }
+
+  function renderReturnDecisionsPanel(context) {
+    const canManage = returnsCanManage(context);
+    return `
+      <section class="warehouse-returns-workbench-panel" data-warehouse-returns-workbench-panel="decisions" data-warehouse-return-decisions-panel data-warehouse-return-decisions-can-manage="${canManage ? "true" : "false"}" hidden>
+        <div class="warehouse-returns-hub-lane-head">
+          <span class="warehouse-returns-hub-kicker">Manager review</span>
+          <div class="warehouse-returns-hub-lane-title">Return decisions</div>
+          <div class="warehouse-returns-hub-lane-note">Manager posture updates custom return records only. Save a customer intake or supplier candidate first.</div>
         </div>
-        <div class="warehouse-customer-return-guardrail" data-warehouse-internal-transfer-guardrail>
-          No stock is moved, no Stock Entry is created or submitted, and no Stock Ledger or Stock Balance record is changed from this shell.
+        <div class="warehouse-return-intake-status" data-warehouse-return-decision-status-message data-warehouse-return-decision-tone="info">
+          <strong>${canManage ? "Manager posture ready" : "Manager only"}</strong>
+          <span>${canManage ? "Decision controls unlock after a custom return record is saved in this hub." : "Warehouse User and Stock User can view this lane but cannot record manager posture."}</span>
         </div>
-        <div class="warehouse-customer-return-status-strip">
-          ${statuses.map((status) => `<div class="warehouse-customer-return-status-chip" data-warehouse-internal-transfer-status>${escapeHtml(status)}</div>`).join("")}
+        <div class="warehouse-return-decision-grid">
+          <section class="warehouse-return-decision-section" data-warehouse-return-decision-source-panel="customer">
+            <div>
+              <div class="warehouse-return-decision-section-title">Customer return posture</div>
+              <div class="warehouse-return-decision-section-note">For reviewed customer intake evidence. No Sales Return, Credit Note, Delivery Note, or stock posting.</div>
+            </div>
+            <div class="warehouse-return-decision-controls">
+              ${renderReturnDecisionButton("customer", "mark_restock_candidate", "Mark restock candidate", "Allowed for accepted clean return quantity.")}
+              ${renderReturnDecisionButton("customer", "request_reinspection", "Request reinspection", "Ask Warehouse to verify unclear intake evidence.")}
+            ${renderReturnDecisionButton("customer", "escalate_to_sales", "Mark Sales review needed", "Custom posture only; no Sales Return, Credit Note, Delivery Note, or notification is created.")}
+            </div>
+          </section>
+          <section class="warehouse-return-decision-section" data-warehouse-return-decision-source-panel="supplier">
+            <div>
+              <div class="warehouse-return-decision-section-title">Supplier return posture</div>
+              <div class="warehouse-return-decision-section-note">For reviewed supplier candidate evidence. No supplier notification, debit note, return receipt, or stock decrease.</div>
+            </div>
+            <div class="warehouse-return-decision-controls">
+              ${renderReturnDecisionButton("supplier", "mark_supplier_return_candidate", "Mark supplier-return candidate", "Records manager posture for supplier-return evidence.")}
+              ${renderReturnDecisionButton("supplier", "mark_quarantine_review", "Mark quarantine review", "For quarantine, damage, wrong-item, or quality-hold evidence.")}
+            ${renderReturnDecisionButton("supplier", "escalate_to_procurement", "Mark Procurement review needed", "Custom posture only; no supplier notification, debit note, return receipt, or stock decrease is created.")}
+            </div>
+          </section>
         </div>
-        <div class="warehouse-customer-return-grid">
-          <section class="warehouse-customer-return-panel" data-warehouse-internal-transfer-user-preview>
-            <h3>Warehouse user preview</h3>
-            <div class="warehouse-customer-return-items">${plannedMarkup(userPreview)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel" data-warehouse-internal-transfer-manager-preview>
-            <h3>Manager preview</h3>
-            <div class="warehouse-customer-return-items">${plannedMarkup(managerPreview)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel" data-warehouse-internal-transfer-evidence-preview>
-            <h3>Evidence preview</h3>
-            <div class="warehouse-customer-return-evidence-grid">${miniMarkup(evidence)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel">
-            <h3>Role ownership</h3>
-            <div class="warehouse-customer-return-owner-grid">${miniMarkup(ownership)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel warehouse-customer-return-policy-panel" data-warehouse-internal-transfer-policy>
-            <h3>Future document policy</h3>
-            <div class="warehouse-customer-return-policy-grid">${miniMarkup(policy)}</div>
-          </section>
-        </div>
+        <div class="warehouse-returns-hub-tags"><span>Manager posture only</span><span>No ERP document</span><span>No notification</span></div>
       </section>
     `;
   }
 
-
-  function renderCycleCountVarianceShell() {
-    const statuses = [
-      "Count Source",
-      "Blind Count",
-      "Physical Count",
-      "Manager Review",
-      "Variance Review",
-      "Inventory/Admin Handoff",
-    ];
-    const userPreview = [
-      "Start count task",
-      "Count item and location",
-      "Record counted quantity",
-      "Add variance evidence",
-      "Send to manager review",
-    ];
-    const managerPreview = [
-      "Request recount",
-      "Approve clean count",
-      "Mark variance review",
-      "Mark serial/batch review",
-      "Request Inventory/Admin review",
-      "Close count",
-    ];
-    const evidence = [
-      ["Warehouse/location reference", "Plain text count scope"],
-      ["Item identity", "Item and unit posture"],
-      ["Expected quantity policy", "Blind count by default"],
-      ["Counted quantity", "Physical count evidence"],
-      ["Variance reason", "Required for mismatch"],
-      ["Evidence reference", "Future attachment or note reference"],
-      ["Manager event", "Recount or variance review trail"],
-    ];
-    const ownership = [
-      ["Warehouse", "Physical count evidence"],
-      ["Warehouse Manager", "Recount and variance posture"],
-      ["Stock Manager", "Inventory/Admin review request"],
-      ["Inventory/Admin", "Stock document policy governance"],
-    ];
-    const policy = [
-      ["Stock Reconciliation", "Future policy only, blocked now"],
-      ["Stock Entry", "Future policy only, blocked now"],
-      ["Stock Ledger / Stock Balance", "Future policy only, blocked now"],
-      ["Stock Reservation", "Future policy only, blocked now"],
-      ["System document access", "Blocked now"],
-      ["Reference handling", "Plain text/status only if later approved"],
-    ];
-    const plannedMarkup = (items) => items.map((item) => `
-      <div class="warehouse-customer-return-planned" data-warehouse-cycle-count-planned-control aria-disabled="true">${escapeHtml(item)}</div>
-    `).join("");
-    const miniMarkup = (items) => items.map((item) => `
-      <div class="warehouse-customer-return-mini">
-        ${escapeHtml(item[0])}
-        <span>${escapeHtml(item[1])}</span>
-      </div>
-    `).join("");
+  function renderSupplierReturnCandidatePanel() {
     return `
-      <section class="sales-console-card sales-console-section warehouse-customer-return-shell warehouse-cycle-count-shell" data-warehouse-cycle-count-shell>
-        <div class="warehouse-customer-return-head">
-          <div class="warehouse-customer-return-copy">
-            <h2 class="warehouse-customer-return-title">Cycle count / inventory variance</h2>
-            <div class="warehouse-customer-return-subtitle">Planned workflow shell for blind count evidence, manager variance posture, recount decisions, and Inventory/Admin review.</div>
+      <section class="warehouse-returns-workbench-panel" data-warehouse-returns-workbench-panel="supplier" data-warehouse-supplier-return-candidate-panel hidden>
+        <div class="warehouse-returns-hub-lane-head">
+          <span class="warehouse-returns-hub-kicker">Custom candidate</span>
+          <div class="warehouse-returns-hub-lane-title">Supplier return candidate</div>
+          <div class="warehouse-returns-hub-lane-note">Record supplier-return evidence into custom Warehouse candidate records only.</div>
+        </div>
+        <div class="warehouse-return-intake-status" data-warehouse-supplier-return-status-message data-warehouse-supplier-return-tone="info">
+          <strong>Custom candidate not recorded</strong>
+          <span>No supplier notification, stock decrease, debit note, or return purchase receipt is created.</span>
+        </div>
+        <div class="warehouse-return-intake-form" data-warehouse-supplier-return-form>
+          <div class="warehouse-return-intake-fields">
+            <div class="warehouse-return-intake-field">
+              <label>Supplier</label>
+              <input type="text" value="" placeholder="Supplier name or code" data-warehouse-supplier-return-field="supplier">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Warehouse</label>
+              <input type="text" value="Yangon Main Warehouse - MMOB" placeholder="Visible warehouse" data-warehouse-supplier-return-field="warehouse">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Source reference</label>
+              <input type="text" value="" placeholder="PO, quarantine, or instruction" data-warehouse-supplier-return-field="supplier_return_reference">
+            </div>
           </div>
-          <span class="warehouse-customer-return-badge">Shell only</span>
+          <div class="warehouse-return-intake-line-fields" data-warehouse-supplier-return-line>
+            <div class="warehouse-return-intake-field">
+              <label>Item code</label>
+              <input type="text" value="" placeholder="Item code" data-warehouse-supplier-return-field="item_code">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Item name</label>
+              <input type="text" value="" placeholder="Optional item name" data-warehouse-supplier-return-field="item_name">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>UOM</label>
+              <input type="text" value="Nos" placeholder="Nos" data-warehouse-supplier-return-field="uom">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Candidate</label>
+              <input type="number" min="0" step="any" value="1" data-warehouse-supplier-return-field="candidate_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Quarantine</label>
+              <input type="number" min="0" step="any" value="0" data-warehouse-supplier-return-field="quarantine_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Damaged</label>
+              <input type="number" min="0" step="any" value="0" data-warehouse-supplier-return-field="damaged_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Wrong item</label>
+              <input type="number" min="0" step="any" value="0" data-warehouse-supplier-return-field="wrong_item_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Overage</label>
+              <input type="number" min="0" step="any" value="0" data-warehouse-supplier-return-field="overage_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Quality hold</label>
+              <input type="number" min="0" step="any" value="0" data-warehouse-supplier-return-field="quality_hold_qty">
+            </div>
+            <div class="warehouse-return-intake-field">
+              <label>Condition</label>
+              <select data-warehouse-supplier-return-field="condition_grade">
+                <option value="Good">Good</option>
+                <option value="Damaged">Damaged</option>
+                <option value="Wrong item">Wrong item</option>
+                <option value="Quarantine">Quarantine</option>
+                <option value="Quality hold">Quality hold</option>
+                <option value="Needs inspection">Needs inspection</option>
+              </select>
+            </div>
+            <div class="warehouse-return-intake-field is-wide">
+              <label>Evidence</label>
+              <input type="text" value="" placeholder="Photo, note, quarantine, or instruction" data-warehouse-supplier-return-field="evidence_reference">
+            </div>
+            <div class="warehouse-return-intake-field is-wide">
+              <label>Condition note</label>
+              <input type="text" value="" placeholder="Optional supplier return note" data-warehouse-supplier-return-field="condition_note">
+            </div>
+          </div>
+          <div class="warehouse-return-intake-actions">
+            <button class="warehouse-return-intake-save" type="button" data-warehouse-supplier-return-action data-warehouse-supplier-return-save>Save candidate draft</button>
+          </div>
         </div>
-        <div class="warehouse-customer-return-guardrail" data-warehouse-cycle-count-guardrail>
-          No stock quantity is adjusted, no Stock Reconciliation or Stock Entry is created, and no Stock Ledger or Stock Balance record is changed from this shell.
-        </div>
-        <div class="warehouse-customer-return-status-strip">
-          ${statuses.map((status) => `<div class="warehouse-customer-return-status-chip" data-warehouse-cycle-count-status>${escapeHtml(status)}</div>`).join("")}
-        </div>
-        <div class="warehouse-customer-return-grid">
-          <section class="warehouse-customer-return-panel" data-warehouse-cycle-count-user-preview>
-            <h3>Warehouse user preview</h3>
-            <div class="warehouse-customer-return-items">${plannedMarkup(userPreview)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel" data-warehouse-cycle-count-manager-preview>
-            <h3>Manager preview</h3>
-            <div class="warehouse-customer-return-items">${plannedMarkup(managerPreview)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel" data-warehouse-cycle-count-evidence-preview>
-            <h3>Evidence preview</h3>
-            <div class="warehouse-customer-return-evidence-grid">${miniMarkup(evidence)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel">
-            <h3>Role ownership</h3>
-            <div class="warehouse-customer-return-owner-grid">${miniMarkup(ownership)}</div>
-          </section>
-          <section class="warehouse-customer-return-panel warehouse-customer-return-policy-panel" data-warehouse-cycle-count-policy>
-            <h3>Future document policy</h3>
-            <div class="warehouse-customer-return-policy-grid">${miniMarkup(policy)}</div>
-          </section>
-        </div>
+        <div class="warehouse-returns-hub-tags"><span>No supplier notified</span><span>No stock decreased</span><span>No debit note</span></div>
       </section>
     `;
   }
 
+  function renderReturnsHubSummaryCard(card) {
+    const selected = Boolean(card && card.selected);
+    const marker = card && card.marker ? ` ${card.marker}` : "";
+    return `
+      <button class="warehouse-returns-hub-lane${selected ? " is-selected" : ""}" type="button" data-warehouse-returns-hub-lane="${escapeHtml(card.key || "")}" data-warehouse-returns-hub-switch="${escapeHtml(card.key || "")}" aria-selected="${selected ? "true" : "false"}"${marker}>
+        <div class="warehouse-returns-hub-lane-head">
+          <span class="warehouse-returns-hub-kicker">${escapeHtml(card.kicker || "")}</span>
+          <div class="warehouse-returns-hub-lane-title">${escapeHtml(card.title || "")}</div>
+          <div class="warehouse-returns-hub-lane-note">${escapeHtml(card.note || "")}</div>
+        </div>
+        <div class="warehouse-returns-hub-card-footer">
+          <span class="warehouse-returns-hub-card-meta">${escapeHtml(card.meta || "")}</span>
+          <span class="warehouse-returns-hub-card-action">${selected ? "Open" : "View workflow"}</span>
+        </div>
+      </button>
+    `;
+  }
 
-  function renderPlannedWorkflowShells() {
-    const workflows = [
+  function renderReturnsHubSwitchboard() {
+    const cards = [
       {
-        key: "customer-return",
+        key: "customer",
+        kicker: "Custom intake",
         title: "Customer return intake",
-        note: "Return evidence and Sales/Finance handoff.",
-        owner: "Sales / Finance",
-        detail: renderCustomerReturnIntakeShell(),
+        note: "Capture returned item evidence, condition, and accepted quantity.",
+        meta: "Custom intake",
+        selected: true,
+        marker: "data-warehouse-customer-return-intake-lane",
       },
       {
-        key: "supplier-return",
+        key: "supplier",
+        kicker: "Custom candidate",
         title: "Supplier return candidate",
-        note: "Supplier-return evidence and Procurement/Admin review.",
-        owner: "Procurement / Finance",
-        detail: renderSupplierReturnCandidateShell(),
+        note: "Capture supplier-return evidence, quarantine, and exception posture.",
+        meta: "Custom candidate",
+        marker: "data-warehouse-supplier-return-candidate-lane",
       },
       {
-        key: "internal-transfer",
-        title: "Internal transfer candidate",
-        note: "Transfer intent and Inventory/Admin review.",
-        owner: "Inventory / Admin",
-        detail: renderInternalTransferCandidateShell(),
-      },
-      {
-        key: "cycle-count",
-        title: "Cycle count / inventory variance",
-        note: "Blind count evidence and variance review.",
-        owner: "Inventory / Admin",
-        detail: renderCycleCountVarianceShell(),
+        key: "decisions",
+        kicker: "Manager review",
+        title: "Return decisions",
+        note: "Manager posture only after a customer or supplier custom record is saved.",
+        meta: "Manager posture",
+        marker: "data-warehouse-return-decisions-lane",
       },
     ];
-    const cards = workflows.map((workflow) => `
-      <article class="warehouse-planned-workflow-card" data-warehouse-planned-workflow-card="${escapeHtml(workflow.key)}">
-        <div class="warehouse-planned-workflow-card-head">
-          <span class="warehouse-planned-workflow-kicker">Planned lane</span>
-          <div class="warehouse-planned-workflow-title">${escapeHtml(workflow.title)}</div>
-        </div>
-        <div class="warehouse-planned-workflow-summary">
-          <div class="warehouse-planned-workflow-note">${escapeHtml(workflow.note)}</div>
-          <div class="warehouse-planned-workflow-meta">
-            <span>${escapeHtml(workflow.owner)}</span>
-            <span>Request only</span>
-            <span>No ERP doc</span>
-          </div>
-        </div>
-        <button class="warehouse-planned-workflow-toggle" type="button" aria-expanded="false" data-warehouse-planned-workflow-toggle="${escapeHtml(workflow.key)}">View details</button>
-      </article>
-    `).join("");
-    const details = workflows.map((workflow) => `
-      <div class="warehouse-planned-workflow-detail" data-warehouse-planned-workflow-detail="${escapeHtml(workflow.key)}" hidden>
-        ${workflow.detail}
-      </div>
-    `).join("");
+    return cards.map(renderReturnsHubSummaryCard).join("");
+  }
+
+  function activateReturnsHubPanel($root, panelKey) {
+    const key = ["customer", "supplier", "decisions"].includes(panelKey) ? panelKey : "customer";
+    $root.find("[data-warehouse-returns-hub-switch]").each(function () {
+      const isSelected = String(this.getAttribute("data-warehouse-returns-hub-switch") || "") === key;
+      $(this).toggleClass("is-selected", isSelected).attr("aria-selected", isSelected ? "true" : "false");
+      $(this).find(".warehouse-returns-hub-card-action").text(isSelected ? "Open" : "View workflow");
+    });
+    $root.find("[data-warehouse-returns-workbench-panel]").each(function () {
+      const isSelected = String(this.getAttribute("data-warehouse-returns-workbench-panel") || "") === key;
+      $(this).prop("hidden", !isSelected).toggleClass("is-active", isSelected);
+    });
+    syncReturnDecisionControls($root);
+  }
+
+  function renderReturnsWorkHub(context) {
     return `
-      <section class="sales-console-card sales-console-section warehouse-planned-workflows" data-warehouse-planned-workflows>
-        <div class="warehouse-planned-workflows-head">
-          <div class="warehouse-planned-workflows-copy">
-            <h2 class="warehouse-planned-workflows-title">Planned workflow shells</h2>
-            <div class="warehouse-planned-workflows-subtitle">Future controlled workflow lanes stay compact here. Expand one lane to inspect guardrails and ownership; no ERP document or stock action starts from this section.</div>
+      <section class="sales-console-card sales-console-section warehouse-returns-hub warehouse-workflow-card" data-warehouse-returns-hub data-warehouse-workflow-card data-warehouse-workflow-kind="returns">
+        <div class="warehouse-returns-hub-head warehouse-workflow-head" data-warehouse-workflow-head>
+          <div class="warehouse-returns-hub-copy warehouse-workflow-copy">
+            <h2 class="warehouse-returns-hub-title warehouse-workflow-title">Returns Work Hub</h2>
+            <div class="warehouse-returns-hub-subtitle warehouse-workflow-subtitle">Customer return intake, supplier return candidates, and manager return posture stay inside custom Warehouse records.</div>
           </div>
-          <span class="warehouse-planned-workflows-mode">Planned only</span>
+          <span class="warehouse-returns-hub-mode warehouse-workflow-mode" data-warehouse-workflow-mode>Custom workflow</span>
         </div>
-        <div class="warehouse-planned-workflows-grid">${cards}</div>
-        <div class="warehouse-planned-workflow-details">${details}</div>
+        <div class="warehouse-returns-hub-guardrail warehouse-workflow-guardrail" data-warehouse-returns-hub-guardrail data-warehouse-workflow-guardrail>
+          Custom return records only. No Sales Return, Credit Note, return Purchase Receipt, debit note, notification, native ERP route, or stock movement starts here.
+        </div>
+        <div class="warehouse-returns-hub-grid" data-warehouse-returns-hub-switchboard>${renderReturnsHubSwitchboard()}</div>
+        <div class="warehouse-returns-workbench warehouse-workflow-body" data-warehouse-returns-workbench data-warehouse-workflow-body>
+          ${renderCustomerReturnIntakePanel()}
+          ${renderSupplierReturnCandidatePanel()}
+          ${renderReturnDecisionsPanel(context || {})}
+        </div>
       </section>
     `;
+  }
+
+  function bindReturnsWorkHubHandlers($root) {
+    $root.find("[data-warehouse-returns-hub-switch]").on("click", (event) => {
+      event.preventDefault();
+      activateReturnsHubPanel($root, event.currentTarget.getAttribute("data-warehouse-returns-hub-switch") || "customer");
+    });
+    $root.find("[data-warehouse-customer-return-save]").on("click", (event) => {
+      event.preventDefault();
+      saveCustomerReturnIntakeDraft($root);
+    });
+    $root.find("[data-warehouse-supplier-return-save]").on("click", (event) => {
+      event.preventDefault();
+      saveSupplierReturnCandidateDraft($root);
+    });
+    $root.find("[data-warehouse-return-decision-action]").on("click", (event) => {
+      event.preventDefault();
+      const source = event.currentTarget.getAttribute("data-warehouse-return-decision-source") || "";
+      const decision = event.currentTarget.getAttribute("data-warehouse-return-decision-decision") || "";
+      saveReturnManagerDecision($root, source, decision);
+    });
+  }
+
+
+
+  function internalTransferCanManage(context) {
+    const roles = Array.isArray(context && context.roles) ? context.roles : [];
+    const roleVariant = String(context && context.role_variant || "");
+    return roleVariant === "warehouse_manager"
+      || roleVariant === "stock_manager"
+      || roleVariant === "system_manager"
+      || roles.includes("Warehouse Manager")
+      || roles.includes("Stock Manager")
+      || roles.includes("System Manager");
+  }
+
+  function internalTransferNumberValue(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function internalTransferFieldValue($root, fieldname) {
+    return String($root.find(`[data-warehouse-internal-transfer-field="${fieldname}"]`).first().val() || "").trim();
+  }
+
+  function setInternalTransferStatus($root, message, tone) {
+    const $status = $root.find("[data-warehouse-internal-transfer-status-message]").first();
+    if (!$status.length) return;
+    $status.attr("data-warehouse-internal-transfer-tone", tone || "info");
+    $status.find("span").text(message || "");
+  }
+
+  function setInternalTransferBusy($root, busy) {
+    $root.find("[data-warehouse-internal-transfer-save]").prop("disabled", Boolean(busy));
+    if (busy) {
+      $root.find("[data-warehouse-internal-transfer-decision-action]").prop("disabled", true).attr("aria-disabled", "true");
+    } else {
+      syncInternalTransferManagerControls($root);
+    }
+  }
+
+  function internalTransferCall(method, args) {
+    return frappe.call({ method, args }).then((response) => response && response.message ? response.message : {});
+  }
+
+  function internalTransferRequestId(prefix, reference) {
+    const base = `${prefix}-${reference || "internal-transfer"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return base.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 120);
+  }
+
+  function internalTransferDraftPayloadFromInputs($root) {
+    const sourceWarehouse = internalTransferFieldValue($root, "source_warehouse");
+    const targetWarehouse = internalTransferFieldValue($root, "target_warehouse");
+    return {
+      source_warehouse: sourceWarehouse,
+      target_warehouse: targetWarehouse,
+      source_context: internalTransferFieldValue($root, "source_context"),
+      source_reference_text: internalTransferFieldValue($root, "source_reference_text"),
+      transfer_reason: internalTransferFieldValue($root, "transfer_reason"),
+      transfer_priority: internalTransferFieldValue($root, "transfer_priority"),
+      evidence_status: internalTransferFieldValue($root, "evidence_status") || "Draft evidence",
+      notes: internalTransferFieldValue($root, "notes"),
+      lines: [
+        {
+          item_code: internalTransferFieldValue($root, "item_code"),
+          item_name: internalTransferFieldValue($root, "item_name"),
+          source_warehouse: sourceWarehouse,
+          target_warehouse: targetWarehouse,
+          requested_qty: internalTransferNumberValue(internalTransferFieldValue($root, "requested_qty")),
+          counted_qty: internalTransferNumberValue(internalTransferFieldValue($root, "counted_qty")),
+          transfer_candidate_qty: internalTransferNumberValue(internalTransferFieldValue($root, "transfer_candidate_qty")),
+          blocked_qty: internalTransferNumberValue(internalTransferFieldValue($root, "blocked_qty")),
+          quarantine_qty: internalTransferNumberValue(internalTransferFieldValue($root, "quarantine_qty")),
+          damaged_qty: internalTransferNumberValue(internalTransferFieldValue($root, "damaged_qty")),
+          short_qty: internalTransferNumberValue(internalTransferFieldValue($root, "short_qty")),
+          condition_grade: internalTransferFieldValue($root, "condition_grade"),
+          reason_code: internalTransferFieldValue($root, "reason_code"),
+          evidence_reference: internalTransferFieldValue($root, "evidence_reference"),
+          uom: internalTransferFieldValue($root, "uom") || "Nos",
+        },
+      ],
+    };
+  }
+
+  function validateInternalTransferDraftPayload(payload) {
+    const line = payload && payload.lines && payload.lines[0] ? payload.lines[0] : {};
+    if (!payload.source_warehouse) return "Source warehouse is required.";
+    if (!payload.target_warehouse) return "Target warehouse is required.";
+    if (payload.source_warehouse === payload.target_warehouse) return "Source and target warehouses must be different.";
+    if (!payload.source_context) return "Source context is required.";
+    if (!payload.transfer_reason) return "Transfer reason is required.";
+    if (!line.item_code) return "Item code is required.";
+    if (line.requested_qty <= 0) return "Requested quantity must be greater than zero.";
+    if (line.counted_qty <= 0) return "Counted quantity must be greater than zero.";
+    if (line.transfer_candidate_qty <= 0) return "Transfer candidate quantity must be greater than zero.";
+    if (line.transfer_candidate_qty > line.requested_qty || line.transfer_candidate_qty > line.counted_qty) return "Transfer candidate quantity cannot exceed requested or counted quantity.";
+    if ((line.transfer_candidate_qty + line.blocked_qty + line.quarantine_qty + line.damaged_qty + line.short_qty) > line.requested_qty) return "Candidate and exception quantities cannot exceed requested quantity.";
+    if (!line.reason_code && !line.evidence_reference) return "Reason or evidence reference is required.";
+    if ((line.blocked_qty > 0 || line.quarantine_qty > 0 || line.damaged_qty > 0 || line.short_qty > 0) && !line.evidence_reference) return "Evidence reference is required for exception quantities.";
+    return "";
+  }
+
+  function internalTransferStableRequestId($root, payload) {
+    const signature = JSON.stringify(payload || {});
+    const currentSignature = String($root.data("warehouseInternalTransferDraftSignature") || "");
+    if (currentSignature === signature && $root.data("warehouseInternalTransferDraftRequestId")) {
+      return String($root.data("warehouseInternalTransferDraftRequestId") || "");
+    }
+    const requestId = internalTransferRequestId("internal-transfer-candidate", payload.source_reference_text || payload.source_warehouse || "draft");
+    $root.data("warehouseInternalTransferDraftSignature", signature);
+    $root.data("warehouseInternalTransferDraftRequestId", requestId);
+    return requestId;
+  }
+
+  function clearInternalTransferStableRequestId($root) {
+    $root.removeData("warehouseInternalTransferDraftSignature");
+    $root.removeData("warehouseInternalTransferDraftRequestId");
+  }
+
+  function saveInternalTransferCandidateDraft($root) {
+    const payload = internalTransferDraftPayloadFromInputs($root);
+    const validationError = validateInternalTransferDraftPayload(payload);
+    if (validationError) {
+      setInternalTransferStatus($root, validationError, "error");
+      return Promise.resolve();
+    }
+    const args = Object.assign({}, payload, {
+      lines: JSON.stringify(payload.lines),
+      request_id: internalTransferStableRequestId($root, payload),
+    });
+    setInternalTransferBusy($root, true);
+    setInternalTransferStatus($root, "Saving custom internal transfer candidate...", "pending");
+    markWarehouseDiagnostic("internalTransferCandidateDraftCallAttempted");
+    return internalTransferCall(INTERNAL_TRANSFER_CANDIDATE_DRAFT_METHOD, args).then((responsePayload) => {
+      const candidateId = responsePayload && responsePayload.candidate && responsePayload.candidate.candidate_id ? responsePayload.candidate.candidate_id : "";
+      $root.data("warehouseInternalTransferCandidateId", candidateId);
+      markWarehouseDiagnostic("internalTransferCandidateDraftSaved");
+      clearInternalTransferStableRequestId($root);
+      setInternalTransferStatus($root, `Custom internal transfer candidate saved${candidateId ? `: ${candidateId}` : ""}. No Stock Entry, stock movement, ledger, or balance record was created.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic("internalTransferCandidateDraftFailed");
+      setInternalTransferStatus($root, error && error.message ? error.message : "Could not save internal transfer candidate.", "error");
+    }).finally(() => {
+      setInternalTransferBusy($root, false);
+    });
+  }
+
+  function syncInternalTransferManagerControls($root) {
+    const canManage = Boolean($root.data("warehouseInternalTransferCanManage"));
+    const candidateId = String($root.data("warehouseInternalTransferCandidateId") || "").trim();
+    $root.find("[data-warehouse-internal-transfer-decision-action]").each(function () {
+      const enabled = canManage && Boolean(candidateId);
+      $(this).prop("disabled", !enabled).attr("aria-disabled", enabled ? "false" : "true");
+    });
+  }
+
+  function applyInternalTransferWorkflowRecall($root, payload) {
+    const candidate = workflowSelectedRecord(payload, "candidate");
+    const candidateId = String(candidate.candidate_id || candidate.name || "").trim();
+    if (!candidateId) {
+      syncInternalTransferManagerControls($root);
+      return;
+    }
+    $root.data("warehouseInternalTransferCandidateId", candidateId);
+    setInternalTransferStatus($root, `Loaded saved custom internal transfer candidate ${candidateId}. Manager posture can continue without re-saving; no Stock Entry or stock movement was created.`, "info");
+    markWarehouseDiagnostic("internalTransferWorkflowRecallHydrated");
+    syncInternalTransferManagerControls($root);
+  }
+
+  function saveInternalTransferManagerDecision($root, decision) {
+    if (!Boolean($root.data("warehouseInternalTransferCanManage"))) {
+      setInternalTransferStatus($root, "Manager posture is available only to Warehouse Manager, Stock Manager, or System Manager.", "error");
+      return Promise.resolve();
+    }
+    const candidateId = String($root.data("warehouseInternalTransferCandidateId") || "").trim();
+    if (!candidateId) {
+      setInternalTransferStatus($root, "Save a custom internal transfer candidate before recording manager posture.", "error");
+      return Promise.resolve();
+    }
+    const args = {
+      internal_transfer_candidate: candidateId,
+      decision,
+      note: decision === "approve_transfer_candidate" ? "Candidate marked from Warehouse Console Internal Transfer workflow." : "Recorded from Warehouse Console Internal Transfer workflow.",
+      inventory_admin_escalation_reference: decision === "escalate_to_inventory_admin" ? "Warehouse Console posture only" : "",
+      quarantine_review_reference: decision === "mark_quarantine_review" ? "Warehouse Console quarantine review" : "",
+      request_id: internalTransferRequestId("internal-transfer-manager", `${candidateId}-${decision}`),
+    };
+    setInternalTransferBusy($root, true);
+    setInternalTransferStatus($root, "Recording manager posture on custom internal transfer candidate...", "pending");
+    markWarehouseDiagnostic("internalTransferManagerDecisionCallAttempted");
+    return internalTransferCall(INTERNAL_TRANSFER_MANAGER_DECISION_METHOD, args).then((responsePayload) => {
+      const status = responsePayload && responsePayload.candidate && responsePayload.candidate.candidate_status ? responsePayload.candidate.candidate_status : decision;
+      $root.removeData("warehouseInternalTransferCandidateId");
+      markWarehouseDiagnostic("internalTransferManagerDecisionSaved");
+      setInternalTransferStatus($root, `Manager posture recorded: ${status}. Custom record only; no Stock Entry, stock movement, ledger, or balance record was created.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic("internalTransferManagerDecisionFailed");
+      setInternalTransferStatus($root, error && error.message ? error.message : "Could not record internal transfer manager posture.", "error");
+    }).finally(() => {
+      setInternalTransferBusy($root, false);
+    });
+  }
+
+  function renderInternalTransferField(fieldname, label, value, options) {
+    const config = options || {};
+    const type = config.type || "text";
+    const className = config.wide ? "warehouse-return-intake-field is-wide" : "warehouse-return-intake-field";
+    if (config.select) {
+      const optionsMarkup = config.select.map((item) => `<option value="${escapeHtml(item.value)}"${item.value === value ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
+      return `<div class="${className}"><label>${escapeHtml(label)}</label><select data-warehouse-internal-transfer-field="${escapeHtml(fieldname)}">${optionsMarkup}</select></div>`;
+    }
+    return `<div class="${className}"><label>${escapeHtml(label)}</label><input type="${escapeHtml(type)}" value="${escapeHtml(value == null ? "" : value)}" placeholder="${escapeHtml(config.placeholder || "")}" data-warehouse-internal-transfer-field="${escapeHtml(fieldname)}"></div>`;
+  }
+
+  function renderInternalTransferManagerButton(decision, label, note) {
+    return `
+      <button class="warehouse-return-decision-button" type="button" disabled aria-disabled="true" data-warehouse-internal-transfer-decision-action data-warehouse-internal-transfer-decision="${escapeHtml(decision)}">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(note)}</span>
+      </button>
+    `;
+  }
+
+  function renderInternalTransferWorkflow(context) {
+    const canManage = internalTransferCanManage(context || {});
+    return `
+      <section class="sales-console-card sales-console-section warehouse-workflow-card warehouse-internal-transfer-workflow" data-warehouse-internal-transfer-workflow data-warehouse-workflow-card data-warehouse-workflow-kind="internal_transfer">
+        <div class="warehouse-workflow-head" data-warehouse-workflow-head>
+          <div class="warehouse-workflow-copy">
+            <h2 class="warehouse-workflow-title">Internal Transfer workflow</h2>
+            <div class="warehouse-workflow-subtitle">Record transfer intent, source count evidence, and manager posture in custom Warehouse records only.</div>
+          </div>
+          <span class="warehouse-workflow-mode" data-warehouse-workflow-mode>Custom workflow</span>
+        </div>
+        <div class="warehouse-workflow-guardrail" data-warehouse-internal-transfer-guardrail data-warehouse-workflow-guardrail>
+          No Stock Entry is created. No stock is moved, reserved, posted, or written to Stock Ledger, Stock Balance, or Stock Reconciliation from this workflow.
+        </div>
+        <div class="warehouse-workflow-body" data-warehouse-workflow-body>
+          <section class="warehouse-workflow-panel" data-warehouse-internal-transfer-candidate-panel data-warehouse-workflow-panel="evidence">
+            <div class="warehouse-workflow-panel-head">
+              <span class="warehouse-workflow-kicker">Custom transfer</span>
+              <div class="warehouse-workflow-panel-title">Transfer candidate evidence</div>
+              <div class="warehouse-workflow-panel-note">Save a custom candidate first. Manager controls unlock only after the custom candidate exists.</div>
+            </div>
+            <div class="warehouse-return-intake-status" data-warehouse-internal-transfer-status-message data-warehouse-internal-transfer-tone="info">
+              <strong>Custom candidate not recorded</strong>
+              <span>No custom internal transfer candidate has been saved from this page yet.</span>
+            </div>
+            <div class="warehouse-return-intake-form" data-warehouse-internal-transfer-form>
+              <div class="warehouse-return-intake-fields">
+                ${renderInternalTransferField("source_warehouse", "Source warehouse", "Yangon Main Warehouse - MMOB", { placeholder: "Source warehouse" })}
+                ${renderInternalTransferField("target_warehouse", "Target warehouse", "", { placeholder: "Target warehouse" })}
+                ${renderInternalTransferField("source_context", "Source context", "warehouse_rebalance", { select: [
+                  { value: "warehouse_rebalance", label: "Warehouse rebalance" },
+                  { value: "post_movement_check", label: "Post movement check" },
+                  { value: "return_exception_check", label: "Return exception check" },
+                  { value: "manager_request", label: "Manager request" },
+                ] })}
+                ${renderInternalTransferField("source_reference_text", "Source reference", "", { placeholder: "Count note, request, or bin" })}
+                ${renderInternalTransferField("transfer_reason", "Transfer reason", "", { placeholder: "Reason for transfer candidate", wide: true })}
+                ${renderInternalTransferField("transfer_priority", "Priority", "normal", { select: [
+                  { value: "normal", label: "Normal" },
+                  { value: "urgent", label: "Urgent" },
+                  { value: "hold", label: "Hold" },
+                ] })}
+              </div>
+              <div class="warehouse-return-intake-line-fields" data-warehouse-internal-transfer-line>
+                ${renderInternalTransferField("item_code", "Item code", "", { placeholder: "Item code" })}
+                ${renderInternalTransferField("item_name", "Item name", "", { placeholder: "Optional item name" })}
+                ${renderInternalTransferField("uom", "UOM", "Nos", { placeholder: "UOM" })}
+                ${renderInternalTransferField("requested_qty", "Requested", "", { type: "number", placeholder: "0" })}
+                ${renderInternalTransferField("counted_qty", "Counted", "", { type: "number", placeholder: "0" })}
+                ${renderInternalTransferField("transfer_candidate_qty", "Candidate", "", { type: "number", placeholder: "0" })}
+                ${renderInternalTransferField("blocked_qty", "Blocked", "0", { type: "number" })}
+                ${renderInternalTransferField("quarantine_qty", "Quarantine", "0", { type: "number" })}
+                ${renderInternalTransferField("damaged_qty", "Damaged", "0", { type: "number" })}
+                ${renderInternalTransferField("short_qty", "Short", "0", { type: "number" })}
+                ${renderInternalTransferField("condition_grade", "Condition", "good", { select: [
+                  { value: "good", label: "Good" },
+                  { value: "mixed", label: "Mixed" },
+                  { value: "damaged", label: "Damaged" },
+                  { value: "quarantine", label: "Quarantine" },
+                ] })}
+                ${renderInternalTransferField("reason_code", "Reason", "count_verified", { select: [
+                  { value: "count_verified", label: "Count verified" },
+                  { value: "rebalance", label: "Rebalance" },
+                  { value: "quarantine_review", label: "Quarantine review" },
+                  { value: "manager_request", label: "Manager request" },
+                ] })}
+                ${renderInternalTransferField("evidence_reference", "Evidence", "", { placeholder: "Photo, bin, count note, or tag", wide: true })}
+                ${renderInternalTransferField("evidence_status", "Evidence status", "Draft evidence", { placeholder: "Evidence status" })}
+                ${renderInternalTransferField("notes", "Notes", "", { placeholder: "Optional internal note", wide: true })}
+              </div>
+              <div class="warehouse-return-intake-actions">
+                <button class="warehouse-return-intake-save" type="button" data-warehouse-internal-transfer-save>Save transfer candidate</button>
+              </div>
+              <div class="warehouse-workflow-tags"><span>No Stock Entry</span><span>No stock moved</span><span>No ledger or balance change</span></div>
+            </div>
+          </section>
+          <section class="warehouse-workflow-panel" data-warehouse-internal-transfer-manager-panel data-warehouse-workflow-panel="manager" data-warehouse-internal-transfer-can-manage="${canManage ? "true" : "false"}">
+            <div class="warehouse-workflow-panel-head">
+              <span class="warehouse-workflow-kicker">${canManage ? "Manager posture" : "Manager only"}</span>
+              <div class="warehouse-workflow-panel-title">Transfer decision posture</div>
+              <div class="warehouse-workflow-panel-note">${canManage ? "Manager controls update only the custom candidate status and event log." : "Warehouse users can save evidence; manager decisions remain disabled here."}</div>
+            </div>
+            <div class="warehouse-return-decision-grid">
+              <section class="warehouse-return-decision-section">
+                <div class="warehouse-return-decision-section-title">Candidate posture</div>
+                <div class="warehouse-return-decision-section-note">Save a candidate first. These controls never create Stock Entry or stock movement.</div>
+                <div class="warehouse-return-decision-controls">
+                  ${renderInternalTransferManagerButton("approve_transfer_candidate", "Mark transfer candidate", "Recommend the custom candidate for Inventory/Admin review.")}
+                  ${renderInternalTransferManagerButton("request_recount", "Request recount", "Ask Warehouse user to recheck unclear source counts.")}
+                  ${renderInternalTransferManagerButton("mark_quarantine_review", "Mark quarantine review", "Keep blocked, damaged, or quarantine posture separate.")}
+                  ${renderInternalTransferManagerButton("escalate_to_inventory_admin", "Mark Inventory/Admin review needed", "Custom posture only; no handoff request or stock document is created.")}
+                  ${renderInternalTransferManagerButton("reject_transfer_candidate", "Reject candidate", "Close this candidate posture with manager note.")}
+                </div>
+              </section>
+              <section class="warehouse-return-decision-section">
+                <div class="warehouse-return-decision-section-title">Document policy</div>
+                <div class="warehouse-return-decision-section-note">Inventory/Admin owns any separate owner-approved Stock Entry policy outside this workflow.</div>
+                <div class="warehouse-workflow-tags"><span>Custom record only</span><span>System document access blocked</span><span>Stock posting blocked</span></div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </section>
+    `;
+  }
+
+  function bindInternalTransferWorkflowHandlers($root) {
+    $root.find("[data-warehouse-internal-transfer-save]").on("click", (event) => {
+      event.preventDefault();
+      saveInternalTransferCandidateDraft($root);
+    });
+    $root.find("[data-warehouse-internal-transfer-decision-action]").on("click", (event) => {
+      event.preventDefault();
+      const decision = event.currentTarget.getAttribute("data-warehouse-internal-transfer-decision") || "";
+      saveInternalTransferManagerDecision($root, decision);
+    });
+    syncInternalTransferManagerControls($root);
+  }
+
+
+
+  function cycleCountCanManage(context) {
+    const roles = Array.isArray(context && context.roles) ? context.roles : [];
+    const roleVariant = String(context && context.role_variant || "");
+    return roleVariant === "warehouse_manager"
+      || roleVariant === "stock_manager"
+      || roleVariant === "system_manager"
+      || roles.includes("Warehouse Manager")
+      || roles.includes("Stock Manager")
+      || roles.includes("System Manager");
+  }
+
+  function cycleCountNumberValue(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function cycleCountFieldValue($root, fieldname) {
+    return String($root.find(`[data-warehouse-cycle-count-field="${fieldname}"]`).first().val() || "").trim();
+  }
+
+  function setCycleCountStatus($root, message, tone) {
+    const $status = $root.find("[data-warehouse-cycle-count-status-message]").first();
+    if (!$status.length) return;
+    $status.attr("data-warehouse-cycle-count-tone", tone || "info");
+    $status.find("span").text(message || "");
+  }
+
+  function setCycleCountBusy($root, busy) {
+    $root.find("[data-warehouse-cycle-count-save]").prop("disabled", Boolean(busy));
+    if (busy) {
+      $root.find("[data-warehouse-cycle-count-decision-action]").prop("disabled", true).attr("aria-disabled", "true");
+    } else {
+      syncCycleCountManagerControls($root);
+    }
+  }
+
+  function cycleCountCall(method, args) {
+    return frappe.call({ method, args }).then((response) => response && response.message ? response.message : {});
+  }
+
+  function cycleCountRequestId(prefix, reference) {
+    const base = `${prefix}-${reference || "cycle-count"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return base.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 120);
+  }
+
+  function cycleCountDraftPayloadFromInputs($root) {
+    const warehouse = cycleCountFieldValue($root, "warehouse");
+    const visibility = cycleCountFieldValue($root, "expected_quantity_visibility") || "blind_count";
+    const expectedSnapshot = cycleCountFieldValue($root, "expected_qty_snapshot");
+    const line = {
+      item_code: cycleCountFieldValue($root, "item_code"),
+      item_name: cycleCountFieldValue($root, "item_name"),
+      warehouse,
+      location_reference_text: cycleCountFieldValue($root, "line_location_reference_text"),
+      uom: cycleCountFieldValue($root, "uom") || "Nos",
+      counted_qty: cycleCountNumberValue(cycleCountFieldValue($root, "counted_qty")),
+      variance_qty: cycleCountNumberValue(cycleCountFieldValue($root, "variance_qty")),
+      variance_direction: cycleCountFieldValue($root, "variance_direction") || "No Variance",
+      condition_grade: cycleCountFieldValue($root, "condition_grade"),
+      reason_code: cycleCountFieldValue($root, "reason_code"),
+      evidence_reference: cycleCountFieldValue($root, "evidence_reference"),
+      serial_batch_reference_text: cycleCountFieldValue($root, "serial_batch_reference_text"),
+      line_status: cycleCountFieldValue($root, "line_status") || "Counted",
+    };
+    if (expectedSnapshot) line.expected_qty_snapshot = cycleCountNumberValue(expectedSnapshot);
+    return {
+      warehouse,
+      count_source: cycleCountFieldValue($root, "count_source"),
+      count_scope: cycleCountFieldValue($root, "count_scope"),
+      location_reference_text: cycleCountFieldValue($root, "location_reference_text"),
+      count_reason: cycleCountFieldValue($root, "count_reason"),
+      count_priority: cycleCountFieldValue($root, "count_priority") || "Normal",
+      expected_quantity_visibility: visibility,
+      evidence_status: cycleCountFieldValue($root, "evidence_status") || "Draft count evidence",
+      notes: cycleCountFieldValue($root, "notes"),
+      assigned_user: cycleCountFieldValue($root, "assigned_user"),
+      lines: [line],
+    };
+  }
+
+  function validateCycleCountDraftPayload(payload) {
+    const line = payload && payload.lines && payload.lines[0] ? payload.lines[0] : {};
+    if (!payload.warehouse) return "Warehouse is required.";
+    if (!payload.count_source) return "Count source is required.";
+    if (!payload.count_scope) return "Count scope is required.";
+    if (!payload.count_reason) return "Count reason is required.";
+    if (!line.item_code) return "Item code is required.";
+    if (line.counted_qty < 0) return "Counted quantity cannot be negative.";
+    if (payload.expected_quantity_visibility === "blind_count" && Object.prototype.hasOwnProperty.call(line, "expected_qty_snapshot")) return "Expected quantity is not allowed for blind count.";
+    if (line.variance_direction !== "No Variance" && !line.evidence_reference && !line.reason_code && !line.condition_grade && !line.serial_batch_reference_text) return "Variance, zero count, serial/batch, or blocked lines require evidence or reason.";
+    return "";
+  }
+
+  function cycleCountStableRequestId($root, payload) {
+    const signature = JSON.stringify(payload || {});
+    const currentSignature = String($root.data("warehouseCycleCountDraftSignature") || "");
+    if (currentSignature === signature && $root.data("warehouseCycleCountDraftRequestId")) {
+      return String($root.data("warehouseCycleCountDraftRequestId") || "");
+    }
+    const requestId = cycleCountRequestId("cycle-count-task", payload.warehouse || "draft");
+    $root.data("warehouseCycleCountDraftSignature", signature);
+    $root.data("warehouseCycleCountDraftRequestId", requestId);
+    return requestId;
+  }
+
+  function clearCycleCountStableRequestId($root) {
+    $root.removeData("warehouseCycleCountDraftSignature");
+    $root.removeData("warehouseCycleCountDraftRequestId");
+  }
+
+  function saveCycleCountTaskDraft($root) {
+    const payload = cycleCountDraftPayloadFromInputs($root);
+    const validationError = validateCycleCountDraftPayload(payload);
+    if (validationError) {
+      setCycleCountStatus($root, validationError, "error");
+      return Promise.resolve();
+    }
+    const args = Object.assign({}, payload, {
+      lines: JSON.stringify(payload.lines),
+      request_id: cycleCountStableRequestId($root, payload),
+    });
+    setCycleCountBusy($root, true);
+    setCycleCountStatus($root, "Saving custom cycle count task...", "pending");
+    markWarehouseDiagnostic("cycleCountTaskDraftCallAttempted");
+    return cycleCountCall(CYCLE_COUNT_TASK_DRAFT_METHOD, args).then((responsePayload) => {
+      const taskId = responsePayload && responsePayload.task && responsePayload.task.task_id ? responsePayload.task.task_id : "";
+      $root.data("warehouseCycleCountTaskId", taskId);
+      markWarehouseDiagnostic("cycleCountTaskDraftSaved");
+      clearCycleCountStableRequestId($root);
+      setCycleCountStatus($root, `Custom cycle count task saved${taskId ? `: ${taskId}` : ""}. No Stock Reconciliation, Stock Entry, stock movement, ledger, or balance record was created.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic("cycleCountTaskDraftFailed");
+      setCycleCountStatus($root, error && error.message ? error.message : "Could not save cycle count task.", "error");
+    }).finally(() => {
+      setCycleCountBusy($root, false);
+    });
+  }
+
+  function syncCycleCountManagerControls($root) {
+    const canManage = Boolean($root.data("warehouseCycleCountCanManage"));
+    const taskId = String($root.data("warehouseCycleCountTaskId") || "").trim();
+    $root.find("[data-warehouse-cycle-count-decision-action]").each(function () {
+      const enabled = canManage && Boolean(taskId);
+      $(this).prop("disabled", !enabled).attr("aria-disabled", enabled ? "false" : "true");
+    });
+  }
+
+  function applyCycleCountWorkflowRecall($root, payload) {
+    const task = workflowSelectedRecord(payload, "task");
+    const taskId = String(task.task_id || task.name || "").trim();
+    if (!taskId) {
+      syncCycleCountManagerControls($root);
+      return;
+    }
+    $root.data("warehouseCycleCountTaskId", taskId);
+    setCycleCountStatus($root, `Loaded saved custom cycle count task ${taskId}. Manager variance posture can continue without re-saving; no Stock Reconciliation, Stock Entry, or stock adjustment was created.`, "info");
+    markWarehouseDiagnostic("cycleCountWorkflowRecallHydrated");
+    syncCycleCountManagerControls($root);
+  }
+
+  function saveCycleCountManagerDecision($root, decision) {
+    if (!Boolean($root.data("warehouseCycleCountCanManage"))) {
+      setCycleCountStatus($root, "Manager posture is available only to Warehouse Manager, Stock Manager, or System Manager.", "error");
+      return Promise.resolve();
+    }
+    const taskId = String($root.data("warehouseCycleCountTaskId") || "").trim();
+    if (!taskId) {
+      setCycleCountStatus($root, "Save a custom cycle count task before recording manager posture.", "error");
+      return Promise.resolve();
+    }
+    const args = {
+      task_id: taskId,
+      decision,
+      note: decision === "mark_clean_count" ? "Cycle count reviewed from Warehouse Console workflow." : "Recorded from Warehouse Console Cycle Count workflow.",
+      inventory_admin_escalation_reference: decision === "escalate_to_inventory_admin" ? "Warehouse Console posture only" : "",
+      request_id: cycleCountRequestId("cycle-count-manager", `${taskId}-${decision}`),
+    };
+    setCycleCountBusy($root, true);
+    setCycleCountStatus($root, "Recording manager posture on custom cycle count task...", "pending");
+    markWarehouseDiagnostic("cycleCountManagerDecisionCallAttempted");
+    return cycleCountCall(CYCLE_COUNT_MANAGER_DECISION_METHOD, args).then((responsePayload) => {
+      const status = responsePayload && responsePayload.task && responsePayload.task.count_status ? responsePayload.task.count_status : decision;
+      $root.removeData("warehouseCycleCountTaskId");
+      markWarehouseDiagnostic("cycleCountManagerDecisionSaved");
+      setCycleCountStatus($root, `Manager posture recorded: ${status}. Custom record only; no Stock Reconciliation, Stock Entry, stock movement, ledger, or balance record was created.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic("cycleCountManagerDecisionFailed");
+      setCycleCountStatus($root, error && error.message ? error.message : "Could not record cycle count manager posture.", "error");
+    }).finally(() => {
+      setCycleCountBusy($root, false);
+    });
+  }
+
+  function renderCycleCountField(fieldname, label, value, options) {
+    const config = options || {};
+    const type = config.type || "text";
+    const className = config.wide ? "warehouse-return-intake-field is-wide" : "warehouse-return-intake-field";
+    if (config.select) {
+      const optionsMarkup = config.select.map((item) => `<option value="${escapeHtml(item.value)}"${item.value === value ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
+      return `<div class="${className}"><label>${escapeHtml(label)}</label><select data-warehouse-cycle-count-field="${escapeHtml(fieldname)}">${optionsMarkup}</select></div>`;
+    }
+    return `<div class="${className}"><label>${escapeHtml(label)}</label><input type="${escapeHtml(type)}" value="${escapeHtml(value == null ? "" : value)}" placeholder="${escapeHtml(config.placeholder || "")}" data-warehouse-cycle-count-field="${escapeHtml(fieldname)}"></div>`;
+  }
+
+  function renderCycleCountManagerButton(decision, label, note) {
+    return `
+      <button class="warehouse-return-decision-button" type="button" disabled aria-disabled="true" data-warehouse-cycle-count-decision-action data-warehouse-cycle-count-decision="${escapeHtml(decision)}">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(note)}</span>
+      </button>
+    `;
+  }
+
+  function renderCycleCountWorkflow(context) {
+    const canManage = cycleCountCanManage(context || {});
+    return `
+      <section class="sales-console-card sales-console-section warehouse-workflow-card warehouse-cycle-count-workflow" data-warehouse-cycle-count-workflow data-warehouse-workflow-card data-warehouse-workflow-kind="cycle_count">
+        <div class="warehouse-workflow-head" data-warehouse-workflow-head>
+          <div class="warehouse-workflow-copy">
+            <h2 class="warehouse-workflow-title">Cycle Count workflow</h2>
+            <div class="warehouse-workflow-subtitle">Record blind count evidence, variance posture, and manager review in custom Warehouse records only.</div>
+          </div>
+          <span class="warehouse-workflow-mode" data-warehouse-workflow-mode>Custom workflow</span>
+        </div>
+        <div class="warehouse-workflow-guardrail" data-warehouse-cycle-count-guardrail data-warehouse-workflow-guardrail>
+          No Stock Reconciliation or Stock Entry is created. No stock is adjusted, posted, reserved, or written to Stock Ledger or Stock Balance from this workflow.
+        </div>
+        <div class="warehouse-workflow-body" data-warehouse-workflow-body>
+          <section class="warehouse-workflow-panel" data-warehouse-cycle-count-task-panel data-warehouse-workflow-panel="evidence">
+            <div class="warehouse-workflow-panel-head">
+              <span class="warehouse-workflow-kicker">Count workflow</span>
+              <div class="warehouse-workflow-panel-title">Count evidence</div>
+              <div class="warehouse-workflow-panel-note">Save a custom cycle count task first. Manager controls unlock only after the custom task exists.</div>
+            </div>
+            <div class="warehouse-return-intake-status" data-warehouse-cycle-count-status-message data-warehouse-cycle-count-tone="info">
+              <strong>Custom cycle count not recorded</strong>
+              <span>No custom cycle count task has been saved from this page yet.</span>
+            </div>
+            <div class="warehouse-return-intake-form" data-warehouse-cycle-count-form>
+              <div class="warehouse-return-intake-fields">
+                ${renderCycleCountField("warehouse", "Warehouse", "Yangon Main Warehouse - MMOB", { placeholder: "Warehouse" })}
+                ${renderCycleCountField("count_source", "Count source", "spot_count", { select: [
+                  { value: "scheduled_cycle_count", label: "Scheduled cycle count" },
+                  { value: "spot_count", label: "Spot count" },
+                  { value: "exception_count", label: "Exception count" },
+                  { value: "manager_request", label: "Manager request" },
+                  { value: "post_movement_check", label: "Post movement check" },
+                  { value: "return_exception_check", label: "Return exception check" },
+                  { value: "internal_transfer_check", label: "Internal transfer check" },
+                ] })}
+                ${renderCycleCountField("count_scope", "Count scope", "item_specific", { select: [
+                  { value: "warehouse_scope", label: "Warehouse scope" },
+                  { value: "item_specific", label: "Item specific" },
+                  { value: "location_reference", label: "Location reference" },
+                  { value: "serial_batch", label: "Serial/batch" },
+                  { value: "quarantine_restricted", label: "Quarantine restricted" },
+                  { value: "movement_exception", label: "Movement exception" },
+                ] })}
+                ${renderCycleCountField("location_reference_text", "Scope reference", "", { placeholder: "Bin, zone, shelf, or scope" })}
+                ${renderCycleCountField("count_reason", "Count reason", "", { placeholder: "Reason for count", wide: true })}
+                ${renderCycleCountField("count_priority", "Priority", "Normal", { select: [
+                  { value: "Normal", label: "Normal" },
+                  { value: "High", label: "High" },
+                  { value: "Urgent", label: "Urgent" },
+                ] })}
+                ${renderCycleCountField("expected_quantity_visibility", "Expected visibility", "blind_count", { select: [
+                  { value: "blind_count", label: "Blind count" },
+                  { value: "guided_count", label: "Guided count" },
+                  { value: "manager_visible", label: "Manager visible" },
+                  { value: "inventory_admin_visible", label: "Inventory/Admin visible" },
+                ] })}
+              </div>
+              <div class="warehouse-return-intake-line-fields" data-warehouse-cycle-count-line>
+                ${renderCycleCountField("item_code", "Item code", "", { placeholder: "Item code" })}
+                ${renderCycleCountField("item_name", "Item name", "", { placeholder: "Optional item name" })}
+                ${renderCycleCountField("line_location_reference_text", "Line location", "", { placeholder: "Bin, shelf, or zone" })}
+                ${renderCycleCountField("uom", "UOM", "Nos", { placeholder: "UOM" })}
+                ${renderCycleCountField("expected_qty_snapshot", "Expected", "", { type: "number", placeholder: "Guided only" })}
+                ${renderCycleCountField("counted_qty", "Counted", "", { type: "number", placeholder: "0" })}
+                ${renderCycleCountField("variance_qty", "Variance", "0", { type: "number" })}
+                ${renderCycleCountField("variance_direction", "Variance posture", "No Variance", { select: [
+                  { value: "No Variance", label: "No variance" },
+                  { value: "Positive Variance", label: "Positive variance" },
+                  { value: "Negative Variance", label: "Negative variance" },
+                  { value: "Zero Count", label: "Zero count" },
+                  { value: "Unexpected Item", label: "Unexpected item" },
+                  { value: "Missing Item", label: "Missing item" },
+                  { value: "Serial/Batch Review", label: "Serial/batch review" },
+                  { value: "Quarantine Review", label: "Quarantine review" },
+                  { value: "Blocked Review", label: "Blocked review" },
+                ] })}
+                ${renderCycleCountField("condition_grade", "Condition", "Good", { placeholder: "Good, mixed, damaged, blocked" })}
+                ${renderCycleCountField("reason_code", "Reason", "", { placeholder: "Reason or discrepancy" })}
+                ${renderCycleCountField("evidence_reference", "Evidence", "", { placeholder: "Photo, bin, count note, or tag", wide: true })}
+                ${renderCycleCountField("serial_batch_reference_text", "Serial/batch", "", { placeholder: "Optional serial or batch reference" })}
+                ${renderCycleCountField("line_status", "Line status", "Counted", { select: [
+                  { value: "Pending Count", label: "Pending count" },
+                  { value: "Counted", label: "Counted" },
+                  { value: "Submitted For Review", label: "Submitted for review" },
+                  { value: "Recount Requested", label: "Recount requested" },
+                  { value: "Clean Count", label: "Clean count" },
+                  { value: "Variance Review", label: "Variance review" },
+                  { value: "Blocked Review", label: "Blocked review" },
+                  { value: "Closed", label: "Closed" },
+                ] })}
+                ${renderCycleCountField("evidence_status", "Evidence status", "Draft count evidence", { placeholder: "Evidence status" })}
+                ${renderCycleCountField("notes", "Notes", "", { placeholder: "Optional internal note", wide: true })}
+                ${renderCycleCountField("assigned_user", "Assigned user", "", { placeholder: "Optional assignee" })}
+              </div>
+              <div class="warehouse-return-intake-actions">
+                <button class="warehouse-return-intake-save" type="button" data-warehouse-cycle-count-save>Save count task</button>
+              </div>
+              <div class="warehouse-workflow-tags"><span>No Stock Reconciliation</span><span>No Stock Entry</span><span>No stock adjusted</span></div>
+            </div>
+          </section>
+          <section class="warehouse-workflow-panel" data-warehouse-cycle-count-manager-panel data-warehouse-workflow-panel="manager" data-warehouse-cycle-count-can-manage="${canManage ? "true" : "false"}">
+            <div class="warehouse-workflow-panel-head">
+              <span class="warehouse-workflow-kicker">${canManage ? "Manager posture" : "Manager only"}</span>
+              <div class="warehouse-workflow-panel-title">Variance decision posture</div>
+              <div class="warehouse-workflow-panel-note">${canManage ? "Manager controls update only the custom cycle count task status and event log." : "Warehouse users can save count evidence; manager decisions remain disabled here."}</div>
+            </div>
+            <div class="warehouse-return-decision-grid">
+              <section class="warehouse-return-decision-section">
+                <div class="warehouse-return-decision-section-title">Cycle count posture</div>
+                <div class="warehouse-return-decision-section-note">Save a task first. These controls never create Stock Reconciliation, Stock Entry, or stock movement.</div>
+                <div class="warehouse-return-decision-controls">
+                  ${renderCycleCountManagerButton("mark_clean_count", "Mark clean count", "For count evidence with no variance or exception.")}
+                  ${renderCycleCountManagerButton("request_recount", "Request recount", "Ask Warehouse user to verify unclear count evidence.")}
+                  ${renderCycleCountManagerButton("mark_variance_review", "Mark variance review", "Keep positive/negative variance evidence for review.")}
+                  ${renderCycleCountManagerButton("mark_quarantine_review", "Mark quarantine review", "Keep blocked or quarantine posture separate.")}
+                  ${renderCycleCountManagerButton("mark_serial_batch_review", "Mark serial/batch review", "Route serial or batch evidence for review.")}
+                  ${renderCycleCountManagerButton("escalate_to_inventory_admin", "Mark Inventory/Admin review needed", "Custom posture only; no handoff request or adjustment document is created.")}
+                  ${renderCycleCountManagerButton("close_cycle_count", "Close count posture", "Close the custom task posture with manager note.")}
+                </div>
+              </section>
+              <section class="warehouse-return-decision-section">
+                <div class="warehouse-return-decision-section-title">Adjustment policy</div>
+                <div class="warehouse-return-decision-section-note">Inventory/Admin owns any separate owner-approved Stock Reconciliation policy outside this workflow.</div>
+                <div class="warehouse-workflow-tags"><span>Custom records only</span><span>System document access blocked</span><span>Stock posting blocked</span></div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </section>
+    `;
+  }
+
+  function bindCycleCountWorkflowHandlers($root) {
+    $root.find("[data-warehouse-cycle-count-save]").on("click", (event) => {
+      event.preventDefault();
+      saveCycleCountTaskDraft($root);
+    });
+    $root.find("[data-warehouse-cycle-count-decision-action]").on("click", (event) => {
+      event.preventDefault();
+      const decision = event.currentTarget.getAttribute("data-warehouse-cycle-count-decision") || "";
+      saveCycleCountManagerDecision($root, decision);
+    });
+    syncCycleCountManagerControls($root);
   }
 
   function renderOverview(page, payload) {
@@ -8497,7 +10255,7 @@
           <div class="sales-console-header-row warehouse-cockpit-command-row">
             <div class="sales-console-header-copy">
               <h1 class="sales-console-title warehouse-console-title">Warehouse Console</h1>
-              <div class="sales-console-header-note warehouse-console-note">Read-only review and planning workspace for inbound receiving, outbound picking, stock exceptions, posted movements, and transfer visibility.</div>
+              <div class="sales-console-header-note warehouse-console-note">Custom Warehouse workflow workspace for receiving, picking, returns, internal transfer, cycle count, stock exceptions, posted movement visibility, and transfer visibility.</div>
             </div>
           </div>
           <div class="sales-console-kpi-grid warehouse-console-kpi-grid warehouse-cockpit-pulse-grid" data-count="3" data-warehouse-cockpit-pulse>${heroPulseCards.map(renderPulseCard).join("")}</div>
@@ -8513,21 +10271,9 @@
         </section>
         ${renderCockpitStart(payload, kpis)}
         ${renderCockpitActionCenter(payload.action_center || {})}
-        ${renderPlannedWorkflowShells()}
       </div>
     `);
-    $root.find("[data-warehouse-planned-workflow-toggle]").on("click", (event) => {
-      event.preventDefault();
-      const $toggle = $(event.currentTarget);
-      const workflowKey = $toggle.attr("data-warehouse-planned-workflow-toggle") || "";
-      const wasExpanded = $toggle.attr("aria-expanded") === "true";
-      $root.find("[data-warehouse-planned-workflow-toggle]").attr("aria-expanded", "false").text("View details").closest("[data-warehouse-planned-workflow-card]").removeClass("is-expanded");
-      $root.find("[data-warehouse-planned-workflow-detail]").prop("hidden", true);
-      if (!wasExpanded && workflowKey) {
-        $toggle.attr("aria-expanded", "true").text("Hide details").closest("[data-warehouse-planned-workflow-card]").addClass("is-expanded");
-        $root.find(`[data-warehouse-planned-workflow-detail="${workflowKey}"]`).prop("hidden", false);
-      }
-    });
+    $root.data("warehouseReturnsCanManage", returnsCanManage(payload.context || {}));
     $root.find("[data-warehouse-refresh]").on("click", (event) => {
       event.preventDefault();
       activeOverviewRenderState = null;
@@ -8544,26 +10290,32 @@
       frappe.route_options = {};
       frappe.set_route(WORKLIST_PAGE_KEY, "outbound-picking");
     });
-    $root.find("[data-warehouse-open-stock-exceptions]").on("click", (event) => {
+    $root.find("[data-warehouse-open-returns]").on("click", (event) => {
       event.preventDefault();
       frappe.route_options = {};
-      frappe.set_route(WORKLIST_PAGE_KEY, "stock-exceptions");
+      frappe.set_route(WORKLIST_PAGE_KEY, "returns-work-hub");
     });
-    $root.find("[data-warehouse-open-movement]").on("click", (event) => {
+    $root.find("[data-warehouse-open-internal-transfer]").on("click", (event) => {
       event.preventDefault();
       frappe.route_options = {};
-      frappe.set_route(WORKLIST_PAGE_KEY, "movement-visibility");
+      frappe.set_route(WORKLIST_PAGE_KEY, "internal-transfer-workflow");
     });
-    $root.find("[data-warehouse-open-transfer]").on("click", (event) => {
+    $root.find("[data-warehouse-open-cycle-count]").on("click", (event) => {
       event.preventDefault();
       frappe.route_options = {};
-      frappe.set_route(WORKLIST_PAGE_KEY, "transfer-visibility");
+      frappe.set_route(WORKLIST_PAGE_KEY, "cycle-count-workflow");
     });
     $root.find("[data-warehouse-action-center-open]").on("click", (event) => {
       event.preventDefault();
       const card = event.currentTarget.closest("[data-warehouse-action-center-card]");
       const route = card ? card.getAttribute("data-warehouse-action-center-route") : "";
       const routePart = card ? card.getAttribute("data-warehouse-action-center-route-part") : "";
+      const targetSection = card ? card.getAttribute("data-warehouse-action-center-target-section") : "";
+      if (targetSection === "returns-work-hub") {
+        frappe.route_options = {};
+        frappe.set_route(WORKLIST_PAGE_KEY, "returns-work-hub");
+        return;
+      }
       if (route === WORKLIST_PAGE_KEY && isSupportedWorklistQueue(routePart)) {
         frappe.route_options = {};
         frappe.set_route(WORKLIST_PAGE_KEY, worklistViewName(routePart));
@@ -8587,6 +10339,9 @@
     if (!isWarehouseOwnedRouteKey(activeWarehouseRouteKey())) return;
     document.querySelectorAll(".page-head").forEach((head) => {
       if (head instanceof HTMLElement) head.remove();
+    });
+    document.querySelectorAll("[data-warehouse-route-loading]").forEach((shell) => {
+      if (shell instanceof HTMLElement) shell.remove();
     });
   }
 
@@ -8620,14 +10375,15 @@
     const routeSignature = overviewRouteSignature();
     const active = activeOverviewRenderState;
     if (active && active.routeSignature === routeSignature && active.root && document.body.contains(active.root)) {
-      if (rootHasWarehouseShell(active.root)) return;
+      const activeAge = Date.now() - Number(active.startedAt || 0);
+      if (activeAge < 8000) return;
       activeOverviewRenderState = null;
     }
     const page = makeConsolePage(wrapper);
-    renderLoadingState(page);
     const renderToken = ++overviewRenderSerial;
-    activeOverviewRenderState = { routeSignature, token: renderToken, root: pageBodyElement(page) };
-    ensureConsoleRuntime().then(() => fetchOverviewWithRetry(0)).then((response) => {
+    activeOverviewRenderState = { routeSignature, token: renderToken, root: pageBodyElement(page), startedAt: Date.now() };
+    ensureConsoleRuntime().catch(() => null);
+    fetchOverviewWithRetry(0).then((response) => {
       if (!isActiveWarehouseRoute() || overviewRouteSignature() !== routeSignature) return;
       if (!activeOverviewRenderState || activeOverviewRenderState.token !== renderToken) return;
       const payload = response && response.message ? response.message : {};
@@ -8687,7 +10443,14 @@
   }
 
   function hasReadyWorklistShell(queueKey) {
-    return Boolean(document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${worklistViewName(queueKey)}"]`));
+    const selector = `.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${worklistViewName(queueKey)}"]`;
+    const wrapper = directInboundRenderWrapper();
+    if (wrapper && typeof wrapper.querySelector === "function" && wrapper.querySelector(selector)) return true;
+    const shell = document.querySelector(selector);
+    if (!shell) return false;
+    const activeHost = wrapper && wrapper.nodeType === 1 ? wrapper : null;
+    if (activeHost && !activeHost.contains(shell)) return false;
+    return true;
   }
 
   function hasReadyInboundShell() {
@@ -8714,14 +10477,33 @@
 
   function scheduleActiveInboundRender() {
     renderActiveInboundRoute();
+    if (window && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(renderActiveInboundRoute);
+    }
     setTimeout(renderActiveInboundRoute, 80);
     setTimeout(renderActiveInboundRoute, 220);
     setTimeout(renderActiveInboundRoute, 700);
+    setTimeout(renderActiveInboundRoute, 1200);
   }
 
   function bindActiveInboundGuard() {
     if (inboundRouteGuardBound || !window || typeof window.setInterval !== "function") return;
     inboundRouteGuardBound = true;
+    const scheduleIfWorklistRoute = () => {
+      if (isActiveWarehouseWorklistRoute()) scheduleActiveInboundRender();
+    };
+    if (frappe.router && typeof frappe.router.on === "function" && !frappe.router.erpwWarehouseWorklistRouteGuardBound) {
+      frappe.router.erpwWarehouseWorklistRouteGuardBound = true;
+      frappe.router.on("change", () => {
+        if (frappe.after_ajax && typeof frappe.after_ajax === "function") {
+          frappe.after_ajax(scheduleIfWorklistRoute);
+          return;
+        }
+        setTimeout(scheduleIfWorklistRoute, 0);
+      });
+    }
+    window.addEventListener("hashchange", scheduleIfWorklistRoute);
+    window.addEventListener("popstate", scheduleIfWorklistRoute);
     window.setInterval(() => {
       if (shouldSelfRenderInbound()) renderActiveInboundRoute();
     }, 220);
@@ -9078,9 +10860,9 @@
         </article>
       `;
     }
-    const detailButton = row.purchase_order
+    const detailButton = row.purchase_orde
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-detail>View details</button>'
-      : row.sales_order
+      : row.sales_orde
         ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-row-open-picking-detail>View details</button>'
         : "";
     return `
@@ -9162,10 +10944,10 @@
     const postureButton = postureToken
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-posture>Review stock posture</button>'
       : "";
-    const pickingButton = pickingTarget.sales_order
+    const pickingButton = pickingTarget.sales_orde
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-picking>View picking review</button>'
       : "";
-    const receivingButton = receivingTarget.purchase_order
+    const receivingButton = receivingTarget.purchase_orde
       ? '<button type="button" class="warehouse-inbound-queue-button" data-warehouse-stock-exception-route-receiving>View inbound review</button>'
       : "";
     return `
@@ -9833,7 +11615,7 @@
   }
 
   function receivingSummaryText(header) {
-    const parts = [header.purchase_order, "Read-only receiving posture"].filter(Boolean);
+    const parts = [header.purchase_order, "Custom receiving workflow"].filter(Boolean);
     return parts.join(" · ");
   }
 
@@ -9876,7 +11658,7 @@
     });
     if (!unavailable && (!lines || !lines.length)) counts.unavailable += 1;
     return [
-      { key: "ready", label: "Ready Later", value: counts.ready, note: "Open lines with clear warehouse posture." },
+      { key: "ready", label: "Ready For Count", value: counts.ready, note: "Open lines with clear warehouse posture." },
       { key: "blocked", label: "Needs Review", value: counts.blocked, note: "Overdue, missing, or unclear posture." },
       { key: "received", label: "Already Received", value: counts.received, note: "Lines with no open quantity visible." },
       { key: "unavailable", label: "Unavailable", value: counts.unavailable, note: "Details hidden or not available." },
@@ -9897,7 +11679,7 @@
     return `
       <div class="warehouse-receiving-card warehouse-visual-summary-card" data-warehouse-receiving-card="${escapeHtml(card.key || "")}">
         <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
-        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-value ${String(card.key || "") === "state" ? "warehouse-receiving-status-value" : ""}">${escapeHtml(card.value == null ? "--" : card.value)}</div>
         <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
       </div>
     `;
@@ -9969,28 +11751,79 @@
     `;
   }
 
-  function renderReceivingWorkflowStatusStrip() {
+  function receivingWorkflowTask(payload) {
+    const task = payload && payload.workflow_task;
+    return task && typeof task === "object" ? task : { available: false };
+  }
+
+  function receivingCanManageTask(context) {
+    const roles = Array.isArray(context && context.roles) ? context.roles : [];
+    const roleVariant = String(context && context.role_variant || "");
+    return roleVariant === "warehouse_manager"
+      || roleVariant === "system_manager"
+      || roles.includes("Warehouse Manager")
+      || roles.includes("Stock Manager")
+      || roles.includes("System Manager");
+  }
+
+  function receivingTaskLineKey(line) {
+    return `${String(line && line.item_code || "").trim()}::${String(line && line.target_warehouse || "").trim()}`;
+  }
+
+  function receivingTaskLineMap(task) {
+    const map = {};
+    (Array.isArray(task && task.lines) ? task.lines : []).forEach((line) => {
+      const key = receivingTaskLineKey(line);
+      if (key !== "::") map[key] = line;
+    });
+    return map;
+  }
+
+  function receivingWorkflowTaskSummary(task) {
+    if (!task || !task.available) {
+      return "No custom receiving task has been recorded for this order yet.";
+    }
+    const parts = [
+      task.task_id ? `Task ${task.task_id}` : "Custom task",
+      task.status || "Status not visible",
+      task.line_count == null ? "" : `${task.line_count} line${Number(task.line_count) === 1 ? "" : "s"}`,
+    ].filter(Boolean);
+    return parts.join(" · ");
+  }
+
+  function renderReceivingWorkflowTaskSummary(task) {
+    const status = receivingWorkflowTaskSummary(task);
+    return `
+      <div class="warehouse-receiving-workflow-task-summary" data-warehouse-receiving-workflow-status-message>
+        <strong>${escapeHtml(task && task.available ? "Custom receiving task" : "Custom receiving task not recorded")}</strong>
+        <span>${escapeHtml(status)}</span>
+      </div>
+    `;
+  }
+
+  function renderReceivingWorkflowStatusStrip(task) {
     const statuses = [
       "Not Started",
       "In Progress",
       "Submitted For Review",
       "Manager Review",
-      "Procurement Escalation",
-      "Draft Prepared",
+      "Procurement Review Needed",
+      "Separate Document Policy",
     ];
+    const currentStatus = task && task.available ? String(task.status || "In Progress") : "Not Started";
     return `
       <div class="warehouse-receiving-workflow-status" data-warehouse-receiving-workflow-status-strip>
-        ${statuses.map((status) => `<div class="warehouse-receiving-workflow-status-step" data-warehouse-receiving-workflow-status="${escapeHtml(status)}">${escapeHtml(status)}</div>`).join("")}
+        ${statuses.map((status) => `<div class="warehouse-receiving-workflow-status-step ${status === currentStatus ? "is-active" : ""}" data-warehouse-receiving-workflow-status="${escapeHtml(status)}">${escapeHtml(status)}</div>`).join("")}
       </div>
     `;
   }
 
-  function renderReceivingPlannedControl(key, title, note) {
+  function renderReceivingWorkflowControl(key, title, note) {
     return `
-      <div class="warehouse-receiving-planned-control" aria-disabled="true" data-warehouse-receiving-workflow-control="${escapeHtml(key)}">
+      <button type="button" class="warehouse-receiving-workflow-control" data-warehouse-receiving-workflow-control="${escapeHtml(key)}" data-warehouse-receiving-action="${escapeHtml(key)}">
         <strong>${escapeHtml(title)}</strong>
-        <span>${escapeHtml(note || "Planned control, not active yet.")}</span>
-      </div>
+        <span>${escapeHtml(note || "Custom receiving task action.")}</span>
+      </button>
     `;
   }
 
@@ -10003,21 +11836,55 @@
     `;
   }
 
-  function renderReceivingCountEvidenceRow(line) {
+  function renderReceivingCountInput(label, field, value) {
+    return `
+      <label class="warehouse-receiving-count-field">
+        <span>${escapeHtml(label)}</span>
+        <input type="number" min="0" step="any" value="${escapeHtml(value == null || value === "" ? "0" : value)}" data-warehouse-receiving-line-field="${escapeHtml(field)}">
+      </label>
+    `;
+  }
+
+  function renderReceivingCountEvidenceRow(line, taskLine) {
     const uom = line && line.uom ? ` ${line.uom}` : "";
     const expected = line && (line.remaining_qty || line.ordered_qty) ? `${line.remaining_qty || line.ordered_qty}${uom}` : "--";
+    const defaultQty = taskLine && taskLine.counted_qty != null ? taskLine.counted_qty : (line && (line.remaining_qty || line.ordered_qty)) || "0";
+    const acceptedQty = taskLine && taskLine.accepted_qty != null ? taskLine.accepted_qty : defaultQty;
+    const damagedQty = taskLine && taskLine.damaged_qty != null ? taskLine.damaged_qty : "0";
+    const overQty = taskLine && taskLine.over_qty != null ? taskLine.over_qty : "0";
+    const quarantineQty = taskLine && taskLine.quarantine_qty != null ? taskLine.quarantine_qty : "0";
+    const reason = taskLine && taskLine.discrepancy_reason ? String(taskLine.discrepancy_reason) : "";
+    const evidenceReference = taskLine && taskLine.evidence_reference ? String(taskLine.evidence_reference) : "";
+    const reasonOptions = [
+      ["", "No discrepancy"],
+      ["short", "Short"],
+      ["over", "Over"],
+      ["damaged", "Damaged"],
+      ["wrong_item", "Wrong item"],
+      ["quarantine", "Quarantine"],
+      ["supplier_paperwork_mismatch", "Supplier paperwork mismatch"],
+    ];
     return `
-      <div class="warehouse-receiving-count-row" data-warehouse-receiving-count-row="${escapeHtml(line && line.item_code || "")}">
+      <div class="warehouse-receiving-count-row" data-warehouse-receiving-count-row="${escapeHtml(line && line.item_code || "")}" data-warehouse-receiving-line-item="${escapeHtml(line && line.item_code || "")}" data-warehouse-receiving-line-warehouse="${escapeHtml(line && line.target_warehouse || "")}">
         <div class="warehouse-receiving-count-row-title">${escapeHtml(line && line.item_code || "Item not visible")}</div>
         <div class="warehouse-receiving-meta">${escapeHtml(line && line.item_name || "Count evidence model preview")}</div>
         <div class="warehouse-receiving-count-fields">
           ${renderReceivingCountField("Expected", expected)}
-          ${renderReceivingCountField("Counted", "Not active")}
-          ${renderReceivingCountField("Accepted", "Not active")}
-          ${renderReceivingCountField("Damaged", "Not active")}
-          ${renderReceivingCountField("Short", "Not active")}
-          ${renderReceivingCountField("Over", "Not active")}
-          ${renderReceivingCountField("Quarantine", "Not active")}
+          ${renderReceivingCountInput("Counted", "counted_qty", defaultQty)}
+          ${renderReceivingCountInput("Accepted", "accepted_qty", acceptedQty)}
+          ${renderReceivingCountInput("Damaged", "damaged_qty", damagedQty)}
+          ${renderReceivingCountInput("Over", "over_qty", overQty)}
+          ${renderReceivingCountInput("Quarantine", "quarantine_qty", quarantineQty)}
+          <label class="warehouse-receiving-count-field is-wide">
+            <span>Reason</span>
+            <select data-warehouse-receiving-line-field="discrepancy_reason" aria-label="Receiving discrepancy reason">
+              ${reasonOptions.map((option) => `<option value="${escapeHtml(option[0])}" ${option[0] === reason ? "selected" : ""}>${escapeHtml(option[1])}</option>`).join("")}
+            </select>
+          </label>
+          <label class="warehouse-receiving-count-field is-wide">
+            <span>Evidence</span>
+            <input type="text" value="${escapeHtml(evidenceReference)}" placeholder="Photo, note, or tag" data-warehouse-receiving-line-field="evidence_reference">
+          </label>
         </div>
       </div>
     `;
@@ -10032,94 +11899,112 @@
     `;
   }
 
-  function renderReceivingManagerDecision(key, title, note) {
+  function renderReceivingManagerDecision(key, title, note, task, canManage) {
+    const hasTask = Boolean(task && task.available);
+    const decisionReady = Boolean(hasTask && task.manager_decision_available);
+    const disabled = !(canManage && decisionReady);
+    let noteText = note;
+    if (!canManage) {
+      noteText = `Manager only. Warehouse users can save count evidence; this decision stays disabled. ${note}`;
+    } else if (!hasTask) {
+      noteText = `Save count draft first. ${note}`;
+    } else if (!decisionReady) {
+      noteText = `Current custom task status is not decision-ready. ${note}`;
+    }
     return `
-      <div class="warehouse-receiving-manager-card" aria-disabled="true" data-warehouse-receiving-manager-decision="${escapeHtml(key)}">
+      <button type="button" class="warehouse-receiving-manager-card" data-warehouse-receiving-manager-decision="${escapeHtml(key)}" data-warehouse-receiving-manager-action="${escapeHtml(key)}" ${disabled ? "disabled aria-disabled=\"true\"" : ""}>
         <strong>${escapeHtml(title)}</strong>
-        <span>${escapeHtml(note)}</span>
-      </div>
+        <span>${escapeHtml(noteText)}</span>
+      </button>
     `;
   }
 
-  function renderReceivingWorkflowShell(header, lines, statePayload) {
+  function renderReceivingWorkflowShell(header, lines, statePayload, workflowTask, context) {
     const visibleLines = Array.isArray(lines) ? lines.filter((line) => line && line.item_code).slice(0, 4) : [];
     const moreLines = Array.isArray(lines) && lines.length > visibleLines.length ? lines.length - visibleLines.length : 0;
     const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload && statePayload.kind || ""));
+    const taskLineMap = receivingTaskLineMap(workflowTask);
+    const canManage = receivingCanManageTask(context);
     const countRows = visibleLines.length
-      ? visibleLines.map(renderReceivingCountEvidenceRow).join("")
-      : `<div class="warehouse-receiving-count-row warehouse-visual-fallback" data-warehouse-receiving-workflow-empty><div class="warehouse-receiving-count-row-title">No count preview visible</div><div class="warehouse-receiving-meta">${escapeHtml(unavailable ? "Receiving task evidence is not available for this order." : "Item lines will appear here when receiving evidence is enabled.")}</div></div>`;
+      ? visibleLines.map((line) => renderReceivingCountEvidenceRow(line, taskLineMap[receivingTaskLineKey(line)])).join("")
+      : `<div class="warehouse-receiving-count-row warehouse-visual-fallback" data-warehouse-receiving-workflow-empty><div class="warehouse-receiving-count-row-title">No count evidence rows visible</div><div class="warehouse-receiving-meta">${escapeHtml(unavailable ? "Receiving task evidence is not available for this order." : "Item lines appear here when receiving evidence is available for this order.")}</div></div>`;
     return `
       <section class="warehouse-receiving-workflow-shell" data-warehouse-receiving-workflow-shell data-warehouse-w15c2-shell="true">
         <div class="warehouse-receiving-workflow-head">
           <div>
             <h2 class="warehouse-receiving-workflow-title">Receiving workflow</h2>
-            <div class="warehouse-receiving-workflow-subtitle">Controlled future workflow shell for arrival checks, count evidence, manager review, and Procurement escalation. This preview is display-only.</div>
+            <div class="warehouse-receiving-workflow-subtitle">Custom receiving task workflow for count evidence, manager review, and Procurement review posture. It records only Warehouse custom records.</div>
           </div>
-          <span class="warehouse-receiving-workflow-badge" data-warehouse-receiving-workflow-state>Shell only</span>
+          <span class="warehouse-receiving-workflow-badge" data-warehouse-receiving-workflow-state>Custom workflow</span>
         </div>
         <div class="warehouse-receiving-workflow-guardrail" data-warehouse-receiving-workflow-guardrail>
           <strong>No stock is posted.</strong>
-          <span>No Purchase Receipt is created or submitted from this shell. Draft preparation comes later through an approved workflow and remains unsubmitted.</span>
+          <span>No Purchase Receipt is created, saved, or submitted from this workflow. It records custom count evidence and manager posture only.</span>
         </div>
-        ${renderReceivingWorkflowStatusStrip()}
+        ${renderReceivingWorkflowTaskSummary(workflowTask)}
+        ${renderReceivingWorkflowStatusStrip(workflowTask)}
         <div class="warehouse-receiving-workflow-grid">
           <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-user-work-panel>
             <div>
               <div class="warehouse-receiving-workflow-card-title">Warehouse User Work Panel</div>
-              <div class="warehouse-receiving-workflow-card-note">Planned controls are visible for workflow shape only. They are inactive and do not change stock or receiving records.</div>
+              <div class="warehouse-receiving-workflow-card-note">Record visible count evidence into the custom Warehouse Receiving Task. Stock and Purchase Receipt documents stay untouched.</div>
             </div>
-            <div class="warehouse-receiving-planned-actions">
-              ${renderReceivingPlannedControl("start_arrival_check", "Start arrival check", "Planned action for confirming goods physically arrived.")}
-              ${renderReceivingPlannedControl("save_count_draft", "Save count draft", "Planned action for storing count evidence after workflow approval.")}
-              ${renderReceivingPlannedControl("submit_for_review", "Send to manager review", "Planned handoff for manager review, not active now.")}
+            <div class="warehouse-receiving-workflow-actions">
+              ${renderReceivingWorkflowControl("record_count_draft", "Record count draft", "Record count evidence to the custom receiving task only.")}
+              ${renderReceivingWorkflowControl("refresh_workflow_status", "Refresh task status", "Reload the custom receiving task summary for this order.")}
             </div>
           </section>
           <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-discrepancy-panel>
             <div>
               <div class="warehouse-receiving-workflow-card-title">Discrepancy categories</div>
-              <div class="warehouse-receiving-workflow-card-note">Future evidence-required categories for manager review and Procurement escalation.</div>
+              <div class="warehouse-receiving-workflow-card-note">Evidence-required categories for manager review and separate Procurement ownership.</div>
             </div>
             <div class="warehouse-receiving-discrepancy-grid">
               ${renderReceivingDiscrepancyCard("short", "Short", "Evidence required when received quantity is below expected quantity.")}
               ${renderReceivingDiscrepancyCard("over", "Over", "Procurement owns over-receipt policy and supplier follow-up.")}
               ${renderReceivingDiscrepancyCard("damaged", "Damaged", "Evidence required before quarantine or supplier claim.")}
-              ${renderReceivingDiscrepancyCard("wrong_item", "Wrong item", "Procurement escalation required; do not accept as normal stock.")}
+              ${renderReceivingDiscrepancyCard("wrong_item", "Wrong item", "Procurement review needed; do not accept as normal stock.")}
               ${renderReceivingDiscrepancyCard("quarantine", "Quarantine", "Hold posture for damaged, wrong, or unresolved goods.")}
               ${renderReceivingDiscrepancyCard("supplier_paperwork_mismatch", "Supplier paperwork mismatch", "Evidence required before Procurement follow-up.")}
-              ${renderReceivingDiscrepancyCard("procurement_escalation", "Procurement escalation", "For PO correction, supplier dispute, or commercial decision.")}
+              ${renderReceivingDiscrepancyCard("procurement_escalation", "Procurement review needed", "For PO correction, supplier dispute, or commercial decision.")}
             </div>
           </section>
         </div>
         <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-count-evidence-preview>
-          <div>
-            <div class="warehouse-receiving-workflow-card-title">Count Evidence Preview</div>
-            <div class="warehouse-receiving-workflow-card-note">Future count model based on visible receiving lines for ${escapeHtml(header && header.purchase_order || "this order")}. Values are display-only placeholders.${moreLines ? ` Showing first ${visibleLines.length} lines; ${moreLines} more remain in Item Lines.` : ""}</div>
+          <div class="warehouse-receiving-count-card-head">
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Count evidence</div>
+              <div class="warehouse-receiving-workflow-card-note">Enter counted, accepted, exception quantities, reason, and evidence for ${escapeHtml(header && header.purchase_order || "this order")}. Values save only to the custom receiving task.${moreLines ? ` Showing first ${visibleLines.length} lines; ${moreLines} more remain in Item Lines.` : ""}</div>
+            </div>
+            <div class="warehouse-receiving-count-actions">
+              <button type="button" class="warehouse-receiving-count-save" data-warehouse-receiving-action="record_count_draft" data-warehouse-receiving-count-save>Save draft</button>
+            </div>
           </div>
           <div class="warehouse-receiving-count-grid">${countRows}</div>
         </section>
         <div class="warehouse-receiving-workflow-grid">
           <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-manager-preview>
             <div>
-              <div class="warehouse-receiving-workflow-card-title">Manager Decision Preview</div>
-              <div class="warehouse-receiving-workflow-card-note">Planned Warehouse Manager decisions are shown as non-active review cards.</div>
+              <div class="warehouse-receiving-workflow-card-title">Manager decision</div>
+              <div class="warehouse-receiving-workflow-card-note">Manager decisions update only the custom receiving task status and event log.</div>
             </div>
             <div class="warehouse-receiving-manager-grid">
-              ${renderReceivingManagerDecision("request_recount", "Request recount", "Ask Warehouse User to verify unclear counts.")}
-              ${renderReceivingManagerDecision("approve_clean_receipt", "Approve clean receipt", "For counts that match visible PO receiving posture.")}
-              ${renderReceivingManagerDecision("approve_shortage_within_tolerance", "Approve shortage within tolerance", "Allowed only after owner-approved tolerance policy.")}
-              ${renderReceivingManagerDecision("mark_quarantine_review", "Mark quarantine review", "For damaged, wrong, or held goods.")}
-              ${renderReceivingManagerDecision("escalate_to_procurement", "Escalate to Procurement", "Required for overage, wrong item, supplier return, PO correction, or supplier dispute.")}
+              ${renderReceivingManagerDecision("request_recount", "Request recount", "Ask Warehouse User to verify unclear counts.", workflowTask, canManage)}
+              ${renderReceivingManagerDecision("approve_clean", "Mark clean count", "For custom count evidence with no receiving discrepancy.", workflowTask, canManage)}
+              ${renderReceivingManagerDecision("approve_discrepancy", "Mark discrepancy reviewed", "For custom count evidence with a documented receiving discrepancy.", workflowTask, canManage)}
+              ${renderReceivingManagerDecision("mark_quarantine_review", "Mark quarantine review", "For damaged, wrong, or held goods.", workflowTask, canManage)}
+              ${renderReceivingManagerDecision("escalate_to_procurement", "Mark Procurement review needed", "Custom posture only for overage, wrong item, supplier paperwork, PO correction, or supplier dispute.", workflowTask, canManage)}
             </div>
           </section>
           <section class="warehouse-receiving-workflow-card" data-warehouse-receiving-draft-policy>
             <div>
-              <div class="warehouse-receiving-workflow-card-title">Draft Policy Preview</div>
-              <div class="warehouse-receiving-workflow-card-note">Purchase Receipt draft preparation comes later, remains unsubmitted, and requires Procurement/Admin document review after approval.</div>
+              <div class="warehouse-receiving-workflow-card-title">Purchase Receipt policy</div>
+              <div class="warehouse-receiving-workflow-card-note">Purchase Receipt creation is blocked from this custom workflow. Procurement/Admin document handling stays outside Warehouse count evidence.</div>
             </div>
             <div class="warehouse-receiving-discrepancy-grid">
-              ${renderReceivingDiscrepancyCard("draft_later_only", "Draft comes later", "No draft is prepared from this preview.")}
-              ${renderReceivingDiscrepancyCard("draft_unsubmitted", "Draft remains unsubmitted", "Stock posting stays outside this shell.")}
-              ${renderReceivingDiscrepancyCard("document_owner_review", "Document owner review", "Procurement/Admin reviews the draft handoff after preparation.")}
+              ${renderReceivingDiscrepancyCard("purchase_receipt_blocked", "No Purchase Receipt", "No Purchase Receipt draft, save, submit, cancel, or amend starts here.")}
+              ${renderReceivingDiscrepancyCard("stock_posting_blocked", "No stock posting", "Stock posting stays outside this custom workflow.")}
+              ${renderReceivingDiscrepancyCard("document_owner_review", "Separate document policy", "Procurement/Admin document handling is not started here.")}
               ${renderReceivingDiscrepancyCard("exclude_unresolved", "Exclude unresolved issues", "Damaged, wrong, quarantine, or unresolved overage must not become normal accepted draft lines.")}
             </div>
           </section>
@@ -10140,6 +12025,126 @@
     });
   }
 
+  function receivingWorkflowRequestId(prefix, purchaseOrder) {
+    const base = `${prefix}-${purchaseOrder || "order"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return base.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 120);
+  }
+
+  function receivingNumberValue(value) {
+    const number = Number(String(value == null ? "" : value).replace(/,/g, ""));
+    return Number.isFinite(number) && number >= 0 ? number : 0;
+  }
+
+  function receivingLineFieldValue($row, fieldname) {
+    const field = $row.find(`[data-warehouse-receiving-line-field="${fieldname}"]`).first();
+    return field.length ? field.val() : "";
+  }
+
+  function receivingDraftLinesFromInputs($root) {
+    const rows = [];
+    $root.find("[data-warehouse-receiving-count-row]").each(function () {
+      const $row = $(this);
+      const itemCode = String($row.attr("data-warehouse-receiving-line-item") || "").trim();
+      const targetWarehouse = String($row.attr("data-warehouse-receiving-line-warehouse") || "").trim();
+      if (!itemCode || !targetWarehouse) return;
+      rows.push({
+        item_code: itemCode,
+        target_warehouse: targetWarehouse,
+        counted_qty: receivingNumberValue(receivingLineFieldValue($row, "counted_qty")),
+        accepted_qty: receivingNumberValue(receivingLineFieldValue($row, "accepted_qty")),
+        damaged_qty: receivingNumberValue(receivingLineFieldValue($row, "damaged_qty")),
+        over_qty: receivingNumberValue(receivingLineFieldValue($row, "over_qty")),
+        quarantine_qty: receivingNumberValue(receivingLineFieldValue($row, "quarantine_qty")),
+        discrepancy_reason: String(receivingLineFieldValue($row, "discrepancy_reason") || "").trim(),
+        evidence_reference: String(receivingLineFieldValue($row, "evidence_reference") || "").trim(),
+        note: "Recorded from Warehouse Console receiving workflow.",
+      });
+    });
+    return rows;
+  }
+
+  function setReceivingWorkflowStatus($root, message, tone) {
+    const $status = $root.find("[data-warehouse-receiving-workflow-status-message]").first();
+    if (!$status.length) return;
+    $status.attr("data-warehouse-receiving-workflow-tone", tone || "info");
+    $status.find("span").text(message || "");
+  }
+
+  function setReceivingWorkflowBusy($root, busy) {
+    $root.find("[data-warehouse-receiving-action]").prop("disabled", Boolean(busy));
+    if (busy) {
+      $root.find("[data-warehouse-receiving-manager-action]").prop("disabled", true);
+    } else {
+      $root.find("[data-warehouse-receiving-manager-action]").not("[aria-disabled='true']").prop("disabled", false);
+    }
+  }
+
+  function receivingCall(method, args) {
+    return Promise.resolve(frappe.call({ method, args })).then((response) => response && response.message ? response.message : {});
+  }
+
+  function saveReceivingCountDraft(viewState, $root, header) {
+    const purchaseOrder = String(header && header.purchase_order || viewState.purchaseOrder || "").trim();
+    const draftLines = receivingDraftLinesFromInputs($root);
+    const targetWarehouse = draftLines.length ? draftLines[0].target_warehouse : String(header && header.target_warehouse || "").trim();
+    if (!purchaseOrder || !targetWarehouse || !draftLines.length) {
+      setReceivingWorkflowStatus($root, "Receiving count evidence is not available for this order.", "error");
+      return Promise.resolve();
+    }
+    setReceivingWorkflowBusy($root, true);
+    setReceivingWorkflowStatus($root, "Recording custom receiving count draft...", "pending");
+    markWarehouseDiagnostic("receivingTaskDraftCallAttempted");
+    return receivingCall(RECEIVING_TASK_DRAFT_METHOD, {
+      purchase_order: purchaseOrder,
+      target_warehouse: targetWarehouse,
+      lines: draftLines,
+      note: "Recorded from Warehouse Console receiving workflow.",
+      request_id: receivingWorkflowRequestId("receiving-draft", purchaseOrder),
+    }).then((payload) => {
+      viewState.receivingWorkflowTask = payload.task || viewState.receivingWorkflowTask || {};
+      markWarehouseDiagnostic("receivingTaskDraftSaved");
+      setReceivingWorkflowStatus($root, "Custom receiving count draft recorded.", "success");
+      return loadReceivingReview(viewState, purchaseOrder, { force: true });
+    }).catch((error) => {
+      markWarehouseDiagnostic("receivingTaskDraftFailed");
+      setReceivingWorkflowStatus($root, error && error.message ? error.message : "Could not record receiving count draft.", "error");
+    }).finally(() => {
+      setReceivingWorkflowBusy($root, false);
+    });
+  }
+
+  function saveReceivingManagerDecision(viewState, $root, decision) {
+    if (!viewState.receivingCanManageTask) {
+      setReceivingWorkflowStatus($root, "Manager decision is available only to Warehouse Manager, Stock Manager, or System Manager.", "error");
+      return Promise.resolve();
+    }
+    const task = viewState.receivingWorkflowTask || {};
+    const taskId = String(task.task_id || "").trim();
+    const purchaseOrder = String(task.purchase_order || viewState.purchaseOrder || "").trim();
+    if (!taskId) {
+      setReceivingWorkflowStatus($root, "Record count draft before manager decision.", "error");
+      return Promise.resolve();
+    }
+    setReceivingWorkflowBusy($root, true);
+    setReceivingWorkflowStatus($root, "Recording manager decision on custom receiving task...", "pending");
+    markWarehouseDiagnostic("receivingManagerDecisionCallAttempted");
+    return receivingCall(RECEIVING_MANAGER_DECISION_METHOD, {
+      task_id: taskId,
+      decision,
+      note: "Recorded from Warehouse Console receiving workflow.",
+      request_id: receivingWorkflowRequestId(`receiving-manager-${decision}`, purchaseOrder || taskId),
+    }).then((payload) => {
+      viewState.receivingWorkflowTask = payload.task || viewState.receivingWorkflowTask || {};
+      markWarehouseDiagnostic("receivingManagerDecisionSaved");
+      setReceivingWorkflowStatus($root, `Manager decision recorded: ${payload.status || decision}.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic("receivingManagerDecisionFailed");
+      setReceivingWorkflowStatus($root, error && error.message ? error.message : "Could not record manager decision.", "error");
+    }).finally(() => {
+      setReceivingWorkflowBusy($root, false);
+    });
+  }
+
   function renderReceivingReviewPayload(viewState, payload) {
     ensureStyle();
     const header = payload.header || {};
@@ -10151,18 +12156,21 @@
     const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
     const readinessCards = receivingReadinessSummary(lines, unavailable);
     const shellOrder = header.purchase_order || viewState.purchaseOrder || "";
+    const workflowTask = receivingWorkflowTask(payload);
+    viewState.receivingWorkflowTask = workflowTask;
+    viewState.receivingCanManageTask = receivingCanManageTask(payload.context || {});
     const $root = $(`
       <div class="sales-console-shell warehouse-receiving-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-warehouse-view="receiving-review" data-erpw-console-runtime="ready" data-warehouse-receiving-order="${escapeHtml(shellOrder)}" data-warehouse-visual-foundation="w13c2">
         <section class="warehouse-receiving-header warehouse-visual-command">
           <div class="warehouse-receiving-head">
             <div class="warehouse-receiving-command warehouse-visual-command-title">
-              <div class="warehouse-receiving-eyebrow">Read-only receiving posture</div>
+              <div class="warehouse-receiving-eyebrow">Custom receiving workflow</div>
               <h1 class="warehouse-receiving-title">Receiving Review</h1>
               <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Receiving work could not be loaded. Refresh or contact an administrator." : receivingSummaryText(header))}</div>
               <div class="warehouse-receiving-chip-row warehouse-visual-chip-row">
                 <span class="warehouse-receiving-chip warehouse-visual-chip">${escapeHtml(shellOrder || "Order not visible")}</span>
                 <span class="warehouse-receiving-chip warehouse-visual-chip">${escapeHtml(header.status || statePayload.title || "Review")}</span>
-                <span class="warehouse-receiving-chip warehouse-visual-chip is-read-only">Read-only</span>
+                <span class="warehouse-receiving-chip warehouse-visual-chip is-read-only">Custom records only</span>
               </div>
             </div>
             <div class="warehouse-receiving-actions warehouse-visual-action-strip">
@@ -10172,10 +12180,10 @@
           </div>
           ${unavailable ? `<div class="warehouse-receiving-state-panel warehouse-visual-fallback" data-warehouse-receiving-empty><strong>${escapeHtml(statePayload.title || "Receiving review unavailable")}</strong><span>${escapeHtml(statePayload.detail || "Receiving work could not be loaded. Refresh or contact an administrator.")}</span></div>` : `
             <div class="warehouse-receiving-command-grid warehouse-visual-fact-strip">
-              <div class="warehouse-receiving-command-fact warehouse-visual-fact"><span>Supplier</span><strong>${escapeHtml(header.supplier || "Not visible")}</strong></div>
-              <div class="warehouse-receiving-command-fact warehouse-visual-fact"><span>Target warehouse</span><strong>${escapeHtml(header.target_warehouse || "Not visible")}</strong></div>
-              <div class="warehouse-receiving-command-fact warehouse-visual-fact"><span>Expected</span><strong>${escapeHtml(header.required_date || "Not visible")}</strong></div>
-              <div class="warehouse-receiving-command-fact warehouse-visual-fact"><span>Receiving state</span><strong>${escapeHtml(header.state_label || "Review")}</strong></div>
+              <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-receiving-command-fact="supplier"><span>Supplier</span><strong>${escapeHtml(header.supplier || "Not visible")}</strong></div>
+              <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-receiving-command-fact="warehouse"><span>Target warehouse</span><strong>${escapeHtml(header.target_warehouse || "Not visible")}</strong></div>
+              <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-receiving-command-fact="expected"><span>Expected</span><strong>${escapeHtml(header.required_date || "Not visible")}</strong></div>
+              <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-receiving-command-fact="state"><span>Receiving state</span><strong class="warehouse-receiving-status-value">${escapeHtml(header.state_label || "Review")}</strong></div>
             </div>
             <section class="warehouse-receiving-posture-panel" data-warehouse-receiving-posture-panel>
               <div class="warehouse-receiving-posture-head">
@@ -10200,10 +12208,10 @@
           `}
         </section>
         <section class="warehouse-receiving-guardrail warehouse-visual-guardrail" data-warehouse-receiving-guardrail>
-          <strong>Review only</strong>
-          <span>No stock is posted and no Purchase Receipt is created from this screen. Use this page to understand receiving posture before any separate receiving process.</span>
+          <strong>Custom workflow only</strong>
+          <span>No stock is posted and no Purchase Receipt is created from this screen. Count and manager actions write only custom Warehouse receiving task records.</span>
         </section>
-        ${renderReceivingWorkflowShell(header, lines, statePayload)}
+        ${renderReceivingWorkflowShell(header, lines, statePayload, workflowTask, payload.context || {})}
         <section class="warehouse-receiving-detail">
           <div class="warehouse-receiving-detail-head">
             <div>
@@ -10235,6 +12243,21 @@
     $root.find("[data-warehouse-receiving-tab]").on("click", function (event) {
       event.preventDefault();
       activateReceivingTab($root, String(this.getAttribute("data-warehouse-receiving-tab") || "item_lines"));
+    });
+    $root.find("[data-warehouse-receiving-action]").on("click", function (event) {
+      event.preventDefault();
+      const action = String(this.getAttribute("data-warehouse-receiving-action") || "");
+      if (action === "refresh_workflow_status") {
+        loadReceivingReview(viewState, viewState.purchaseOrder, { force: true });
+        return;
+      }
+      if (action === "record_count_draft") {
+        saveReceivingCountDraft(viewState, $root, header);
+      }
+    });
+    $root.find("[data-warehouse-receiving-manager-action]").on("click", function (event) {
+      event.preventDefault();
+      saveReceivingManagerDecision(viewState, $root, String(this.getAttribute("data-warehouse-receiving-manager-action") || ""));
     });
     activateReceivingTab($root, "item_lines");
     replaceWarehouseRouteHost(viewState, $root);
@@ -10364,7 +12387,7 @@
   }
 
   function pickingSummaryText(header) {
-    const parts = [header.sales_order, "Read-only picking posture"].filter(Boolean);
+    const parts = [header.sales_order, "Custom picking workflow"].filter(Boolean);
     return parts.join(" · ");
   }
 
@@ -10417,7 +12440,7 @@
     return `
       <div class="warehouse-receiving-readiness-card warehouse-visual-summary-card is-${escapeHtml(card.tone || "review")}" data-warehouse-picking-readiness-card="${escapeHtml(card.key || "")}">
         <div class="warehouse-receiving-card-label">${escapeHtml(card.label || "")}</div>
-        <div class="warehouse-receiving-card-value">${escapeHtml(card.value == null ? "--" : card.value)}</div>
+        <div class="warehouse-receiving-card-value ${String(card.key || "") === "state" ? "warehouse-receiving-status-value" : ""}">${escapeHtml(card.value == null ? "--" : card.value)}</div>
         <div class="warehouse-receiving-card-note">${escapeHtml(card.note || "")}</div>
       </div>
     `;
@@ -10477,20 +12500,80 @@
     `;
   }
 
-  function renderPickingWorkflowStatusStep(step) {
+  function pickingWorkflowTask(payload) {
+    const task = payload && payload.workflow_task;
+    return task && typeof task === "object" ? task : { available: false };
+  }
+
+  function pickingCanManageTask(context) {
+    const roles = Array.isArray(context && context.roles) ? context.roles : [];
+    const roleVariant = String(context && context.role_variant || "");
+    return roleVariant === "warehouse_manager"
+      || roleVariant === "system_manager"
+      || roles.includes("Warehouse Manager")
+      || roles.includes("Stock Manager")
+      || roles.includes("System Manager");
+  }
+
+  function pickingTaskLineKey(line) {
+    return `${String(line && line.item_code || "").trim()}::${String(line && (line.source_warehouse || line.warehouse) || "").trim()}`;
+  }
+
+  function pickingTaskLineMap(task) {
+    const map = {};
+    (Array.isArray(task && task.lines) ? task.lines : []).forEach((line) => {
+      const key = pickingTaskLineKey(line);
+      if (key !== "::") map[key] = line;
+    });
+    return map;
+  }
+
+  function pickingWorkflowTaskSummary(task) {
+    if (!task || !task.available) {
+      return "No custom picking task has been recorded for this order yet.";
+    }
+    const parts = [
+      task.task_id ? `Task ${task.task_id}` : "Custom task",
+      task.status || "Status not visible",
+      task.line_count == null ? "" : `${task.line_count} line${Number(task.line_count) === 1 ? "" : "s"}`,
+    ].filter(Boolean);
+    return parts.join(" - ");
+  }
+
+  function renderPickingWorkflowTaskSummary(task) {
+    const status = pickingWorkflowTaskSummary(task);
     return `
-      <div class="warehouse-receiving-workflow-status-step" data-warehouse-picking-workflow-status="${escapeHtml(step.key || "")}">
-        ${escapeHtml(step.label || "")}
+      <div class="warehouse-receiving-workflow-task-summary" data-warehouse-picking-workflow-status-message>
+        <strong>${escapeHtml(task && task.available ? "Custom picking task" : "Custom picking task not recorded")}</strong>
+        <span>${escapeHtml(status)}</span>
       </div>
     `;
   }
 
-  function renderPickingPlannedControl(control) {
+  function renderPickingWorkflowStatusStrip(task) {
+    const statuses = [
+      "Not Started",
+      "In Progress",
+      "Submitted For Review",
+      "Manager Review",
+      "Shortage Review",
+      "Sales Review Needed",
+      "Outbound Review Ready",
+    ];
+    const currentStatus = task && task.available ? String(task.status || "In Progress") : "Not Started";
     return `
-      <div class="warehouse-receiving-planned-control" data-warehouse-picking-planned-control="${escapeHtml(control.key || "")}" aria-disabled="true">
-        <strong>${escapeHtml(control.label || "")}</strong>
-        <span>${escapeHtml(control.note || "")}</span>
+      <div class="warehouse-receiving-workflow-status" data-warehouse-picking-workflow-status-strip>
+        ${statuses.map((status) => `<div class="warehouse-receiving-workflow-status-step ${status === currentStatus ? "is-active" : ""}" data-warehouse-picking-workflow-status="${escapeHtml(status)}">${escapeHtml(status)}</div>`).join("")}
       </div>
+    `;
+  }
+
+  function renderPickingActionControl(key, title, note) {
+    return `
+      <button type="button" class="warehouse-receiving-workflow-control" data-warehouse-picking-workflow-control="${escapeHtml(key)}" data-warehouse-picking-action="${escapeHtml(key)}">
+        <strong>${escapeHtml(title || "")}</strong>
+        <span>${escapeHtml(note || "Custom picking task action.")}</span>
+      </button>
     `;
   }
 
@@ -10498,23 +12581,61 @@
     return `
       <div class="warehouse-receiving-count-field">
         <span>${escapeHtml(label || "")}</span>
-        <strong>${escapeHtml(value == null || value === "" ? "Not active" : value)}</strong>
+        <strong>${escapeHtml(value == null || value === "" ? "--" : value)}</strong>
       </div>
     `;
   }
 
-  function renderPickingEvidenceRow(line) {
-    const uom = line.uom || line.stock_uom || "";
-    const openQty = `${line.pending_qty || "0"} ${uom}`.trim();
+  function renderPickingCountInput(label, field, value) {
     return `
-      <div class="warehouse-receiving-count-row" data-warehouse-picking-evidence-row="${escapeHtml(line.item_code || "")}">
-        <div class="warehouse-receiving-count-row-title">${escapeHtml(line.item_code || "Item not visible")}</div>
-        <div class="warehouse-receiving-meta">${escapeHtml(line.item_name || line.source_warehouse || "Line detail not visible")}</div>
+      <label class="warehouse-receiving-count-field">
+        <span>${escapeHtml(label)}</span>
+        <input type="number" min="0" step="any" value="${escapeHtml(value == null || value === "" ? "0" : value)}" data-warehouse-picking-line-field="${escapeHtml(field)}">
+      </label>
+    `;
+  }
+
+  function renderPickingEvidenceRow(line, taskLine) {
+    const uom = line && line.uom ? ` ${line.uom}` : "";
+    const openQty = line && (line.pending_qty || line.open_qty) ? `${line.pending_qty || line.open_qty}${uom}` : `0${uom}`.trim();
+    const pickedQty = taskLine && taskLine.picked_qty != null ? taskLine.picked_qty : (line && (line.pending_qty || line.open_qty)) || "0";
+    const packedQty = taskLine && taskLine.packed_qty != null ? taskLine.packed_qty : pickedQty;
+    const shortQty = taskLine && taskLine.short_qty != null ? taskLine.short_qty : "0";
+    const damagedQty = taskLine && taskLine.damaged_qty != null ? taskLine.damaged_qty : "0";
+    const notFoundQty = taskLine && taskLine.not_found_qty != null ? taskLine.not_found_qty : "0";
+    const exceptionType = taskLine && taskLine.exception_type ? String(taskLine.exception_type) : "";
+    const evidenceReference = taskLine && taskLine.evidence_reference ? String(taskLine.evidence_reference) : "";
+    const exceptionOptions = [
+      ["", "No exception"],
+      ["short", "Short"],
+      ["damaged", "Damaged"],
+      ["not_found", "Not found"],
+      ["wrong_bin", "Wrong bin"],
+      ["unavailable_stock", "Unavailable stock"],
+      ["substitution", "Substitution review"],
+      ["dispatch_paperwork_mismatch", "Paperwork mismatch"],
+    ];
+    return `
+      <div class="warehouse-receiving-count-row" data-warehouse-picking-evidence-row="${escapeHtml(line && line.item_code || "")}" data-warehouse-picking-line-item="${escapeHtml(line && line.item_code || "")}" data-warehouse-picking-line-warehouse="${escapeHtml(line && line.source_warehouse || "")}">
+        <div class="warehouse-receiving-count-row-title">${escapeHtml(line && line.item_code || "Item not visible")}</div>
+        <div class="warehouse-receiving-meta">${escapeHtml(line && line.item_name || line && line.source_warehouse || "Pick evidence model")}</div>
         <div class="warehouse-receiving-count-fields">
           ${renderPickingWorkflowField("Open", openQty)}
-          ${renderPickingWorkflowField("Picked", "Not active")}
-          ${renderPickingWorkflowField("Packed", "Not active")}
-          ${renderPickingWorkflowField("Exception", "Not active")}
+          ${renderPickingCountInput("Picked", "picked_qty", pickedQty)}
+          ${renderPickingCountInput("Packed", "packed_qty", packedQty)}
+          ${renderPickingCountInput("Short", "short_qty", shortQty)}
+          ${renderPickingCountInput("Damaged", "damaged_qty", damagedQty)}
+          ${renderPickingCountInput("Not found", "not_found_qty", notFoundQty)}
+          <label class="warehouse-receiving-count-field is-wide">
+            <span>Exception</span>
+            <select data-warehouse-picking-line-field="exception_type" aria-label="Picking exception type">
+              ${exceptionOptions.map((option) => `<option value="${escapeHtml(option[0])}" ${option[0] === exceptionType ? "selected" : ""}>${escapeHtml(option[1])}</option>`).join("")}
+            </select>
+          </label>
+          <label class="warehouse-receiving-count-field is-wide">
+            <span>Evidence</span>
+            <input type="text" value="${escapeHtml(evidenceReference)}" placeholder="Bin note, photo, or tag" data-warehouse-picking-line-field="evidence_reference">
+          </label>
         </div>
       </div>
     `;
@@ -10529,74 +12650,181 @@
     `;
   }
 
-  function renderPickingWorkflowShell(header, lines, statePayload) {
-    const statusSteps = [
-      { key: "not_started", label: "Not Started" },
-      { key: "in_progress", label: "In Progress" },
-      { key: "submitted", label: "Sent For Review" },
-      { key: "manager_review", label: "Manager Review" },
-      { key: "pack_ready", label: "Pack Ready" },
-      { key: "dispatch_handoff", label: "Dispatch Handoff" },
-    ];
-    const plannedControls = [
-      { key: "start_pick_check", label: "Start pick check", note: "Planned warehouse user step for confirming physical pick work." },
-      { key: "save_pick_draft", label: "Save pick draft", note: "Planned evidence capture for picked, short, damaged, or not-found lines." },
-      { key: "send_manager_review", label: "Send to manager review", note: "Planned handoff for manager decision before dispatch readiness." },
-    ];
+  function renderPickingManagerDecision(key, title, note, task, canManage) {
+    const disabled = !(canManage && task && task.available && task.manager_decision_available);
+    const managerOnly = !canManage ? "Manager only. " : "";
+    return `
+      <button type="button" class="warehouse-receiving-manager-card" data-warehouse-picking-manager-decision="${escapeHtml(key)}" data-warehouse-picking-manager-action="${escapeHtml(key)}" ${disabled ? "disabled aria-disabled=\"true\"" : ""}>
+        <strong>${escapeHtml(!canManage ? "Manager only" : title)}</strong>
+        <span>${escapeHtml(managerOnly + (note || "Custom picking manager decision."))}</span>
+      </button>
+    `;
+  }
+
+  function pickingWorkflowRequestId(prefix, salesOrder) {
+    const base = `${prefix}-${salesOrder || "order"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return base.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 120);
+  }
+
+  function pickingNumberValue(value) {
+    const number = Number(String(value == null ? "" : value).replace(/,/g, ""));
+    return Number.isFinite(number) && number >= 0 ? number : 0;
+  }
+
+  function pickingLineFieldValue($row, fieldname) {
+    const field = $row.find(`[data-warehouse-picking-line-field="${fieldname}"]`).first();
+    return field.length ? field.val() : "";
+  }
+
+  function pickingDraftLinesFromInputs($root) {
+    const rows = [];
+    $root.find("[data-warehouse-picking-evidence-row]").each(function () {
+      const $row = $(this);
+      const itemCode = String($row.attr("data-warehouse-picking-line-item") || "").trim();
+      const sourceWarehouse = String($row.attr("data-warehouse-picking-line-warehouse") || "").trim();
+      if (!itemCode || !sourceWarehouse) return;
+      rows.push({
+        item_code: itemCode,
+        source_warehouse: sourceWarehouse,
+        picked_qty: pickingNumberValue(pickingLineFieldValue($row, "picked_qty")),
+        packed_qty: pickingNumberValue(pickingLineFieldValue($row, "packed_qty")),
+        short_qty: pickingNumberValue(pickingLineFieldValue($row, "short_qty")),
+        damaged_qty: pickingNumberValue(pickingLineFieldValue($row, "damaged_qty")),
+        not_found_qty: pickingNumberValue(pickingLineFieldValue($row, "not_found_qty")),
+        exception_type: String(pickingLineFieldValue($row, "exception_type") || "").trim(),
+        evidence_reference: String(pickingLineFieldValue($row, "evidence_reference") || "").trim(),
+        note: "Recorded from Warehouse Console picking workflow.",
+      });
+    });
+    return rows;
+  }
+
+  function setPickingWorkflowStatus($root, message, tone) {
+    const $status = $root.find("[data-warehouse-picking-workflow-status-message]").first();
+    if (!$status.length) return;
+    $status.attr("data-warehouse-picking-workflow-tone", tone || "info");
+    $status.find("span").text(message || "");
+  }
+
+  function setPickingWorkflowBusy($root, busy) {
+    $root.find("[data-warehouse-picking-action]").prop("disabled", Boolean(busy));
+    if (busy) {
+      $root.find("[data-warehouse-picking-manager-action]").prop("disabled", true);
+    } else {
+      $root.find("[data-warehouse-picking-manager-action]").not("[aria-disabled='true']").prop("disabled", false);
+    }
+  }
+
+  function pickingCall(method, args) {
+    return Promise.resolve(frappe.call({ method, args })).then((response) => response && response.message ? response.message : {});
+  }
+
+  function savePickingDraft(viewState, $root, header) {
+    const salesOrder = String(header && header.sales_order || viewState.salesOrder || "").trim();
+    const draftLines = pickingDraftLinesFromInputs($root);
+    const sourceWarehouse = draftLines.length ? draftLines[0].source_warehouse : String(header && header.target_warehouse || "").trim();
+    if (!salesOrder || !sourceWarehouse || !draftLines.length) {
+      setPickingWorkflowStatus($root, "Pick evidence is not available for this order.", "error");
+      return Promise.resolve();
+    }
+    setPickingWorkflowBusy($root, true);
+    setPickingWorkflowStatus($root, "Recording custom pick draft...", "pending");
+    markWarehouseDiagnostic("pickingTaskDraftCallAttempted");
+    return pickingCall(PICKING_TASK_DRAFT_METHOD, {
+      sales_order: salesOrder,
+      source_warehouse: sourceWarehouse,
+      lines: draftLines,
+      note: "Recorded from Warehouse Console picking workflow.",
+      request_id: pickingWorkflowRequestId("picking-draft", salesOrder),
+    }).then((payload) => {
+      viewState.pickingWorkflowTask = payload.task || viewState.pickingWorkflowTask || {};
+      markWarehouseDiagnostic("pickingTaskDraftSaved");
+      setPickingWorkflowStatus($root, "Custom pick draft recorded.", "success");
+      return loadPickingReview(viewState, salesOrder, { force: true });
+    }).catch((error) => {
+      markWarehouseDiagnostic("pickingTaskDraftFailed");
+      setPickingWorkflowStatus($root, error && error.message ? error.message : "Could not record pick draft.", "error");
+    }).finally(() => {
+      setPickingWorkflowBusy($root, false);
+    });
+  }
+
+  function savePickingManagerDecision(viewState, $root, decision) {
+    if (!viewState.pickingCanManageTask) {
+      setPickingWorkflowStatus($root, "Manager decision is available only to Warehouse Manager, Stock Manager, or System Manager.", "error");
+      return Promise.resolve();
+    }
+    const task = viewState.pickingWorkflowTask || {};
+    const taskId = String(task.task_id || "").trim();
+    const salesOrder = String(task.sales_order || viewState.salesOrder || "").trim();
+    if (!taskId) {
+      setPickingWorkflowStatus($root, "Record pick draft before manager decision.", "error");
+      return Promise.resolve();
+    }
+    setPickingWorkflowBusy($root, true);
+    setPickingWorkflowStatus($root, "Recording manager decision on custom picking task...", "pending");
+    markWarehouseDiagnostic("pickingManagerDecisionCallAttempted");
+    return pickingCall(PICKING_MANAGER_DECISION_METHOD, {
+      task_id: taskId,
+      decision,
+      note: "Recorded from Warehouse Console picking workflow.",
+      request_id: pickingWorkflowRequestId(`picking-manager-${decision}`, salesOrder || taskId),
+    }).then((payload) => {
+      viewState.pickingWorkflowTask = payload.task || viewState.pickingWorkflowTask || {};
+      markWarehouseDiagnostic("pickingManagerDecisionSaved");
+      setPickingWorkflowStatus($root, `Manager decision recorded: ${payload.status || decision}.`, "success");
+    }).catch((error) => {
+      markWarehouseDiagnostic("pickingManagerDecisionFailed");
+      setPickingWorkflowStatus($root, error && error.message ? error.message : "Could not record manager decision.", "error");
+    }).finally(() => {
+      setPickingWorkflowBusy($root, false);
+    });
+  }
+
+  function renderPickingWorkflowShell(header, lines, statePayload, workflowTask, context) {
     const exceptions = [
       { key: "shortage", label: "Shortage", note: "Open quantity cannot be fully picked from the visible warehouse posture." },
       { key: "damaged", label: "Damaged", note: "Picked goods need damage evidence before manager review." },
-      { key: "not_found", label: "Not found", note: "Expected stock is not found and may need repick or recount." },
-      { key: "substitution_blocked", label: "Substitution blocked", note: "Alternative items require Sales and customer approval before use." },
-      { key: "partial_fulfillment", label: "Partial fulfillment", note: "Partial dispatch needs manager and Sales-facing decision policy." },
-      { key: "sales_escalation", label: "Sales escalation", note: "Customer promise, shortage notification, and order changes remain Sales-owned." },
+      { key: "not_found", label: "Not found", note: "Expected stock is not found and may need recheck." },
+      { key: "substitution_blocked", label: "Substitution review", note: "Alternative items require Sales and customer approval before use." },
+      { key: "partial_fulfillment", label: "Partial fulfillment", note: "Partial outbound work needs manager and Sales-facing decision policy." },
+      { key: "sales_escalation", label: "Sales review needed", note: "Customer promise, shortage notification, and order changes remain Sales-owned." },
     ];
-    const managerDecisions = [
-      { key: "request_repick", label: "Request repick", note: "Ask the warehouse user to recheck or recount the pick." },
-      { key: "approve_clean_pick", label: "Approve clean pick", note: "Approve picked lines only when no shortage or damage is present." },
-      { key: "approve_partial_pick", label: "Approve partial pick", note: "Approve a partial pick only under the later owner-approved policy." },
-      { key: "mark_shortage_review", label: "Mark shortage review", note: "Keep shortage evidence for resolution before any dispatch handoff." },
-      { key: "escalate_sales", label: "Escalate to Sales", note: "Send customer-facing changes to Sales ownership." },
-      { key: "mark_dispatch_handoff", label: "Mark dispatch handoff", note: "Planned dispatch readiness state after policy approval." },
-    ];
-    const previewLines = Array.isArray(lines) ? lines.slice(0, 4) : [];
-    const stateTitle = statePayload && statePayload.title ? statePayload.title : "";
+    const visibleLines = Array.isArray(lines) ? lines.filter((line) => line && line.item_code).slice(0, 4) : [];
+    const moreLines = Array.isArray(lines) && lines.length > visibleLines.length ? lines.length - visibleLines.length : 0;
+    const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload && statePayload.kind || ""));
+    const taskLineMap = pickingTaskLineMap(workflowTask);
+    const canManage = pickingCanManageTask(context);
+    const countRows = visibleLines.length
+      ? visibleLines.map((line) => renderPickingEvidenceRow(line, taskLineMap[pickingTaskLineKey(line)])).join("")
+      : `<div class="warehouse-receiving-count-row warehouse-visual-fallback" data-warehouse-picking-workflow-empty><div class="warehouse-receiving-count-row-title">No pick evidence rows visible</div><div class="warehouse-receiving-meta">${escapeHtml(unavailable ? "Picking task evidence is not available for this order." : "Item lines appear here when picking evidence is available for this order.")}</div></div>`;
     return `
-      <section class="warehouse-receiving-workflow-shell" data-warehouse-picking-workflow-shell data-warehouse-w15d2-shell="true">
+      <section class="warehouse-receiving-workflow-shell" data-warehouse-picking-workflow-shell data-warehouse-w16c-workflow="true">
         <div class="warehouse-receiving-workflow-head">
           <div>
             <h2 class="warehouse-receiving-workflow-title">Picking workflow</h2>
-            <div class="warehouse-receiving-workflow-subtitle">Future workflow preview for pick evidence, pack readiness, manager review, Sales escalation, and dispatch handoff. This preview is display-only.</div>
+            <div class="warehouse-receiving-workflow-subtitle">Custom picking task workflow for pick evidence, manager review, Sales review posture, and outbound readiness posture. It records only Warehouse custom records.</div>
           </div>
-          <span class="warehouse-receiving-workflow-badge" data-warehouse-picking-workflow-badge>Shell only</span>
+          <span class="warehouse-receiving-workflow-badge" data-warehouse-picking-workflow-badge>Custom workflow</span>
         </div>
         <div class="warehouse-receiving-workflow-guardrail" data-warehouse-picking-workflow-policy>
-          <strong>No stock effect.</strong>
-          <span>No stock is reserved, picked, packed, shipped, delivered, posted, or adjusted from this workflow preview. Delivery Note, Pick List, and Stock Reservation steps require a later approved policy.</span>
+          <strong>No stock is posted.</strong>
+          <span>No Delivery Note, Pick List, Stock Reservation, Stock Entry, or stock ledger change is created from this workflow. It records custom pick evidence and manager posture only.</span>
         </div>
-        <div class="warehouse-receiving-workflow-status" data-warehouse-picking-workflow-status-strip>
-          ${statusSteps.map(renderPickingWorkflowStatusStep).join("")}
-        </div>
+        ${renderPickingWorkflowTaskSummary(workflowTask)}
+        ${renderPickingWorkflowStatusStrip(workflowTask)}
         <div class="warehouse-receiving-workflow-grid">
-          <div class="warehouse-receiving-workflow-card" data-warehouse-picking-user-work-panel>
+          <section class="warehouse-receiving-workflow-card" data-warehouse-picking-user-work-panel>
             <div>
               <div class="warehouse-receiving-workflow-card-title">Warehouse user work</div>
-              <div class="warehouse-receiving-workflow-card-note">Planned physical pick, count, and exception evidence steps. These controls are not active.</div>
+              <div class="warehouse-receiving-workflow-card-note">Record visible pick evidence into the custom Warehouse Picking Task. Stock and outbound ERP documents stay untouched.</div>
             </div>
-            <div class="warehouse-receiving-planned-actions">
-              ${plannedControls.map(renderPickingPlannedControl).join("")}
+            <div class="warehouse-receiving-workflow-actions">
+              ${renderPickingActionControl("record_pick_draft", "Record pick draft", "Record pick and exception evidence to the custom picking task only.")}
+              ${renderPickingActionControl("refresh_workflow_status", "Refresh task status", "Reload the custom picking task summary for this order.")}
             </div>
-          </div>
-          <div class="warehouse-receiving-workflow-card" data-warehouse-picking-evidence-preview>
-            <div>
-              <div class="warehouse-receiving-workflow-card-title">Pick evidence preview</div>
-              <div class="warehouse-receiving-workflow-card-note">${escapeHtml(stateTitle || header.state_label || "Visible item lines")} remain source evidence only until a later workflow is enabled.</div>
-            </div>
-            <div class="warehouse-receiving-count-grid">
-              ${previewLines.length ? previewLines.map(renderPickingEvidenceRow).join("") : `<div class="warehouse-receiving-count-row" data-warehouse-picking-evidence-row="empty"><div class="warehouse-receiving-count-row-title">No visible pick lines</div><div class="warehouse-receiving-meta">No line evidence can be previewed for this order.</div></div>`}
-            </div>
-          </div>
-          <div class="warehouse-receiving-workflow-card" data-warehouse-picking-exception-preview>
+          </section>
+          <section class="warehouse-receiving-workflow-card" data-warehouse-picking-exception-preview>
             <div>
               <div class="warehouse-receiving-workflow-card-title">Exception categories</div>
               <div class="warehouse-receiving-workflow-card-note">Outbound exceptions stay internal until manager and Sales ownership rules are approved.</div>
@@ -10604,20 +12832,45 @@
             <div class="warehouse-receiving-discrepancy-grid">
               ${exceptions.map((card) => renderPickingWorkflowCard(card, "data-warehouse-picking-exception-category")).join("")}
             </div>
-          </div>
-          <div class="warehouse-receiving-workflow-card" data-warehouse-picking-manager-preview>
+          </section>
+        </div>
+        <section class="warehouse-receiving-workflow-card" data-warehouse-picking-evidence-preview>
+          <div class="warehouse-receiving-count-card-head">
             <div>
-              <div class="warehouse-receiving-workflow-card-title">Manager decision preview</div>
-              <div class="warehouse-receiving-workflow-card-note">Future manager choices remain preview-only and do not create stock documents.</div>
+              <div class="warehouse-receiving-workflow-card-title">Pick evidence</div>
+              <div class="warehouse-receiving-workflow-card-note">Enter picked, packed, and exception quantities for ${escapeHtml(header && header.sales_order || "this order")}. Values save only to the custom picking task.${moreLines ? ` Showing first ${visibleLines.length} lines; ${moreLines} more remain in Item Lines.` : ""}</div>
+            </div>
+            <div class="warehouse-receiving-count-actions">
+              <button type="button" class="warehouse-receiving-count-save" data-warehouse-picking-action="record_pick_draft" data-warehouse-picking-count-save>Save draft</button>
+            </div>
+          </div>
+          <div class="warehouse-receiving-count-grid">${countRows}</div>
+        </section>
+        <div class="warehouse-receiving-workflow-grid">
+          <section class="warehouse-receiving-workflow-card" data-warehouse-picking-manager-preview>
+            <div>
+              <div class="warehouse-receiving-workflow-card-title">Manager decision</div>
+              <div class="warehouse-receiving-workflow-card-note">Manager decisions update only the custom picking task status and event log.</div>
             </div>
             <div class="warehouse-receiving-manager-grid">
-              ${managerDecisions.map((card) => renderPickingWorkflowCard(card, "data-warehouse-picking-manager-decision")).join("")}
+              ${renderPickingManagerDecision("request_repick", "Request recheck", "Ask Warehouse User to verify unclear picks.", workflowTask, canManage)}
+              ${renderPickingManagerDecision("approve_clean_pick", "Mark clean pick", "For custom pick evidence with no picking discrepancy.", workflowTask, canManage)}
+              ${renderPickingManagerDecision("approve_partial_pick", "Mark partial reviewed", "For custom evidence with shortage or partial-pick posture.", workflowTask, canManage)}
+              ${renderPickingManagerDecision("mark_shortage_review", "Mark shortage review", "Keep shortage evidence for resolution before outbound readiness.", workflowTask, canManage)}
+              ${renderPickingManagerDecision("escalate_to_sales", "Mark Sales review needed", "Custom posture only for customer promise, shortage, or order-change ownership.", workflowTask, canManage)}
+              ${renderPickingManagerDecision("mark_pack_ready", "Mark outbound ready", "For picked and packed evidence after manager review.", workflowTask, canManage)}
+              ${renderPickingManagerDecision("mark_dispatch_handoff", "Mark outbound readiness", "Custom posture only; no Delivery Note, Pick List, dispatch, or handoff request is created.", workflowTask, canManage)}
             </div>
-          </div>
-        </div>
-        <div class="warehouse-receiving-workflow-card" data-warehouse-picking-delivery-policy>
-          <div class="warehouse-receiving-workflow-card-title">Delivery policy preview</div>
-          <div class="warehouse-receiving-workflow-card-note">Delivery Note draft, Pick List, Stock Reservation, and customer-facing dispatch steps are not available from this preview. Later phases must keep Sales/Admin ownership and native route restrictions explicit.</div>
+          </section>
+          <section class="warehouse-receiving-workflow-card" data-warehouse-picking-delivery-policy>
+            <div class="warehouse-receiving-workflow-card-title">Outbound document policy</div>
+            <div class="warehouse-receiving-workflow-card-note">Delivery Note, Pick List, Stock Reservation, and customer-facing outbound document steps are blocked from this workflow. Sales/Admin ownership and system document access restrictions remain explicit.</div>
+            <div class="warehouse-receiving-discrepancy-grid">
+              ${renderPickingWorkflowCard({ key: "custom_records_only", label: "Custom records only", note: "This workflow saves pick evidence and manager posture only." }, "data-warehouse-picking-policy-card")}
+              ${renderPickingWorkflowCard({ key: "document_owner_review", label: "Separate document policy", note: "Sales/Admin document handling is not started here." }, "data-warehouse-picking-policy-card")}
+              ${renderPickingWorkflowCard({ key: "exclude_unresolved", label: "Exclude unresolved issues", note: "Short, damaged, not-found, and substitution issues must not become normal outbound lines without owner review." }, "data-warehouse-picking-policy-card")}
+            </div>
+          </section>
         </div>
       </section>
     `;
@@ -10642,6 +12895,9 @@
     const tabs = Array.isArray(payload.tabs) ? payload.tabs : [];
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     const statePayload = payload.state || {};
+    const workflowTask = pickingWorkflowTask(payload);
+    viewState.pickingWorkflowTask = workflowTask;
+    viewState.pickingCanManageTask = pickingCanManageTask(payload.context || {});
     const unavailable = ["restricted", "error", "unavailable"].includes(String(statePayload.kind || ""));
     const readinessCards = pickingReadinessSummary(lines, unavailable);
     const shellOrder = header.sales_order || viewState.salesOrder || "";
@@ -10650,16 +12906,16 @@
         <section class="warehouse-receiving-header warehouse-picking-header warehouse-visual-command" data-warehouse-picking-command>
           <div class="warehouse-receiving-head">
             <div class="warehouse-receiving-command warehouse-visual-command-title">
-              <div class="warehouse-receiving-eyebrow">Read-only picking posture</div>
+              <div class="warehouse-receiving-eyebrow">Custom picking workflow</div>
               <h1 class="warehouse-receiving-title">Picking Review</h1>
-              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Picking work could not be loaded. Refresh or contact an administrator." : pickingSummaryText(header))}</div>
+              <div class="warehouse-receiving-subtitle">${escapeHtml(unavailable ? statePayload.detail || "Picking work could not be loaded. Refresh or contact an administrator." : `${header.sales_order || shellOrder || "Order not visible"} - Custom picking workflow`)}</div>
               <div class="warehouse-receiving-chip-row warehouse-visual-chip-row" data-warehouse-picking-identity-chips>
                 <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(shellOrder || "Order not visible")}</span>
                 <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.customer || "Customer not visible")}</span>
                 <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.age_label || header.required_date || "Delivery date not visible")}</span>
                 <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.target_warehouse || "Warehouse not visible")}</span>
                 <span class="warehouse-receiving-chip warehouse-visual-chip" data-warehouse-picking-identity-chip>${escapeHtml(header.status || header.state_label || statePayload.title || "Review")}</span>
-                <span class="warehouse-receiving-chip warehouse-visual-chip is-read-only" data-warehouse-picking-identity-chip>Read-only</span>
+                <span class="warehouse-receiving-chip warehouse-visual-chip is-read-only" data-warehouse-picking-identity-chip>Custom records only</span>
               </div>
             </div>
             <div class="warehouse-receiving-actions warehouse-visual-action-strip">
@@ -10672,7 +12928,7 @@
               <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-picking-command-fact="customer"><span>Customer</span><strong>${escapeHtml(header.customer || "Not visible")}</strong></div>
               <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-picking-command-fact="warehouse"><span>Warehouse</span><strong>${escapeHtml(header.target_warehouse || "Not visible")}</strong></div>
               <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-picking-command-fact="delivery"><span>Delivery timing</span><strong>${escapeHtml(header.required_date || header.age_label || "Not visible")}</strong></div>
-              <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-picking-command-fact="state"><span>Picking state</span><strong>${escapeHtml(header.state_label || header.status || "Review")}</strong></div>
+              <div class="warehouse-receiving-command-fact warehouse-visual-fact" data-warehouse-picking-command-fact="state"><span>Picking state</span><strong class="warehouse-receiving-status-value">${escapeHtml(header.state_label || header.status || "Review")}</strong></div>
             </div>
             <section class="warehouse-receiving-posture-panel warehouse-picking-posture-panel" data-warehouse-picking-posture-panel>
               <div class="warehouse-receiving-posture-head">
@@ -10697,10 +12953,10 @@
           `}
         </section>
         <section class="warehouse-receiving-guardrail warehouse-picking-guardrail warehouse-visual-guardrail" data-warehouse-picking-guardrail>
-          <strong>Review only</strong>
-          <span>No stock is reserved, picked, shipped, or delivered from this page. Use this page to understand picking posture before any separate outbound process.</span>
+          <strong>Custom workflow only</strong>
+          <span>No stock is posted and no Delivery Note, Pick List, or Stock Reservation is created from this screen. Pick and manager actions write only custom Warehouse picking task records.</span>
         </section>
-        ${unavailable ? "" : renderPickingWorkflowShell(header, lines, statePayload)}
+        ${unavailable ? "" : renderPickingWorkflowShell(header, lines, statePayload, workflowTask, payload.context || {})}
         <section class="warehouse-receiving-detail warehouse-picking-detail" data-warehouse-picking-detail>
           <div class="warehouse-receiving-detail-head" data-warehouse-picking-detail-head>
             <div>
@@ -10732,6 +12988,20 @@
     $root.find("[data-warehouse-picking-tab]").on("click", function (event) {
       event.preventDefault();
       activatePickingTab($root, String(this.getAttribute("data-warehouse-picking-tab") || "item_lines"));
+    });
+    $root.find("[data-warehouse-picking-action]").on("click", function (event) {
+      event.preventDefault();
+      const action = String(this.getAttribute("data-warehouse-picking-action") || "");
+      if (action === "record_pick_draft") {
+        savePickingDraft(viewState, $root, header);
+      } else if (action === "refresh_workflow_status") {
+        loadPickingReview(viewState, viewState.salesOrder, { force: true });
+      }
+    });
+    $root.find("[data-warehouse-picking-manager-action]").on("click", function (event) {
+      event.preventDefault();
+      const decision = String(this.getAttribute("data-warehouse-picking-manager-action") || "");
+      if (decision) savePickingManagerDecision(viewState, $root, decision);
     });
     activatePickingTab($root, "item_lines");
     replaceWarehouseRouteHost(viewState, $root);
@@ -12182,6 +14452,451 @@
     });
   }
 
+  function renderReturnsWorkHubLoading(viewState) {
+    ensureStyle();
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="returns-work-hub" data-warehouse-queue-key="${RETURNS_WORK_HUB_KEY}" data-warehouse-returns-page="true" data-warehouse-workflow-page-shell="returns" data-erpw-console-runtime="loading">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-returns-command data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Returns</h1>
+              <div class="warehouse-inbound-queue-note">Loading custom return workflows...</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" disabled aria-disabled="true">Loading</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderReturnsWorkHubError(viewState, error) {
+    ensureStyle();
+    const message = "Custom workflow context could not be loaded. Retry after the page finishes loading; no return record was changed.";
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="returns-work-hub" data-warehouse-queue-key="${RETURNS_WORK_HUB_KEY}" data-warehouse-returns-page="true" data-warehouse-workflow-page-shell="returns" data-erpw-console-runtime="error">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-returns-command data-warehouse-returns-page-error data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Returns</h1>
+              <div class="warehouse-inbound-queue-note">Returns could not load the custom workflow context. No return record was changed.</div>
+              <div class="warehouse-workflow-guardrail">${escapeHtml(message)}</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" data-warehouse-returns-refresh>Retry</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-returns-refresh]").on("click", (event) => {
+      event.preventDefault();
+      renderReturnsWorkHubPage(viewState, { force: true });
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderReturnsWorkHubPagePayload(viewState, payload) {
+    ensureStyle();
+    const context = payload && payload.context ? payload.context : {};
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="returns-work-hub" data-warehouse-queue-key="${RETURNS_WORK_HUB_KEY}" data-warehouse-returns-page="true" data-warehouse-workflow-page-shell="returns" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-returns-command data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Returns</h1>
+              <div class="warehouse-inbound-queue-note">Record customer returns, supplier return candidates, and manager posture in custom Warehouse records.</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" data-warehouse-returns-refresh>Refresh</button>
+            </div>
+          </div>
+        </section>
+        ${renderReturnsWorkHub(context)}
+      </div>
+    `);
+    $root.data("warehouseReturnsCanManage", returnsCanManage(context));
+    activateReturnsHubPanel($root, "customer");
+    bindReturnsWorkHubHandlers($root);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-returns-refresh]").on("click", (event) => {
+      event.preventDefault();
+      renderReturnsWorkHubPage(viewState, { force: true });
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderReturnsWorkHubPage(viewState, options) {
+    const force = Boolean(options && options.force);
+    const signature = worklistLoadSignature(RETURNS_WORK_HUB_KEY, {});
+    if (!force && viewState.loadingPromise && viewState.loadingSignature === signature) {
+      markWarehouseDiagnostic("returnsWorkHubDuplicateLoadReused");
+      return viewState.loadingPromise;
+    }
+    if (!force && viewState.loadedSignature === signature && hasRenderedWorklistShell(viewState, RETURNS_WORK_HUB_KEY)) {
+      markWarehouseDiagnostic("returnsWorkHubDuplicateRenderSkipped");
+      return Promise.resolve(viewState.lastPayload || {});
+    }
+    markWarehouseDiagnostic("returnsWorkHubStateCallAttempted");
+    viewState.queueKey = RETURNS_WORK_HUB_KEY;
+    const requestToken = (viewState.requestSerial || 0) + 1;
+    viewState.requestSerial = requestToken;
+    viewState.loadingSignature = signature;
+    viewState.loadedSignature = "";
+    const isCurrentRequest = () => (
+      viewState.requestSerial === requestToken
+      && viewState.loadingSignature === signature
+      && isActiveWarehouseWorklistRoute()
+      && isActiveWorklistQueue(RETURNS_WORK_HUB_KEY)
+    );
+    const clearCurrentLoad = () => {
+      if (viewState.requestSerial === requestToken && viewState.loadingSignature === signature) {
+        viewState.loadingPromise = null;
+        viewState.loadingSignature = "";
+      }
+    };
+    renderReturnsWorkHubLoading(viewState);
+    const requestPromise = frappe.call({ method: RETURNS_WORK_HUB_METHOD }).then((response) => {
+      const payload = response && response.message ? response.message : {};
+      const shouldRender = isCurrentRequest();
+      clearCurrentLoad();
+      if (!shouldRender) {
+        markWarehouseDiagnostic("returnsWorkHubStaleResponseIgnored");
+        return payload;
+      }
+      viewState.loadedSignature = signature;
+      viewState.lastPayload = payload;
+      renderReturnsWorkHubPagePayload(viewState, payload);
+      return payload;
+    }).catch((error) => {
+      const shouldRender = isCurrentRequest();
+      clearCurrentLoad();
+      if (!shouldRender) {
+        markWarehouseDiagnostic("returnsWorkHubStaleErrorIgnored");
+        return {};
+      }
+      viewState.loadedSignature = "";
+      viewState.lastPayload = null;
+      markWarehouseDiagnostic("returnsWorkHubStateCallFailed");
+      renderReturnsWorkHubError(viewState, error);
+      throw error;
+    });
+    viewState.loadingPromise = requestPromise;
+    return requestPromise;
+  }
+
+  function renderInternalTransferWorkflowLoading(viewState) {
+    ensureStyle();
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="internal-transfer-workflow" data-warehouse-queue-key="${INTERNAL_TRANSFER_WORKFLOW_KEY}" data-warehouse-internal-transfer-page="true" data-warehouse-workflow-page-shell="internal_transfer" data-erpw-console-runtime="loading">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-internal-transfer-command data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Internal Transfer</h1>
+              <div class="warehouse-inbound-queue-note">Loading custom internal transfer workflow...</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" disabled aria-disabled="true">Loading</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderInternalTransferWorkflowError(viewState, error) {
+    ensureStyle();
+    const message = "Custom workflow context could not be loaded. Retry after the page finishes loading; no transfer record was changed.";
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="internal-transfer-workflow" data-warehouse-queue-key="${INTERNAL_TRANSFER_WORKFLOW_KEY}" data-warehouse-internal-transfer-page="true" data-warehouse-workflow-page-shell="internal_transfer" data-erpw-console-runtime="error">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-internal-transfer-command data-warehouse-internal-transfer-page-error data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Internal Transfer</h1>
+              <div class="warehouse-inbound-queue-note">Internal Transfer could not load the custom workflow context. No transfer record was changed.</div>
+              <div class="warehouse-workflow-guardrail">${escapeHtml(message)}</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" data-warehouse-internal-transfer-refresh>Retry</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-internal-transfer-refresh]").on("click", (event) => {
+      event.preventDefault();
+      renderInternalTransferWorkflowPage(viewState, { force: true });
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderInternalTransferWorkflowPagePayload(viewState, payload) {
+    ensureStyle();
+    const context = payload && payload.context ? payload.context : {};
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="internal-transfer-workflow" data-warehouse-queue-key="${INTERNAL_TRANSFER_WORKFLOW_KEY}" data-warehouse-internal-transfer-page="true" data-warehouse-workflow-page-shell="internal_transfer" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-internal-transfer-command data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Internal Transfer</h1>
+              <div class="warehouse-inbound-queue-note">Record transfer intent, source count evidence, and manager posture in custom Warehouse records.</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" data-warehouse-internal-transfer-refresh>Refresh</button>
+            </div>
+          </div>
+        </section>
+        ${renderInternalTransferWorkflow(context)}
+      </div>
+    `);
+    $root.data("warehouseInternalTransferCanManage", internalTransferCanManage(context));
+    bindInternalTransferWorkflowHandlers($root);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-internal-transfer-refresh]").on("click", (event) => {
+      event.preventDefault();
+      renderInternalTransferWorkflowPage(viewState, { force: true });
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderInternalTransferWorkflowPage(viewState, options) {
+    const force = Boolean(options && options.force);
+    const signature = worklistLoadSignature(INTERNAL_TRANSFER_WORKFLOW_KEY, {});
+    if (!force && viewState.loadingPromise && viewState.loadingSignature === signature) {
+      markWarehouseDiagnostic("internalTransferWorkflowDuplicateLoadReused");
+      return viewState.loadingPromise;
+    }
+    if (!force && viewState.loadedSignature === signature && hasRenderedWorklistShell(viewState, INTERNAL_TRANSFER_WORKFLOW_KEY)) {
+      markWarehouseDiagnostic("internalTransferWorkflowDuplicateRenderSkipped");
+      return Promise.resolve(viewState.lastPayload || {});
+    }
+    markWarehouseDiagnostic("internalTransferWorkflowStateCallAttempted");
+    viewState.queueKey = INTERNAL_TRANSFER_WORKFLOW_KEY;
+    const requestToken = (viewState.requestSerial || 0) + 1;
+    viewState.requestSerial = requestToken;
+    viewState.loadingSignature = signature;
+    viewState.loadedSignature = "";
+    const isCurrentRequest = () => (
+      viewState.requestSerial === requestToken
+      && viewState.loadingSignature === signature
+      && isActiveWarehouseWorklistRoute()
+      && isActiveWorklistQueue(INTERNAL_TRANSFER_WORKFLOW_KEY)
+    );
+    const clearCurrentLoad = () => {
+      if (viewState.requestSerial === requestToken && viewState.loadingSignature === signature) {
+        viewState.loadingPromise = null;
+        viewState.loadingSignature = "";
+      }
+    };
+    renderInternalTransferWorkflowLoading(viewState);
+    const requestPromise = frappe.call({ method: INTERNAL_TRANSFER_WORKFLOW_METHOD }).then((response) => {
+      const payload = response && response.message ? response.message : {};
+      const shouldRender = isCurrentRequest();
+      clearCurrentLoad();
+      if (!shouldRender) {
+        markWarehouseDiagnostic("internalTransferWorkflowStaleResponseIgnored");
+        return payload;
+      }
+      viewState.loadedSignature = signature;
+      viewState.lastPayload = payload;
+      renderInternalTransferWorkflowPagePayload(viewState, payload);
+      return payload;
+    }).catch((error) => {
+      const shouldRender = isCurrentRequest();
+      clearCurrentLoad();
+      if (!shouldRender) {
+        markWarehouseDiagnostic("internalTransferWorkflowStaleErrorIgnored");
+        return {};
+      }
+      viewState.loadedSignature = "";
+      viewState.lastPayload = null;
+      markWarehouseDiagnostic("internalTransferWorkflowStateCallFailed");
+      renderInternalTransferWorkflowError(viewState, error);
+      throw error;
+    });
+    viewState.loadingPromise = requestPromise;
+    return requestPromise;
+  }
+
+  function renderCycleCountWorkflowLoading(viewState) {
+    ensureStyle();
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="cycle-count-workflow" data-warehouse-queue-key="${CYCLE_COUNT_WORKFLOW_KEY}" data-warehouse-cycle-count-page="true" data-warehouse-workflow-page-shell="cycle_count" data-erpw-console-runtime="loading">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-cycle-count-command data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Cycle Count</h1>
+              <div class="warehouse-inbound-queue-note">Loading custom cycle count workflow...</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" disabled aria-disabled="true">Loading</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderCycleCountWorkflowError(viewState, error) {
+    ensureStyle();
+    const message = "Custom workflow context could not be loaded. Retry after the page finishes loading; no count record was changed.";
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="cycle-count-workflow" data-warehouse-queue-key="${CYCLE_COUNT_WORKFLOW_KEY}" data-warehouse-cycle-count-page="true" data-warehouse-workflow-page-shell="cycle_count" data-erpw-console-runtime="error">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-cycle-count-command data-warehouse-cycle-count-page-error data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Cycle Count</h1>
+              <div class="warehouse-inbound-queue-note">Cycle Count could not load the custom workflow context. No count record was changed.</div>
+              <div class="warehouse-workflow-guardrail">${escapeHtml(message)}</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" data-warehouse-cycle-count-refresh>Retry</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-cycle-count-refresh]").on("click", (event) => {
+      event.preventDefault();
+      renderCycleCountWorkflowPage(viewState, { force: true });
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderCycleCountWorkflowPagePayload(viewState, payload) {
+    ensureStyle();
+    const context = payload && payload.context ? payload.context : {};
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-returns-page-shell warehouse-workflow-page-shell warehouse-overview-shared" data-erpw-workspace="warehouse" data-warehouse-view="cycle-count-workflow" data-warehouse-queue-key="${CYCLE_COUNT_WORKFLOW_KEY}" data-warehouse-cycle-count-page="true" data-warehouse-workflow-page-shell="cycle_count" data-erpw-console-runtime="ready">
+        <section class="warehouse-inbound-queue-header warehouse-workflow-page-header warehouse-visual-command" data-warehouse-cycle-count-command data-warehouse-workflow-page-header>
+          <div class="warehouse-inbound-queue-head">
+            <div class="warehouse-inbound-command">
+              <h1 class="warehouse-inbound-queue-title">Cycle Count</h1>
+              <div class="warehouse-inbound-queue-note">Record blind counts, variance evidence, and manager posture in custom Warehouse records.</div>
+            </div>
+            <div class="warehouse-receiving-header-actions">
+              <button class="warehouse-receiving-button" type="button" data-warehouse-back-overview>Back to overview</button>
+              <button class="warehouse-receiving-button" type="button" data-warehouse-cycle-count-refresh>Refresh</button>
+            </div>
+          </div>
+        </section>
+        ${renderCycleCountWorkflow(context)}
+      </div>
+    `);
+    $root.data("warehouseCycleCountCanManage", cycleCountCanManage(context));
+    bindCycleCountWorkflowHandlers($root);
+    $root.find("[data-warehouse-back-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    $root.find("[data-warehouse-cycle-count-refresh]").on("click", (event) => {
+      event.preventDefault();
+      renderCycleCountWorkflowPage(viewState, { force: true });
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
+  function renderCycleCountWorkflowPage(viewState, options) {
+    const force = Boolean(options && options.force);
+    const signature = worklistLoadSignature(CYCLE_COUNT_WORKFLOW_KEY, {});
+    if (!force && viewState.loadingPromise && viewState.loadingSignature === signature) {
+      markWarehouseDiagnostic("cycleCountWorkflowDuplicateLoadReused");
+      return viewState.loadingPromise;
+    }
+    if (!force && viewState.loadedSignature === signature && hasRenderedWorklistShell(viewState, CYCLE_COUNT_WORKFLOW_KEY)) {
+      markWarehouseDiagnostic("cycleCountWorkflowDuplicateRenderSkipped");
+      return Promise.resolve(viewState.lastPayload || {});
+    }
+    markWarehouseDiagnostic("cycleCountWorkflowStateCallAttempted");
+    viewState.queueKey = CYCLE_COUNT_WORKFLOW_KEY;
+    const requestToken = (viewState.requestSerial || 0) + 1;
+    viewState.requestSerial = requestToken;
+    viewState.loadingSignature = signature;
+    viewState.loadedSignature = "";
+    const isCurrentRequest = () => (
+      viewState.requestSerial === requestToken
+      && viewState.loadingSignature === signature
+      && isActiveWarehouseWorklistRoute()
+      && isActiveWorklistQueue(CYCLE_COUNT_WORKFLOW_KEY)
+    );
+    const clearCurrentLoad = () => {
+      if (viewState.requestSerial === requestToken && viewState.loadingSignature === signature) {
+        viewState.loadingPromise = null;
+        viewState.loadingSignature = "";
+      }
+    };
+    renderCycleCountWorkflowLoading(viewState);
+    const requestPromise = frappe.call({ method: CYCLE_COUNT_WORKFLOW_METHOD }).then((response) => {
+      const payload = response && response.message ? response.message : {};
+      const shouldRender = isCurrentRequest();
+      clearCurrentLoad();
+      if (!shouldRender) {
+        markWarehouseDiagnostic("cycleCountWorkflowStaleResponseIgnored");
+        return payload;
+      }
+      viewState.loadedSignature = signature;
+      viewState.lastPayload = payload;
+      renderCycleCountWorkflowPagePayload(viewState, payload);
+      return payload;
+    }).catch((error) => {
+      const shouldRender = isCurrentRequest();
+      clearCurrentLoad();
+      if (!shouldRender) {
+        markWarehouseDiagnostic("cycleCountWorkflowStaleErrorIgnored");
+        return {};
+      }
+      viewState.loadedSignature = "";
+      viewState.lastPayload = null;
+      markWarehouseDiagnostic("cycleCountWorkflowStateCallFailed");
+      renderCycleCountWorkflowError(viewState, error);
+      throw error;
+    });
+    viewState.loadingPromise = requestPromise;
+    return requestPromise;
+  }
+
   function loadInboundQueue(viewState, options) {
     const queueKey = normalizeQueueKey(viewState.queueKey || activeWorklistQueueKey() || INBOUND_QUEUE_KEY);
     const force = Boolean(options && options.force);
@@ -12199,6 +14914,12 @@
     const isStockExceptions = queueKey === STOCK_EXCEPTIONS_KEY;
     const isMovementVisibility = queueKey === MOVEMENT_VISIBILITY_KEY;
     const isTransferVisibility = queueKey === TRANSFER_VISIBILITY_KEY;
+    const isReturnsWorkHub = queueKey === RETURNS_WORK_HUB_KEY;
+    const isInternalTransferWorkflow = queueKey === INTERNAL_TRANSFER_WORKFLOW_KEY;
+    const isCycleCountWorkflow = queueKey === CYCLE_COUNT_WORKFLOW_KEY;
+    if (isReturnsWorkHub) return renderReturnsWorkHubPage(viewState, options);
+    if (isInternalTransferWorkflow) return renderInternalTransferWorkflowPage(viewState, options);
+    if (isCycleCountWorkflow) return renderCycleCountWorkflowPage(viewState, options);
     markWarehouseDiagnostic(isTransferVisibility ? "transferVisibilityServiceCallAttempted" : isMovementVisibility ? "movementVisibilityServiceCallAttempted" : isStockExceptions ? "stockExceptionsServiceCallAttempted" : isOutbound ? "outboundQueueServiceCallAttempted" : "queueServiceCallAttempted");
     viewState.queueKey = queueKey;
     const requestToken = (viewState.requestSerial || 0) + 1;
@@ -12288,11 +15009,47 @@
     return requestPromise;
   }
 
+  function renderUnsupportedWorklistRoute(wrapper, queueKey) {
+    ensureStyle();
+    const viewState = makeInboundPage(wrapper);
+    const requested = String(queueKey || activeWorklistQueueKey() || "").trim().replace(/_/g, "-") || "unknown";
+    const $root = $(`
+      <div class="sales-console-shell warehouse-inbound-shell warehouse-visual-foundation" data-erpw-workspace="warehouse" data-warehouse-view="unsupported-worklist" data-warehouse-queue-key="unsupported_worklist" data-erpw-console-runtime="ready" data-warehouse-unsupported-worklist="true">
+        <section class="warehouse-inbound-queue-header warehouse-visual-command">
+          <div class="warehouse-inbound-queue-head">
+            <div>
+              <h1 class="warehouse-inbound-queue-title">Warehouse worklist unavailable</h1>
+              <div class="warehouse-inbound-queue-note">The requested Warehouse route is not available in this workspace.</div>
+            </div>
+          </div>
+          <div class="warehouse-inbound-groups">
+            <section class="warehouse-inbound-group warehouse-visual-fallback" data-warehouse-unsupported-worklist-panel>
+              <h2 class="warehouse-inbound-group-title">Unsupported worklist</h2>
+              <div class="warehouse-inbound-meta">Route requested: ${escapeHtml(requested)}. Use the Warehouse overview to open an available custom workflow or review queue.</div>
+              <div class="warehouse-inbound-controls warehouse-visual-filter-strip">
+                <button type="button" class="warehouse-inbound-queue-button" data-warehouse-unsupported-overview>Back to overview</button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </div>
+    `);
+    $root.find("[data-warehouse-unsupported-overview]").on("click", (event) => {
+      event.preventDefault();
+      frappe.set_route(PAGE_KEY);
+    });
+    replaceWarehouseRouteHost(viewState, $root);
+  }
+
   function renderWarehouseWorklist(wrapper, queueKey) {
     const explicitQueueKey = normalizeQueueKey(queueKey || "");
     const resolvedQueueKey = explicitQueueKey || activeWorklistQueueKey();
-    if (!isSupportedWorklistQueue(resolvedQueueKey)) return;
-    markWarehouseDiagnostic(resolvedQueueKey === TRANSFER_VISIBILITY_KEY ? "renderTransferVisibilityEntered" : resolvedQueueKey === MOVEMENT_VISIBILITY_KEY ? "renderMovementVisibilityEntered" : resolvedQueueKey === STOCK_EXCEPTIONS_KEY ? "renderStockExceptionsEntered" : resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
+    if (!isSupportedWorklistQueue(resolvedQueueKey)) {
+      markWarehouseDiagnostic("renderUnsupportedWorklistEntered");
+      renderUnsupportedWorklistRoute(wrapper, resolvedQueueKey);
+      return;
+    }
+    markWarehouseDiagnostic(resolvedQueueKey === CYCLE_COUNT_WORKFLOW_KEY ? "renderCycleCountWorkflowEntered" : resolvedQueueKey === INTERNAL_TRANSFER_WORKFLOW_KEY ? "renderInternalTransferWorkflowEntered" : resolvedQueueKey === RETURNS_WORK_HUB_KEY ? "renderReturnsWorkHubEntered" : resolvedQueueKey === TRANSFER_VISIBILITY_KEY ? "renderTransferVisibilityEntered" : resolvedQueueKey === MOVEMENT_VISIBILITY_KEY ? "renderMovementVisibilityEntered" : resolvedQueueKey === STOCK_EXCEPTIONS_KEY ? "renderStockExceptionsEntered" : resolvedQueueKey === OUTBOUND_QUEUE_KEY ? "renderOutboundQueueEntered" : "renderInboundQueueEntered");
     const viewState = makeInboundPage(wrapper);
     viewState.queueKey = resolvedQueueKey;
     const signature = worklistLoadSignature(resolvedQueueKey, viewState.activeFilters || {});

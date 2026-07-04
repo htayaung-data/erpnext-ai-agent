@@ -55,7 +55,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Draft\nIn Progress\nSubmitted For Review\nRecount Requested\nApproved Clean\nApproved With Discrepancy\nQuarantine Review\nEscalated To Procurement\nDraft Prepared\nClosed\nCancelled",
+   "options": "Draft\nIn Progress\nSubmitted For Review\nRecount Requested\nApproved Clean\nApproved With Discrepancy\nQuarantine Review\nProcurement Review Needed\nSeparate Document Policy\nClosed\nCancelled",
    "read_only": 1
   },
   {

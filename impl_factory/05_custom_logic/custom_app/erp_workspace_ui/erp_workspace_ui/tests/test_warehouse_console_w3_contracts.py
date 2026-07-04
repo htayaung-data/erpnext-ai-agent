@@ -23,6 +23,12 @@ READABLE_DOCTYPES = {
     "Stock Entry",
     "Stock Entry Detail",
 }
+CUSTOM_WORKFLOW_READABLE_DOCTYPES = {
+    "Warehouse Customer Return Intake",
+    "Warehouse Supplier Return Candidate",
+    "Warehouse Internal Transfer Candidate",
+    "Warehouse Cycle Count Task",
+}
 COUNT_CALLS = []
 LIST_CALLS = []
 GET_ALL_CALLS = []
@@ -908,6 +914,32 @@ def _selected(row, fields):
     return {field: row.get(field) for field in fields}
 
 
+def _filter_child_rows(rows, filters):
+    filtered = list(rows)
+    conditions = []
+    if isinstance(filters, dict):
+        for field, value in filters.items():
+            if isinstance(value, list) and value and value[0] == "in":
+                conditions.append((field, "in", value[1]))
+            else:
+                conditions.append((field, "=", value))
+    elif isinstance(filters, list):
+        for condition in filters:
+            if isinstance(condition, list) and len(condition) >= 4:
+                _, field, operator, value = condition[:4]
+                conditions.append((field, operator, value))
+    for field, operator, value in conditions:
+        if operator == "in":
+            allowed = set(value or [])
+            filtered = [row for row in filtered if row.get(field) in allowed]
+        elif operator == "like":
+            needle = str(value or "").replace("%", "").lower()
+            filtered = [row for row in filtered if needle in str(row.get(field, "")).lower()]
+        elif operator == "=":
+            filtered = [row for row in filtered if row.get(field) == value]
+    return filtered
+
+
 def _filter_purchase_orders(filters):
     rows = list(PO_ROWS)
     for condition in filters or []:
@@ -919,6 +951,8 @@ def _filter_purchase_orders(filters):
             rows = [row for row in rows if needle in row["name"].lower()]
         if field == "name" and operator == "=":
             rows = [row for row in rows if row["name"] == value]
+        if field == "name" and operator == "in":
+            rows = [row for row in rows if row["name"] in set(value)]
         if field == "supplier_name" and operator == "like":
             needle = str(value).replace("%", "").lower()
             rows = [row for row in rows if needle in row["supplier_name"].lower()]
@@ -945,6 +979,8 @@ def _filter_sales_orders(filters):
             rows = [row for row in rows if needle in row["name"].lower()]
         if field == "name" and operator == "=":
             rows = [row for row in rows if row["name"] == value]
+        if field == "name" and operator == "in":
+            rows = [row for row in rows if row["name"] in set(value)]
         if field == "customer_name" and operator == "like":
             needle = str(value).replace("%", "").lower()
             rows = [row for row in rows if needle in row["customer_name"].lower()]
@@ -978,6 +1014,47 @@ def _filter_stock_entries(filters):
     return rows
 
 
+def _memory_row_value(row, key):
+    return row.get(key) if isinstance(row, dict) else getattr(row, key, None)
+
+
+def _filter_memory_rows(rows, filters):
+    filtered = list(rows)
+    if isinstance(filters, dict):
+        for key, value in filters.items():
+            if isinstance(value, list) and value and value[0] == "in":
+                allowed = set(value[1])
+                filtered = [row for row in filtered if _memory_row_value(row, key) in allowed]
+            else:
+                filtered = [row for row in filtered if _memory_row_value(row, key) == value]
+    return filtered
+
+
+def _memory_rows_for_doctype(doctype, filters=None):
+    if doctype == "Warehouse":
+        warehouses = {
+            row.get("set_warehouse") for row in PO_ROWS + SO_ROWS if row.get("set_warehouse")
+        } | {
+            row.get("warehouse") for row in PO_ITEM_ROWS + SO_ITEM_ROWS + BIN_ROWS if row.get("warehouse")
+        } | {
+            row.get("from_warehouse") for row in STOCK_ENTRY_ROWS if row.get("from_warehouse")
+        } | {
+            row.get("to_warehouse") for row in STOCK_ENTRY_ROWS if row.get("to_warehouse")
+        }
+        rows = [{"name": name} for name in sorted(warehouses) if name]
+        return _filter_memory_rows(rows, filters)
+    stores = {
+        "Warehouse Customer Return Intake": CUSTOMER_RETURN_INTAKE_DOCS,
+        "Warehouse Supplier Return Candidate": SUPPLIER_RETURN_CANDIDATE_DOCS,
+        "Warehouse Internal Transfer Candidate": INTERNAL_TRANSFER_CANDIDATE_DOCS,
+        "Warehouse Cycle Count Task": CYCLE_COUNT_TASK_DOCS,
+    }
+    store = stores.get(doctype)
+    if store is None:
+        return None
+    return [row.__dict__ for row in _filter_memory_rows(store.values(), filters)]
+
+
 def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_length=None, **kwargs):
     LIST_CALLS.append({"doctype": doctype, "fields": fields, "filters": filters, "limit": limit_page_length})
     if doctype == "Purchase Order":
@@ -989,6 +1066,9 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
     if doctype == "Stock Entry":
         rows = _filter_stock_entries(filters)
         return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
+    memory_rows = _memory_rows_for_doctype(doctype, filters)
+    if memory_rows is not None:
+        return [_selected(row, fields or ["name"]) for row in memory_rows[: limit_page_length or len(memory_rows)]]
     return []
 
 
@@ -1229,14 +1309,7 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
                 rows = [row for row in rows if row.get(key) == value]
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Order Item":
-        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
-        if isinstance(parent_filter, list) and parent_filter[0] == "in":
-            parents = set(parent_filter[1])
-        elif parent_filter:
-            parents = {parent_filter}
-        else:
-            parents = set()
-        rows = [row for row in PO_ITEM_ROWS if not parents or row["parent"] in parents]
+        rows = _filter_child_rows(PO_ITEM_ROWS, filters)
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Purchase Receipt Item":
         purchase_order = (filters or {}).get("purchase_order") if isinstance(filters, dict) else None
@@ -1248,14 +1321,7 @@ def _get_all(doctype, fields=None, filters=None, order_by=None, limit_page_lengt
         rows = [row for row in PR_ROWS if not names or row["name"] in names]
         return [_selected(row, fields or ["name"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Sales Order Item":
-        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
-        if isinstance(parent_filter, list) and parent_filter[0] == "in":
-            parents = set(parent_filter[1])
-        elif parent_filter:
-            parents = {parent_filter}
-        else:
-            parents = set()
-        rows = [row for row in SO_ITEM_ROWS if not parents or row["parent"] in parents]
+        rows = _filter_child_rows(SO_ITEM_ROWS, filters)
         return [_selected(row, fields or ["parent"]) for row in rows[: limit_page_length or len(rows)]]
     if doctype == "Bin":
         item_filter = (filters or {}).get("item_code") if isinstance(filters, dict) else None
@@ -1548,6 +1614,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             "Stock Entry",
             "Stock Entry Detail",
         })
+        READABLE_DOCTYPES.update(CUSTOM_WORKFLOW_READABLE_DOCTYPES)
         COUNT_CALLS.clear()
         LIST_CALLS.clear()
         GET_ALL_CALLS.clear()
@@ -1609,6 +1676,18 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             "erp_workspace_ui.warehouse_console.service.get_warehouse_picking_review",
         )
         self.assertEqual(
+            workspace["methods"]["returns_work_hub"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_returns_work_hub",
+        )
+        self.assertEqual(
+            workspace["methods"]["internal_transfer_workflow"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_internal_transfer_workflow",
+        )
+        self.assertEqual(
+            workspace["methods"]["cycle_count_workflow"],
+            "erp_workspace_ui.warehouse_console.service.get_warehouse_cycle_count_workflow",
+        )
+        self.assertEqual(
             workspace["methods"]["stock_exceptions"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
         )
@@ -1633,6 +1712,14 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
         )
         self.assertEqual(
+            workspace["methods"]["internal_transfer_candidate_draft"],
+            "erp_workspace_ui.warehouse_console.service.save_warehouse_internal_transfer_candidate_draft",
+        )
+        self.assertEqual(
+            workspace["methods"]["internal_transfer_manager_decision"],
+            "erp_workspace_ui.warehouse_console.service.save_warehouse_internal_transfer_manager_decision",
+        )
+        self.assertEqual(
             workspace["methods"]["quick_find"],
             "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions",
         )
@@ -1645,6 +1732,9 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             "inbound_receiving",
             "outbound_picking",
             "stock_exceptions",
+            "returns_work_hub",
+            "internal_transfer_workflow",
+            "cycle_count_workflow",
             "movement_visibility",
             "transfer_visibility",
         ])
@@ -1659,8 +1749,8 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(payload["allowed_actions"], [{"key": "refresh", "label": "Refresh", "kind": "read_only"}])
         self.assertNotIn("manager_center", payload)
         self.assertIn("action_center", payload)
-        self.assertEqual(payload["action_center"]["mode"], "shell_only")
-        self.assertEqual(payload["action_center"]["state"], "planning")
+        self.assertEqual(payload["action_center"]["mode"], "custom_workflow")
+        self.assertEqual(payload["action_center"]["state"], "active")
         self.assertIn("inbound", payload)
         self.assertEqual(payload["inbound"]["queue_route"], "warehouse-console-worklist")
         self.assertEqual(payload["inbound"]["counts"]["overdue"], 1)
@@ -1687,7 +1777,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("amount", payload_text)
         self.assertNotIn("/app/", payload_text)
 
-    def test_w15b_action_center_is_shell_only_and_custom_route_only(self):
+    def test_w15b_action_center_is_custom_workflow_and_custom_route_only(self):
         CURRENT_ROLES[:] = ["Warehouse Manager"]
 
         payload = service.get_warehouse_console_overview()
@@ -1695,42 +1785,86 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("manager_center", payload)
         action_center = payload["action_center"]
         self.assertEqual(action_center["key"], "w15b_action_center")
-        self.assertEqual(action_center["mode"], "shell_only")
+        self.assertEqual(action_center["mode"], "custom_workflow")
         self.assertEqual(action_center["role_mode"], "manager")
-        self.assertGreaterEqual(len(action_center["sections"]), 2)
-        allowed_route_parts = {
-            "inbound-receiving",
-            "outbound-picking",
-            "stock-exceptions",
-            "movement-visibility",
-            "transfer-visibility",
+        expected_sections = {
+            "work_entry": ["arrival_checks", "picking_work", "return_intake", "internal_transfer", "cycle_counts"],
+            "manager_decisions": [
+                "arrival_review",
+                "picking_blockers",
+                "exception_resolution",
+                "return_decisions",
+                "internal_transfer_decisions",
+                "inventory_variance",
+            ],
+            "visibility": ["movement_visibility", "transfer_visibility"],
+        }
+        self.assertEqual([section["key"] for section in action_center["sections"]], list(expected_sections))
+        expected_card_matrix = {
+            "arrival_checks": ("inbound-receiving", "Open inbound", "queue", "Queue", "Review queue"),
+            "picking_work": ("outbound-picking", "Open picking", "queue", "Queue", "Review queue"),
+            "return_intake": ("returns-work-hub", "Open returns", "custom_workflow", "Custom workflow", "Returns page"),
+            "internal_transfer": ("internal-transfer-workflow", "Open transfer", "custom_workflow", "Custom workflow", "Transfer page"),
+            "cycle_counts": ("cycle-count-workflow", "Open cycle count", "custom_workflow", "Custom workflow", "Cycle Count page"),
+            "arrival_review": ("inbound-receiving", "Review arrivals", "queue", "Review queue", "Review queue"),
+            "picking_blockers": ("outbound-picking", "Review blockers", "queue", "Review queue", "Review queue"),
+            "exception_resolution": ("stock-exceptions", "Review exceptions", "queue", "Review queue", "Review queue"),
+            "return_decisions": ("returns-work-hub", "Open returns", "custom_workflow", "Workflow page", "Returns"),
+            "internal_transfer_decisions": (
+                "internal-transfer-workflow",
+                "Open transfer",
+                "custom_workflow",
+                "Workflow page",
+                "Transfer",
+            ),
+            "inventory_variance": ("cycle-count-workflow", "Open cycle count", "custom_workflow", "Workflow page", "Cycle Count"),
+            "movement_visibility": ("movement-visibility", "Open movements", "visibility", "Read-only", "Visibility"),
+            "transfer_visibility": ("transfer-visibility", "Review transfers", "visibility", "Read-only", "Visibility"),
         }
         routed_cards = []
+        returns_route_cards = []
         planned_cards = []
-        expected_button_labels = {
-            "arrival_checks": "Open inbound",
-            "picking_work": "Open picking",
-            "arrival_review": "Review arrivals",
-            "picking_blockers": "Review blockers",
-            "exception_resolution": "Review exceptions",
-            "movement_visibility": "Review transfers",
-        }
         for section in action_center["sections"]:
             self.assertIn("cards", section)
+            self.assertEqual([card["key"] for card in section["cards"]], expected_sections[section["key"]])
             for card in section["cards"]:
+                self.assertIn(card["key"], expected_card_matrix)
+                expected_route_part, expected_button, expected_role, expected_role_label, expected_status = expected_card_matrix[card["key"]]
                 if card.get("route"):
                     routed_cards.append(card)
                     self.assertEqual(card["route"], "warehouse-console-worklist")
-                    self.assertIn(card["route_part"], allowed_route_parts)
-                    self.assertEqual(card["button_label"], expected_button_labels[card["key"]])
+                    self.assertEqual(card["route_part"], expected_route_part)
+                    self.assertEqual(card["button_label"], expected_button)
+                    self.assertEqual(card["card_role"], expected_role)
+                    self.assertEqual(card["role_label"], expected_role_label)
+                    self.assertEqual(card["status_label"], expected_status)
+                    if card["route_part"] == "returns-work-hub":
+                        returns_route_cards.append(card)
+                        self.assertEqual(card["state"], "live")
+                    if card["route_part"] == "internal-transfer-workflow":
+                        self.assertEqual(card["state"], "live")
+                    if card["route_part"] == "cycle-count-workflow":
+                        self.assertEqual(card["state"], "live")
+                    if card["card_role"] == "custom_workflow":
+                        self.assertEqual(card["value"], "Custom")
+                    self.assertNotIn("target_section", card)
+                elif card.get("target_section"):
+                    self.fail("Returns cards should route to the dedicated Returns Work Hub, not scroll inside Overview")
                 else:
                     planned_cards.append(card)
                     self.assertEqual(card["state"], "planned")
                     self.assertNotIn("button_label", card)
-        self.assertGreaterEqual(len(routed_cards), 4)
-        self.assertGreaterEqual(len(planned_cards), 3)
+        self.assertEqual([card["key"] for card in routed_cards], [key for keys in expected_sections.values() for key in keys])
+        self.assertEqual({card["key"] for card in returns_route_cards}, {"return_intake", "return_decisions"})
+        self.assertEqual(
+            {section["key"]: section["title"] for section in action_center["sections"]},
+            {"work_entry": "Start Work", "manager_decisions": "Manager Review", "visibility": "Visibility"},
+        )
+        self.assertEqual(planned_cards, [])
         payload_text = str(action_center).lower()
         self.assertNotIn("manager readiness", payload_text)
+        self.assertNotIn("manager queue", payload_text)
+        self.assertNotIn("manager queues", payload_text)
         self.assertNotIn("/app/", payload_text)
         self.assertNotIn("/desk/form", payload_text)
         self.assertNotIn("submit", payload_text)
@@ -1774,6 +1908,50 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             self.assertNotIn("/desk/Form", str(result))
             self.assertNotIn("valuation_rate", str(result).lower())
             self.assertNotIn("stock_value", str(result).lower())
+
+    def test_w16g5a_quick_find_stock_exception_requires_visible_parent_sales_order(self):
+        original_parent_lookup = service._quick_find_parent_rows_by_name
+
+        def hidden_parent_lookup(doctype, names, fields, base_filters, limit):
+            if doctype == "Sales Order":
+                return []
+            return original_parent_lookup(doctype, names, fields, base_filters, limit)
+
+        service._quick_find_parent_rows_by_name = hidden_parent_lookup
+        try:
+            results = service._quick_find_stock_exception_results("ITEM-105", 5)
+        finally:
+            service._quick_find_parent_rows_by_name = original_parent_lookup
+
+        self.assertEqual(results, [])
+        child_calls = [call for call in GET_ALL_CALLS if call["doctype"] == "Sales Order Item"]
+        self.assertTrue(child_calls)
+        self.assertTrue(all(call["fields"] == ["parent"] for call in child_calls))
+        self.assertFalse(any(call["fields"] != ["parent"] for call in child_calls))
+
+    def test_w16g5a_quick_find_stock_exception_child_scan_is_parent_constrained(self):
+        results = service._quick_find_stock_exception_results("ITEM-105", 5)
+
+        self.assertTrue(results)
+        child_calls = [call for call in GET_ALL_CALLS if call["doctype"] == "Sales Order Item"]
+        self.assertTrue(child_calls)
+        result_child_calls = [call for call in child_calls if call["fields"] != ["parent"]]
+        self.assertTrue(result_child_calls)
+        for call in result_child_calls:
+            self.assertIn(["Sales Order Item", "parent", "in", ["SO-REVIEW"]], call["filters"])
+
+    def test_w16g5a_quick_find_stock_exception_search_filter_limits_child_rows(self):
+        results = service._quick_find_stock_exception_results("not-a-visible-item", 5)
+
+        self.assertEqual(results, [])
+
+    def test_w16g5a_quick_find_stock_exception_rejects_without_parent_sales_order_read(self):
+        READABLE_DOCTYPES.discard("Sales Order")
+
+        results = service._quick_find_stock_exception_results("ITEM-105", 5)
+
+        self.assertEqual(results, [])
+        self.assertFalse([call for call in GET_ALL_CALLS if call["doctype"] == "Sales Order Item"])
 
     def test_w14b_quick_find_restricted_without_warehouse_role(self):
         CURRENT_ROLES[:] = []
@@ -2344,6 +2522,9 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertEqual(payload["page"]["purchase_order"], "PO-PARTIAL")
         self.assertEqual(payload["valuation"], {"visible": False, "fields": []})
         self.assertEqual(payload["action_targets"]["inbound_queue"]["route"], "warehouse-console-worklist")
+        self.assertFalse(payload["workflow_task"]["available"])
+        self.assertFalse(payload["workflow_task"]["stock_effect"]["purchase_receipt_created"])
+        self.assertEqual(payload["workflow_task"]["valuation"], {"visible": False, "fields": []})
         self.assertEqual(payload["header"]["supplier"], "Partial Goods")
         self.assertEqual(payload["header"]["received_percent"], "35%")
         self.assertGreaterEqual(len(payload["lines"]), 1)
@@ -2371,6 +2552,29 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertNotIn("/app/", payload_text)
         self.assertTrue(any(call["doctype"] == "Purchase Order" for call in LIST_CALLS))
         self.assertTrue(any(call["doctype"] == "Purchase Order Item" for call in GET_ALL_CALLS))
+
+    def test_w16b_receiving_review_exposes_custom_workflow_task_without_stock_document(self):
+        task = self._create_receiving_task(request_id="w16b-review-task")
+
+        payload = service.get_warehouse_receiving_review("PO-PARTIAL")
+        workflow_task = payload["workflow_task"]
+
+        self.assertTrue(workflow_task["available"])
+        self.assertEqual(workflow_task["task_id"], task.name)
+        self.assertEqual(workflow_task["purchase_order"], "PO-PARTIAL")
+        self.assertEqual(workflow_task["target_warehouse"], "Main - M")
+        self.assertEqual(workflow_task["status"], "In Progress")
+        self.assertTrue(workflow_task["manager_decision_available"])
+        self.assertEqual(workflow_task["line_count"], 1)
+        self.assertEqual(workflow_task["lines"][0]["item_code"], "ITEM-003")
+        self.assertFalse(workflow_task["stock_effect"]["stock_posted"])
+        self.assertFalse(workflow_task["stock_effect"]["purchase_receipt_created"])
+        self.assertFalse(workflow_task["stock_effect"]["purchase_receipt_submitted"])
+        self.assertEqual(workflow_task["valuation"], {"visible": False, "fields": []})
+        workflow_text = str(workflow_task).lower()
+        self.assertNotIn("valuation_rate", workflow_text)
+        self.assertNotIn("stock_value", workflow_text)
+        self.assertNotIn("/app/", workflow_text)
 
     def _create_receiving_task(self, *, line=None, request_id="draft-for-manager"):
         CURRENT_ROLES[:] = ["Warehouse Manager"]
@@ -2646,7 +2850,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             request_id="mgr-procurement-1",
         )
 
-        self.assertEqual(payload["status"], "Escalated To Procurement")
+        self.assertEqual(payload["status"], "Procurement Review Needed")
         self.assertEqual(payload["last_event"]["event_type"], "escalated_to_procurement")
         self.assertFalse(payload["stock_effect"]["stock_posted"])
         self.assertFalse(payload["stock_effect"]["purchase_receipt_created"])
@@ -3105,7 +3309,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             note="Customer-facing delivery quantity needs Sales review.",
             request_id="pick-mgr-sales-reason",
         )
-        self.assertEqual(result["status"], "Sales Escalation")
+        self.assertEqual(result["status"], "Sales Review Needed")
         self.assertFalse(result["sales_order_updated"])
         self.assertFalse(result["customer_notified"])
 
@@ -3172,7 +3376,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             request_id="pick-mgr-dispatch",
         )
 
-        self.assertEqual(result["status"], "Dispatch Handoff Ready")
+        self.assertEqual(result["status"], "Outbound Review Ready")
         self.assertEqual(result["event_summary"]["event_type"], "marked_dispatch_handoff")
         self.assertFalse(result["delivery_note_created"])
         self.assertFalse(result["delivery_note_submitted"])
@@ -3266,7 +3470,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self,
         request_id="pick-dispatch-ready-draft",
         line=None,
-        status="Dispatch Handoff Ready",
+        status="Outbound Review Ready",
         sales_order="SO-REVIEW",
         source_warehouse="Short - M",
     ):
@@ -3284,7 +3488,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         )
         task = PICKING_TASK_DOCS[payload["task"]["task_id"]]
         task.task_status = status
-        task.workflow_state = "Dispatch handoff marked" if status == "Dispatch Handoff Ready" else status
+        task.workflow_state = "Outbound readiness posture marked" if status == "Outbound Review Ready" else status
         return task
 
     def _request_dispatch_handoff(self, task, as_manager=True, **overrides):
@@ -3589,6 +3793,30 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         self.assertTrue(any(call["doctype"] == "Sales Order" for call in LIST_CALLS))
         self.assertTrue(any(call["doctype"] == "Sales Order Item" for call in GET_ALL_CALLS))
         self.assertTrue(any(call["doctype"] == "Bin" for call in GET_ALL_CALLS))
+
+    def test_w16c_picking_review_exposes_custom_workflow_task_without_stock_document(self):
+        draft = self._save_pick_task(request_id="pick-review-workflow-task")
+
+        payload = service.get_warehouse_picking_review("SO-REVIEW")
+
+        workflow_task = payload["workflow_task"]
+        self.assertTrue(workflow_task["available"])
+        self.assertEqual(workflow_task["task_id"], draft["task"]["task_id"])
+        self.assertEqual(workflow_task["sales_order"], "SO-REVIEW")
+        self.assertEqual(workflow_task["source_warehouse"], "Short - M")
+        self.assertEqual(workflow_task["status"], "In Progress")
+        self.assertTrue(workflow_task["manager_decision_available"])
+        self.assertEqual(workflow_task["line_count"], 1)
+        self.assertEqual(workflow_task["lines"][0]["item_code"], "ITEM-105")
+        self.assertFalse(workflow_task["stock_effect"]["delivery_note_created"])
+        self.assertFalse(workflow_task["stock_effect"]["pick_list_created"])
+        self.assertFalse(workflow_task["stock_effect"]["stock_reserved"])
+        self.assertFalse(workflow_task["stock_effect"]["stock_posted"])
+        self.assertEqual(workflow_task["valuation"], {"visible": False, "fields": []})
+        workflow_text = str(workflow_task).lower()
+        self.assertNotIn("valuation_rate", workflow_text)
+        self.assertNotIn("stock_value", workflow_text)
+        self.assertNotIn("/app/", workflow_text)
 
     def test_picking_review_uses_parent_sales_order_when_child_table_read_is_unavailable(self):
         READABLE_DOCTYPES.discard("Sales Order Item")
@@ -3971,7 +4199,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
 
         self.assertEqual(repair_payload["status"], "Repair Candidate")
         self.assertEqual(scrap_payload["status"], "Scrap Candidate")
-        self.assertEqual(sales_payload["status"], "Sales Escalation")
+        self.assertEqual(sales_payload["status"], "Sales Review Needed")
         self.assertEqual(CUSTOMER_RETURN_INTAKE_DOCS[sales_intake].sales_escalation_reference, "SALES-RET-001")
 
         CURRENT_ROLES[:] = ["Stock User"]
@@ -4551,7 +4779,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             procurement_escalation_reference="PROC-SUP-RET-001",
             request_id="supplier-rules-procurement",
         )
-        self.assertEqual(procurement_payload["candidate"]["candidate_status"], "Procurement Escalation")
+        self.assertEqual(procurement_payload["candidate"]["candidate_status"], "Procurement Review Needed")
         self.assertEqual(SUPPLIER_RETURN_CANDIDATE_DOCS[procurement_candidate].procurement_escalation_reference, "PROC-SUP-RET-001")
 
         CURRENT_ROLES[:] = ["Stock User"]
@@ -4564,7 +4792,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             finance_escalation_reference="FIN-SUP-RET-001",
             request_id="supplier-rules-finance",
         )
-        self.assertEqual(finance_payload["candidate"]["candidate_status"], "Finance/Admin Escalation")
+        self.assertEqual(finance_payload["candidate"]["candidate_status"], "Finance/Admin Review Needed")
         self.assertEqual(SUPPLIER_RETURN_CANDIDATE_DOCS[finance_candidate].finance_escalation_reference, "FIN-SUP-RET-001")
 
     def test_w15f4_supplier_return_manager_idempotency_and_status_safety(self):
@@ -4998,6 +5226,11 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "doctype" / folder / f"{folder}.json"
         return json.loads(path.read_text())
 
+    def _select_options(self, folder, fieldname):
+        meta = self._load_warehouse_workflow_doctype(folder)
+        fields = {field["fieldname"]: field for field in meta["fields"]}
+        return set(str(fields[fieldname].get("options") or "").splitlines())
+
     def test_w15i5_workflow_doctypes_explicitly_disable_web_indexing_and_require_core_audit_fields(self):
         workflow_folders = [
             "warehouse_customer_return_intake",
@@ -5043,6 +5276,50 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             for field in self._load_warehouse_workflow_doctype("warehouse_cycle_count_task")["fields"]
         }
         self.assertEqual(cycle_count_fields["request_id"].get("reqd"), 1)
+
+    def test_w16g5f_manager_status_options_match_service_contract(self):
+        status_contracts = {
+            "warehouse_receiving_task": (
+                "status",
+                {status for status, _event_type in service.RECEIVING_TASK_MANAGER_DECISIONS.values()}
+                | {"Separate Document Policy"},
+            ),
+            "warehouse_picking_task": (
+                "task_status",
+                {status for status, _event_type, _event_label in service.PICKING_TASK_MANAGER_DECISIONS.values()}
+                | {"Separate Document Policy"},
+            ),
+            "warehouse_customer_return_intake": (
+                "intake_status",
+                {status for status, _event_type, _event_label in service.CUSTOMER_RETURN_MANAGER_DECISIONS.values()},
+            ),
+            "warehouse_supplier_return_candidate": (
+                "candidate_status",
+                {status for status, _event_type, _event_label in service.SUPPLIER_RETURN_MANAGER_DECISIONS.values()},
+            ),
+            "warehouse_internal_transfer_candidate": (
+                "candidate_status",
+                {status for status, _event_type, _event_label in service.INTERNAL_TRANSFER_MANAGER_DECISIONS.values()},
+            ),
+            "warehouse_cycle_count_task": (
+                "count_status",
+                {status for status, _event_type, _event_label in service.CYCLE_COUNT_MANAGER_DECISIONS.values()},
+            ),
+        }
+        stale_status_fragments = {
+            "Escalated To Procurement",
+            "Escalated To Sales",
+            "Dispatch Handoff Ready",
+            "Delivery Draft Prepared",
+            "Procurement Escalation",
+            "Finance/Admin Escalation",
+            "Inventory/Admin Review Requested",
+        }
+
+        for folder, (fieldname, required_statuses) in status_contracts.items():
+            options = self._select_options(folder, fieldname)
+            self.assertTrue(required_statuses <= options, f"{folder}.{fieldname} is missing {required_statuses - options}")
+            self.assertFalse(stale_status_fragments & options, f"{folder}.{fieldname} has stale statuses")
 
     def test_w15g3_internal_transfer_candidate_doctypes_are_internal_non_submittable(self):
         parent = self._load_internal_transfer_doctype("warehouse_internal_transfer_candidate")
@@ -5753,6 +6030,133 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
         payload.update(overrides)
         return service.save_warehouse_cycle_count_task_draft(**payload)
 
+    def test_w16g5c_custom_workflow_state_endpoints_recall_saved_records(self):
+        customer_payload = self._save_customer_return_intake(request_id="w16g5c-customer-intake")
+        supplier_payload = self._save_supplier_return_candidate(request_id="w16g5c-supplier-candidate")
+        internal_payload = self._save_internal_transfer_candidate(request_id="w16g5c-internal-transfer")
+        cycle_payload = self._save_cycle_count_task(request_id="w16g5c-cycle-count")
+        customer_id = customer_payload["intake"]["intake_id"]
+        supplier_id = supplier_payload["candidate"]["candidate_id"]
+        internal_id = internal_payload["candidate"]["candidate_id"]
+        cycle_id = cycle_payload["task"]["task_id"]
+
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        LIST_CALLS.clear()
+        GET_ALL_CALLS.clear()
+        returns_payload = service.get_warehouse_returns_work_hub()
+        internal_payload = service.get_warehouse_internal_transfer_workflow()
+        cycle_payload = service.get_warehouse_cycle_count_workflow()
+
+        self.assertEqual(returns_payload["state"]["kind"], "ready")
+        self.assertTrue(returns_payload["record_recall_only"])
+        self.assertEqual(returns_payload["native_routes"], [])
+        self.assertFalse(returns_payload["stock_effect"])
+        self.assertEqual(returns_payload["workflow"]["selected"]["customer_intake"]["intake_id"], customer_id)
+        self.assertEqual(returns_payload["workflow"]["selected"]["supplier_candidate"]["candidate_id"], supplier_id)
+        self.assertTrue(returns_payload["workflow"]["manager"]["can_manage_customer"])
+        self.assertTrue(returns_payload["workflow"]["manager"]["can_manage_supplier"])
+
+        self.assertEqual(internal_payload["workflow"]["selected"]["candidate"]["candidate_id"], internal_id)
+        self.assertTrue(internal_payload["workflow"]["manager"]["can_manage"])
+        self.assertFalse(internal_payload["stock_moved"])
+        self.assertFalse(internal_payload["stock_entry_created"])
+        self.assertEqual(internal_payload["native_routes"], [])
+
+        self.assertEqual(cycle_payload["workflow"]["selected"]["task"]["task_id"], cycle_id)
+        self.assertTrue(cycle_payload["workflow"]["manager"]["can_manage"])
+        self.assertFalse(cycle_payload["stock_quantity_adjusted"])
+        self.assertFalse(cycle_payload["stock_reconciliation_created"])
+        self.assertEqual(cycle_payload["native_routes"], [])
+
+        forbidden_docs = {
+            "Sales Return",
+            "Credit Note",
+            "Delivery Note",
+            "Purchase Receipt",
+            "Purchase Invoice",
+            "Stock Entry",
+            "Stock Ledger Entry",
+            "Stock Balance",
+            "Stock Reconciliation",
+            "Stock Reservation Entry",
+        }
+        custom_recall_doctypes = CUSTOM_WORKFLOW_READABLE_DOCTYPES | {"Warehouse"}
+        self.assertTrue(any(call["doctype"] in custom_recall_doctypes for call in LIST_CALLS))
+        self.assertFalse(any(call["doctype"] in forbidden_docs for call in GET_ALL_CALLS))
+        self.assertFalse(any(call["doctype"] in custom_recall_doctypes for call in GET_ALL_CALLS))
+
+    def test_w16g5c_custom_workflow_state_endpoints_restrict_non_warehouse_roles(self):
+        self._save_customer_return_intake(request_id="w16g5c-restricted-customer")
+        self._save_internal_transfer_candidate(request_id="w16g5c-restricted-transfer")
+        self._save_cycle_count_task(request_id="w16g5c-restricted-cycle")
+
+        CURRENT_ROLES[:] = ["Accounts User"]
+        GET_ALL_CALLS.clear()
+        returns_payload = service.get_warehouse_returns_work_hub()
+        internal_payload = service.get_warehouse_internal_transfer_workflow()
+        cycle_payload = service.get_warehouse_cycle_count_workflow()
+
+        self.assertEqual(returns_payload["state"]["kind"], "restricted")
+        self.assertEqual(returns_payload["workflow"]["records"], {})
+        self.assertEqual(returns_payload["workflow"]["selected"], {})
+        self.assertEqual(internal_payload["state"]["kind"], "restricted")
+        self.assertEqual(internal_payload["workflow"]["records"], {})
+        self.assertEqual(cycle_payload["state"]["kind"], "restricted")
+        self.assertEqual(cycle_payload["workflow"]["records"], {})
+        self.assertFalse(any(call["doctype"] in {
+            service.CUSTOMER_RETURN_INTAKE_DOCTYPE,
+            service.SUPPLIER_RETURN_CANDIDATE_DOCTYPE,
+            service.INTERNAL_TRANSFER_CANDIDATE_DOCTYPE,
+            service.CYCLE_COUNT_TASK_DOCTYPE,
+        } for call in GET_ALL_CALLS))
+
+    def test_w16g5h_custom_workflow_recall_requires_custom_doctype_read_permission(self):
+        self._save_customer_return_intake(request_id="w16g5h-read-customer")
+        self._save_supplier_return_candidate(request_id="w16g5h-read-supplier")
+        self._save_internal_transfer_candidate(request_id="w16g5h-read-transfer")
+        self._save_cycle_count_task(request_id="w16g5h-read-cycle")
+
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        READABLE_DOCTYPES.difference_update(CUSTOM_WORKFLOW_READABLE_DOCTYPES)
+        LIST_CALLS.clear()
+        GET_ALL_CALLS.clear()
+
+        returns_payload = service.get_warehouse_returns_work_hub()
+        internal_payload = service.get_warehouse_internal_transfer_workflow()
+        cycle_payload = service.get_warehouse_cycle_count_workflow()
+
+        self.assertEqual(returns_payload["workflow"]["records"]["customer_intakes"], [])
+        self.assertEqual(returns_payload["workflow"]["records"]["supplier_candidates"], [])
+        self.assertEqual(returns_payload["workflow"]["selected"]["customer_intake"], {})
+        self.assertEqual(returns_payload["workflow"]["selected"]["supplier_candidate"], {})
+        self.assertEqual(internal_payload["workflow"]["records"]["candidates"], [])
+        self.assertEqual(internal_payload["workflow"]["selected"]["candidate"], {})
+        self.assertEqual(cycle_payload["workflow"]["records"]["tasks"], [])
+        self.assertEqual(cycle_payload["workflow"]["selected"]["task"], {})
+        self.assertFalse(any(call["doctype"] in CUSTOM_WORKFLOW_READABLE_DOCTYPES for call in LIST_CALLS))
+        self.assertFalse(any(call["doctype"] in CUSTOM_WORKFLOW_READABLE_DOCTYPES for call in GET_ALL_CALLS))
+
+    def test_w16g5h_custom_workflow_recall_requires_warehouse_read_permission(self):
+        self._save_customer_return_intake(request_id="w16g5h-warehouse-customer")
+        self._save_internal_transfer_candidate(request_id="w16g5h-warehouse-transfer")
+        self._save_cycle_count_task(request_id="w16g5h-warehouse-cycle")
+
+        CURRENT_ROLES[:] = ["Warehouse Manager"]
+        READABLE_DOCTYPES.discard("Warehouse")
+        LIST_CALLS.clear()
+        GET_ALL_CALLS.clear()
+
+        returns_payload = service.get_warehouse_returns_work_hub()
+        internal_payload = service.get_warehouse_internal_transfer_workflow()
+        cycle_payload = service.get_warehouse_cycle_count_workflow()
+
+        self.assertEqual(returns_payload["workflow"]["records"], {})
+        self.assertEqual(returns_payload["workflow"]["selected"], {})
+        self.assertEqual(internal_payload["workflow"]["records"], {})
+        self.assertEqual(cycle_payload["workflow"]["records"], {})
+        self.assertFalse(any(call["doctype"] in CUSTOM_WORKFLOW_READABLE_DOCTYPES for call in LIST_CALLS))
+        self.assertFalse(any(call["doctype"] in CUSTOM_WORKFLOW_READABLE_DOCTYPES for call in GET_ALL_CALLS))
+
     def test_w15h4_warehouse_and_stock_users_can_save_cycle_count_task_draft(self):
         payload = self._save_cycle_count_task()
 
@@ -6064,7 +6468,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             inventory_admin_escalation_reference="INV-ADM-COUNT-001",
             request_id="cycle-count-rules-admin",
         )
-        self.assertEqual(admin_payload["task"]["count_status"], "Inventory/Admin Review Requested")
+        self.assertEqual(admin_payload["task"]["count_status"], "Inventory/Admin Review Needed")
         self.assertEqual(CYCLE_COUNT_TASK_DOCS[admin_task].inventory_admin_escalation_reference, "INV-ADM-COUNT-001")
 
         CURRENT_ROLES[:] = ["Stock User"]
@@ -6697,7 +7101,7 @@ class TestWarehouseConsoleW5BContracts(unittest.TestCase):
             inventory_admin_escalation_reference="INV-ADM-TR-001",
             request_id="internal-transfer-rules-admin",
         )
-        self.assertEqual(admin_payload["candidate"]["candidate_status"], "Inventory/Admin Review")
+        self.assertEqual(admin_payload["candidate"]["candidate_status"], "Inventory/Admin Review Needed")
         self.assertEqual(INTERNAL_TRANSFER_CANDIDATE_DOCS[admin_candidate].inventory_admin_escalation_reference, "INV-ADM-TR-001")
 
         CURRENT_ROLES[:] = ["Stock User"]

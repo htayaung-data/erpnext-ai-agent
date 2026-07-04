@@ -186,6 +186,28 @@
           <path d="M5 11a7 7 0 1 0 2.1-5"></path>
         </svg>
       `,
+      return: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 7H5v4"></path>
+          <path d="M5 11a7 7 0 1 0 2.1-5"></path>
+        </svg>
+      `,
+      stock: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3l7 4-7 4-7-4 7-4z"></path>
+          <path d="M5 7v6l7 4 7-4V7"></path>
+          <path d="M8 17.5h8"></path>
+          <path d="M16 15.5l2 2-2 2"></path>
+        </svg>
+      `,
+      report: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 4.5h12v15H6z"></path>
+          <path d="M9 9h6"></path>
+          <path d="M9 12.5h6"></path>
+          <path d="M9 16h3"></path>
+        </svg>
+      `,
       guide: `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="9"></circle>

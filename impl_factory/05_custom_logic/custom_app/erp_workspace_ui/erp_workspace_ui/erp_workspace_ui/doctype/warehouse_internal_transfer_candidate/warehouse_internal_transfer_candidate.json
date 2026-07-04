@@ -88,7 +88,7 @@
    "fieldtype": "Select",
    "label": "Candidate Status",
    "read_only": 1,
-   "options": "Draft\nCount In Progress\nSubmitted For Review\nRecount Requested\nTransfer Candidate\nQuarantine Review\nInventory/Admin Review\nRejected\nCancelled\nClosed",
+   "options": "Draft\nCount In Progress\nSubmitted For Review\nRecount Requested\nTransfer Candidate\nQuarantine Review\nInventory/Admin Review Needed\nRejected\nCancelled\nClosed",
    "default": "Draft"
   },
   {
@@ -100,7 +100,7 @@
   {
    "fieldname": "inventory_admin_escalation_reference",
    "fieldtype": "Data",
-   "label": "Inventory Admin Escalation Reference",
+   "label": "Inventory/Admin Review Reference",
    "read_only": 1
   },
   {

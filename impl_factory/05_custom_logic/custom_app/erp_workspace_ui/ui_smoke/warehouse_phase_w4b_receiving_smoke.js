@@ -121,11 +121,40 @@ function requestText(request) {
   return `${request.url()} ${request.postData() || ""} ${jsonText}`;
 }
 
+function requestMethodArgs(request) {
+  let body = {};
+  try {
+    body = request.postDataJSON() || {};
+  } catch (error) {
+    const params = new URLSearchParams(request.postData() || "");
+    body = Object.fromEntries(params.entries());
+  }
+  if (typeof body.args === "string") {
+    try {
+      return JSON.parse(body.args || "{}") || {};
+    } catch (error) {
+      return {};
+    }
+  }
+  return body.args && typeof body.args === "object" ? body.args : body;
+}
+
 function recordOverrideHit(diagnostics, key, request, extra = {}) {
   remember(diagnostics.overrideHits, { key, url: bounded(request.url()), method: request.method(), postData: bounded(request.postData() || "", 500), ...extra }, 120);
 }
 
-function sourceSidebarPayload(allowed = true) {
+function sourceRoleContext(userKey = "warehouse-manager", allowed = true) {
+  const isManager = userKey === "warehouse-manager";
+  return {
+    has_warehouse_access: allowed,
+    role_family: "Warehouse",
+    role_variant: isManager ? "warehouse_manager" : "warehouse_user",
+    roles: isManager ? ["Warehouse Manager"] : ["Warehouse User"],
+    can_view_valuation: false,
+  };
+}
+
+function sourceSidebarPayload(allowed = true, roleContext = sourceRoleContext("warehouse-manager", allowed)) {
   const items = allowed ? [
     { key: "warehouse_console_home", label: "Overview", icon: "item", target: { kind: "page", route: "warehouse-console" } },
     { key: "inbound_receiving", label: "Inbound Receiving", icon: "quotation", target: { kind: "worklist", queue_key: "inbound_receiving" } },
@@ -144,7 +173,7 @@ function sourceSidebarPayload(allowed = true) {
       },
       search: { enabled: false },
     },
-    context: { has_warehouse_access: allowed, role_family: "Warehouse", role_variant: "warehouse_manager", can_view_valuation: false },
+    context: roleContext,
     state: allowed
       ? { kind: "ready", title: "Warehouse Console ready", detail: "Stock visibility and warehouse posture are available for review." }
       : { kind: "restricted", title: "Warehouse Console is restricted", detail: "This page is available only to Warehouse roles." },
@@ -206,7 +235,9 @@ function sourceInboundRows() {
   ];
 }
 
-function sourceInboundPayload(filters = {}) {
+const RECEIVING_WORKFLOW_TASKS = new Map();
+
+function sourceInboundPayload(filters = {}, roleContext = sourceRoleContext("warehouse-manager", true)) {
   const rows = sourceInboundRows().filter((row) => {
     if (filters.supplier && !row.supplier.toLowerCase().includes(String(filters.supplier).toLowerCase())) return false;
     if (filters.purchase_order && !row.purchase_order.toLowerCase().includes(String(filters.purchase_order).toLowerCase())) return false;
@@ -227,8 +258,8 @@ function sourceInboundPayload(filters = {}) {
     ["expected_soon", "Expected Soon", "Due in the next 14 days."],
   ].map(([key, title, note]) => ({ key, label: title, title, value: counts[key], state: "live", note, empty_message: "No inbound receiving needs attention." }));
   return {
-    workspace: sourceSidebarPayload(true).workspace,
-    context: { has_warehouse_access: true, role_family: "Warehouse", role_variant: "warehouse_manager", can_view_valuation: false },
+    workspace: sourceSidebarPayload(true, roleContext).workspace,
+    context: roleContext,
     state: rows.length
       ? { kind: "ready", title: "Warehouse Console ready", detail: "Stock visibility and warehouse posture are available for review." }
       : { kind: "empty", title: "No inbound receiving needs attention", detail: "No receiving matches these filters." },
@@ -253,11 +284,11 @@ function sourceInboundPayload(filters = {}) {
   };
 }
 
-function sourceOverviewPayload() {
-  const inbound = sourceInboundPayload();
+function sourceOverviewPayload(roleContext = sourceRoleContext("warehouse-manager", true)) {
+  const inbound = sourceInboundPayload({}, roleContext);
   return {
     workspace: sourceSidebarPayload(true).workspace,
-    context: { has_warehouse_access: true, role_family: "Warehouse", role_variant: "warehouse_manager", can_view_valuation: false },
+    context: roleContext,
     state: { kind: "ready", title: "Warehouse Console ready", detail: "Stock visibility and warehouse posture are available for review." },
     sidebar: sourceSidebarPayload(true).sidebar,
     kpis: [
@@ -277,11 +308,24 @@ function sourceOverviewPayload() {
   };
 }
 
-function sourceReceivingPayload(po = "PO-OVERDUE") {
+function sourceReceivingPayload(po = "PO-OVERDUE", roleContext = sourceRoleContext("warehouse-manager", true)) {
   const row = sourceInboundRows().find((item) => item.purchase_order === po) || sourceInboundRows()[0];
+  const workflowTask = RECEIVING_WORKFLOW_TASKS.get(row.purchase_order) || {
+    available: false,
+    task_id: "",
+    purchase_order: row.purchase_order,
+    target_warehouse: row.target_warehouse,
+    status: "",
+    decision: "",
+    line_count: 0,
+    manager_decision_available: false,
+    lines: [],
+    stock_effect: { stock_posted: false, purchase_receipt_created: false, purchase_receipt_submitted: false },
+    valuation: { visible: false, fields: [] },
+  };
   return {
-    workspace: sourceSidebarPayload(true).workspace,
-    context: { has_warehouse_access: true, role_family: "Warehouse", role_variant: "warehouse_manager", can_view_valuation: false },
+    workspace: sourceSidebarPayload(true, roleContext).workspace,
+    context: roleContext,
     state: { kind: "ready", title: "Warehouse Console ready", detail: "Stock visibility and warehouse posture are available for review." },
     page: { title: "Receiving Review", key: "receiving_review", purchase_order: row.purchase_order },
     header: {
@@ -317,6 +361,7 @@ function sourceReceivingPayload(po = "PO-OVERDUE") {
       status: row.purchase_order === "PO-PARTIAL" ? "Partially arrived" : "Overdue",
     })),
     receipt_history: [{ receipt_id: "REC-0001", posting_date: "2026-05-25", status: "Recorded", item_count: 1, quantity_summary: "7 Nos" }],
+    workflow_task: workflowTask,
     allowed_actions: [{ key: "refresh", label: "Refresh", kind: "read_only" }, { key: "back_to_inbound", label: "Back to inbound receiving", kind: "navigation" }],
     action_targets: { inbound_queue: { route: "warehouse-console-worklist", queue_key: "inbound_receiving" } },
     valuation: { visible: false, fields: [] },
@@ -326,6 +371,7 @@ function sourceReceivingPayload(po = "PO-OVERDUE") {
 
 async function installSourceOverrides(context, diagnostics) {
   if (!ASSET_ROOT) return;
+  const roleContext = sourceRoleContext(diagnostics.label, true);
   const assetMappings = [
     { key: "warehouse-page-asset", pattern: /\/assets\/erp_workspace_ui\/js\/warehouse_console\/warehouse_console_page\.js(?:\?|$)/, file: "erp_workspace_ui/public/js/warehouse_console/warehouse_console_page.js", contentType: "application/javascript" },
     { key: "workspace-registry-asset", pattern: /\/assets\/erp_workspace_ui\/js\/runtime\/console\/workspace_registry\.js(?:\?|$)/, file: "erp_workspace_ui/public/js/runtime/console/workspace_registry.js", contentType: "application/javascript" },
@@ -358,7 +404,7 @@ async function installSourceOverrides(context, diagnostics) {
   });
   await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.get_warehouse_console_overview**", async (route) => {
     recordOverrideHit(diagnostics, "warehouse-overview", route.request(), { fulfilled: true });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceOverviewPayload() }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceOverviewPayload(roleContext) }) });
   });
   await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.get_warehouse_inbound_receiving_queue**", async (route) => {
     let filters = {};
@@ -370,22 +416,103 @@ async function installSourceOverrides(context, diagnostics) {
       filters = {};
     }
     recordOverrideHit(diagnostics, "warehouse-inbound-queue", route.request(), { fulfilled: true, filters });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceInboundPayload(filters) }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceInboundPayload(filters, roleContext) }) });
   });
   await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.get_warehouse_receiving_review**", async (route) => {
     let purchaseOrder = "PO-OVERDUE";
     try {
-      const body = route.request().postDataJSON() || {};
+      const body = requestMethodArgs(route.request());
       purchaseOrder = body.purchase_order || purchaseOrder;
     } catch (error) {
       purchaseOrder = "PO-OVERDUE";
     }
     recordOverrideHit(diagnostics, "warehouse-receiving-detail", route.request(), { fulfilled: true, purchaseOrder });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceReceivingPayload(purchaseOrder) }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceReceivingPayload(purchaseOrder, roleContext) }) });
+  });
+  await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.save_warehouse_receiving_task_draft**", async (route) => {
+    const body = requestMethodArgs(route.request());
+    const purchaseOrder = body.purchase_order || "PO-OVERDUE";
+    const targetWarehouse = body.target_warehouse || "Stores - M";
+    const rawLines = typeof body.lines === "string" ? JSON.parse(body.lines || "[]") : (body.lines || []);
+    const lines = Array.isArray(rawLines) ? rawLines : (Array.isArray(rawLines.lines) ? rawLines.lines : []);
+    const task = {
+      available: true,
+      task_id: `WRT-SMOKE-${purchaseOrder}`,
+      purchase_order: purchaseOrder,
+      target_warehouse: targetWarehouse,
+      status: "In Progress",
+      decision: "",
+      line_count: lines.length,
+      manager_decision_available: true,
+      lines: lines.map((line) => ({
+        purchase_order_item: line.purchase_order_item || "",
+        item_code: line.item_code || "",
+        target_warehouse: line.target_warehouse || targetWarehouse,
+        expected_qty: line.counted_qty == null ? "0" : String(line.counted_qty),
+        counted_qty: line.counted_qty == null ? "0" : String(line.counted_qty),
+        accepted_qty: line.accepted_qty == null ? "0" : String(line.accepted_qty),
+        damaged_qty: line.damaged_qty == null ? "0" : String(line.damaged_qty),
+        short_qty: line.short_qty == null ? "0" : String(line.short_qty),
+        over_qty: line.over_qty == null ? "0" : String(line.over_qty),
+        quarantine_qty: line.quarantine_qty == null ? "0" : String(line.quarantine_qty),
+        line_status: line.discrepancy_reason ? "Needs Review" : "Draft",
+      })),
+      stock_effect: { stock_posted: false, purchase_receipt_created: false, purchase_receipt_submitted: false },
+      valuation: { visible: false, fields: [] },
+    };
+    RECEIVING_WORKFLOW_TASKS.set(purchaseOrder, task);
+    recordOverrideHit(diagnostics, "warehouse-receiving-task-draft", route.request(), { fulfilled: true, purchaseOrder, lineCount: lines.length });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        message: {
+          state: { kind: "ready", title: "Receiving task draft ready", detail: "Custom receiving task recorded." },
+          page: { title: "Receiving Task Draft", key: "receiving_task_draft", purchase_order: purchaseOrder },
+          task,
+          stock_effect: task.stock_effect,
+          valuation: task.valuation,
+        },
+      }),
+    });
+  });
+  await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.save_warehouse_receiving_manager_decision**", async (route) => {
+    const body = requestMethodArgs(route.request());
+    const decision = body.decision || "approve_clean";
+    const task = Array.from(RECEIVING_WORKFLOW_TASKS.values()).find((item) => item.task_id === body.task_id) || Array.from(RECEIVING_WORKFLOW_TASKS.values())[0];
+    const statusByDecision = {
+      request_recount: "Recount Requested",
+      approve_clean: "Approved Clean",
+      approve_discrepancy: "Approved With Discrepancy",
+      mark_quarantine_review: "Quarantine Review",
+      escalate_to_procurement: "Procurement Review Needed",
+    };
+    if (task) {
+      task.status = statusByDecision[decision] || "Manager Review";
+      task.decision = decision;
+      task.manager_decision_available = ["In Progress", "Submitted For Review"].includes(task.status);
+      RECEIVING_WORKFLOW_TASKS.set(task.purchase_order, task);
+    }
+    recordOverrideHit(diagnostics, "warehouse-receiving-manager-decision", route.request(), { fulfilled: true, decision });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        message: {
+          state: { kind: "ready", title: "Receiving manager decision ready", detail: "Custom receiving task decision recorded." },
+          page: { title: "Receiving Manager Decision", key: "receiving_manager_decision", purchase_order: task ? task.purchase_order : "" },
+          task,
+          status: task ? task.status : "",
+          decision,
+          stock_effect: { stock_posted: false, purchase_receipt_created: false, purchase_receipt_submitted: false },
+          valuation: { visible: false, fields: [] },
+        },
+      }),
+    });
   });
   await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context**", async (route) => {
     recordOverrideHit(diagnostics, "warehouse-sidebar", route.request(), { fulfilled: true });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceSidebarPayload(true) }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourceSidebarPayload(true, roleContext) }) });
   });
 }
 
@@ -515,9 +642,15 @@ async function snapshot(page) {
       receivingWorkflowShellCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-workflow-shell]")).filter(visible).length,
       receivingWorkflowStatusCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-workflow-status]")).filter(visible).length,
       receivingWorkflowControlCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-workflow-control]")).filter(visible).length,
+      receivingWorkflowActionCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-action]")).filter(visible).length,
+      receivingWorkflowInputCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-line-field]")).filter(visible).length,
+      receivingWorkflowStatusMessage: (document.querySelector("[data-warehouse-receiving-workflow-status-message]") || {}).innerText || "",
       receivingWorkflowCountRowCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-count-row]")).filter(visible).length,
       receivingWorkflowDiscrepancyCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-discrepancy-category]")).filter(visible).length,
       receivingWorkflowManagerDecisionCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-manager-decision]")).filter(visible).length,
+      receivingWorkflowManagerActionCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-manager-action]")).filter(visible).length,
+      receivingWorkflowEnabledManagerActionCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-manager-action]:not(:disabled)")).filter(visible).length,
+      receivingWorkflowDisabledManagerActionCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-manager-action]:disabled")).filter(visible).length,
       receivingWorkflowDraftPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-draft-policy]")).filter(visible).length,
       receivingLineCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-line]")).filter(visible).length,
       receivingHistoryCount: Array.from(document.querySelectorAll("[data-warehouse-receiving-history-row]")).filter(visible).length,
@@ -547,14 +680,46 @@ function assertCleanWarehouseUi(state, context) {
 }
 
 function assertReceivingWorkflowShell(state, context) {
-  if (!EXPECT_W12A) return;
-  assert(state.receivingWorkflowShellCount === 1, "W15C2 receiving workflow shell did not render once", { context, state });
-  assert(state.receivingWorkflowStatusCount >= 6, "W15C2 receiving workflow status strip did not render", { context, state });
-  assert(state.receivingWorkflowControlCount >= 3, "W15C2 warehouse user planned controls did not render", { context, state });
-  assert(state.receivingWorkflowCountRowCount >= 1, "W15C2 count evidence preview did not render", { context, state });
-  assert(state.receivingWorkflowDiscrepancyCount >= 6, "W15C2 discrepancy category preview did not render", { context, state });
-  assert(state.receivingWorkflowManagerDecisionCount >= 5, "W15C2 manager decision preview did not render", { context, state });
-  assert(state.receivingWorkflowDraftPolicyCount === 1, "W15C2 draft policy preview did not render once", { context, state });
+  assert(state.receivingWorkflowShellCount === 1, "W16B receiving workflow shell did not render once", { context, state });
+  assert(state.receivingWorkflowStatusCount >= 6, "W16B receiving workflow status strip did not render", { context, state });
+  assert(state.receivingWorkflowControlCount >= 2, "W16B warehouse user custom controls did not render", { context, state });
+  assert(state.receivingWorkflowActionCount >= 2, "W16B receiving custom action buttons did not render", { context, state });
+  assert(state.receivingWorkflowInputCount >= 6, "W16B receiving count evidence inputs did not render", { context, state });
+  assert(state.receivingWorkflowCountRowCount >= 1, "W16B count evidence rows did not render", { context, state });
+  assert(state.receivingWorkflowDiscrepancyCount >= 6, "W16B discrepancy category preview did not render", { context, state });
+  assert(state.receivingWorkflowManagerDecisionCount >= 5, "W16B manager decision controls did not render", { context, state });
+  assert(state.receivingWorkflowManagerActionCount >= 5, "W16B manager decision buttons did not render", { context, state });
+  assert(state.receivingWorkflowDraftPolicyCount === 1, "W16B draft policy preview did not render once", { context, state });
+  assert(/Custom receiving task|Manager decision recorded/i.test(state.receivingWorkflowStatusMessage || ""), "W16B custom task status message is missing", { context, state });
+}
+
+async function exerciseReceivingCustomWorkflow(page, diagnostics, user, label) {
+  if (!ASSET_ROOT) return;
+  await page.locator('[data-warehouse-receiving-action="record_count_draft"]').first().click();
+  await waitForOverrideHit(page, diagnostics, "warehouse-receiving-task-draft", `${label}:record-count-draft`);
+  await waitForReceivingReady(page, diagnostics, `${label}:record-count-draft`);
+  let state = await snapshot(page);
+  assertCleanWarehouseUi(state, `${label}:record-count-draft`);
+  assertReceivingWorkflowShell(state, `${label}:record-count-draft`);
+  assert((state.warehouseConsoleDiagnostics || {}).receivingTaskDraftSaved >= 1, "W16B receiving count draft did not complete", { user: user.key, state, diagnostics });
+  assert((state.receivingWorkflowStatusMessage || "").includes("Custom receiving task"), "W16B custom task summary did not persist after draft", { user: user.key, state });
+  if (user.key === "warehouse-manager") {
+    assert(state.receivingWorkflowEnabledManagerActionCount >= 5, "W16B manager controls should be enabled for manager roles after draft", { user: user.key, state });
+  } else {
+    assert(state.receivingWorkflowEnabledManagerActionCount === 0, "W16B manager controls must stay disabled for non-manager roles", { user: user.key, state });
+    assert(state.receivingWorkflowDisabledManagerActionCount >= 5, "W16B non-manager view should show disabled manager-only controls", { user: user.key, state });
+  }
+
+  if (user.key !== "warehouse-manager") return;
+  await page.locator('[data-warehouse-receiving-manager-action="approve_clean"]').first().click();
+  await waitForOverrideHit(page, diagnostics, "warehouse-receiving-manager-decision", `${label}:manager-decision`);
+  await page.waitForFunction(() => {
+    const status = document.querySelector("[data-warehouse-receiving-workflow-status-message]");
+    return Boolean(status && /Manager decision recorded/i.test(status.innerText || ""));
+  }, null, { timeout: TIMEOUT });
+  state = await snapshot(page);
+  assertCleanWarehouseUi(state, `${label}:manager-decision`);
+  assert((state.warehouseConsoleDiagnostics || {}).receivingManagerDecisionSaved >= 1, "W16B receiving manager decision did not complete", { user: user.key, state, diagnostics });
 }
 
 async function exerciseUser(browser, user) {
@@ -586,6 +751,7 @@ async function exerciseUser(browser, user) {
     }
     assert(state.receivingLineCount >= 1, "Receiving review lines did not render", { user: user.key, state });
     assert(state.tabCount >= 2, "Receiving review tabs did not render", { user: user.key, state });
+    await exerciseReceivingCustomWorkflow(page, diagnostics, user, `${user.key}:row-drilldown`);
     await capture(page, `${user.key}-receiving-review`);
 
     await page.locator('[data-warehouse-receiving-tab="receipt_history"]').click();

@@ -44,6 +44,20 @@ const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|inco
 
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
+const workflowRecallState = {
+  customerReturnIntake: null,
+  supplierReturnCandidate: null,
+  internalTransferCandidate: null,
+  cycleCountTask: null,
+};
+
+function resetWorkflowRecallState() {
+  workflowRecallState.customerReturnIntake = null;
+  workflowRecallState.supplierReturnCandidate = null;
+  workflowRecallState.internalTransferCandidate = null;
+  workflowRecallState.cycleCountTask = null;
+}
+
 function assert(condition, message, details = {}) {
   if (!condition) {
     const error = new Error(message);
@@ -69,6 +83,20 @@ async function capture(page, name) {
 function readSource(relativePath) {
   const file = ASSET_ROOT ? path.join(ASSET_ROOT, relativePath) : "";
   return file && fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+}
+
+function assertWarehouseHandoffCopyIsPostureOnly(body, file) {
+  if (!body || !/warehouse_console_page\.js$/.test(file)) return;
+  const staleLabels = [
+    "Escalate to Sales",
+    "Escalate to Procurement",
+    "Request Inventory/Admin review",
+    "Record handoff review",
+    "Document owner review",
+    "outbound handoff readiness",
+  ];
+  const found = staleLabels.filter((label) => body.includes(label));
+  assert(found.length === 0, "Warehouse source still contains active-sounding handoff labels", { file, found });
 }
 
 function remember(list, item, limit = 160) {
@@ -117,6 +145,8 @@ function sidebarItems() {
     { key: "inbound_receiving", label: "Inbound Receiving", icon: "quotation", target: { kind: "worklist", queue_key: "inbound_receiving" } },
     { key: "outbound_picking", label: "Outbound Picking", icon: "order", target: { kind: "worklist", queue_key: "outbound_picking" } },
     { key: "stock_exceptions", label: "Stock Exceptions", icon: "report", target: { kind: "worklist", queue_key: "stock_exceptions" } },
+    { key: "returns_work_hub", label: "Returns", icon: "return", target: { kind: "worklist", queue_key: "returns_work_hub" } },
+    { key: "internal_transfer_workflow", label: "Internal Transfer", icon: "stock", target: { kind: "worklist", queue_key: "internal_transfer_workflow" } },
     { key: "movement_visibility", label: "Movement Visibility", icon: "stock", target: { kind: "worklist", queue_key: "movement_visibility" } },
     { key: "transfer_visibility", label: "Transfer Visibility", icon: "branch", target: { kind: "worklist", queue_key: "transfer_visibility" } },
   ];
@@ -145,6 +175,17 @@ function workspacePayload() {
       transferVisibility: "erp_workspace_ui.warehouse_console.service.get_warehouse_transfer_visibility_queue",
       quickFind: "erp_workspace_ui.warehouse_console.service.get_warehouse_quick_find_suggestions",
       workspaceSearch: "erp_workspace_ui.warehouse_console.service.search_warehouse_console_workspace",
+      returnsWorkHub: "erp_workspace_ui.warehouse_console.service.get_warehouse_returns_work_hub",
+      customerReturnIntakeDraft: "erp_workspace_ui.warehouse_console.service.save_warehouse_customer_return_intake_draft",
+      customerReturnManagerDecision: "erp_workspace_ui.warehouse_console.service.save_warehouse_customer_return_manager_decision",
+      supplierReturnCandidateDraft: "erp_workspace_ui.warehouse_console.service.save_warehouse_supplier_return_candidate_draft",
+      supplierReturnManagerDecision: "erp_workspace_ui.warehouse_console.service.save_warehouse_supplier_return_manager_decision",
+      internalTransferWorkflow: "erp_workspace_ui.warehouse_console.service.get_warehouse_internal_transfer_workflow",
+      internalTransferCandidateDraft: "erp_workspace_ui.warehouse_console.service.save_warehouse_internal_transfer_candidate_draft",
+      internalTransferManagerDecision: "erp_workspace_ui.warehouse_console.service.save_warehouse_internal_transfer_manager_decision",
+      cycleCountWorkflow: "erp_workspace_ui.warehouse_console.service.get_warehouse_cycle_count_workflow",
+      cycleCountTaskDraft: "erp_workspace_ui.warehouse_console.service.save_warehouse_cycle_count_task_draft",
+      cycleCountManagerDecision: "erp_workspace_ui.warehouse_console.service.save_warehouse_cycle_count_manager_decision",
     },
     search: {
       enabled: true,
@@ -363,60 +404,125 @@ function managerCenterPayload() {
 }
 
 function actionCenterPayload() {
-  const card = (key, title, value, note, routePart = "", buttonLabel = "Open queue") => {
+  const card = (key, title, value, note, routePart = "", buttonLabel = "Open queue", targetSection = "", statusLabel = "", cardRole = "queue", roleLabel = "") => {
     const payload = {
       key,
       title,
       value,
       note,
-      state: routePart ? "live" : "planned",
-      status_label: routePart ? "Review queue" : "Planned",
+      state: routePart ? "live" : targetSection ? "hub" : "custom_workflow",
+      card_role: cardRole,
+      role_label: roleLabel || (cardRole === "queue" ? "Review queue" : cardRole === "visibility" ? "Read-only" : "Custom workflow"),
+      status_label: statusLabel || (routePart ? "Review queue" : targetSection ? "Custom hub" : "Custom workflow"),
     };
     if (routePart) {
       payload.route = "warehouse-console-worklist";
       payload.route_part = routePart;
       payload.button_label = buttonLabel;
     }
+    if (targetSection) {
+      payload.target_section = targetSection;
+      payload.button_label = buttonLabel;
+    }
     return payload;
   };
   return {
     key: "w15b_action_center",
-    title: "Warehouse Action Center",
-    subtitle: "Controlled entry points for future Warehouse work; current cards open custom review queues only.",
-    mode: "shell_only",
-    state: "planning",
+    title: "Warehouse Command Center",
+    subtitle: "Start governed Warehouse work, open review pages, and inspect visibility routes without leaving custom workflow boundaries.",
+    mode: "custom_workflow",
+    mode_label: "Custom records only",
+    state: "active",
     role_mode: "manager",
     sections: [
       {
         key: "work_entry",
-        title: "Work Entry",
-        summary: "Operational work starts here before any approved ERP document step.",
+        title: "Start Work",
+        summary: "Open the page where the Warehouse user records or reviews custom workflow evidence.",
         cards: [
-          card("arrival_checks", "Arrival checks", 2, "Supplier arrivals and count review start from the inbound queue.", "inbound-receiving", "Open inbound"),
-          card("picking_work", "Picking work", 2, "Customer demand and stock blockers start from the outbound queue.", "outbound-picking", "Open picking"),
-          card("return_intake", "Return intake", "Planned", "Customer and supplier return intake will be designed after receiving and picking actions."),
-          card("cycle_counts", "Cycle counts", "Planned", "Count tasks and variance review will stay controlled by approval policy."),
+          card("arrival_checks", "Arrival checks", 2, "Supplier arrivals and count review start from the inbound queue.", "inbound-receiving", "Open inbound", "", "Review queue", "queue", "Queue"),
+          card("picking_work", "Picking work", 2, "Customer demand and stock blockers start from the outbound queue.", "outbound-picking", "Open picking", "", "Review queue", "queue", "Queue"),
+          card("return_intake", "Returns Work Hub", "Custom", "Customer and supplier returns continue in the dedicated Returns Work Hub.", "returns-work-hub", "Open returns", "", "Returns page", "custom_workflow", "Custom workflow"),
+          card("internal_transfer", "Internal transfer", "Custom", "Transfer intent and source count evidence continue on the dedicated Internal Transfer page.", "internal-transfer-workflow", "Open transfer", "", "Transfer page", "custom_workflow", "Custom workflow"),
+          card("cycle_counts", "Cycle Count", "Custom", "Blind count evidence and variance posture continue on the dedicated Cycle Count page.", "cycle-count-workflow", "Open cycle count", "", "Cycle Count page", "custom_workflow", "Custom workflow"),
         ],
       },
       {
         key: "manager_decisions",
-        title: "Manager Decisions",
-        summary: "Decision lanes for approval, release, discrepancy, and variance review.",
+        title: "Manager Review",
+        summary: "Open review queues and workflow pages; manager actions appear only after custom evidence exists.",
         cards: [
           card("arrival_review", "Arrival review", 2, "Review supplier-side arrivals before any separate receiving document step.", "inbound-receiving", "Review arrivals"),
-          card("picking_blockers", "Picking blockers", 2, "Review outbound demand and shortage blockers before release design.", "outbound-picking", "Review blockers"),
+          card("picking_blockers", "Picking blockers", 2, "Review outbound demand and shortage blockers before release posture.", "outbound-picking", "Review blockers"),
           card("exception_resolution", "Exception resolution", 1, "Shortage and posture issues stay inside custom Warehouse review routes.", "stock-exceptions", "Review exceptions"),
-          card("movement_visibility", "Transfer visibility", 1, "Review posted movement and transfer posture before action workflow design.", "transfer-visibility", "Review transfers"),
-          card("return_decisions", "Return decisions", "Planned", "Restock, quarantine, repair, or supplier-return decisions are not executable yet."),
-          card("inventory_variance", "Inventory variance", "Planned", "Variance approval and adjustment preparation are reserved for the count workflow."),
+          card("return_decisions", "Return decisions", "Custom", "Manager return posture stays inside the Returns Work Hub; separate handoff requests remain outside this active page.", "returns-work-hub", "Open returns", "", "Returns", "custom_workflow", "Workflow page"),
+          card("internal_transfer_decisions", "Transfer decisions", "Custom", "Manager transfer posture stays inside the Internal Transfer page.", "internal-transfer-workflow", "Open transfer", "", "Transfer", "custom_workflow", "Workflow page"),
+          card("inventory_variance", "Inventory variance", "Custom", "Manager variance posture stays inside the dedicated Cycle Count page; adjustment documents remain blocked.", "cycle-count-workflow", "Open cycle count", "", "Cycle Count", "custom_workflow", "Workflow page"),
+        ],
+      },
+      {
+        key: "visibility",
+        title: "Visibility",
+        summary: "Inspect posted movement and transfer posture without opening native ERP document routes.",
+        cards: [
+          card("movement_visibility", "Movement visibility", 1, "Trace posted movement evidence and item posture from the custom visibility page.", "movement-visibility", "Open movements", "", "Visibility", "visibility", "Read-only"),
+          card("transfer_visibility", "Transfer visibility", 1, "Review inter-warehouse movement posture before any separate transfer action policy.", "transfer-visibility", "Review transfers", "", "Visibility", "visibility", "Read-only"),
         ],
       },
     ],
     guardrail: {
-      title: "Action shell only",
-      detail: "No ERPNext stock document is created here. Cards either open custom Warehouse review queues or mark a planned workflow lane.",
+      title: "Custom workflow only",
+      detail: "No ERPNext stock document is created here. Cards open custom Warehouse workflows or review queues only.",
     },
   };
+}
+
+function workflowBasePayload(key, title) {
+  return {
+    workspace: workspacePayload(),
+    context: sidebarPayload().context,
+    state: { kind: "ready", title: `${title} ready`, detail: "Custom Warehouse workflow state is available." },
+    navigation: { items: sidebarItems() },
+    sidebar: sidebarPayload().sidebar,
+    page: { title, key },
+    workflow: { key, record_recall_only: true, records: {}, selected: {}, manager: { can_manage: true, can_manage_customer: true, can_manage_supplier: true } },
+    native_routes: [],
+    stock_effect: false,
+    stock_moved: false,
+    stock_quantity_adjusted: false,
+    stock_posted: false,
+    stock_entry_created: false,
+    stock_reconciliation_created: false,
+    stock_ledger_updated: false,
+    stock_balance_updated: false,
+    valuation: { visible: false, fields: [] },
+    fetched_at: "2026-05-30 09:00:00",
+  };
+}
+
+function returnsWorkHubPayload() {
+  const payload = workflowBasePayload("returns_work_hub", "Returns Work Hub");
+  const customerRecords = workflowRecallState.customerReturnIntake ? [workflowRecallState.customerReturnIntake] : [];
+  const supplierRecords = workflowRecallState.supplierReturnCandidate ? [workflowRecallState.supplierReturnCandidate] : [];
+  payload.workflow.records = { customer_intakes: customerRecords, supplier_candidates: supplierRecords };
+  payload.workflow.selected = { customer_intake: customerRecords[0] || {}, supplier_candidate: supplierRecords[0] || {} };
+  return payload;
+}
+
+function internalTransferWorkflowPayload() {
+  const payload = workflowBasePayload("internal_transfer_workflow", "Internal Transfer Workflow");
+  const records = workflowRecallState.internalTransferCandidate ? [workflowRecallState.internalTransferCandidate] : [];
+  payload.workflow.records = { candidates: records };
+  payload.workflow.selected = { candidate: records[0] || {} };
+  return payload;
+}
+
+function cycleCountWorkflowPayload() {
+  const payload = workflowBasePayload("cycle_count_workflow", "Cycle Count Workflow");
+  const records = workflowRecallState.cycleCountTask ? [workflowRecallState.cycleCountTask] : [];
+  payload.workflow.records = { tasks: records };
+  payload.workflow.selected = { task: records[0] || {} };
+  return payload;
 }
 
 function overviewPayload() {
@@ -575,6 +681,7 @@ async function installSourceOverrides(context, diagnostics) {
     await context.route((url) => pattern.test(url.pathname + url.search), async (route) => {
       const body = readSource(file);
       recordOverrideHit(diagnostics, key, route.request(), { fulfilled: Boolean(body) });
+      assertWarehouseHandoffCopyIsPostureOnly(body, file);
       if (body) return route.fulfill({ status: 200, body, contentType: "application/javascript" });
       return route.continue();
     });
@@ -601,6 +708,9 @@ async function installSourceOverrides(context, diagnostics) {
   });
   const methodPayloads = [
     ["get_warehouse_console_overview", "warehouse-overview", () => overviewPayload()],
+    ["get_warehouse_returns_work_hub", "warehouse-returns-work-hub", () => returnsWorkHubPayload()],
+    ["get_warehouse_internal_transfer_workflow", "warehouse-internal-transfer-workflow", () => internalTransferWorkflowPayload()],
+    ["get_warehouse_cycle_count_workflow", "warehouse-cycle-count-workflow", () => cycleCountWorkflowPayload()],
     ["get_warehouse_console_sidebar_context", "warehouse-sidebar", () => sidebarPayload()],
     ["get_warehouse_inbound_receiving_queue", "warehouse-inbound", () => inboundPayload()],
     ["get_warehouse_outbound_picking_queue", "warehouse-outbound", () => outboundPayload()],
@@ -609,6 +719,65 @@ async function installSourceOverrides(context, diagnostics) {
     ["get_warehouse_transfer_visibility_queue", "warehouse-transfer-visibility", () => transferPayload()],
     ["search_warehouse_console_workspace", "warehouse-quick-find", () => quickFindPayload()],
     ["get_warehouse_quick_find_suggestions", "warehouse-quick-find", () => quickFindPayload()],
+    ["save_warehouse_customer_return_intake_draft", "customer-return-intake-draft", () => {
+      workflowRecallState.customerReturnIntake = { intake_id: "WH-CR-W16D3-0001", intake_status: "Draft", manager_review_status: "Draft", customer: "W16D3 Customer", warehouse: "Yangon Main Warehouse - MMOB", line_count: 1, request_id: "w16d3-smoke" };
+      return {
+        intake: { intake_id: "WH-CR-W16D3-0001", status: "Draft" },
+        no_effect: { stock_increased: false, sales_return_created: false, credit_note_created: false, delivery_note_created: false },
+      };
+    }],
+    ["save_warehouse_supplier_return_candidate_draft", "supplier-return-candidate-draft", () => {
+      workflowRecallState.supplierReturnCandidate = { candidate_id: "WH-SR-W16D4-0001", candidate_status: "Candidate Draft", manager_review_status: "Candidate Draft", supplier: "W16D4 Supplier", warehouse: "Yangon Main Warehouse - MMOB", line_count: 1, request_id: "w16d4-smoke" };
+      return {
+        candidate: { candidate_id: "WH-SR-W16D4-0001", candidate_status: "Candidate Draft" },
+        no_effect: { stock_decreased: false, return_purchase_receipt_created: false, purchase_invoice_return_created: false, debit_note_created: false },
+      };
+    }],
+    ["save_warehouse_internal_transfer_candidate_draft", "internal-transfer-candidate-draft", () => {
+      workflowRecallState.internalTransferCandidate = { candidate_id: "WH-IT-W16E-0001", candidate_status: "Draft", manager_review_status: "Draft", source_warehouse: "Yangon Main Warehouse - MMOB", target_warehouse: "Target Warehouse - W16E", source_context: "warehouse_rebalance", line_count: 1, total_candidate_qty: "1", request_id: "w16e-smoke" };
+      return {
+        candidate: { candidate_id: "WH-IT-W16E-0001", candidate_status: "Draft" },
+        stock_effect: false,
+        stock_moved: false,
+        stock_entry_created: false,
+        stock_ledger_updated: false,
+        stock_balance_updated: false,
+      };
+    }],
+    ["save_warehouse_cycle_count_task_draft", "cycle-count-task-draft", () => {
+      workflowRecallState.cycleCountTask = { task_id: "WH-CC-W16F-0001", count_status: "Count In Progress", manager_review_status: "Count In Progress", variance_status: "No variance", warehouse: "Yangon Main Warehouse - MMOB", count_source: "spot_count", count_scope: "item_specific", line_count: 1, request_id: "w16f-smoke" };
+      return {
+        task: { task_id: "WH-CC-W16F-0001", count_status: "Count In Progress" },
+        stock_effect: false,
+        stock_quantity_adjusted: false,
+        stock_reconciliation_created: false,
+        stock_entry_created: false,
+        stock_ledger_updated: false,
+        stock_balance_updated: false,
+      };
+    }],
+    ["save_warehouse_cycle_count_manager_decision", "cycle-count-manager-decision", () => ({
+      task: { task_id: "WH-CC-W16F-0001", count_status: "Clean Count", manager_review_status: "Clean Count" },
+      decision: { decision: "mark_clean_count" },
+      stock_effect: false,
+      stock_quantity_adjusted: false,
+      stock_reconciliation_created: false,
+      stock_entry_created: false,
+      stock_ledger_updated: false,
+      stock_balance_updated: false,
+    })],
+    ["save_warehouse_customer_return_manager_decision", "customer-return-manager-decision", () => ({
+      status: "Restock Candidate",
+      intake: { intake_id: "WH-CR-W16D3-0001", intake_status: "Restock Candidate" },
+      event_summary: { event_type: "marked_restock_candidate" },
+      no_effect: { stock_increased: false, sales_return_created: false, credit_note_created: false, delivery_note_created: false },
+    })],
+    ["save_warehouse_supplier_return_manager_decision", "supplier-return-manager-decision", () => ({
+      status: "Supplier Return Candidate",
+      candidate: { candidate_id: "WH-SR-W16D4-0001", candidate_status: "Supplier Return Candidate" },
+      event_summary: { event_type: "marked_supplier_return_candidate" },
+      no_effect: { stock_decreased: false, return_purchase_receipt_created: false, purchase_invoice_return_created: false, debit_note_created: false },
+    })],
   ];
   for (const [method, key, payload] of methodPayloads) {
     await context.route(`**/api/method/erp_workspace_ui.warehouse_console.service.${method}**`, async (route) => {
@@ -638,8 +807,42 @@ async function waitForCockpit(page) {
 async function waitForWorklist(page, viewName) {
   await page.waitForFunction((expectedView) => {
     const shell = document.querySelector(`.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-view="${expectedView}"]`);
-    return Boolean(shell && (shell.querySelector("[data-warehouse-inbound-queue-card], [data-warehouse-movement-card], [data-warehouse-stock-exception-card], [data-warehouse-transfer-card]") || shell.querySelector("[data-warehouse-movement-empty], [data-warehouse-stock-exception-empty], [data-warehouse-transfer-empty]")));
+    return Boolean(shell && (shell.querySelector("[data-warehouse-inbound-queue-card], [data-warehouse-movement-card], [data-warehouse-stock-exception-card], [data-warehouse-transfer-card], [data-warehouse-returns-hub], [data-warehouse-internal-transfer-workflow], [data-warehouse-cycle-count-workflow]") || shell.querySelector("[data-warehouse-movement-empty], [data-warehouse-stock-exception-empty], [data-warehouse-transfer-empty]")));
   }, viewName, { timeout: TIMEOUT });
+}
+
+async function waitForUnsupportedWorklist(page) {
+  await page.waitForFunction(() => {
+    const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="warehouse"][data-warehouse-unsupported-worklist="true"]');
+    return Boolean(shell && shell.querySelector("[data-warehouse-unsupported-worklist-panel]"));
+  }, null, { timeout: TIMEOUT });
+}
+
+async function waitForWarehouseRouteFirstPaint(page, contextLabel) {
+  await page.waitForFunction(() => {
+    const selectors = [
+      "[data-warehouse-route-loading]",
+      ".sales-console-shell[data-erpw-workspace='warehouse']",
+      ".warehouse-receiving-shell[data-warehouse-view='receiving-review']",
+      ".warehouse-picking-shell[data-warehouse-view='picking-review']",
+      "[data-warehouse-unsupported-worklist='true']",
+    ];
+    return selectors.some((selector) => Boolean(document.querySelector(selector)));
+  }, null, { timeout: Math.min(TIMEOUT, 5000) });
+  const firstPaint = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    return {
+      loadingShells: Array.from(document.querySelectorAll("[data-warehouse-route-loading]")).filter(visible).length,
+      finalShells: Array.from(document.querySelectorAll(".sales-console-shell[data-erpw-workspace='warehouse'], .warehouse-receiving-shell[data-warehouse-view='receiving-review'], .warehouse-picking-shell[data-warehouse-view='picking-review']")).filter(visible).length,
+      bodyText: (document.body && document.body.innerText || "").replace(/\s+/g, " ").trim().slice(0, 220),
+    };
+  });
+  assert(firstPaint.loadingShells + firstPaint.finalShells > 0, "Warehouse route showed a blank first paint", { context: contextLabel, firstPaint });
 }
 
 async function waitForOverrideHit(diagnostics, key) {
@@ -675,6 +878,7 @@ async function openRoute(page, routeParts, pathName, wait) {
   } else {
     await page.goto(routeUrl(pathName), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   }
+  await waitForWarehouseRouteFirstPaint(page, routeParts.join("/"));
   await wait(page);
 }
 
@@ -706,12 +910,17 @@ async function snapshot(page) {
       warehousePageHeadCount: pageHeadText.length,
       allPageHeadCount: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
       shellCount: Array.from(document.querySelectorAll('.sales-console-shell[data-erpw-workspace="warehouse"]')).filter(visible).length,
+      unsupportedWorklistCount: Array.from(document.querySelectorAll("[data-warehouse-unsupported-worklist]")).filter(visible).length,
+      unsupportedWorklistPanelCount: Array.from(document.querySelectorAll("[data-warehouse-unsupported-worklist-panel]")).filter(visible).length,
+      unsupportedWorklistOverviewActionCount: Array.from(document.querySelectorAll("[data-warehouse-unsupported-overview]")).filter(visible).length,
       headerCount: Array.from(document.querySelectorAll(".warehouse-console-header, .warehouse-inbound-queue-header, .warehouse-receiving-header")).filter(visible).length,
       cockpitCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit='ready']")).filter(visible).length,
       commandCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-command]")).filter(visible).length,
       commandChipCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-command-chip]")).filter(visible).length,
       pulseCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-pulse-card]")).filter(visible).length,
       startCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-start-card]")).filter(visible).length,
+      startCardKeys: Array.from(document.querySelectorAll("[data-warehouse-cockpit-start-card]")).filter(visible).map((node) => node.getAttribute("data-warehouse-cockpit-start-card") || "").filter(Boolean),
+      startRouteTargets: Array.from(document.querySelectorAll("[data-warehouse-cockpit-start-card]")).filter(visible).map((node) => node.getAttribute("data-warehouse-cockpit-route-target") || "").filter(Boolean),
       workCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-work] .warehouse-console-inbound-panel")).filter(visible).length,
       riskCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-risk] [data-warehouse-cockpit-route-card]")).filter(visible).length,
       movementCount: Array.from(document.querySelectorAll("[data-warehouse-cockpit-movement] [data-warehouse-cockpit-route-card]")).filter(visible).length,
@@ -734,10 +943,56 @@ async function snapshot(page) {
       managerCenterActionCount: Array.from(document.querySelectorAll("[data-warehouse-manager-center-open]")).filter(visible).length,
       actionCenterCount: Array.from(document.querySelectorAll("[data-warehouse-action-center]")).filter(visible).length,
       actionCenterGroupCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-group]")).filter(visible).length,
+      actionCenterGroupKeys: Array.from(document.querySelectorAll("[data-warehouse-action-center-group]")).filter(visible).map((node) => node.getAttribute("data-warehouse-action-center-group") || "").filter(Boolean),
       actionCenterCardCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-card]")).filter(visible).length,
+      actionCenterCardKeys: Array.from(document.querySelectorAll("[data-warehouse-action-center-card]")).filter(visible).map((node) => node.getAttribute("data-warehouse-action-center-card") || "").filter(Boolean),
+      actionCenterCardRoles: Array.from(document.querySelectorAll("[data-warehouse-action-center-card]")).filter(visible).map((node) => node.getAttribute("data-warehouse-action-center-card-role") || "").filter(Boolean),
+      actionCenterRouteTargets: Array.from(document.querySelectorAll("[data-warehouse-action-center-card]")).filter(visible).map((node) => node.getAttribute("data-warehouse-cockpit-route-target") || "").filter(Boolean),
       actionCenterOpenCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-open]")).filter(visible).length,
+      actionCenterRoleBadgeCount: Array.from(document.querySelectorAll(".warehouse-action-center-role-badge")).filter(visible).length,
+      actionCenterCustomMetricCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-role='custom_workflow'] .sales-console-queue-count")).filter(visible).length,
+      actionCenterVisibilityCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-card-role='visibility']")).filter(visible).length,
+      actionCenterCustomWorkflowCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-card-role='custom_workflow']")).filter(visible).length,
       actionCenterGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-action-center-guardrail]")).filter(visible).length,
       actionCenterModes: Array.from(document.querySelectorAll("[data-warehouse-action-center-mode]")).map((node) => node.getAttribute("data-warehouse-action-center-mode") || "").filter(Boolean),
+      actionCenterTargetSections: Array.from(document.querySelectorAll("[data-warehouse-action-center-target-section]")).map((node) => node.getAttribute("data-warehouse-action-center-target-section") || "").filter(Boolean),
+      returnsOverviewSummaryCount: Array.from(document.querySelectorAll("[data-warehouse-returns-overview-summary]")).filter(visible).length,
+      returnsOverviewSummaryCardCount: Array.from(document.querySelectorAll("[data-warehouse-returns-summary-card]")).filter(visible).length,
+      returnsOverviewOpenCount: Array.from(document.querySelectorAll("[data-warehouse-returns-overview-open]")).filter(visible).length,
+      returnsOpenRouteCount: Array.from(document.querySelectorAll("[data-warehouse-open-returns]")).filter(visible).length,
+      returnsOverviewSaveClassCount: Array.from(document.querySelectorAll("[data-warehouse-returns-overview-open].warehouse-return-intake-save")).filter(visible).length,
+      cycleCountOverviewSummaryCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-overview-summary]")).filter(visible).length,
+      cycleCountOverviewSummaryCardCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-summary-card]")).filter(visible).length,
+      cycleCountOverviewOpenCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-overview-open]")).filter(visible).length,
+      workflowPageShellCount: Array.from(document.querySelectorAll("[data-warehouse-workflow-page-shell]")).filter(visible).length,
+      workflowPageShellKeys: Array.from(document.querySelectorAll("[data-warehouse-workflow-page-shell]")).filter(visible).map((node) => node.getAttribute("data-warehouse-workflow-page-shell") || "").filter(Boolean),
+      workflowPageHeaderCount: Array.from(document.querySelectorAll("[data-warehouse-workflow-page-header]")).filter(visible).length,
+      workflowCardCount: Array.from(document.querySelectorAll("[data-warehouse-workflow-card]")).filter(visible).length,
+      workflowCardKinds: Array.from(document.querySelectorAll("[data-warehouse-workflow-card]")).filter(visible).map((node) => node.getAttribute("data-warehouse-workflow-kind") || "").filter(Boolean),
+      workflowModeCount: Array.from(document.querySelectorAll("[data-warehouse-workflow-mode]")).filter(visible).length,
+      workflowGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-workflow-guardrail]")).filter(visible).length,
+      workflowBodyCount: Array.from(document.querySelectorAll("[data-warehouse-workflow-body]")).filter(visible).length,
+      workflowPanelCount: Array.from(document.querySelectorAll("[data-warehouse-workflow-panel]")).filter(visible).length,
+      returnsPageErrorCount: Array.from(document.querySelectorAll("[data-warehouse-returns-page-error]")).filter(visible).length,
+      returnsHubCount: Array.from(document.querySelectorAll("[data-warehouse-returns-hub]")).filter(visible).length,
+      returnsHubLaneCount: Array.from(document.querySelectorAll("[data-warehouse-returns-hub-lane]")).filter(visible).length,
+      returnsHubSwitchCount: Array.from(document.querySelectorAll("[data-warehouse-returns-hub-switch]")).filter(visible).length,
+      returnsHubSelectedLaneKeys: Array.from(document.querySelectorAll("[data-warehouse-returns-hub-switch][aria-selected='true']")).filter(visible).map((node) => node.getAttribute("data-warehouse-returns-hub-switch") || "").filter(Boolean),
+      returnsHubVisiblePanelKeys: Array.from(document.querySelectorAll("[data-warehouse-returns-workbench-panel]")).filter(visible).map((node) => node.getAttribute("data-warehouse-returns-workbench-panel") || "").filter(Boolean),
+      returnsHubGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-returns-hub-guardrail]")).filter(visible).length,
+      returnsHubActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-returns-hub] button, [data-warehouse-returns-hub] a, [data-warehouse-returns-hub] [role=button]")).filter((node) => visible(node) && !node.disabled && node.getAttribute("aria-disabled") !== "true").length,
+      customerReturnIntakeLaneCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-intake-lane]")).filter(visible).length,
+      customerReturnIntakePanelCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-intake-panel]")).filter(visible).length,
+      customerReturnIntakeFieldCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-field]")).filter(visible).length,
+      customerReturnIntakeSaveCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-save]")).filter(visible).length,
+      supplierReturnHubActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-returns-workbench-panel='supplier'] button, [data-warehouse-returns-workbench-panel='supplier'] a, [data-warehouse-returns-workbench-panel='supplier'] [role=button]")).filter((node) => visible(node) && !node.disabled && node.getAttribute("aria-disabled") !== "true").length,
+      supplierReturnCandidateLaneCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-candidate-lane]")).filter(visible).length,
+      supplierReturnCandidatePanelCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-candidate-panel]")).filter(visible).length,
+      supplierReturnCandidateFieldCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-field]")).filter(visible).length,
+      supplierReturnCandidateSaveCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-save]")).filter(visible).length,
+      returnDecisionsHubControlCount: Array.from(document.querySelectorAll("[data-warehouse-return-decision-action]")).length,
+      returnDecisionsPanelCount: Array.from(document.querySelectorAll("[data-warehouse-return-decisions-panel]")).filter(visible).length,
+      returnDecisionsHubActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-return-decision-action]")).filter((node) => visible(node) && !node.disabled && node.getAttribute("aria-disabled") !== "true").length,
       plannedWorkflowGroupCount: Array.from(document.querySelectorAll("[data-warehouse-planned-workflows]")).filter(visible).length,
       plannedWorkflowCardCount: Array.from(document.querySelectorAll("[data-warehouse-planned-workflow-card]")).filter(visible).length,
       plannedWorkflowToggleCount: Array.from(document.querySelectorAll("[data-warehouse-planned-workflow-toggle]")).filter(visible).length,
@@ -749,7 +1004,6 @@ async function snapshot(page) {
       customerReturnManagerPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-manager-preview]")).filter(visible).length,
       customerReturnEvidencePreviewCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-evidence-preview]")).filter(visible).length,
       customerReturnPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-policy]")).filter(visible).length,
-      customerReturnPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-planned-control]")).filter(visible).length,
       customerReturnActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-customer-return-shell] button, [data-warehouse-customer-return-shell] a, [data-warehouse-customer-return-shell] [role=button]")).filter(visible).length,
       supplierReturnShellCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-shell]")).filter(visible).length,
       supplierReturnStatusCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-status]")).filter(visible).length,
@@ -757,15 +1011,27 @@ async function snapshot(page) {
       supplierReturnManagerPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-manager-preview]")).filter(visible).length,
       supplierReturnEvidencePreviewCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-evidence-preview]")).filter(visible).length,
       supplierReturnPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-policy]")).filter(visible).length,
-      supplierReturnPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-planned-control]")).filter(visible).length,
       supplierReturnActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-supplier-return-shell] button, [data-warehouse-supplier-return-shell] a, [data-warehouse-supplier-return-shell] [role=button]")).filter(visible).length,
+      internalTransferWorkflowPageCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-page]")).filter(visible).length,
+      internalTransferWorkflowCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-workflow]")).filter(visible).length,
+      internalTransferCandidatePanelCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-candidate-panel]")).filter(visible).length,
+      internalTransferFieldCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-field]")).filter(visible).length,
+      internalTransferSaveCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-save]")).filter(visible).length,
+      internalTransferDecisionControlCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-decision-action]")).length,
+      internalTransferDecisionActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-decision-action]")).filter((node) => visible(node) && !node.disabled && node.getAttribute("aria-disabled") !== "true").length,
+      cycleCountWorkflowPageCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-page]")).filter(visible).length,
+      cycleCountWorkflowCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-workflow]")).filter(visible).length,
+      cycleCountTaskPanelCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-task-panel]")).filter(visible).length,
+      cycleCountFieldCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-field]")).filter(visible).length,
+      cycleCountSaveCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-save]")).filter(visible).length,
+      cycleCountDecisionControlCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-decision-action]")).length,
+      cycleCountDecisionActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-decision-action]")).filter((node) => visible(node) && !node.disabled && node.getAttribute("aria-disabled") !== "true").length,
       internalTransferShellCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-shell]")).filter(visible).length,
       internalTransferStatusCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-status]")).filter(visible).length,
       internalTransferUserPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-user-preview]")).filter(visible).length,
       internalTransferManagerPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-manager-preview]")).filter(visible).length,
       internalTransferEvidencePreviewCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-evidence-preview]")).filter(visible).length,
       internalTransferPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-policy]")).filter(visible).length,
-      internalTransferPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-planned-control]")).filter(visible).length,
       internalTransferActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-internal-transfer-shell] button, [data-warehouse-internal-transfer-shell] a, [data-warehouse-internal-transfer-shell] [role=button]")).filter(visible).length,
       cycleCountShellCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-shell]")).filter(visible).length,
       cycleCountStatusCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-status]")).filter(visible).length,
@@ -773,7 +1039,6 @@ async function snapshot(page) {
       cycleCountManagerPreviewCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-manager-preview]")).filter(visible).length,
       cycleCountEvidencePreviewCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-evidence-preview]")).filter(visible).length,
       cycleCountPolicyCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-policy]")).filter(visible).length,
-      cycleCountPlannedControlCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-planned-control]")).filter(visible).length,
       cycleCountActiveControlCount: Array.from(document.querySelectorAll("[data-warehouse-cycle-count-shell] button, [data-warehouse-cycle-count-shell] a, [data-warehouse-cycle-count-shell] [role=button]")).filter(visible).length,
       searchUtilityVisible: Array.from(document.querySelectorAll("[data-erpw-sales-search-open]")).some(visible),
       horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
@@ -798,9 +1063,9 @@ function assertW12KCockpit(state, contextLabel) {
   assert(state.refreshActionCount === 1, "Cockpit refresh control must render once", { context: contextLabel, state });
   assert(state.inboundActionCount === 1, "Inbound receiving should have one top-level Start navigation control", { context: contextLabel, state });
   assert(state.outboundActionCount === 1, "Outbound picking should have one top-level Start navigation control", { context: contextLabel, state });
-  assert(state.stockExceptionActionCount === 1, "Stock exceptions should have one top-level Start navigation control", { context: contextLabel, state });
-  assert(state.movementActionCount === 1, "Movement visibility should have one top-level Start navigation control", { context: contextLabel, state });
-  assert(state.transferActionCount === 1, "Transfer visibility should have one top-level Start navigation control", { context: contextLabel, state });
+  assert(state.stockExceptionActionCount === 0, "Stock exceptions should stay in Review and Visibility, not Start Warehouse Work", { context: contextLabel, state });
+  assert(state.movementActionCount === 0, "Movement visibility should stay in Review and Visibility, not Start Warehouse Work", { context: contextLabel, state });
+  assert(state.transferActionCount === 0, "Transfer visibility should stay in Review and Visibility, not Start Warehouse Work", { context: contextLabel, state });
   const targets = state.routeTargets || [];
   [
     "warehouse-console-worklist/inbound-receiving",
@@ -835,114 +1100,143 @@ function assertW14CManagerCenter(state, contextLabel) {
   assert(!(state.text || "").includes("Manager Readiness Center"), "Manager Readiness Center title is still visible", { context: contextLabel, state });
 }
 
+function assertW16D2ReturnsHub(state, contextLabel) {
+  assert(state.returnsOverviewSummaryCount === 0, "Overview must not duplicate the dedicated Returns work hub summary", { context: contextLabel, state });
+  assert(state.returnsOverviewSummaryCardCount === 0, "Overview must not render inactive Returns lane cards below Action Center", { context: contextLabel, state });
+  assert(state.returnsOverviewOpenCount === 0, "Overview must not use the removed Returns summary open action", { context: contextLabel, state });
+  assert(state.cycleCountOverviewSummaryCount === 0, "Overview must not duplicate the dedicated Cycle Count work hub summary", { context: contextLabel, state });
+  assert(state.cycleCountOverviewSummaryCardCount === 0, "Overview must not render inactive Cycle Count lane cards below Action Center", { context: contextLabel, state });
+  assert(state.cycleCountOverviewOpenCount === 0, "Overview must not use the removed Cycle Count summary open action", { context: contextLabel, state });
+  assert(state.returnsOpenRouteCount >= 2, "Overview should expose Returns navigation from Start Work and Action Center", { context: contextLabel, state });
+  assert(state.returnsOverviewSaveClassCount === 0, "Overview Returns navigation must not reuse return save-button styling", { context: contextLabel, state });
+  assert(state.returnsHubCount === 0, "Overview must not expose the active Returns workbench", { context: contextLabel, state });
+  assert(state.customerReturnIntakeFieldCount === 0, "Overview must not expose customer return input fields", { context: contextLabel, state });
+  assert(state.supplierReturnCandidateFieldCount === 0, "Overview must not expose supplier return input fields", { context: contextLabel, state });
+  assert(state.returnDecisionsHubActiveControlCount === 0, "Overview must not expose active return manager controls", { context: contextLabel, state });
+  assert((state.text || "").includes("Returns"), "Returns summary title is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Open Returns"), "Overview Returns action is missing", { context: contextLabel, state });
+  assert((state.actionCenterTargetSections || []).filter((target) => target === "returns-work-hub").length === 0, "Action Center should route to Returns Work Hub instead of Overview target sections", { context: contextLabel, state });
+  assert(!/sales_returns_in_progress|sales-console-worklist|new_doc|frappe\.new_doc/i.test(`${state.text} ${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Overview Returns summary leaked Sales or native document routing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Overview Returns summary exposed a native route", { context: contextLabel, state });
+}
+
+function assertReturnsWorkHubPage(state, contextLabel) {
+  assert(state.returnsPageErrorCount === 0, "Dedicated Returns Work Hub rendered an error state", { context: contextLabel, state });
+  assert(state.workflowPageShellCount === 1 && (state.workflowPageShellKeys || []).includes("returns"), "Returns Work Hub must use the shared workflow page shell", { context: contextLabel, state });
+  assert(state.workflowPageHeaderCount === 1, "Returns Work Hub must use the shared workflow page header", { context: contextLabel, state });
+  assert(state.workflowCardCount === 1 && (state.workflowCardKinds || []).includes("returns"), "Returns Work Hub must use the shared workflow card grammar", { context: contextLabel, state });
+  assert(state.workflowModeCount === 1, "Returns Work Hub custom workflow mode badge is missing", { context: contextLabel, state });
+  assert(state.workflowGuardrailCount === 1, "Returns Work Hub shared guardrail is missing", { context: contextLabel, state });
+  assert(state.workflowBodyCount === 1, "Returns Work Hub shared workflow body is missing", { context: contextLabel, state });
+  assert(state.returnsHubCount === 1, "Dedicated Returns Work Hub must render the active work hub once", { context: contextLabel, state });
+  assert(state.returnsHubLaneCount === 3, "Dedicated Returns Work Hub selector cards are missing", { context: contextLabel, state });
+  assert(state.returnsHubSwitchCount === 3, "Dedicated Returns Work Hub workflow switches are missing", { context: contextLabel, state });
+  assert((state.returnsHubSelectedLaneKeys || []).length === 1 && state.returnsHubSelectedLaneKeys[0] === "customer", "Customer return workflow should be selected by default on Returns Work Hub", { context: contextLabel, state });
+  assert((state.returnsHubVisiblePanelKeys || []).length === 1 && state.returnsHubVisiblePanelKeys[0] === "customer", "Only customer workbench panel should be visible by default on Returns Work Hub", { context: contextLabel, state });
+  assert(state.returnsHubGuardrailCount === 1, "Dedicated Returns guardrail is missing", { context: contextLabel, state });
+  assert(state.customerReturnIntakePanelCount === 1, "Customer return intake workbench panel must be visible by default", { context: contextLabel, state });
+  assert(state.customerReturnIntakeFieldCount >= 9, "Customer return intake evidence fields are missing on Returns Work Hub", { context: contextLabel, state });
+  assert(state.customerReturnIntakeSaveCount === 1, "Customer return intake save control must render once on Returns Work Hub", { context: contextLabel, state });
+  assert(state.supplierReturnCandidatePanelCount === 0, "Supplier return candidate panel must stay hidden until selected", { context: contextLabel, state });
+  assert(state.supplierReturnCandidateFieldCount === 0, "Supplier return candidate fields should be hidden until selected", { context: contextLabel, state });
+  assert(state.returnDecisionsPanelCount === 0, "Return decisions panel must stay hidden until selected", { context: contextLabel, state });
+  assert(state.returnDecisionsHubControlCount >= 6, "Return decision controls must exist on the dedicated Returns Work Hub", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Dedicated Returns Work Hub exposed a native route", { context: contextLabel, state });
+}
+
 function assertW15PlannedWorkflowGroup(state, contextLabel) {
-  assert(state.plannedWorkflowGroupCount === 1, "Planned workflow group must render once", { context: contextLabel, state });
-  assert(state.plannedWorkflowCardCount === 4, "Planned workflow summary cards must render once each", { context: contextLabel, state });
-  assert(state.plannedWorkflowToggleCount === 4, "Planned workflow detail toggles must render once each", { context: contextLabel, state });
-  assert(state.plannedWorkflowVisibleDetailCount === 0, "Planned workflow details should be collapsed by default", { context: contextLabel, state });
-  assert(state.customerReturnShellCount === 0, "Customer Return detail shell should be collapsed by default", { context: contextLabel, state });
-  assert(state.supplierReturnShellCount === 0, "Supplier Return detail shell should be collapsed by default", { context: contextLabel, state });
-  assert(state.internalTransferShellCount === 0, "Internal Transfer detail shell should be collapsed by default", { context: contextLabel, state });
-  assert(state.cycleCountShellCount === 0, "Cycle Count detail shell should be collapsed by default", { context: contextLabel, state });
-  assert((state.text || "").includes("Planned workflow shells"), "Planned workflow group title is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Customer return intake"), "Customer Return summary card is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Supplier return candidate"), "Supplier Return summary card is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Internal transfer candidate"), "Internal Transfer summary card is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Cycle count / inventory variance"), "Cycle Count summary card is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("No ERP doc"), "Planned workflow no-document context is missing", { context: contextLabel, state });
+  assert(state.plannedWorkflowGroupCount === 0, "Overview should not show planned workflow shells after W16F activation", { context: contextLabel, state });
+  assert(state.plannedWorkflowCardCount === 0, "Overview should not show planned workflow cards after W16F activation", { context: contextLabel, state });
+  assert(state.plannedWorkflowToggleCount === 0, "Overview should not show planned workflow toggles after W16F activation", { context: contextLabel, state });
+  assert(state.plannedWorkflowVisibleDetailCount === 0, "Overview should not show expanded planned workflow details after W16F activation", { context: contextLabel, state });
+  assert(state.customerReturnShellCount === 0, "Customer Return detail shell should not remain in planned workflow shells", { context: contextLabel, state });
+  assert(state.supplierReturnShellCount === 0, "Supplier Return detail shell should not remain in planned workflow shells", { context: contextLabel, state });
+  assert(state.internalTransferShellCount === 0, "Internal Transfer detail shell should not remain in planned workflow shells", { context: contextLabel, state });
+  assert(state.cycleCountShellCount === 0, "Cycle Count detail shell should not remain in planned workflow shells", { context: contextLabel, state });
+  const obsoletePlannedWorkflowTitle = ["Remaining", "planned", "workflow", "shells"].join(" ");
+  assert(!(state.text || "").includes(obsoletePlannedWorkflowTitle), "Obsolete planned workflow group title should not render after W16F activation", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Internal transfer candidate"), "Internal Transfer should not remain as a planned workflow shell after W16E", { context: contextLabel, state });
   assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Planned workflow group exposed a native route", { context: contextLabel, state });
 }
 
 
-function assertW15E2CustomerReturnShell(state, contextLabel) {
-  assert(state.customerReturnShellCount === 1, "Customer Return Intake shell must render once", { context: contextLabel, state });
-  assert(state.customerReturnStatusCount >= 6, "Customer Return Intake workflow states are missing", { context: contextLabel, state });
-  assert(state.customerReturnUserPreviewCount === 1, "Customer Return Intake user preview is missing", { context: contextLabel, state });
-  assert(state.customerReturnManagerPreviewCount === 1, "Customer Return Intake manager preview is missing", { context: contextLabel, state });
-  assert(state.customerReturnEvidencePreviewCount === 1, "Customer Return Intake evidence preview is missing", { context: contextLabel, state });
-  assert(state.customerReturnPolicyCount === 1, "Customer Return Intake future document policy is missing", { context: contextLabel, state });
-  assert(state.customerReturnPlannedControlCount >= 12, "Customer Return Intake planned controls are missing", { context: contextLabel, state });
-  assert(state.customerReturnActiveControlCount === 0, "Customer Return Intake planned controls must be inert", { context: contextLabel, state });
-  assert((state.text || "").includes("Customer return intake"), "Customer Return Intake title is missing", { context: contextLabel, state });
-  assert((state.text || "").toLowerCase().includes("shell only"), "Customer Return Intake shell-only badge is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("No stock is increased"), "Customer Return Intake guardrail is missing", { context: contextLabel, state });
-  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Customer Return Intake exposed a native route", { context: contextLabel, state });
-}
-
-function assertW15F2SupplierReturnShell(state, contextLabel) {
-  assert(state.supplierReturnShellCount === 1, "Supplier Return Candidate shell must render once", { context: contextLabel, state });
-  assert(state.supplierReturnStatusCount >= 6, "Supplier Return Candidate workflow states are missing", { context: contextLabel, state });
-  assert(state.supplierReturnUserPreviewCount === 1, "Supplier Return Candidate user preview is missing", { context: contextLabel, state });
-  assert(state.supplierReturnManagerPreviewCount === 1, "Supplier Return Candidate manager preview is missing", { context: contextLabel, state });
-  assert(state.supplierReturnEvidencePreviewCount === 1, "Supplier Return Candidate evidence preview is missing", { context: contextLabel, state });
-  assert(state.supplierReturnPolicyCount === 1, "Supplier Return Candidate future document policy is missing", { context: contextLabel, state });
-  assert(state.supplierReturnPlannedControlCount >= 11, "Supplier Return Candidate planned controls are missing", { context: contextLabel, state });
-  assert(state.supplierReturnActiveControlCount === 0, "Supplier Return Candidate planned controls must be inert", { context: contextLabel, state });
-  assert((state.text || "").includes("Supplier return candidate"), "Supplier Return Candidate title is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Procurement review"), "Supplier Return Candidate Procurement review context is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("No supplier is notified"), "Supplier Return Candidate guardrail is missing", { context: contextLabel, state });
-  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Supplier Return Candidate exposed a native route", { context: contextLabel, state });
-}
-
-
-function assertW15G2InternalTransferShell(state, contextLabel) {
-  assert(state.internalTransferShellCount === 1, "Internal Transfer Candidate shell must render once", { context: contextLabel, state });
-  assert(state.internalTransferStatusCount >= 6, "Internal Transfer Candidate workflow states are missing", { context: contextLabel, state });
-  assert(state.internalTransferUserPreviewCount === 1, "Internal Transfer Candidate user preview is missing", { context: contextLabel, state });
-  assert(state.internalTransferManagerPreviewCount === 1, "Internal Transfer Candidate manager preview is missing", { context: contextLabel, state });
-  assert(state.internalTransferEvidencePreviewCount === 1, "Internal Transfer Candidate evidence preview is missing", { context: contextLabel, state });
-  assert(state.internalTransferPolicyCount === 1, "Internal Transfer Candidate future document policy is missing", { context: contextLabel, state });
-  assert(state.internalTransferPlannedControlCount >= 11, "Internal Transfer Candidate planned controls are missing", { context: contextLabel, state });
-  assert(state.internalTransferActiveControlCount === 0, "Internal Transfer Candidate planned controls must be inert", { context: contextLabel, state });
-  assert((state.text || "").includes("Internal transfer candidate"), "Internal Transfer Candidate title is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Inventory/Admin review"), "Internal Transfer Candidate Inventory/Admin review context is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("No stock is moved"), "Internal Transfer Candidate guardrail is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("no Stock Entry is created or submitted"), "Internal Transfer Candidate Stock Entry guardrail is missing", { context: contextLabel, state });
-  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Internal Transfer Candidate exposed a native route", { context: contextLabel, state });
-}
-
-
-function assertW15H2CycleCountShell(state, contextLabel) {
-  assert(state.cycleCountShellCount === 1, "Cycle Count / Inventory Variance shell must render once", { context: contextLabel, state });
-  assert(state.cycleCountStatusCount >= 6, "Cycle Count workflow states are missing", { context: contextLabel, state });
-  assert(state.cycleCountUserPreviewCount === 1, "Cycle Count user preview is missing", { context: contextLabel, state });
-  assert(state.cycleCountManagerPreviewCount === 1, "Cycle Count manager preview is missing", { context: contextLabel, state });
-  assert(state.cycleCountEvidencePreviewCount === 1, "Cycle Count evidence preview is missing", { context: contextLabel, state });
-  assert(state.cycleCountPolicyCount === 1, "Cycle Count future document policy is missing", { context: contextLabel, state });
-  assert(state.cycleCountPlannedControlCount >= 11, "Cycle Count planned controls are missing", { context: contextLabel, state });
-  assert(state.cycleCountActiveControlCount === 0, "Cycle Count planned controls must be inert", { context: contextLabel, state });
-  assert((state.text || "").includes("Cycle count / inventory variance"), "Cycle Count title is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Blind Count"), "Cycle Count blind-count context is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Inventory/Admin review"), "Cycle Count Inventory/Admin review context is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("No stock quantity is adjusted"), "Cycle Count guardrail is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("no Stock Reconciliation or Stock Entry is created"), "Cycle Count stock document guardrail is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("System document access"), "Cycle Count document-access policy wording is missing", { context: contextLabel, state });
-  assert(!(state.text || "").includes("Native routes"), "Cycle Count shell should avoid raw native-route wording", { context: contextLabel, state });
-  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Cycle Count shell exposed a native route", { context: contextLabel, state });
-}
-
-
 function assertW15BActionCenter(state, contextLabel) {
-  assert(state.actionCenterCount === 1, "Warehouse Action Center must render once", { context: contextLabel, state });
-  assert(state.actionCenterGroupCount >= 2, "Warehouse Action Center groups are missing", { context: contextLabel, state });
-  assert(state.actionCenterCardCount >= 8, "Warehouse Action Center cards are missing", { context: contextLabel, state });
-  assert(state.actionCenterOpenCount >= 4, "Warehouse Action Center review queue entries are missing", { context: contextLabel, state });
-  assert(state.actionCenterGuardrailCount === 1, "Warehouse Action Center shell-only guardrail is missing", { context: contextLabel, state });
-  assert((state.actionCenterModes || []).includes("shell_only"), "Warehouse Action Center must stay shell-only", { context: contextLabel, state });
-  assert((state.text || "").includes("Warehouse Action Center"), "Warehouse Action Center title is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Work Entry"), "Warehouse Action Center work-entry group is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Manager Decisions"), "Warehouse Action Center manager-decision group is missing", { context: contextLabel, state });
-  assert((state.text || "").includes("Planned"), "Warehouse Action Center planned lanes are missing", { context: contextLabel, state });
-  assert(!(state.text || "").includes("Manager Readiness"), "Manager Readiness copy must not return with W15B", { context: contextLabel, state });
-  const targets = state.routeTargets || [];
-  [
+  const expectedStartCardKeys = [
+    "inbound_due",
+    "outbound_risk",
+    "returns_work_hub",
+    "internal_transfer_workflow",
+    "cycle_count_workflow",
+  ];
+  const expectedStartTargets = [
+    "warehouse-console-worklist/inbound-receiving",
+    "warehouse-console-worklist/outbound-picking",
+    "warehouse-console-worklist/returns-work-hub",
+    "warehouse-console-worklist/internal-transfer-workflow",
+    "warehouse-console-worklist/cycle-count-workflow",
+  ];
+  const expectedGroupKeys = ["manager_decisions", "visibility"];
+  const expectedCardKeys = [
+    "arrival_review",
+    "picking_blockers",
+    "exception_resolution",
+    "return_decisions",
+    "internal_transfer_decisions",
+    "inventory_variance",
+    "movement_visibility",
+    "transfer_visibility",
+  ];
+  const expectedCardRoles = [
+    "queue",
+    "queue",
+    "queue",
+    "custom_workflow",
+    "custom_workflow",
+    "custom_workflow",
+    "visibility",
+    "visibility",
+  ];
+  const expectedActionCenterTargets = [
     "warehouse-console-worklist/inbound-receiving",
     "warehouse-console-worklist/outbound-picking",
     "warehouse-console-worklist/stock-exceptions",
+    "warehouse-console-worklist/returns-work-hub",
+    "warehouse-console-worklist/internal-transfer-workflow",
+    "warehouse-console-worklist/cycle-count-workflow",
+    "warehouse-console-worklist/movement-visibility",
     "warehouse-console-worklist/transfer-visibility",
-  ].forEach((target) => {
-    assert(targets.includes(target), `Action Center route target missing: ${target}`, { context: contextLabel, state });
-  });
+  ];
+  assert(JSON.stringify(state.startCardKeys || []) === JSON.stringify(expectedStartCardKeys), "Start Warehouse Work should contain only work-entry destinations", { context: contextLabel, state, expectedStartCardKeys });
+  assert(JSON.stringify(state.startRouteTargets || []) === JSON.stringify(expectedStartTargets), "Start Warehouse Work route targets changed unexpectedly", { context: contextLabel, state, expectedStartTargets });
+  assert(!(state.startCardKeys || []).includes("stock_exceptions"), "Stock Exceptions should not duplicate into Start Warehouse Work", { context: contextLabel, state });
+  assert(!(state.startCardKeys || []).includes("movement_visibility"), "Movement Visibility should not duplicate into Start Warehouse Work", { context: contextLabel, state });
+  assert(!(state.startCardKeys || []).includes("transfer_visibility"), "Transfer Visibility should not duplicate into Start Warehouse Work", { context: contextLabel, state });
+  assert(state.actionCenterCount === 1, "Warehouse Action Center must render once", { context: contextLabel, state });
+  assert(JSON.stringify(state.actionCenterGroupKeys || []) === JSON.stringify(expectedGroupKeys), "Warehouse Command Center groups changed unexpectedly", { context: contextLabel, state, expectedGroupKeys });
+  assert(JSON.stringify(state.actionCenterCardKeys || []) === JSON.stringify(expectedCardKeys), "Warehouse Command Center card matrix changed unexpectedly", { context: contextLabel, state, expectedCardKeys });
+  assert(JSON.stringify(state.actionCenterCardRoles || []) === JSON.stringify(expectedCardRoles), "Warehouse Command Center card roles changed unexpectedly", { context: contextLabel, state, expectedCardRoles });
+  assert(JSON.stringify(state.actionCenterRouteTargets || []) === JSON.stringify(expectedActionCenterTargets), "Warehouse Command Center route targets changed unexpectedly", { context: contextLabel, state, expectedActionCenterTargets });
+  assert(state.actionCenterGroupCount === expectedGroupKeys.length, "Warehouse Action Center group count changed unexpectedly", { context: contextLabel, state });
+  assert(state.actionCenterCardCount === expectedCardKeys.length, "Warehouse Action Center card count changed unexpectedly", { context: contextLabel, state });
+  assert(state.actionCenterOpenCount === expectedCardKeys.length, "Warehouse Action Center should have one route control per card", { context: contextLabel, state });
+  assert(state.actionCenterRoleBadgeCount === 0, "Warehouse Command Center should not expose decorative role badges in the visible card UI", { context: contextLabel, state });
+  assert(state.actionCenterCustomMetricCount === 0, "Custom workflow cards must not render Custom as a large side metric", { context: contextLabel, state });
+  assert(state.actionCenterCustomWorkflowCount === 3, "Manager custom workflow cards should be explicitly marked", { context: contextLabel, state });
+  assert(state.actionCenterVisibilityCount === 2, "Visibility cards should be separated from manager review cards", { context: contextLabel, state });
+  assert(state.actionCenterGuardrailCount === 1, "Warehouse Action Center custom-workflow guardrail is missing", { context: contextLabel, state });
+  assert((state.actionCenterModes || []).includes("custom_workflow"), "Warehouse Action Center must present as custom workflow", { context: contextLabel, state });
+  assert((state.text || "").includes("Review and Visibility"), "Review and Visibility title is missing", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Warehouse Command Center"), "Overview should not expose the duplicate Warehouse Command Center label after W16G5I", { context: contextLabel, state });
+  assert(!(state.actionCenterGroupKeys || []).includes("work_entry"), "Action Center must not duplicate the Start Work group after W16G5I", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Start Work"), "Action Center should not duplicate Start Work after W16G5I", { context: contextLabel, state });
+  assert((state.text || "").includes("Manager Review"), "Warehouse Command Center manager-review group is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Visibility"), "Warehouse Command Center visibility group is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Custom workflow only"), "Warehouse Action Center custom-workflow guardrail copy is missing", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Shell only"), "Warehouse Action Center should not present as shell-only after W16 activations", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Action shell only"), "Warehouse Action Center should not expose action-shell wording after W16 activations", { context: contextLabel, state });
+  assert(!(state.text || "").includes("future Warehouse work"), "Warehouse Action Center should not describe active workflows as future work", { context: contextLabel, state });
+  assert(!(state.text || "").includes("planned workflow lane"), "Warehouse Action Center should not expose planned-lane wording after W16 activations", { context: contextLabel, state });
+  assert(!(state.text || "").includes("Manager Readiness"), "Manager Readiness copy must not return with W15B", { context: contextLabel, state });
   assert(!FORBIDDEN_ACTION_RE.test(state.actionText), "Warehouse Action Center exposed a forbidden stock action control", { context: contextLabel, state });
 }
 
@@ -952,7 +1246,7 @@ async function assertCockpit(page, contextLabel) {
   assertClean(state, contextLabel);
   assert(state.cockpitCount === 1, "Cockpit shell did not render", { context: contextLabel, state });
   assert(state.pulseCount >= 6, "Warehouse pulse cards did not render", { context: contextLabel, state });
-  assert(state.startCount >= 4, "Start Here cards did not render", { context: contextLabel, state });
+  assert(state.startCount === 5, "Start Warehouse Work should render five work-entry cards", { context: contextLabel, state });
   assert(state.workCount === 0, "Legacy Work To Do cards should not duplicate Start Warehouse Work or Action Center", { context: contextLabel, state });
   assert(state.riskCount === 0, "Legacy Risks To Resolve cards should not duplicate Start Warehouse Work or Action Center", { context: contextLabel, state });
   assert(state.movementCount === 0, "Legacy Movement To Understand cards should not duplicate Start Warehouse Work or Action Center", { context: contextLabel, state });
@@ -962,36 +1256,226 @@ async function assertCockpit(page, contextLabel) {
   if (EXPECT_W14B) assertW14BQuickFind(state, contextLabel);
   if (EXPECT_W14C) assertW14CManagerCenter(state, contextLabel);
   if (EXPECT_W15B) assertW15BActionCenter(state, contextLabel);
+  assertW16D2ReturnsHub(state, contextLabel);
   assertW15PlannedWorkflowGroup(state, contextLabel);
+  assert(!(state.text || "").includes("Draft comes later"), "Overview should not expose draft-later wording", { context: contextLabel, state });
+  assert(!(state.text || "").includes("preview-only"), "Overview should not expose preview-only planned wording", { context: contextLabel, state });
   return state;
 }
-
-async function exercisePlannedWorkflowDisclosure(page, contextLabel) {
-  const workflows = [
-    { key: "customer-return", shellSelector: "[data-warehouse-customer-return-shell]", assertShell: assertW15E2CustomerReturnShell },
-    { key: "supplier-return", shellSelector: "[data-warehouse-supplier-return-shell]", assertShell: assertW15F2SupplierReturnShell },
-    { key: "internal-transfer", shellSelector: "[data-warehouse-internal-transfer-shell]", assertShell: assertW15G2InternalTransferShell },
-    { key: "cycle-count", shellSelector: "[data-warehouse-cycle-count-shell]", assertShell: assertW15H2CycleCountShell },
-  ];
-  for (const workflow of workflows) {
-    await page.locator(`[data-warehouse-planned-workflow-toggle="${workflow.key}"]`).click();
-    await page.waitForSelector(`[data-warehouse-planned-workflow-detail="${workflow.key}"] ${workflow.shellSelector}`, { state: "visible", timeout: TIMEOUT });
-    const state = await snapshot(page);
-    assert(state.plannedWorkflowVisibleDetailCount === 1, "Only one planned workflow detail should be expanded", { context: contextLabel, workflow: workflow.key, state });
-    assert((state.plannedWorkflowExpandedKeys || []).includes(workflow.key), "Expanded planned workflow key is missing", { context: contextLabel, workflow: workflow.key, state });
-    workflow.assertShell(state, `${contextLabel}:${workflow.key}`);
-  }
-  await page.locator(`[data-warehouse-planned-workflow-toggle="${workflows[workflows.length - 1].key}"]`).click();
-  await page.waitForFunction(() => {
+async function selectReturnsWorkflow(page, key) {
+  await page.locator(`[data-warehouse-returns-hub-switch="${key}"]`).first().click();
+  await page.waitForFunction((expectedKey) => {
     const visible = (node) => {
       if (!node) return false;
       const rect = node.getBoundingClientRect();
       const style = window.getComputedStyle(node);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
     };
-    return !Array.from(document.querySelectorAll("[data-warehouse-planned-workflow-detail]")).some(visible);
-  }, null, { timeout: TIMEOUT });
-  assertW15PlannedWorkflowGroup(await snapshot(page), `${contextLabel}:collapsed`);
+    const panels = Array.from(document.querySelectorAll("[data-warehouse-returns-workbench-panel]")).filter(visible);
+    const selected = document.querySelector(`[data-warehouse-returns-hub-switch="${expectedKey}"][aria-selected="true"]`);
+    return panels.length === 1 && panels[0].getAttribute("data-warehouse-returns-workbench-panel") === expectedKey && Boolean(selected);
+  }, key, { timeout: TIMEOUT });
+}
+
+async function openReturnsWorkHub(page, diagnostics, contextLabel) {
+  await page.locator("[data-warehouse-open-returns]").first().click();
+  await page.waitForURL((url) => url.pathname === "/desk/warehouse-console-worklist/returns-work-hub" || url.pathname === "/app/warehouse-console-worklist/returns-work-hub", { timeout: TIMEOUT });
+  await waitForWorklist(page, "returns-work-hub");
+  if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-returns-work-hub");
+  assertReturnsWorkHubPage(await snapshot(page), contextLabel);
+}
+
+async function exerciseCustomerReturnIntakeDraft(page, diagnostics, contextLabel) {
+  if (!ASSET_ROOT) return;
+  await selectReturnsWorkflow(page, "customer");
+  await page.locator("[data-warehouse-customer-return-field='customer']").fill("W16D3 Customer");
+  await page.locator("[data-warehouse-customer-return-field='return_authorization_reference']").fill("RMA-W16D3-001");
+  await page.locator("[data-warehouse-customer-return-field='item_code']").fill("ITEM-W16D3");
+  await page.locator("[data-warehouse-customer-return-field='returned_qty']").fill("2");
+  await page.locator("[data-warehouse-customer-return-field='accepted_qty']").fill("2");
+  const baseline = overrideHitCount(diagnostics, "customer-return-intake-draft");
+  await page.locator("[data-warehouse-customer-return-save]").click();
+  await waitForOverrideHit(diagnostics, "customer-return-intake-draft");
+  assert(overrideHitCount(diagnostics, "customer-return-intake-draft") > baseline, "Customer return intake save did not call the custom draft method", { context: contextLabel });
+  const statusText = await page.locator("[data-warehouse-customer-return-status-message]").first().innerText();
+  assert(/Custom customer return draft saved/i.test(statusText), "Customer return intake save success message is missing", { context: contextLabel, statusText });
+  assert(!/Sales Return created|Credit Note created|Delivery Note created|Stock Entry/i.test(statusText), "Customer return intake status implies ERP document creation", { context: contextLabel, statusText });
+}
+
+async function exerciseSupplierReturnCandidateDraft(page, diagnostics, contextLabel) {
+  if (!ASSET_ROOT) return;
+  await selectReturnsWorkflow(page, "supplier");
+  await page.locator("[data-warehouse-supplier-return-field='supplier']").fill("W16D4 Supplier");
+  await page.locator("[data-warehouse-supplier-return-field='supplier_return_reference']").fill("SUP-RET-W16D4-001");
+  await page.locator("[data-warehouse-supplier-return-field='item_code']").fill("ITEM-W16D4");
+  await page.locator("[data-warehouse-supplier-return-field='candidate_qty']").fill("2");
+  await page.locator("[data-warehouse-supplier-return-field='condition_note']").fill("Supplier-return evidence ready for manager posture.");
+  const baseline = overrideHitCount(diagnostics, "supplier-return-candidate-draft");
+  await page.locator("[data-warehouse-supplier-return-save]").click();
+  await waitForOverrideHit(diagnostics, "supplier-return-candidate-draft");
+  assert(overrideHitCount(diagnostics, "supplier-return-candidate-draft") > baseline, "Supplier return candidate save did not call the custom draft method", { context: contextLabel });
+  const statusText = await page.locator("[data-warehouse-supplier-return-status-message]").first().innerText();
+  assert(/Custom supplier return candidate saved/i.test(statusText), "Supplier return candidate save success message is missing", { context: contextLabel, statusText });
+  assert(!/supplier notified|stock decrease was created|debit note created|return purchase receipt created/i.test(statusText), "Supplier return status implies forbidden external or stock document behavior", { context: contextLabel, statusText });
+}
+
+
+async function exerciseReturnManagerDecisions(page, diagnostics, contextLabel) {
+  if (!ASSET_ROOT) return;
+  const refreshBaseline = overrideHitCount(diagnostics, "warehouse-returns-work-hub");
+  await page.locator("[data-warehouse-returns-refresh]").first().click();
+  await waitForOverrideHit(diagnostics, "warehouse-returns-work-hub");
+  assert(overrideHitCount(diagnostics, "warehouse-returns-work-hub") > refreshBaseline, "Returns Work Hub refresh did not reload custom workflow records", { context: contextLabel });
+  await waitForWorklist(page, "returns-work-hub");
+  await selectReturnsWorkflow(page, "decisions");
+  const customerBaseline = overrideHitCount(diagnostics, "customer-return-manager-decision");
+  await page.locator("[data-warehouse-return-decision-source='customer'][data-warehouse-return-decision-decision='mark_restock_candidate']").click();
+  await waitForOverrideHit(diagnostics, "customer-return-manager-decision");
+  assert(overrideHitCount(diagnostics, "customer-return-manager-decision") > customerBaseline, "Customer return manager decision did not call the custom manager method", { context: contextLabel });
+  const customerStatusText = await page.locator("[data-warehouse-return-decision-status-message]").first().innerText();
+  assert(/Manager posture recorded/i.test(customerStatusText), "Customer return manager decision success message is missing", { context: contextLabel, customerStatusText });
+  assert(!/Sales Return created|Credit Note created|Delivery Note created|Stock Entry/i.test(customerStatusText), "Customer return manager decision implies ERP document creation", { context: contextLabel, customerStatusText });
+
+  const supplierBaseline = overrideHitCount(diagnostics, "supplier-return-manager-decision");
+  await page.locator("[data-warehouse-return-decision-source='supplier'][data-warehouse-return-decision-decision='mark_supplier_return_candidate']").click();
+  await waitForOverrideHit(diagnostics, "supplier-return-manager-decision");
+  assert(overrideHitCount(diagnostics, "supplier-return-manager-decision") > supplierBaseline, "Supplier return manager decision did not call the custom manager method", { context: contextLabel });
+  const supplierStatusText = await page.locator("[data-warehouse-return-decision-status-message]").first().innerText();
+  assert(/Manager posture recorded/i.test(supplierStatusText), "Supplier return manager decision success message is missing", { context: contextLabel, supplierStatusText });
+  assert(!/supplier notified|stock decrease was created|debit note created|return purchase receipt created/i.test(supplierStatusText), "Supplier return manager decision implies forbidden external or stock document behavior", { context: contextLabel, supplierStatusText });
+}
+
+
+function assertInternalTransferWorkflowPage(state, contextLabel) {
+  assert(state.internalTransferWorkflowPageCount === 1, "Internal Transfer dedicated page must render once", { context: contextLabel, state });
+  assert(state.workflowPageShellCount === 1 && (state.workflowPageShellKeys || []).includes("internal_transfer"), "Internal Transfer must use the shared workflow page shell", { context: contextLabel, state });
+  assert(state.workflowPageHeaderCount === 1, "Internal Transfer must use the shared workflow page header", { context: contextLabel, state });
+  assert(state.workflowCardCount === 1 && (state.workflowCardKinds || []).includes("internal_transfer"), "Internal Transfer must use the shared workflow card grammar", { context: contextLabel, state });
+  assert(state.workflowModeCount === 1, "Internal Transfer custom workflow mode badge is missing", { context: contextLabel, state });
+  assert(state.workflowGuardrailCount === 1, "Internal Transfer shared guardrail is missing", { context: contextLabel, state });
+  assert(state.workflowBodyCount === 1, "Internal Transfer shared workflow body is missing", { context: contextLabel, state });
+  assert(state.workflowPanelCount >= 2, "Internal Transfer shared workflow panels are missing", { context: contextLabel, state });
+  assert(state.internalTransferWorkflowCount === 1, "Internal Transfer workflow body is missing", { context: contextLabel, state });
+  assert(state.internalTransferCandidatePanelCount === 1, "Internal Transfer candidate evidence panel is missing", { context: contextLabel, state });
+  assert(state.internalTransferFieldCount >= 14, "Internal Transfer candidate fields are missing", { context: contextLabel, state });
+  assert(state.internalTransferSaveCount === 1, "Internal Transfer save control must render once", { context: contextLabel, state });
+  assert(state.internalTransferDecisionControlCount >= 5, "Internal Transfer manager posture controls are missing", { context: contextLabel, state });
+  assert(state.internalTransferDecisionActiveControlCount === 0, "Internal Transfer manager controls must stay disabled until a custom candidate is saved", { context: contextLabel, state });
+  assert((state.text || "").includes("No Stock Entry"), "Internal Transfer Stock Entry guardrail is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No stock is moved"), "Internal Transfer stock movement guardrail is missing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Internal Transfer workflow exposed a native route", { context: contextLabel, state });
+}
+
+async function openInternalTransferWorkflow(page, diagnostics, contextLabel) {
+  await page.locator("[data-warehouse-open-internal-transfer]").first().click();
+  await page.waitForURL((url) => url.pathname === "/desk/warehouse-console-worklist/internal-transfer-workflow" || url.pathname === "/app/warehouse-console-worklist/internal-transfer-workflow", { timeout: TIMEOUT });
+  await waitForWorklist(page, "internal-transfer-workflow");
+  if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-internal-transfer-workflow");
+  assertInternalTransferWorkflowPage(await snapshot(page), contextLabel);
+}
+
+async function exerciseInternalTransferCandidateDraft(page, diagnostics, contextLabel) {
+  if (!ASSET_ROOT) return;
+  await page.locator("[data-warehouse-internal-transfer-field='target_warehouse']").fill("Target Warehouse - W16E");
+  await page.locator("[data-warehouse-internal-transfer-field='source_reference_text']").fill("W16E smoke transfer request");
+  await page.locator("[data-warehouse-internal-transfer-field='transfer_reason']").fill("Smoke verified warehouse rebalance candidate");
+  await page.locator("[data-warehouse-internal-transfer-field='item_code']").fill("ITEM-W16E");
+  await page.locator("[data-warehouse-internal-transfer-field='requested_qty']").fill("1");
+  await page.locator("[data-warehouse-internal-transfer-field='counted_qty']").fill("1");
+  await page.locator("[data-warehouse-internal-transfer-field='transfer_candidate_qty']").fill("1");
+  await page.locator("[data-warehouse-internal-transfer-field='evidence_reference']").fill("Count note W16E");
+  const baseline = overrideHitCount(diagnostics, "internal-transfer-candidate-draft");
+  await page.locator("[data-warehouse-internal-transfer-save]").click();
+  await waitForOverrideHit(diagnostics, "internal-transfer-candidate-draft");
+  assert(overrideHitCount(diagnostics, "internal-transfer-candidate-draft") > baseline, "Internal Transfer save did not call the custom draft method", { context: contextLabel });
+  const statusText = await page.locator("[data-warehouse-internal-transfer-status-message]").first().innerText();
+  assert(/Custom internal transfer candidate saved/i.test(statusText), "Internal Transfer save success message is missing", { context: contextLabel, statusText });
+  assert(!/Stock Entry created|stock moved|ledger updated|balance updated/i.test(statusText), "Internal Transfer status implies stock document or movement behavior", { context: contextLabel, statusText });
+  const state = await snapshot(page);
+  assert(state.internalTransferDecisionActiveControlCount >= 1, "Internal Transfer manager controls should unlock after custom candidate save for manager context", { context: contextLabel, state });
+  const refreshBaseline = overrideHitCount(diagnostics, "warehouse-internal-transfer-workflow");
+  await page.locator("[data-warehouse-internal-transfer-refresh]").first().click();
+  await waitForOverrideHit(diagnostics, "warehouse-internal-transfer-workflow");
+  assert(overrideHitCount(diagnostics, "warehouse-internal-transfer-workflow") > refreshBaseline, "Internal Transfer refresh did not reload custom workflow records", { context: contextLabel });
+  await waitForWorklist(page, "internal-transfer-workflow");
+  const recalledState = await snapshot(page);
+  assert(recalledState.internalTransferDecisionActiveControlCount >= 1, "Internal Transfer manager controls should remain active after refreshed custom record recall", { context: contextLabel, state: recalledState });
+  assert((recalledState.text || "").includes("Loaded saved custom internal transfer candidate"), "Internal Transfer recall message is missing after refresh", { context: contextLabel, state: recalledState });
+}
+
+
+function assertCycleCountWorkflowPage(state, contextLabel) {
+  assert(state.cycleCountWorkflowPageCount === 1, "Cycle Count dedicated page must render once", { context: contextLabel, state });
+  assert(state.workflowPageShellCount === 1 && (state.workflowPageShellKeys || []).includes("cycle_count"), "Cycle Count must use the shared workflow page shell", { context: contextLabel, state });
+  assert(state.workflowPageHeaderCount === 1, "Cycle Count must use the shared workflow page header", { context: contextLabel, state });
+  assert(state.workflowCardCount === 1 && (state.workflowCardKinds || []).includes("cycle_count"), "Cycle Count must use the shared workflow card grammar", { context: contextLabel, state });
+  assert(state.workflowModeCount === 1, "Cycle Count custom workflow mode badge is missing", { context: contextLabel, state });
+  assert(state.workflowGuardrailCount === 1, "Cycle Count shared guardrail is missing", { context: contextLabel, state });
+  assert(state.workflowBodyCount === 1, "Cycle Count shared workflow body is missing", { context: contextLabel, state });
+  assert(state.workflowPanelCount >= 2, "Cycle Count shared workflow panels are missing", { context: contextLabel, state });
+  assert(state.cycleCountWorkflowCount === 1, "Cycle Count workflow body is missing", { context: contextLabel, state });
+  assert(state.cycleCountTaskPanelCount === 1, "Cycle Count task evidence panel is missing", { context: contextLabel, state });
+  assert(state.cycleCountFieldCount >= 17, "Cycle Count task fields are missing", { context: contextLabel, state });
+  assert(state.cycleCountSaveCount === 1, "Cycle Count save control must render once", { context: contextLabel, state });
+  assert(state.cycleCountDecisionControlCount >= 7, "Cycle Count manager posture controls are missing", { context: contextLabel, state });
+  assert(state.cycleCountDecisionActiveControlCount === 0, "Cycle Count manager controls must stay disabled until a custom task is saved", { context: contextLabel, state });
+  assert((state.text || "").includes("No Stock Reconciliation"), "Cycle Count Stock Reconciliation guardrail is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No Stock Entry"), "Cycle Count Stock Entry guardrail is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("No stock is adjusted"), "Cycle Count stock adjustment guardrail is missing", { context: contextLabel, state });
+  assert(!NATIVE_ROUTE_RE.test(`${state.hrefs} ${state.actionText} ${(state.routeTargets || []).join(" ")}`), "Cycle Count workflow exposed a native route", { context: contextLabel, state });
+}
+
+async function openCycleCountWorkflow(page, diagnostics, contextLabel) {
+  await page.locator("[data-warehouse-open-cycle-count]").first().click();
+  await page.waitForURL((url) => url.pathname === "/desk/warehouse-console-worklist/cycle-count-workflow" || url.pathname === "/app/warehouse-console-worklist/cycle-count-workflow", { timeout: TIMEOUT });
+  await waitForWorklist(page, "cycle-count-workflow");
+  if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-cycle-count-workflow");
+  assertCycleCountWorkflowPage(await snapshot(page), contextLabel);
+}
+
+async function exerciseCycleCountTaskDraft(page, diagnostics, contextLabel) {
+  if (!ASSET_ROOT) return;
+  await page.locator("[data-warehouse-cycle-count-field='location_reference_text']").fill("W16F smoke count zone");
+  await page.locator("[data-warehouse-cycle-count-field='count_reason']").fill("Smoke verified blind count evidence");
+  await page.locator("[data-warehouse-cycle-count-field='item_code']").fill("ITEM-W16F");
+  await page.locator("[data-warehouse-cycle-count-field='line_location_reference_text']").fill("W16F smoke bin");
+  await page.locator("[data-warehouse-cycle-count-field='counted_qty']").fill("1");
+  await page.locator("[data-warehouse-cycle-count-field='reason_code']").fill("Smoke verified count");
+  await page.locator("[data-warehouse-cycle-count-field='evidence_reference']").fill("Count note W16F");
+  const baseline = overrideHitCount(diagnostics, "cycle-count-task-draft");
+  await page.locator("[data-warehouse-cycle-count-save]").click();
+  await waitForOverrideHit(diagnostics, "cycle-count-task-draft");
+  assert(overrideHitCount(diagnostics, "cycle-count-task-draft") > baseline, "Cycle Count save did not call the custom task draft method", { context: contextLabel });
+  const statusText = await page.locator("[data-warehouse-cycle-count-status-message]").first().innerText();
+  assert(/Custom cycle count task saved/i.test(statusText), "Cycle Count save success message is missing", { context: contextLabel, statusText });
+  assert(!/Stock Reconciliation created|Stock Entry created|stock adjusted|ledger updated|balance updated/i.test(statusText), "Cycle Count status implies stock document or adjustment behavior", { context: contextLabel, statusText });
+  const refreshBaseline = overrideHitCount(diagnostics, "warehouse-cycle-count-workflow");
+  await page.locator("[data-warehouse-cycle-count-refresh]").first().click();
+  await waitForOverrideHit(diagnostics, "warehouse-cycle-count-workflow");
+  assert(overrideHitCount(diagnostics, "warehouse-cycle-count-workflow") > refreshBaseline, "Cycle Count refresh did not reload custom workflow records", { context: contextLabel });
+  await waitForWorklist(page, "cycle-count-workflow");
+  const stateAfterSave = await snapshot(page);
+  assert((stateAfterSave.text || "").includes("Loaded saved custom cycle count task"), "Cycle Count recall message is missing after refresh", { context: contextLabel, state: stateAfterSave });
+  const managerBaseline = overrideHitCount(diagnostics, "cycle-count-manager-decision");
+  if (stateAfterSave.cycleCountDecisionActiveControlCount >= 1) {
+    await page.locator("[data-warehouse-cycle-count-decision='mark_clean_count']").click();
+    await waitForOverrideHit(diagnostics, "cycle-count-manager-decision");
+    assert(overrideHitCount(diagnostics, "cycle-count-manager-decision") > managerBaseline, "Cycle Count manager decision did not call the custom manager method", { context: contextLabel });
+    const managerStatusText = await page.locator("[data-warehouse-cycle-count-status-message]").first().innerText();
+    assert(/Manager posture recorded/i.test(managerStatusText), "Cycle Count manager decision success message is missing", { context: contextLabel, managerStatusText });
+    assert(!/Stock Reconciliation created|Stock Entry created|stock adjusted|ledger updated|balance updated/i.test(managerStatusText), "Cycle Count manager status implies stock document or adjustment behavior", { context: contextLabel, managerStatusText });
+  } else {
+    assert(overrideHitCount(diagnostics, "cycle-count-manager-decision") === managerBaseline, "Cycle Count manager decision should not be called when manager controls are disabled", { context: contextLabel, state: stateAfterSave });
+    assert((stateAfterSave.text || "").includes("Manager only"), "Cycle Count non-manager context should explain that manager posture controls are disabled", { context: contextLabel, state: stateAfterSave });
+  }
+}
+
+async function assertNoRemainingPlannedWorkflowShells(page, contextLabel) {
+  const state = await snapshot(page);
+  assert(state.plannedWorkflowGroupCount === 0, "Overview should not show remaining planned workflow shells after W16F activation", { context: contextLabel, state });
+  assert(state.plannedWorkflowCardCount === 0, "Overview should not show planned workflow cards after W16F activation", { context: contextLabel, state });
+  assert(state.cycleCountShellCount === 0, "Cycle Count should no longer render as an inert planned shell", { context: contextLabel, state });
+  assert(state.internalTransferShellCount === 0, "Internal Transfer should no longer render as an inert planned shell", { context: contextLabel, state });
 }
 
 
@@ -1022,7 +1506,32 @@ async function exerciseQuickFind(page, diagnostics, contextLabel) {
   assert(!NATIVE_ROUTE_RE.test(page.url()), "Warehouse sidebar Quick Find opened a native ERP route", { context: contextLabel, url: page.url() });
 }
 
+async function exerciseUnsupportedWorklistRoute(page, diagnostics, contextLabel) {
+  const serviceBaseline = [
+    "warehouse-inbound",
+    "warehouse-outbound",
+    "warehouse-stock-exceptions",
+    "warehouse-movement-visibility",
+    "warehouse-transfer-visibility",
+  ].reduce((acc, key) => Object.assign(acc, { [key]: overrideHitCount(diagnostics, key) }), {});
+  await openRoute(page, ["warehouse-console-worklist", "unsupported-worklist-slug"], "/desk/warehouse-console-worklist/unsupported-worklist-slug", waitForUnsupportedWorklist);
+  const state = await snapshot(page);
+  assertClean(state, contextLabel);
+  assert(state.unsupportedWorklistCount === 1, "Unsupported Warehouse worklist fallback must render once", { context: contextLabel, state });
+  assert(state.unsupportedWorklistPanelCount === 1, "Unsupported Warehouse worklist fallback panel is missing", { context: contextLabel, state });
+  assert(state.unsupportedWorklistOverviewActionCount === 1, "Unsupported Warehouse worklist fallback overview action is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("Warehouse worklist unavailable"), "Unsupported route fallback title is missing", { context: contextLabel, state });
+  assert((state.text || "").includes("unsupported-worklist-slug"), "Unsupported route fallback does not show the requested slug", { context: contextLabel, state });
+  assert(!/Inbound Receiving|Outbound Picking|Stock Exceptions|Movement Visibility|Transfer Visibility/.test(state.text || ""), "Unsupported route fallback leaked a stale worklist shell", { context: contextLabel, state });
+  if (ASSET_ROOT) {
+    Object.keys(serviceBaseline).forEach((key) => {
+      assert(overrideHitCount(diagnostics, key) === serviceBaseline[key], "Unsupported worklist route made a queue service call", { context: contextLabel, key, before: serviceBaseline[key], after: overrideHitCount(diagnostics, key) });
+    });
+  }
+}
+
 async function exerciseUser(browser, user, viewport) {
+  resetWorkflowRecallState();
   const diagnostics = makeDiagnostics(`${user.key}-${viewport.key}`);
   const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
   await installSourceOverrides(context, diagnostics);
@@ -1035,7 +1544,20 @@ async function exerciseUser(browser, user, viewport) {
     const sidebarCollapsed = await collapseBodySidebarForNarrowViewport(page);
     if (viewport.width <= 520) assert(sidebarCollapsed, "Mobile body sidebar was not collapsed for Warehouse cockpit evidence", { user: user.key, viewport });
     await assertCockpit(page, `${user.key}:${viewport.key}:cockpit`);
-    if (viewport.key === "desktop-1440") await exercisePlannedWorkflowDisclosure(page, `${user.key}:${viewport.key}:planned-workflows`);
+    if (viewport.key === "desktop-1440") {
+      await openReturnsWorkHub(page, diagnostics, `${user.key}:${viewport.key}:returns-work-hub`);
+      await exerciseCustomerReturnIntakeDraft(page, diagnostics, `${user.key}:${viewport.key}:customer-return-intake`);
+      await exerciseSupplierReturnCandidateDraft(page, diagnostics, `${user.key}:${viewport.key}:supplier-return-candidate`);
+      await exerciseReturnManagerDecisions(page, diagnostics, `${user.key}:${viewport.key}:return-decisions`);
+      await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
+      await openInternalTransferWorkflow(page, diagnostics, `${user.key}:${viewport.key}:internal-transfer-workflow`);
+      await exerciseInternalTransferCandidateDraft(page, diagnostics, `${user.key}:${viewport.key}:internal-transfer-candidate`);
+      await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
+      await openCycleCountWorkflow(page, diagnostics, `${user.key}:${viewport.key}:cycle-count-workflow`);
+      await exerciseCycleCountTaskDraft(page, diagnostics, `${user.key}:${viewport.key}:cycle-count-task`);
+      await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
+      await assertNoRemainingPlannedWorkflowShells(page, `${user.key}:${viewport.key}:planned-workflows`);
+    }
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await collapseBodySidebarForNarrowViewport(page);
@@ -1061,6 +1583,12 @@ async function exerciseUser(browser, user, viewport) {
       await assertCockpit(page, `${user.key}:quick-find:return`);
     }
 
+    if (viewport.key === "desktop-1440") {
+      await exerciseUnsupportedWorklistRoute(page, diagnostics, `${user.key}:unsupported-worklist`);
+      await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
+      await assertCockpit(page, `${user.key}:unsupported-worklist:return`);
+    }
+
     if (EXPECT_W14C && viewport.key === "desktop-1440") {
       await assertCockpit(page, `${user.key}:manager-center-removed`);
     }
@@ -1081,15 +1609,15 @@ async function exerciseUser(browser, user, viewport) {
       if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-outbound");
       await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
 
-      await exerciseRouteAction(page, "[data-warehouse-open-stock-exceptions]", "/desk/warehouse-console-worklist/stock-exceptions", "stock-exceptions", `${user.key}:stock-exceptions`);
+      await exerciseRouteAction(page, "[data-warehouse-action-center-card='exception_resolution'] [data-warehouse-action-center-open]", "/desk/warehouse-console-worklist/stock-exceptions", "stock-exceptions", `${user.key}:stock-exceptions`);
       if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-stock-exceptions");
       await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
 
-      await exerciseRouteAction(page, "[data-warehouse-open-movement]", "/desk/warehouse-console-worklist/movement-visibility", "movement-visibility", `${user.key}:movement`);
+      await exerciseRouteAction(page, "[data-warehouse-action-center-card='movement_visibility'] [data-warehouse-action-center-open]", "/desk/warehouse-console-worklist/movement-visibility", "movement-visibility", `${user.key}:movement`);
       if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-movement-visibility");
       await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
 
-      await exerciseRouteAction(page, "[data-warehouse-open-transfer]", "/desk/warehouse-console-worklist/transfer-visibility", "transfer-visibility", `${user.key}:transfer`);
+      await exerciseRouteAction(page, "[data-warehouse-action-center-card='transfer_visibility'] [data-warehouse-action-center-open]", "/desk/warehouse-console-worklist/transfer-visibility", "transfer-visibility", `${user.key}:transfer`);
       if (ASSET_ROOT) await waitForOverrideHit(diagnostics, "warehouse-transfer-visibility");
       await openRoute(page, ["warehouse-console"], "/desk/warehouse-console", waitForCockpit);
     }
@@ -1101,7 +1629,51 @@ async function exerciseUser(browser, user, viewport) {
   return diagnostics;
 }
 
+function assertW16G5GRouteWrapperSourceContracts() {
+  if (!ASSET_ROOT) return;
+  const requiredWrappers = [
+    "erp_workspace_ui/erp_workspace_ui/page/warehouse_console/warehouse_console.js",
+    "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_worklist/warehouse_console_worklist.js",
+    "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_receiving/warehouse_console_receiving.js",
+    "erp_workspace_ui/erp_workspace_ui/page/warehouse_console_picking/warehouse_console_picking.js",
+  ];
+  requiredWrappers.forEach((file) => {
+    const body = readSource(file);
+    assert(body.includes("data-warehouse-route-loading"), "Warehouse route wrapper missing first-paint loading shell", { file });
+    assert(body.includes('target === document.body || target.id === "body"'), "Warehouse route wrapper can leave loading shell in the global body", { file });
+    assert(body.includes('(frappe.container && frappe.container.page && frappe.container.page.wrapper) || document.getElementById("body")'), "Warehouse route wrapper must prefer the active page wrapper before global body fallback", { file });
+  });
+  const worklistWrapper = readSource("erp_workspace_ui/erp_workspace_ui/page/warehouse_console_worklist/warehouse_console_worklist.js");
+  assert(worklistWrapper.includes('return "unsupported-worklist";'), "Warehouse worklist wrapper must route stale slugs to unsupported fallback", { file: "warehouse_console_worklist.js" });
+  assert(!/cycle_count_workflow"\) return "cycle-count-workflow";\s*return "inbound-receiving";/.test(worklistWrapper), "Warehouse worklist wrapper falls through stale slugs to inbound", { file: "warehouse_console_worklist.js" });
+  const pageSource = readSource("erp_workspace_ui/public/js/warehouse_console/warehouse_console_page.js");
+  assert(!/===\s*orde\b/.test(pageSource), "Warehouse detail route stale-response guard has a broken order reference", { file: "warehouse_console_page.js" });
+  assert(!/\bisSupplie\b/.test(pageSource), "Warehouse return manager action references misspelled isSupplie variable", { file: "warehouse_console_page.js" });
+  assert(pageSource.includes('document.querySelectorAll("[data-warehouse-route-loading]")'), "Warehouse real-render cleanup must remove stale route loading shells", { file: "warehouse_console_page.js" });
+  const customWorkflowRouteBlock = pageSource.slice(pageSource.indexOf("function renderReturnsWorkHubLoading"), pageSource.indexOf("function loadInboundQueue"));
+  assert(customWorkflowRouteBlock.includes("replaceWarehouseRouteHost(viewState, $root)"), "Warehouse custom workflow routes must render through the route host helper", { file: "warehouse_console_page.js" });
+  assert(!customWorkflowRouteBlock.includes("replacePageBody(viewState.page, $root)"), "Warehouse custom workflow routes must not replace the whole page body", { file: "warehouse_console_page.js" });
+  [
+    ["renderReturnsWorkHubPagePayload", "renderReturnsWorkHubPage"],
+    ["renderInternalTransferWorkflowPagePayload", "renderInternalTransferWorkflowPage"],
+    ["renderCycleCountWorkflowPagePayload", "renderCycleCountWorkflowPage"],
+  ].forEach(([payloadRenderer, routeRenderer]) => {
+    const payloadCount = (pageSource.match(new RegExp(`function\\s+${payloadRenderer}\\(`, "g")) || []).length;
+    const routeCount = (pageSource.match(new RegExp(`function\\s+${routeRenderer}\\(viewState, options\\)`, "g")) || []).length;
+    assert(payloadCount === 1, "Warehouse custom workflow payload renderer must exist exactly once", { file: "warehouse_console_page.js", payloadRenderer, payloadCount });
+    assert(routeCount === 1, "Warehouse custom workflow route renderer must exist exactly once", { file: "warehouse_console_page.js", routeRenderer, routeCount });
+  });
+  [
+    "returnsWorkHubStaleResponseIgnored",
+    "internalTransferWorkflowStaleResponseIgnored",
+    "cycleCountWorkflowStaleResponseIgnored",
+  ].forEach((marker) => {
+    assert(pageSource.includes(marker), "Warehouse custom workflow route is missing stale-response protection", { file: "warehouse_console_page.js", marker });
+  });
+}
+
 async function main() {
+  assertW16G5GRouteWrapperSourceContracts();
   assert(AUTHORIZED_USERS.length >= 1, "Warehouse credentials are required for W9A smoke", {
     missing: [
       "ERPW_WAREHOUSE_MANAGER_USERNAME/ERPW_WAREHOUSE_MANAGER_PASSWORD",

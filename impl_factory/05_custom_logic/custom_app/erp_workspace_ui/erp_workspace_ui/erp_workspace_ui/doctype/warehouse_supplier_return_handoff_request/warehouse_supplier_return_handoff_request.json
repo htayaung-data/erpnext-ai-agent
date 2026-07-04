@@ -103,13 +103,13 @@
   {
    "fieldname": "procurement_escalation_reference",
    "fieldtype": "Data",
-   "label": "Procurement Escalation Reference",
+   "label": "Procurement Review Reference",
    "read_only": 1
   },
   {
    "fieldname": "finance_escalation_reference",
    "fieldtype": "Data",
-   "label": "Finance Escalation Reference",
+   "label": "Finance/Admin Review Reference",
    "read_only": 1
   },
   {

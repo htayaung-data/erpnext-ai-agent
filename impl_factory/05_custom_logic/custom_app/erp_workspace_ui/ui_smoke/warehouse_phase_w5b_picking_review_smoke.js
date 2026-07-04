@@ -44,6 +44,7 @@ const NATIVE_ROUTE_RE = /\/desk\/Form\/|\/app\/|#Form\/|query-report|\/desk\/Lis
 const VALUATION_RE = /stock value|valuation rate|stock_value|valuation_rate|base_net_rate|amount|profit|margin|cost|gl|accounting/i;
 
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+const PICKING_WORKFLOW_TASKS = new Map();
 
 function assert(condition, message, details = {}) {
   if (!condition) {
@@ -109,6 +110,26 @@ function requestText(request) {
     jsonText = "";
   }
   return `${request.url()} ${request.postData() || ""} ${jsonText}`;
+}
+
+function requestMethodArgs(request) {
+  let body = {};
+  try {
+    body = request.postDataJSON() || {};
+  } catch (error) {
+    body = {};
+  }
+  if (body.args) {
+    if (typeof body.args === "string") {
+      try {
+        return JSON.parse(body.args || "{}") || {};
+      } catch (error) {
+        return {};
+      }
+    }
+    if (typeof body.args === "object") return body.args || {};
+  }
+  return body || {};
 }
 
 function recordOverrideHit(diagnostics, key, request, extra = {}) {
@@ -277,6 +298,7 @@ function sourcePickingPayload(order = "SO-REVIEW") {
       { key: "readiness", label: "Readiness", value: row.state_key === "ready_to_pick" ? 1 : 0, note: row.state_key === "needs_stock_review" ? "1 lines need review" : "0 lines need review" },
     ],
     tabs: [{ key: "item_lines", label: "Item Lines", count: 1 }, { key: "stock_readiness", label: "Stock Readiness", count: 1 }],
+    workflow_task: PICKING_WORKFLOW_TASKS.get(row.sales_order) || { available: false },
     lines: row.lines.map((line) => ({
       item_code: line.item_code,
       item_name: line.item_name,
@@ -350,6 +372,75 @@ async function installSourceOverrides(context, diagnostics) {
     }
     recordOverrideHit(diagnostics, "warehouse-picking-detail", route.request(), { fulfilled: true, salesOrder });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: sourcePickingPayload(salesOrder) }) });
+  });
+  await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.save_warehouse_picking_task_draft**", async (route) => {
+    const body = requestMethodArgs(route.request());
+    const salesOrder = body.sales_order || "SO-REVIEW";
+    const sourceWarehouse = body.source_warehouse || "Short - M";
+    const rawLines = typeof body.lines === "string" ? JSON.parse(body.lines || "[]") : (body.lines || []);
+    const lines = Array.isArray(rawLines) ? rawLines : (Array.isArray(rawLines.lines) ? rawLines.lines : []);
+    const task = {
+      available: true,
+      task_id: `WPT-SMOKE-${salesOrder}`,
+      sales_order: salesOrder,
+      source_warehouse: sourceWarehouse,
+      status: "In Progress",
+      decision: "",
+      line_count: lines.length,
+      manager_decision_available: true,
+      lines: lines.map((line) => ({
+        item_code: line.item_code || "",
+        source_warehouse: line.source_warehouse || sourceWarehouse,
+        picked_qty: line.picked_qty == null ? "0" : String(line.picked_qty),
+        packed_qty: line.packed_qty == null ? "0" : String(line.packed_qty),
+        short_qty: line.short_qty == null ? "0" : String(line.short_qty),
+        damaged_qty: line.damaged_qty == null ? "0" : String(line.damaged_qty),
+        not_found_qty: line.not_found_qty == null ? "0" : String(line.not_found_qty),
+        exception_type: line.exception_type || "",
+        evidence_reference: line.evidence_reference || "",
+        line_status: line.exception_type ? "Needs Review" : "Draft",
+      })),
+      stock_effect: {
+        stock_posted: false,
+        delivery_note_created: false,
+        pick_list_created: false,
+        stock_reservation_created: false,
+      },
+      valuation: { visible: false, fields: [] },
+    };
+    PICKING_WORKFLOW_TASKS.set(salesOrder, task);
+    recordOverrideHit(diagnostics, "warehouse-picking-task-draft", route.request(), { fulfilled: true, salesOrder, lineCount: lines.length });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ message: { state: { kind: "ready", title: "Picking task draft ready", detail: "Custom picking task recorded." }, page: { title: "Picking Task Draft", key: "picking_task_draft", sales_order: salesOrder }, task, stock_effect: task.stock_effect, valuation: task.valuation } }),
+    });
+  });
+  await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.save_warehouse_picking_manager_decision**", async (route) => {
+    const body = requestMethodArgs(route.request());
+    const decision = body.decision || "approve_clean_pick";
+    const task = Array.from(PICKING_WORKFLOW_TASKS.values()).find((item) => item.task_id === body.task_id) || Array.from(PICKING_WORKFLOW_TASKS.values())[0];
+    const statusByDecision = {
+      request_repick: "Repick Requested",
+      approve_clean_pick: "Clean Pick Approved",
+      approve_partial_pick: "Partial Pick Reviewed",
+      mark_shortage_review: "Shortage Review",
+      escalate_to_sales: "Sales Review Needed",
+      mark_pack_ready: "Pack Ready",
+      mark_dispatch_handoff: "Outbound Review Ready",
+    };
+    if (task) {
+      task.status = statusByDecision[decision] || "Manager Review";
+      task.decision = decision;
+      task.manager_decision_available = false;
+      PICKING_WORKFLOW_TASKS.set(task.sales_order, task);
+    }
+    recordOverrideHit(diagnostics, "warehouse-picking-manager-decision", route.request(), { fulfilled: true, decision });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ message: { state: { kind: "ready", title: "Picking manager decision ready", detail: "Custom picking task decision recorded." }, page: { title: "Picking Manager Decision", key: "picking_manager_decision", sales_order: task ? task.sales_order : "" }, task, status: task ? task.status : "", stock_effect: task ? task.stock_effect : {}, valuation: { visible: false, fields: [] } } }),
+    });
   });
   await context.route("**/api/method/erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context**", async (route) => {
     recordOverrideHit(diagnostics, "warehouse-sidebar", route.request(), { fulfilled: true });
@@ -429,7 +520,7 @@ async function waitForPickingReady(page, diagnostics, label) {
           && shell.querySelector("[data-warehouse-picking-guardrail]")
           && shell.querySelector("[data-warehouse-picking-workflow-shell]")
           && shell.querySelectorAll("[data-warehouse-picking-workflow-status]").length >= 6
-          && shell.querySelectorAll("[data-warehouse-picking-planned-control]").length >= 3
+          && shell.querySelectorAll("[data-warehouse-picking-workflow-control]").length >= 2
           && shell.querySelectorAll("[data-warehouse-picking-evidence-row]").length >= 1
           && shell.querySelectorAll("[data-warehouse-picking-exception-category]").length >= 6
           && shell.querySelectorAll("[data-warehouse-picking-manager-decision]").length >= 6
@@ -510,7 +601,7 @@ async function snapshot(page) {
       pickingGuardrailCount: Array.from(document.querySelectorAll("[data-warehouse-picking-guardrail]")).filter(visible).length,
       pickingWorkflowShellCount: Array.from(document.querySelectorAll("[data-warehouse-picking-workflow-shell]")).filter(visible).length,
       pickingWorkflowStatusCount: Array.from(document.querySelectorAll("[data-warehouse-picking-workflow-status]")).filter(visible).length,
-      pickingWorkflowControlCount: Array.from(document.querySelectorAll("[data-warehouse-picking-planned-control]")).filter(visible).length,
+      pickingWorkflowControlCount: Array.from(document.querySelectorAll("[data-warehouse-picking-workflow-control]")).filter(visible).length,
       pickingWorkflowEvidenceRowCount: Array.from(document.querySelectorAll("[data-warehouse-picking-evidence-row]")).filter(visible).length,
       pickingWorkflowExceptionCount: Array.from(document.querySelectorAll("[data-warehouse-picking-exception-category]")).filter(visible).length,
       pickingWorkflowManagerDecisionCount: Array.from(document.querySelectorAll("[data-warehouse-picking-manager-decision]")).filter(visible).length,
@@ -555,12 +646,12 @@ function assertW12DPickingPolish(state, context, options = {}) {
   assert(state.pickingGuardrailCount === 1, "Picking read-only guardrail did not render exactly once", { context, state });
   assert(state.pickingWorkflowShellCount === 1, "Picking workflow shell did not render exactly once", { context, state });
   assert(state.pickingWorkflowStatusCount >= 6, "Picking workflow status strip did not render", { context, state });
-  assert(state.pickingWorkflowControlCount >= 3, "Picking planned controls did not render", { context, state });
+  assert(state.pickingWorkflowControlCount >= 2, "Picking custom workflow controls did not render", { context, state });
   assert(state.pickingWorkflowEvidenceRowCount >= 1, "Picking evidence preview did not render", { context, state });
   assert(state.pickingWorkflowExceptionCount >= 6, "Picking exception categories did not render", { context, state });
   assert(state.pickingWorkflowManagerDecisionCount >= 6, "Picking manager decision preview did not render", { context, state });
-  assert(state.pickingWorkflowDeliveryPolicyCount === 1, "Picking delivery policy preview did not render exactly once", { context, state });
-  assert(state.pickingWorkflowActiveControlCount === 0, "Picking workflow shell must not expose active controls", { context, state });
+  assert(state.pickingWorkflowDeliveryPolicyCount === 1, "Picking outbound document policy did not render exactly once", { context, state });
+  assert(state.pickingWorkflowActiveControlCount >= 2, "Picking custom workflow controls did not activate", { context, state });
   if (requireLineCards) {
     assert(state.pickingLineCardCount >= 1, "Picking item line cards did not render", { context, state });
     assert(state.pickingLineFactCount >= 5, "Picking item line facts did not render", { context, state });
@@ -603,6 +694,22 @@ async function exerciseUser(browser, user) {
     assert(state.pickingCardCount >= 4, "Picking review cards did not render", { user: user.key, state });
     assert(state.pickingLineCount >= 1, "Picking review lines did not render", { user: user.key, state });
     assert(state.tabCount >= 2, "Picking review tabs did not render", { user: user.key, state });
+    await page.locator('[data-warehouse-picking-count-save]').first().click();
+    await waitForOverrideHit(page, diagnostics, "warehouse-picking-task-draft", `${user.key}:picking-task-draft`);
+    await waitForPickingReady(page, diagnostics, `${user.key}:picking-task-draft`);
+    state = await snapshot(page);
+    assertCleanWarehouseUi(state, `${user.key}:picking-task-draft`);
+    assertW12DPickingPolish(state, `${user.key}:picking-task-draft`);
+    assert((state.diagnostics || {}).pickingTaskDraftSaved >= 1, "W16C picking draft did not complete", { user: user.key, state, diagnostics });
+    await page.locator('[data-warehouse-picking-manager-action="approve_clean_pick"]').first().click();
+    await waitForOverrideHit(page, diagnostics, "warehouse-picking-manager-decision", `${user.key}:picking-manager-decision`);
+    await page.waitForFunction(() => {
+      const status = document.querySelector("[data-warehouse-picking-workflow-status-message]");
+      return Boolean(status && /Manager decision recorded/i.test(status.innerText || ""));
+    }, null, { timeout: TIMEOUT });
+    state = await snapshot(page);
+    assertCleanWarehouseUi(state, `${user.key}:picking-manager-decision`);
+    assert((state.diagnostics || {}).pickingManagerDecisionSaved >= 1, "W16C picking manager decision did not complete", { user: user.key, state, diagnostics });
     await capture(page, `${user.key}-picking-review`);
 
     await page.locator('[data-warehouse-picking-tab="stock_readiness"]').click();

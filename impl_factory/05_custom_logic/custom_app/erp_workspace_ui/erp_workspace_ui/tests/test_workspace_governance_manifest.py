@@ -183,6 +183,9 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "warehouse-console-worklist/inbound_receiving",
                 "warehouse-console-worklist/outbound_picking",
                 "warehouse-console-worklist/stock_exceptions",
+                "warehouse-console-worklist/returns_work_hub",
+                "warehouse-console-worklist/internal_transfer_workflow",
+                "warehouse-console-worklist/cycle_count_workflow",
                 "warehouse-console-worklist/movement_visibility",
                 "warehouse-console-worklist/transfer_visibility",
                 "warehouse-console-receiving",
@@ -197,25 +200,24 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("productized_worklist", warehouse_routes[1]["classification"])
         self.assertEqual("productized_worklist", warehouse_routes[2]["classification"])
         self.assertEqual("productized_worklist", warehouse_routes[3]["classification"])
-        self.assertEqual("productized_worklist", warehouse_routes[4]["classification"])
-        self.assertEqual("productized_worklist", warehouse_routes[5]["classification"])
-        self.assertEqual("productized_worklist", warehouse_routes[6]["classification"])
-        self.assertEqual("productized_detail", warehouse_routes[7]["classification"])
-        self.assertEqual("productized_detail", warehouse_routes[8]["classification"])
-        self.assertEqual("productized_detail", warehouse_routes[9]["classification"])
-        self.assertEqual("productized_detail", warehouse_routes[10]["classification"])
-        self.assertEqual("productized_detail", warehouse_routes[11]["classification"])
+        for route in warehouse_routes[1:10]:
+            self.assertEqual("productized_worklist", route["classification"])
+        for route in warehouse_routes[10:]:
+            self.assertEqual("productized_detail", route["classification"])
         self.assertEqual("/desk/warehouse-console", warehouse_routes[0]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/inbound-receiving", warehouse_routes[2]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/outbound-picking", warehouse_routes[3]["route_pattern"])
         self.assertEqual("/desk/warehouse-console-worklist/stock-exceptions", warehouse_routes[4]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-worklist/movement-visibility", warehouse_routes[5]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-worklist/transfer-visibility", warehouse_routes[6]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-receiving/<purchase-order>", warehouse_routes[7]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-picking/<sales-order>", warehouse_routes[8]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-stock-exception/<encoded-context>", warehouse_routes[9]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-stock-posture/<encoded-context>", warehouse_routes[10]["route_pattern"])
-        self.assertEqual("/desk/warehouse-console-movement/<encoded-context>", warehouse_routes[11]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-worklist/returns-work-hub", warehouse_routes[5]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-worklist/internal-transfer-workflow", warehouse_routes[6]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-worklist/cycle-count-workflow", warehouse_routes[7]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-worklist/movement-visibility", warehouse_routes[8]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-worklist/transfer-visibility", warehouse_routes[9]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-receiving/<purchase-order>", warehouse_routes[10]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-picking/<sales-order>", warehouse_routes[11]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-stock-exception/<encoded-context>", warehouse_routes[12]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-stock-posture/<encoded-context>", warehouse_routes[13]["route_pattern"])
+        self.assertEqual("/desk/warehouse-console-movement/<encoded-context>", warehouse_routes[14]["route_pattern"])
         for route in warehouse_routes:
             self.assertNotEqual("governed_native_exception", route["classification"])
             self.assertIsNone(route.get("native_exception_ref"), route)
