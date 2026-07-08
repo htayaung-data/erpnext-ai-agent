@@ -228,18 +228,54 @@
     ],
   };
 
+  const financeWorkspace = {
+    workspaceId: "finance",
+    status: "f3_read_only_overview",
+    title: "Finance Control Desk",
+    workspaceFamily: "Finance & Accounting",
+    modeLabel: "Finance & Accounting Workspace",
+    roleFamily: "Finance & Accounting",
+    routes: {
+      home: "finance-control-desk",
+      homePath: "/desk/finance-control-desk",
+    },
+    methods: {
+      shellContext: "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_shell_context",
+      overviewContext: "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_overview_context",
+      sidebarContext: "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_sidebar_context",
+      workspaceSearch: "erp_workspace_ui.finance_accounting.service.search_finance_control_desk_workspace",
+    },
+    managedDoctypes: {},
+    directoryQueuesByDoctype: {},
+    sidebar: {
+      homeKey: "finance_control_desk_home",
+      homeLabel: "Foundation",
+      sectionKey: "workspace",
+      sectionLabel: "Workspace",
+    },
+    search: {
+      enabled: false,
+      mode: "finance_f3_overview_no_data_rows",
+      placement: "none",
+      placeholder: "Finance search is not active for data rows in F3",
+    },
+    fallbackItems: [
+      { key: "finance_control_desk_home", label: "Foundation", icon: "home", target: { kind: "page", route: "finance-control-desk" } },
+    ],
+  };
 
   const activeWorkspaces = {
     sales: salesWorkspace,
     procurement: procurementWorkspace,
     warehouse: warehouseWorkspace,
+    finance: financeWorkspace,
   };
 
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
     { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
     { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w8b_movement_review" },
-    { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
+    { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "f3_read_only_overview" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
     { workspaceId: "customer_service", matrixName: "Customer Service Console", recommendedName: "Customer Service Console", wave: "second", priority: 6, status: "planned" },
     { workspaceId: "hr_admin", matrixName: "HR and Admin Console", recommendedName: "HR and Admin Console", wave: "second", priority: 7, status: "planned" },
@@ -286,6 +322,10 @@
     return get("warehouse");
   }
 
+  function finance() {
+    return get("finance");
+  }
+
   root.erpWorkspaceUiWorkspaceRegistry = {
     get,
     getByRoute,
@@ -293,6 +333,7 @@
     sales,
     procurement,
     warehouse,
+    finance,
     roadmap: () => clone(roadmap),
   };
 })();

@@ -1,0 +1,17 @@
+{
+  "doctype": "Page",
+  "name": "finance-control-desk",
+  "page_name": "finance-control-desk",
+  "title": "Finance Control Desk",
+  "icon": "octicon octicon-shield",
+  "module": "ERP Workspace UI",
+  "standard": "Yes",
+  "roles": [
+    {
+      "role": "Accounts Manager"
+    },
+    {
+      "role": "Accounts User"
+    }
+  ]
+}

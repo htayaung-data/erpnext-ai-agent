@@ -2076,10 +2076,50 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         boot.apply_role_based_boot_home(bootinfo)
         self.assertEqual(bootinfo["home_page"], "warehouse-console")
 
+    def test_finance_roles_receive_finance_control_desk_without_default_app(self):
+        cases = (
+            ("finance-manager@example.com", ["Accounts Manager"]),
+            ("finance-user@example.com", ["Accounts User"]),
+        )
+        for user, roles in cases:
+            with self.subTest(user=user):
+                _set_user(user, roles)
+                bootinfo = {}
+
+                self.assertIsNone(boot.resolve_default_app(user))
+                self.assertEqual(boot.resolve_default_home_page(user), "finance-control-desk")
+                boot.apply_role_based_boot_home(bootinfo)
+                self.assertEqual(bootinfo["home_page"], "finance-control-desk")
+
+    def test_non_finance_roles_do_not_receive_finance_control_desk_home(self):
+        cases = (
+            ("system@example.com", ["System Manager"]),
+            ("executive@example.com", ["Executive Approver"]),
+            ("sales-only@example.com", ["Sales User"]),
+            ("purchase-only@example.com", ["Purchase User"]),
+            ("warehouse-only@example.com", ["Warehouse Manager"]),
+        )
+        for user, roles in cases:
+            with self.subTest(user=user):
+                _set_user(user, roles)
+                self.assertNotEqual(boot.resolve_default_home_page(user), "finance-control-desk")
+
+    def test_workspace_home_priority_remains_sales_procurement_finance_then_warehouse(self):
+        cases = (
+            ("sales-finance@example.com", ["Sales User", "Accounts Manager"], "sales-console-home"),
+            ("purchase-finance@example.com", ["Purchase User", "Accounts Manager"], "procurement-console-home"),
+            ("warehouse-finance@example.com", ["Warehouse Manager", "Accounts User"], "finance-control-desk"),
+            ("warehouse-only-priority@example.com", ["Warehouse Manager"], "warehouse-console"),
+        )
+        for user, roles, expected_home in cases:
+            with self.subTest(user=user):
+                _set_user(user, roles)
+                self.assertEqual(boot.resolve_default_home_page(user), expected_home)
+
     def test_warehouse_home_is_blocked_for_admin_and_cross_workspace_roles(self):
         cases = (
             ("warehouse-admin@example.com", ["Warehouse Manager", "System Manager"], None),
-            ("warehouse-accounts@example.com", ["Warehouse User", "Accounts User"], None),
+            ("warehouse-accounts@example.com", ["Warehouse User", "Accounts User"], "finance-control-desk"),
             ("warehouse-sales@example.com", ["Warehouse Manager", "Sales User"], "sales-console-home"),
             ("warehouse-purchase@example.com", ["Stock User", "Purchase User"], "procurement-console-home"),
         )

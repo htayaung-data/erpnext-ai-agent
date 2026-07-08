@@ -5,6 +5,7 @@ import unittest
 from erp_workspace_ui import hooks
 from erp_workspace_ui.workspace_registry import (
     get_active_workspace_definitions,
+    get_finance_workspace_definition,
     get_procurement_workspace_definition,
     get_sales_workspace_definition,
     get_warehouse_workspace_definition,
@@ -379,6 +380,70 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "warehouse")
 
+    def test_finance_control_desk_f3_registry_definition(self):
+        workspace = get_finance_workspace_definition()
+
+        self.assertEqual(workspace["workspace_id"], "finance")
+        self.assertEqual(workspace["status"], "f3_read_only_overview")
+        self.assertEqual(workspace["title"], "Finance Control Desk")
+        self.assertEqual(workspace["workspace_family"], "Finance & Accounting")
+        self.assertEqual(workspace["mode_label"], "Finance & Accounting Workspace")
+        self.assertEqual(
+            workspace["routes"],
+            {
+                "home": "finance-control-desk",
+                "home_path": "/desk/finance-control-desk",
+            },
+        )
+        self.assertEqual(
+            workspace["methods"],
+            {
+                "shell_context": "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_shell_context",
+                "overview_context": "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_overview_context",
+                "sidebar_context": "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_sidebar_context",
+                "workspace_search": "erp_workspace_ui.finance_accounting.service.search_finance_control_desk_workspace",
+            },
+        )
+        self.assertEqual(workspace["managed_doctypes"], {})
+        self.assertEqual(workspace["directory_queues_by_doctype"], {})
+        self.assertEqual(
+            workspace["search"],
+            {
+                "enabled": False,
+                "mode": "finance_f3_overview_no_data_rows",
+                "placement": "none",
+                "placeholder": "Finance search is not active for data rows in F3",
+            },
+        )
+        self.assertEqual(
+            workspace["fallback_items"],
+            [
+                {
+                    "key": "finance_control_desk_home",
+                    "label": "Foundation",
+                    "icon": "home",
+                    "target": {"kind": "page", "route": "finance-control-desk"},
+                },
+            ],
+        )
+
+    def test_finance_control_desk_route_resolves_to_registry_definition(self):
+        workspace = get_workspace_by_route("finance-control-desk")
+        self.assertIsNotNone(workspace)
+        self.assertEqual(workspace["workspace_id"], "finance")
+
+    def test_finance_control_desk_page_json_file_is_valid(self):
+        app_root = Path(__file__).resolve().parents[1]
+        path = app_root / "erp_workspace_ui" / "page" / "finance_control_desk" / "finance_control_desk.json"
+        payload = json.loads(path.read_text())
+
+        self.assertEqual(payload["doctype"], "Page")
+        self.assertEqual(payload["name"], "finance-control-desk")
+        self.assertEqual(payload["page_name"], "finance-control-desk")
+        self.assertEqual(payload["title"], "Finance Control Desk")
+        self.assertEqual(payload["module"], "ERP Workspace UI")
+        self.assertEqual(payload["standard"], "Yes")
+
     def test_workspace_route_and_method_values_are_unique(self):
         workspaces = get_active_workspace_definitions()
         route_values = []
@@ -402,10 +467,14 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         warehouse = get_workspace_definition("warehouse")
         warehouse["routes"]["home"] = "changed-warehouse-locally"
 
+        finance = get_workspace_definition("finance")
+        finance["routes"]["home"] = "changed-finance-locally"
+
         self.assertEqual(get_sales_workspace_definition()["routes"]["home"], "sales-console")
         self.assertEqual(get_procurement_workspace_definition()["routes"]["home"], "procurement-console")
         self.assertEqual(get_warehouse_workspace_definition()["routes"]["home"], "warehouse-console")
-        self.assertEqual(len(get_active_workspace_definitions()), 3)
+        self.assertEqual(get_finance_workspace_definition()["routes"]["home"], "finance-control-desk")
+        self.assertEqual(len(get_active_workspace_definitions()), 4)
 
     def test_roadmap_uses_matrix_names_and_explicit_name_reviews(self):
         roadmap = get_workspace_roadmap()
@@ -426,7 +495,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(warehouse["recommended_name"], "Warehouse Console")
         self.assertEqual(warehouse["status"], "w8c_transfer_visibility")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
-        self.assertEqual(finance["status"], "name_review")
+        self.assertEqual(finance["status"], "f3_read_only_overview")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")
         self.assertEqual(executive["status"], "name_review")
 

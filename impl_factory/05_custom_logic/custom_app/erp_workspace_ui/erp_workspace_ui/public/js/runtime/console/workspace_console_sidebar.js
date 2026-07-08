@@ -35,7 +35,7 @@
   }
 
   function configuredWorkspaces() {
-    return [workspaceFromRegistry("sales"), workspaceFromRegistry("procurement"), workspaceFromRegistry("warehouse")].filter(Boolean);
+    return [workspaceFromRegistry("sales"), workspaceFromRegistry("procurement"), workspaceFromRegistry("warehouse"), workspaceFromRegistry("finance")].filter(Boolean);
   }
 
   function defaultWorkspaceForSidebar() {
@@ -128,6 +128,7 @@
     const pageKey = Array.isArray(route) ? String(route[0] || "") : "";
     if (pageKey.indexOf("procurement-console") === 0) return "procurement";
     if (pageKey.indexOf("warehouse-console") === 0) return "warehouse";
+    if (pageKey.indexOf("finance-control-desk") === 0) return "finance";
     if (pageKey.indexOf("sales-console") === 0) return "sales";
     const doctype = routeDoctype(route);
     if (PROCUREMENT_FORM_DOCTYPES.has(doctype)) return "procurement";
@@ -165,9 +166,9 @@
     const methods = workspace.methods || {};
     const sidebar = workspace.sidebar || {};
     const id = workspaceId(workspace);
-    const fallbackTitle = id === "procurement" ? "Procurement Console" : id === "warehouse" ? "Warehouse Console" : WORKSPACE_TITLE;
-    const fallbackMode = id === "procurement" ? "Procurement Workspace" : id === "warehouse" ? "Warehouse Workspace" : WORKSPACE_MODE_LABEL;
-    const fallbackHome = id === "procurement" ? "procurement-console" : id === "warehouse" ? "warehouse-console" : HOME_ROUTE;
+    const fallbackTitle = id === "procurement" ? "Procurement Console" : id === "warehouse" ? "Warehouse Console" : id === "finance" ? "Finance Control Desk" : WORKSPACE_TITLE;
+    const fallbackMode = id === "procurement" ? "Procurement Workspace" : id === "warehouse" ? "Warehouse Workspace" : id === "finance" ? "Finance & Accounting Workspace" : WORKSPACE_MODE_LABEL;
+    const fallbackHome = id === "procurement" ? "procurement-console" : id === "warehouse" ? "warehouse-console" : id === "finance" ? "finance-control-desk" : HOME_ROUTE;
     return {
       workspace,
       workspaceId: id,
@@ -178,12 +179,12 @@
       search: workspace.search || {},
       fallbackItems: Array.isArray(workspace.fallbackItems) ? workspace.fallbackItems : [],
       homeRoute: routes.home || fallbackHome,
-      launcherRoute: routes.launcher || routes.home || (id === "procurement" ? "procurement-console-home" : salesRoutes.launcher || "sales-console-home"),
+      launcherRoute: routes.launcher || routes.home || (id === "procurement" ? "procurement-console-home" : id === "finance" ? "finance-control-desk" : salesRoutes.launcher || "sales-console-home"),
       worklistRoute: routes.worklist || (id === "procurement" ? "procurement-console-worklist" : id === "sales" ? WORKLIST_ROUTE : ""),
       reportRoute: routes.report || (id === "procurement" ? "procurement-console-report" : id === "sales" ? REPORT_ROUTE : ""),
       homePath: routes.homePath || routes.home_path || `/desk/${routes.home || fallbackHome}`,
-      sidebarContextMethod: methods.sidebarContext || methods.sidebar_context || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context" : id === "warehouse" ? "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context" : SIDEBAR_METHOD),
-      searchMethod: methods.workspaceSearch || methods.workspace_search || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace" : SEARCH_METHOD),
+      sidebarContextMethod: methods.sidebarContext || methods.sidebar_context || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context" : id === "warehouse" ? "erp_workspace_ui.warehouse_console.service.get_warehouse_console_sidebar_context" : id === "finance" ? "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_sidebar_context" : SIDEBAR_METHOD),
+      searchMethod: methods.workspaceSearch || methods.workspace_search || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace" : id === "finance" ? "erp_workspace_ui.finance_accounting.service.search_finance_control_desk_workspace" : SEARCH_METHOD),
       managedFormActiveKeys: Object.assign({}, workspace.managedDoctypes || {}),
     };
   }
@@ -1591,7 +1592,7 @@
           <span class="erpw-sales-console-sidebar-utility-shortcut">${escapeHtml(shortcutLabel())}</span>
         </button>
     ` : "";
-    const notificationUtilityMarkup = config.workspaceId === "warehouse" ? "" : `
+    const notificationUtilityMarkup = config.workspaceId === "warehouse" || config.workspaceId === "finance" ? "" : `
         <button
           type="button"
           class="erpw-sales-console-sidebar-utility"

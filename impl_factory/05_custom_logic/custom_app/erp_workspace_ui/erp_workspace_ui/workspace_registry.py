@@ -317,6 +317,48 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 }
 
 
+_FINANCE_WORKSPACE: dict[str, Any] = {
+	"workspace_id": "finance",
+	"status": "f3_read_only_overview",
+	"title": "Finance Control Desk",
+	"workspace_family": "Finance & Accounting",
+	"mode_label": "Finance & Accounting Workspace",
+	"role_family": "Finance & Accounting",
+	"routes": {
+		"home": "finance-control-desk",
+		"home_path": "/desk/finance-control-desk",
+	},
+	"methods": {
+		"shell_context": "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_shell_context",
+		"overview_context": "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_overview_context",
+		"sidebar_context": "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_sidebar_context",
+		"workspace_search": "erp_workspace_ui.finance_accounting.service.search_finance_control_desk_workspace",
+	},
+	"managed_doctypes": {},
+	"directory_queues_by_doctype": {},
+	"sidebar": {
+		"home_key": "finance_control_desk_home",
+		"home_label": "Foundation",
+		"section_key": "workspace",
+		"section_label": "Workspace",
+	},
+	"search": {
+		"enabled": False,
+		"mode": "finance_f3_overview_no_data_rows",
+		"placement": "none",
+		"placeholder": "Finance search is not active for data rows in F3",
+	},
+	"fallback_items": [
+		{
+			"key": "finance_control_desk_home",
+			"label": "Foundation",
+			"icon": "home",
+			"target": {"kind": "page", "route": "finance-control-desk"},
+		},
+	],
+}
+
+
 _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 	{
 		"workspace_id": "sales",
@@ -348,7 +390,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Finance Control Desk",
 		"wave": "first",
 		"priority": 4,
-		"status": "name_review",
+		"status": "f3_read_only_overview",
 	},
 	{
 		"workspace_id": "executive",
@@ -389,6 +431,7 @@ _ACTIVE_WORKSPACES: dict[str, dict[str, Any]] = {
 	"sales": _SALES_WORKSPACE,
 	"procurement": _PROCUREMENT_WORKSPACE,
 	"warehouse": _WAREHOUSE_WORKSPACE,
+	"finance": _FINANCE_WORKSPACE,
 }
 
 
@@ -431,3 +474,7 @@ def get_procurement_workspace_definition() -> dict[str, Any]:
 
 def get_warehouse_workspace_definition() -> dict[str, Any]:
 	return get_workspace_definition("warehouse")
+
+
+def get_finance_workspace_definition() -> dict[str, Any]:
+	return get_workspace_definition("finance")

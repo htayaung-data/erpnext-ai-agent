@@ -16,6 +16,7 @@ from erp_workspace_ui.workspace_governance_manifest import (
     validate_manifest,
 )
 from erp_workspace_ui.workspace_registry import (
+    get_finance_workspace_definition,
     get_procurement_workspace_definition,
     get_sales_workspace_definition,
     get_warehouse_workspace_definition,
@@ -82,7 +83,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         required = {"Submit", "Cancel", "Amend", "Approve", "Reject", "Receive", "Bill", "Pay", "Set Default Supplier", "Update Item Price", "Delete"}
         self.assertTrue(required.issubset(set(FORBIDDEN_MUTATION_LABELS)))
         guarded_workspaces = {guard["workspace_id"] for guard in FORBIDDEN_MUTATION_GUARDS}
-        self.assertEqual({"sales", "procurement", "warehouse"}, guarded_workspaces)
+        self.assertEqual({"sales", "procurement", "warehouse", "finance"}, guarded_workspaces)
         for guard in FORBIDDEN_MUTATION_GUARDS:
             self.assertEqual(set(FORBIDDEN_MUTATION_LABELS), set(guard["labels"]), guard)
             self.assertIn("native-exception-policy-v1.md", guard["policy_doc"], guard)
@@ -166,6 +167,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             (get_sales_workspace_definition()["routes"], route_keys_by_workspace("sales")),
             (get_procurement_workspace_definition()["routes"], route_keys_by_workspace("procurement")),
             (get_warehouse_workspace_definition()["routes"], route_keys_by_workspace("warehouse")),
+            (get_finance_workspace_definition()["routes"], route_keys_by_workspace("finance")),
         ]
 
         for routes, manifest_keys in workspace_pairs:
@@ -342,6 +344,55 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         for action in warehouse_actions.values():
             self.assertNotIn(action["target_kind"], {"form", "report", "list", "new_doc"}, action)
             self.assertIsNone(action.get("native_exception_ref"), action)
+
+    def test_finance_f2_route_and_actions_are_shell_only(self):
+        finance_routes = [route for route in ROUTE_MANIFEST if route["workspace_id"] == "finance"]
+        self.assertEqual(["finance-control-desk"], [route["route_key"] for route in finance_routes])
+        route = finance_routes[0]
+        self.assertEqual("productized_overview", route["classification"])
+        self.assertEqual("/desk/finance-control-desk", route["route_pattern"])
+        self.assertEqual("finance_control_desk_shell", route["expected_shell"])
+        self.assertIsNone(route.get("native_exception_ref"), route)
+
+        finance_actions = {
+            action["manifest_key"]: action
+            for action in ACTION_MANIFEST
+            if action["workspace_id"] == "finance"
+        }
+        self.assertEqual(
+            {
+                "finance-overview-refresh",
+                "finance-sidebar-foundation-navigation",
+            },
+            set(finance_actions),
+        )
+        self.assertEqual("current_shell", finance_actions["finance-overview-refresh"]["target_kind"])
+        self.assertEqual("page", finance_actions["finance-sidebar-foundation-navigation"]["target_kind"])
+        self.assertEqual(
+            "/desk/finance-control-desk",
+            finance_actions["finance-sidebar-foundation-navigation"]["target_route_pattern"],
+        )
+
+        forbidden_labels = {
+            "Post",
+            "Pay",
+            "Reconcile",
+            "Close",
+            "Submit",
+            "Cancel",
+            "Write Off",
+            "Export",
+            "Download",
+        }
+        forbidden_route_fragments = {"/app/", "Form", "List", "Report", "query-report"}
+        for action in finance_actions.values():
+            self.assertNotIn(action["target_kind"], {"form", "report", "list", "new_doc", "export", "download"}, action)
+            self.assertIsNone(action.get("native_exception_ref"), action)
+            self.assertNotIn(action.get("label"), forbidden_labels, action)
+            self.assertNotIn(action.get("label_pattern"), forbidden_labels, action)
+            target = str(action.get("target_route_pattern") or "")
+            for fragment in forbidden_route_fragments:
+                self.assertNotIn(fragment, target, action)
 
     def test_procurement_home_routing_for_purchase_roles_is_owner_approved(self):
         boot_source = (APP_ROOT / "boot.py").read_text()

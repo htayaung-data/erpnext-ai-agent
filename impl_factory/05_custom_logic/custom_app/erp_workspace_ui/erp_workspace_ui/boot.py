@@ -10,10 +10,12 @@ SALES_CONSOLE_APP_HOME = "/desk/sales-console-home"
 SALES_CONSOLE_HOME_PAGE = "sales-console-home"
 PROCUREMENT_CONSOLE_HOME_PAGE = "procurement-console-home"
 WAREHOUSE_CONSOLE_HOME_PAGE = "warehouse-console"
+FINANCE_CONTROL_DESK_HOME_PAGE = "finance-control-desk"
 DEFAULT_APP_EXCLUDED_USERS = {"Administrator"}
 SALES_CONSOLE_ROLES = frozenset({"Sales Manager", "Sales User", "Sales Master Manager", "Sales Executive", "Key Account Sales"})
 PROCUREMENT_CONSOLE_ROLES = frozenset({"Purchase User", "Purchase Manager", "Purchase Master Manager"})
 WAREHOUSE_CONSOLE_ROLES = frozenset({"Warehouse Manager", "Warehouse User", "Stock Manager", "Stock User"})
+FINANCE_CONTROL_DESK_ROLES = frozenset({"Accounts Manager", "Accounts User"})
 WAREHOUSE_CONSOLE_BLOCKING_ROLES = SALES_CONSOLE_ROLES | PROCUREMENT_CONSOLE_ROLES | frozenset(
 	{
 		"System Manager",
@@ -37,6 +39,7 @@ DEFAULT_APP_RULES = (
 DEFAULT_HOME_PAGE_RULES = (
 	(SALES_CONSOLE_HOME_PAGE, SALES_CONSOLE_ROLES),
 	(PROCUREMENT_CONSOLE_HOME_PAGE, PROCUREMENT_CONSOLE_ROLES),
+	(FINANCE_CONTROL_DESK_HOME_PAGE, FINANCE_CONTROL_DESK_ROLES),
 )
 MANAGED_DEFAULT_APPS = {app_name for app_name, _roles in DEFAULT_APP_RULES}
 MANAGED_DESK_HOME_PAGES = {
@@ -45,6 +48,7 @@ MANAGED_DESK_HOME_PAGES = {
 	"procurement-console",
 	"procurement-console-home",
 	"warehouse-console",
+	"finance-control-desk",
 }
 
 
