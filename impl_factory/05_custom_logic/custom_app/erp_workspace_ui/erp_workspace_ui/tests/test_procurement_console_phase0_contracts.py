@@ -2091,6 +2091,51 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
                 boot.apply_role_based_boot_home(bootinfo)
                 self.assertEqual(bootinfo["home_page"], "finance-control-desk")
 
+    def test_finance_boot_home_is_not_persisted_by_default_home_sync(self):
+        _set_user("finance-manager@example.com", ["Accounts Manager"])
+        db_set_calls = []
+        default_set_calls = []
+        default_clear_calls = []
+        original_db_set_value = getattr(fake_frappe.db, "set_value", None)
+        original_set_user_default = getattr(fake_frappe.defaults, "set_user_default", None)
+        original_clear_user_default = getattr(fake_frappe.defaults, "clear_user_default", None)
+        fake_frappe.db.set_value = lambda *args, **kwargs: db_set_calls.append((args, kwargs))
+        fake_frappe.defaults.set_user_default = lambda *args, **kwargs: default_set_calls.append((args, kwargs))
+        fake_frappe.defaults.clear_user_default = lambda *args, **kwargs: default_clear_calls.append((args, kwargs))
+        try:
+            self.assertEqual(boot.resolve_default_home_page("finance-manager@example.com"), "finance-control-desk")
+            self.assertIsNone(boot.resolve_default_home_page("finance-manager@example.com", include_finance=False))
+            bootinfo = {}
+            boot.apply_role_based_boot_home(bootinfo)
+            self.assertEqual(bootinfo["home_page"], "finance-control-desk")
+
+            boot.sync_current_user_default_app()
+
+            self.assertEqual(db_set_calls, [])
+            self.assertEqual(default_set_calls, [])
+            self.assertEqual(default_clear_calls, [])
+        finally:
+            if original_db_set_value is None:
+                delattr(fake_frappe.db, "set_value")
+            else:
+                fake_frappe.db.set_value = original_db_set_value
+            if original_set_user_default is None:
+                delattr(fake_frappe.defaults, "set_user_default")
+            else:
+                fake_frappe.defaults.set_user_default = original_set_user_default
+            if original_clear_user_default is None:
+                delattr(fake_frappe.defaults, "clear_user_default")
+            else:
+                fake_frappe.defaults.clear_user_default = original_clear_user_default
+
+    def test_boot_default_home_sync_does_not_use_broad_user_get_all(self):
+        source = Path(boot.__file__).read_text(encoding="utf-8")
+
+        self.assertNotIn("frappe.get_all", source)
+        self.assertIn('getattr(frappe, "get_list", None)', source)
+        self.assertIn("PERSISTENT_DEFAULT_HOME_PAGE_RULES", source)
+        self.assertIn("BOOT_HOME_PAGE_RULES", source)
+
     def test_non_finance_roles_do_not_receive_finance_control_desk_home(self):
         cases = (
             ("system@example.com", ["System Manager"]),

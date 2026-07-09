@@ -319,7 +319,7 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 
 _FINANCE_WORKSPACE: dict[str, Any] = {
 	"workspace_id": "finance",
-	"status": "f3_read_only_overview",
+	"status": "f4_ar_aggregate_posture",
 	"title": "Finance Control Desk",
 	"workspace_family": "Finance & Accounting",
 	"mode_label": "Finance & Accounting Workspace",
@@ -344,9 +344,9 @@ _FINANCE_WORKSPACE: dict[str, Any] = {
 	},
 	"search": {
 		"enabled": False,
-		"mode": "finance_f3_overview_no_data_rows",
+		"mode": "finance_f4_ar_aggregate_posture_no_rows",
 		"placement": "none",
-		"placeholder": "Finance search is not active for data rows in F3",
+		"placeholder": "Finance search is not active for AR aggregate posture",
 	},
 	"fallback_items": [
 		{
@@ -390,7 +390,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Finance Control Desk",
 		"wave": "first",
 		"priority": 4,
-		"status": "f3_read_only_overview",
+		"status": "f4_ar_aggregate_posture",
 	},
 	{
 		"workspace_id": "executive",

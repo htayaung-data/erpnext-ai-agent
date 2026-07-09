@@ -36,11 +36,14 @@ WAREHOUSE_CONSOLE_BLOCKING_ROLES = SALES_CONSOLE_ROLES | PROCUREMENT_CONSOLE_ROL
 DEFAULT_APP_RULES = (
 	(SALES_CONSOLE_APP, SALES_CONSOLE_ROLES),
 )
-DEFAULT_HOME_PAGE_RULES = (
+PERSISTENT_DEFAULT_HOME_PAGE_RULES = (
 	(SALES_CONSOLE_HOME_PAGE, SALES_CONSOLE_ROLES),
 	(PROCUREMENT_CONSOLE_HOME_PAGE, PROCUREMENT_CONSOLE_ROLES),
+)
+BOOT_HOME_PAGE_RULES = PERSISTENT_DEFAULT_HOME_PAGE_RULES + (
 	(FINANCE_CONTROL_DESK_HOME_PAGE, FINANCE_CONTROL_DESK_ROLES),
 )
+DEFAULT_HOME_PAGE_RULES = BOOT_HOME_PAGE_RULES
 MANAGED_DEFAULT_APPS = {app_name for app_name, _roles in DEFAULT_APP_RULES}
 MANAGED_DESK_HOME_PAGES = {
 	"sales-console",
@@ -86,7 +89,7 @@ def should_use_warehouse_console_home(user: str | None = None) -> bool:
 	)
 
 
-def resolve_default_home_page(user: str | None = None) -> str | None:
+def resolve_default_home_page(user: str | None = None, include_finance: bool = True) -> str | None:
 	user = user or frappe.session.user
 	if not user or user == "Guest":
 		return None
@@ -95,7 +98,8 @@ def resolve_default_home_page(user: str | None = None) -> str | None:
 		return None
 
 	user_roles = _current_user_roles(user)
-	for home_page, roles in DEFAULT_HOME_PAGE_RULES:
+	home_page_rules = BOOT_HOME_PAGE_RULES if include_finance else PERSISTENT_DEFAULT_HOME_PAGE_RULES
+	for home_page, roles in home_page_rules:
 		if user_roles.intersection(roles):
 			return home_page
 
@@ -144,7 +148,7 @@ def sync_current_user_default_app(_login_manager=None) -> None:
 		return
 
 	desired_app = resolve_default_app(user)
-	desired_home_page = resolve_default_home_page(user)
+	desired_home_page = resolve_default_home_page(user, include_finance=False)
 	current_app = _get_current_user_default_app(user)
 
 	if desired_app:
@@ -157,17 +161,30 @@ def sync_current_user_default_app(_login_manager=None) -> None:
 	_sync_desktop_home_page(user, desired_home_page)
 
 
+def _managed_system_users() -> list[str]:
+	getter = getattr(frappe, "get_list", None)
+	if not callable(getter):
+		return []
+	try:
+		return list(
+			getter(
+				"User",
+				filters={"enabled": 1, "user_type": "System User"},
+				pluck="name",
+			)
+			or []
+		)
+	except Exception:
+		return []
+
+
 def sync_managed_default_apps() -> dict[str, str | None]:
 	updated: dict[str, str | None] = {}
-	users = frappe.get_all(
-		"User",
-		filters={"enabled": 1, "user_type": "System User"},
-		pluck="name",
-	)
+	users = _managed_system_users()
 
 	for user in users:
 		desired_app = resolve_default_app(user)
-		desired_home_page = resolve_default_home_page(user)
+		desired_home_page = resolve_default_home_page(user, include_finance=False)
 		current_app = _get_current_user_default_app(user)
 
 		if desired_app:
@@ -200,6 +217,6 @@ def apply_role_based_boot_home(bootinfo) -> None:
 	if not user or user == "Guest":
 		return
 
-	home_page = resolve_default_home_page(user)
+	home_page = resolve_default_home_page(user, include_finance=True)
 	if home_page:
 		bootinfo["home_page"] = home_page

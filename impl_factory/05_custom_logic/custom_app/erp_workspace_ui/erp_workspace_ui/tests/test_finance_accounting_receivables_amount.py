@@ -234,7 +234,7 @@ def _ple(
     }
 
 
-def _invoice(name, party, amount, due_date, posting_date=None, account="Debtors - MMD"):
+def _invoice(name, party, amount, due_date, posting_date=None, account="Debtors - MMD", company=None):
     return _ple(
         voucher_type="Sales Invoice",
         voucher_no=name,
@@ -245,6 +245,7 @@ def _invoice(name, party, amount, due_date, posting_date=None, account="Debtors 
         against_voucher_type="Sales Invoice",
         against_voucher_no=name,
         account=account,
+        company=company,
     )
 
 
@@ -513,6 +514,33 @@ class TestFinanceReceivablesPaymentLedgerAmountSummary(unittest.TestCase):
                 self.assert_invalid_source_response(payload)
                 self.assertNotIn("SINV-BAD", repr(payload))
                 self.assertNotIn("CUST-", repr(payload))
+
+    def test_mismatched_payment_ledger_company_fails_closed_without_partial_amounts(self):
+        records = [
+            _invoice("SINV-COMPANY-1", "CUST-001", 100, date(2026, 7, 6)),
+            _invoice("SINV-COMPANY-2", "CUST-002", 200, date(2026, 7, 6), company="Other Company"),
+            _invoice("SINV-COMPANY-3", "CUST-003", 300, date(2026, 7, 6)),
+        ]
+        payload = _direct_summary(records)
+
+        self.assert_invalid_source_response(payload)
+        self.assertNotIn("SINV-COMPANY", repr(payload))
+        self.assertNotIn("CUST-", repr(payload))
+        self.assertNotIn("Other Company", repr(payload))
+
+    def test_mismatched_delinked_payment_ledger_company_fails_closed_before_skip(self):
+        records = [
+            _invoice("SINV-DELINK-1", "CUST-001", 100, date(2026, 7, 6)),
+            _invoice("SINV-DELINK-2", "CUST-002", 200, date(2026, 7, 6), company="Other Company"),
+            _invoice("SINV-DELINK-3", "CUST-003", 300, date(2026, 7, 6)),
+        ]
+        records[1]["delinked"] = 1
+        payload = _direct_summary(records)
+
+        self.assert_invalid_source_response(payload)
+        self.assertNotIn("SINV-DELINK", repr(payload))
+        self.assertNotIn("CUST-", repr(payload))
+        self.assertNotIn("Other Company", repr(payload))
 
     def test_absent_required_payment_ledger_fields_fail_closed_without_partial_amounts(self):
         required_fields = (
@@ -944,6 +972,7 @@ class TestFinanceReceivablesPaymentLedgerAmountSummary(unittest.TestCase):
         self.assertIn("RECEIVABLES_AMOUNT_SOURCE_MAX_ROWS", source)
         self.assertIn("RECEIVABLES_AMOUNT_SOURCE_TOO_LARGE_REASON", source)
         self.assertIn("RECEIVABLES_AMOUNT_SOURCE_INVALID_REASON", source)
+        self.assertIn("row_company != company_name", source)
         self.assertIn("limit_start=limit_start", source)
         self.assertIn('"aging_date_basis": "due_date_only"', source)
         self.assertIn('"posting_date_fallback_enabled": False', source)

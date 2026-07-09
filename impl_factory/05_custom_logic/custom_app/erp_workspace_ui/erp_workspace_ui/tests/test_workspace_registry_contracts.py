@@ -380,11 +380,11 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "warehouse")
 
-    def test_finance_control_desk_f3_registry_definition(self):
+    def test_finance_control_desk_f4_registry_definition(self):
         workspace = get_finance_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "finance")
-        self.assertEqual(workspace["status"], "f3_read_only_overview")
+        self.assertEqual(workspace["status"], "f4_ar_aggregate_posture")
         self.assertEqual(workspace["title"], "Finance Control Desk")
         self.assertEqual(workspace["workspace_family"], "Finance & Accounting")
         self.assertEqual(workspace["mode_label"], "Finance & Accounting Workspace")
@@ -410,9 +410,9 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             workspace["search"],
             {
                 "enabled": False,
-                "mode": "finance_f3_overview_no_data_rows",
+                "mode": "finance_f4_ar_aggregate_posture_no_rows",
                 "placement": "none",
-                "placeholder": "Finance search is not active for data rows in F3",
+                "placeholder": "Finance search is not active for AR aggregate posture",
             },
         )
         self.assertEqual(
@@ -495,7 +495,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(warehouse["recommended_name"], "Warehouse Console")
         self.assertEqual(warehouse["status"], "w8c_transfer_visibility")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
-        self.assertEqual(finance["status"], "f3_read_only_overview")
+        self.assertEqual(finance["status"], "f4_ar_aggregate_posture")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")
         self.assertEqual(executive["status"], "name_review")
 

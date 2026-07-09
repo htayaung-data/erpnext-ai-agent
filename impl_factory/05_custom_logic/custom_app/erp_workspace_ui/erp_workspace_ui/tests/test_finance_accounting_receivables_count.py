@@ -152,6 +152,15 @@ def _raising_getter(*args, **kwargs):
     raise AssertionError("Sales Invoice count query should not run")
 
 
+def _static_count_response_getter(response, calls=None):
+    def getter(doctype, **kwargs):
+        if calls is not None:
+            calls.append((doctype, kwargs))
+        return response
+
+    return getter
+
+
 class TestFinanceReceivablesCountPosture(unittest.TestCase):
     def assert_safe_count_response(self, payload):
         self.assertEqual(set(payload), _ALLOWED_TOP_LEVEL_KEYS)
@@ -278,6 +287,38 @@ class TestFinanceReceivablesCountPosture(unittest.TestCase):
         self.assertIsNone(payload["company_scope"])
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][1]["filters"][-1], ["due_date", "is", "not set"])
+
+    def test_malformed_aggregate_count_responses_fail_closed_without_zero_counts(self):
+        cases = (
+            (None, "missing_response"),
+            ([], "empty_response"),
+            ([{"COUNT(name)": 0}], "unexpected_count_alias"),
+            ([{"count(name)": 0}], "legacy_count_alias"),
+            ([{"total": 0}], "missing_count_key"),
+            ([{"count": None}], "none_count"),
+            ([{"count": "not-a-number"}], "non_numeric_count"),
+            ([{"count": -1}], "negative_count"),
+            ([{"count": 1}, {"count": 2}], "multiple_aggregate_rows"),
+            ([{"count": 0, "extra": 0}], "ambiguous_extra_key"),
+        )
+        for response, label in cases:
+            with self.subTest(label=label):
+                calls = []
+                payload = service.build_receivables_count_posture(
+                    context=_context(),
+                    resolver=_resolver(),
+                    as_of_date="2026-07-06",
+                    permission_checker=_permission_checker(True),
+                    list_getter=_static_count_response_getter(response, calls=calls),
+                )
+
+                self.assert_safe_count_response(payload)
+                self.assertEqual(payload["state"], "unavailable")
+                self.assertEqual(payload["policy"]["reason"], service.RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+                self.assertEqual(payload["bucket_counts"], {})
+                self.assertEqual(payload["runtime_count_enabled"], False)
+                self.assertIsNone(payload["company_scope"])
+                self.assertEqual(len(calls), 1)
 
     def test_permission_denied_returns_no_counts_and_does_not_query(self):
         payload = service.build_receivables_count_posture(

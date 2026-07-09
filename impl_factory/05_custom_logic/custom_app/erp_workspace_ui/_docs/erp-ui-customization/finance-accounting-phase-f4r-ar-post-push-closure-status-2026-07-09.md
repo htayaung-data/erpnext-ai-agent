@@ -16,7 +16,7 @@ Commit: `5231d078389568e2d6db552d1598f3bdc9aee082`
 Commit message: `feat(finance): add control desk AR posture`
 Remote push: `405d278..5231d07 feature/erpnext-ui-design -> feature/erpnext-ui-design`
 
-F4R is a closure/status record only. It does not stage, commit, push, live-align, restart, reload metadata, migrate, run protected gates, change runtime code, or expand Finance behavior.
+F4R is a closure/status record only. Its later F4R1 handoff staged, committed, and pushed only this document and the README entry. Neither F4R nor F4R1 live-aligned, restarted, reloaded metadata, migrated, ran protected gates, changed runtime code, or expanded Finance behavior.
 
 ## Completed Scope
 
@@ -180,7 +180,8 @@ F5 must start with policy/design only. It should not implement runtime Payables,
 F4R confirms:
 
 - no runtime code was changed in this closure/status step;
-- no staging, commit, push, live alignment, restart, reload metadata, migration, or protected gate was performed in this step;
+- F4R1 staged, committed, and pushed only the F4R documentation and README entry as commit `50eec8ab26ea5d4eb587f63871d274d6bc139eec`;
+- no live alignment, restart, reload metadata, migration, or protected gate was performed in this step;
 - no accounting execution is approved;
 - no Payables, GL, Cash, Tax, or Close implementation is approved;
 - no row/customer/invoice/voucher/account/Payment Ledger/GL drilldown is approved;

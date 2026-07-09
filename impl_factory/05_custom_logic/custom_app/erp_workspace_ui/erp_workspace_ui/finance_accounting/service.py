@@ -28,6 +28,7 @@ FINANCE_APPROVED_COMPANY_NAME = "Mingalar Mobile Distribution Co., Ltd."
 FINANCE_APPROVED_COMPANY_CURRENCY = "MMK"
 RECEIVABLES_COUNT_SOURCE = "Sales Invoice"
 RECEIVABLES_COUNT_QUERY_FIELD = {"COUNT": "name", "as": "count"}
+RECEIVABLES_COUNT_SOURCE_INVALID_REASON = "sales_invoice_count_source_invalid"
 RECEIVABLES_AMOUNT_SOURCE = "Payment Ledger Entry"
 RECEIVABLES_AMOUNT_MIN_BUCKET_VOUCHER_COUNT = 3
 RECEIVABLES_AMOUNT_MIN_BUCKET_DIVERSITY_COUNT = 3
@@ -651,23 +652,28 @@ def _receivables_missing_due_date_filters(company_name: str) -> list[list[object
     return filters
 
 
+class _ReceivablesCountUnavailable(Exception):
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
 def _extract_count(records: object) -> int:
-    if not records:
-        return 0
-    first = records[0] if isinstance(records, list) else records
-    if isinstance(first, dict):
-        for key in ("count", "COUNT(name)", "count(name)"):
-            if key in first:
-                try:
-                    return int(first.get(key) or 0)
-                except (TypeError, ValueError):
-                    return 0
-    if isinstance(first, (list, tuple)) and first:
-        try:
-            return int(first[0] or 0)
-        except (TypeError, ValueError):
-            return 0
-    return 0
+    if not isinstance(records, list) or len(records) != 1:
+        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+    first = records[0]
+    if not isinstance(first, dict) or set(first) != {"count"}:
+        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+    value = first.get("count")
+    if isinstance(value, bool) or value in (None, ""):
+        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+    try:
+        count = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+    if count < 0 or count != count.to_integral_value():
+        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+    return int(count)
 
 
 def verify_receivables_source_permission(
@@ -821,6 +827,8 @@ def build_receivables_count_posture(
             )
             for bucket in RECEIVABLES_COUNT_BUCKETS
         }
+    except _ReceivablesCountUnavailable as exc:
+        return _receivables_count_payload("unavailable", exc.reason, active_resolver, policy, permission, as_of)
     except Exception:
         return _receivables_count_payload("unavailable", "permission_preserving_count_unavailable", active_resolver, policy, permission, as_of)
 
@@ -1031,7 +1039,7 @@ def _voucher_bucket(entry_date: date, as_of: date) -> str:
     return "overdue_over_90"
 
 
-def _payment_ledger_voucher_outstandings(records: list[dict[str, object]], as_of: date) -> list[dict[str, object]]:
+def _payment_ledger_voucher_outstandings(records: list[dict[str, object]], as_of: date, company_name: str) -> list[dict[str, object]]:
     voucher_basis: dict[tuple[str, str, str, str, str], dict[str, object]] = {}
     outstanding_by_key: dict[tuple[str, str, str, str, str], Decimal] = {}
     outstanding_account_by_key: dict[tuple[str, str, str, str, str], Decimal] = {}
@@ -1039,11 +1047,13 @@ def _payment_ledger_voucher_outstandings(records: list[dict[str, object]], as_of
     for row in records:
         if not isinstance(row, dict):
             raise _ReceivablesAmountUnavailable(RECEIVABLES_AMOUNT_SOURCE_INVALID_REASON)
+        row_company = _required_text(row.get("company"))
+        if row_company != company_name:
+            raise _ReceivablesAmountUnavailable(RECEIVABLES_AMOUNT_SOURCE_INVALID_REASON)
         if row.get("delinked") in (None, ""):
             raise _ReceivablesAmountUnavailable(RECEIVABLES_AMOUNT_SOURCE_INVALID_REASON)
         if _is_checked(row.get("delinked")):
             continue
-        _required_text(row.get("company"))
         account_type = _required_text(row.get("account_type"))
         party_type = _required_text(row.get("party_type"))
         if account_type != "Receivable" or party_type != "Customer":
@@ -1295,7 +1305,7 @@ def build_receivables_payment_ledger_amount_summary(
 
     try:
         rows = _permission_preserving_payment_ledger_rows(company_name, as_of, list_getter=list_getter)
-        vouchers = _payment_ledger_voucher_outstandings(rows, as_of)
+        vouchers = _payment_ledger_voucher_outstandings(rows, as_of, company_name)
         aggregate = _aggregate_payment_ledger_buckets(vouchers)
     except _ReceivablesAmountUnavailable as exc:
         return _receivables_amount_payload("unavailable", exc.reason, active_resolver, permission, metadata, as_of)

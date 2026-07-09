@@ -423,6 +423,24 @@
     });
   }
 
+  function financeDataBoundaryPayload(payload) {
+    const safePayload = payload && typeof payload === "object" ? payload : {};
+    return {
+      overview: safePayload.overview,
+      receivables_posture: safePayload.receivables_posture,
+      receivables_amount_summary: safePayload.receivables_amount_summary,
+      company_scope: safePayload.company_scope,
+      period_scope: safePayload.period_scope,
+      posture_cards: safePayload.posture_cards,
+      lanes: safePayload.lanes,
+      rows: safePayload.rows,
+      metrics: safePayload.metrics,
+      amounts: safePayload.amounts,
+      documents: safePayload.documents,
+      no_effect: safePayload.no_effect,
+    };
+  }
+
   function hasFinancialRows(payload) {
     return hasForbiddenFinancePayloadShape(payload);
   }
@@ -628,8 +646,9 @@
   }
 
   function renderPayload(payload) {
+    const rawPayloadHasFinancialRows = hasFinancialRows(financeDataBoundaryPayload(payload));
     const normalized = normalizePayload(payload);
-    if (hasFinancialRows(normalized)) {
+    if (rawPayloadHasFinancialRows || hasFinancialRows(normalized)) {
       return renderPolicyViolation(normalized);
     }
     if (normalized.state.kind === "restricted") {

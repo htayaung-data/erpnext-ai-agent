@@ -457,11 +457,18 @@ class TestFinanceAccountingShell(unittest.TestCase):
             "write_off",
             "customer_statement",
             "customer_reminder",
+            "financeDataBoundaryPayload",
+            "receivables_amount_summary",
+            "rawPayloadHasFinancialRows",
+            "rawPayloadHasFinancialRows || hasFinancialRows(normalized)",
             "return renderPolicyViolation(normalized)",
         ):
             self.assertIn(expected, source)
 
-        self.assertLess(source.index("hasFinancialRows(normalized)"), source.index('normalized.state.kind === "restricted"'))
+        self.assertLess(source.index("const rawPayloadHasFinancialRows = hasFinancialRows(financeDataBoundaryPayload(payload))"), source.index("const normalized = normalizePayload(payload)"))
+        self.assertLess(source.index("rawPayloadHasFinancialRows || hasFinancialRows(normalized)"), source.index('normalized.state.kind === "restricted"'))
+        self.assertNotIn("navigation: safePayload.navigation", source)
+        self.assertNotIn("sidebar: safePayload.sidebar", source)
         self.assertNotIn("financial_rows_loaded", source)
 
     def test_frontend_source_keeps_f3_boundary(self):

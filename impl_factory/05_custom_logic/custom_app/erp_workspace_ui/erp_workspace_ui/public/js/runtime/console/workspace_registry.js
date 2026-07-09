@@ -230,7 +230,7 @@
 
   const financeWorkspace = {
     workspaceId: "finance",
-    status: "f3_read_only_overview",
+    status: "f4_ar_aggregate_posture",
     title: "Finance Control Desk",
     workspaceFamily: "Finance & Accounting",
     modeLabel: "Finance & Accounting Workspace",
@@ -255,9 +255,9 @@
     },
     search: {
       enabled: false,
-      mode: "finance_f3_overview_no_data_rows",
+      mode: "finance_f4_ar_aggregate_posture_no_rows",
       placement: "none",
-      placeholder: "Finance search is not active for data rows in F3",
+      placeholder: "Finance search is not active for AR aggregate posture",
     },
     fallbackItems: [
       { key: "finance_control_desk_home", label: "Foundation", icon: "home", target: { kind: "page", route: "finance-control-desk" } },
@@ -275,7 +275,7 @@
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
     { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
     { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w8b_movement_review" },
-    { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "f3_read_only_overview" },
+    { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "f4_ar_aggregate_posture" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
     { workspaceId: "customer_service", matrixName: "Customer Service Console", recommendedName: "Customer Service Console", wave: "second", priority: 6, status: "planned" },
     { workspaceId: "hr_admin", matrixName: "HR and Admin Console", recommendedName: "HR and Admin Console", wave: "second", priority: 7, status: "planned" },
