@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import types
 import unittest
@@ -67,6 +68,61 @@ def _sidebar_source() -> str:
     return _SIDEBAR_SOURCE.read_text(encoding="utf-8")
 
 
+def _frontend_guard_payload(payables_posture: dict[str, object]) -> dict[str, object]:
+    return {
+        "workspace": {
+            "title": "Finance Control Desk",
+            "workspace_family": "Finance & Accounting",
+        },
+        "state": {
+            "kind": "ready",
+            "title": "Read-only overview ready",
+            "detail": "Aggregate posture only.",
+        },
+        "scope": {"execution_enabled": False},
+        "overview": {"detail": "Company-scoped aggregate posture only."},
+        "company_scope": {},
+        "payables_count_posture": payables_posture,
+        "posture_cards": [{
+            "key": "payables_posture",
+            "title": "Payables posture",
+            "state": payables_posture.get("state", "unavailable"),
+            "detail": "Count-only posture.",
+            "value": "Aggregate counts only" if payables_posture.get("state") == "ready" else "Unavailable",
+            "rows": [],
+        }],
+        "lanes": [],
+        "rows": [],
+        "metrics": [],
+        "amounts": [],
+        "documents": [],
+        "no_effect": {"payment_entry_created": False, "report_run": False},
+    }
+
+
+def _frontend_guard_probe(payload: dict[str, object]) -> dict[str, object]:
+    script = """
+const guard = require(process.argv[1]);
+const payload = JSON.parse(process.argv[2]);
+const rawFinancialPayload = guard.financeDataBoundaryPayload(payload);
+const normalizedPayload = guard.normalizePayload(payload);
+const html = guard.renderPayload(payload);
+process.stdout.write(JSON.stringify({
+  raw_forbidden: guard.hasForbiddenRawFinancePayload(payload),
+  normalized_forbidden: guard.hasForbiddenFinancePayloadShape(normalizedPayload),
+  policy_violation: html.includes("Policy violation blocked"),
+  ready: html.includes('data-finance-f3-overview="ready"'),
+}));
+"""
+    result = subprocess.run(
+        ["node", "-e", script, str(_FRONTEND_SOURCE), json.dumps(payload, separators=(",", ":"))],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 
 _COMPANY_SCOPE = {
     "name": "Mingalar Mobile Distribution Co., Ltd.",
@@ -104,7 +160,7 @@ def _fake_bucket_count(filters, list_getter=None):
         return 0
     if due_filter[1] == ">=":
         return 2
-    if due_filter[1] == "between" and due_filter[2][1] in {"2026-07-03", "2026-07-05"}:
+    if due_filter[1] == "between" and str(due_filter[2][1]).startswith("2026-07-"):
         return 1
     return 0
 
@@ -181,6 +237,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertEqual(payload["scope"]["accounting_overview_enabled"], True)
         self.assertEqual(payload["scope"]["receivables_count_posture_enabled"], True)
         self.assertEqual(payload["scope"]["receivables_amount_summary_enabled"], False)
+        self.assertEqual(payload["scope"]["payables_count_posture_enabled"], False)
         self.assertEqual(payload["scope"]["financial_data_enabled"], False)
         self.assertEqual(payload["scope"]["financial_rows_enabled"], False)
         self.assertEqual(payload["scope"]["monetary_values_enabled"], False)
@@ -217,6 +274,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
                 "overview",
                 "receivables_posture",
                 "receivables_amount_summary",
+                "payables_count_posture",
                 "company_scope",
                 "period_scope",
                 "posture_cards",
@@ -253,6 +311,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertEqual(payload["scope"]["accounting_overview_enabled"], False)
         self.assertEqual(payload["scope"]["receivables_count_posture_enabled"], False)
         self.assertEqual(payload["scope"]["receivables_amount_summary_enabled"], False)
+        self.assertEqual(payload["scope"]["payables_count_posture_enabled"], False)
         self.assertEqual(payload["company_scope"]["state"], "unavailable")
         self.assertNotEqual(payload["company_scope"]["source"], "user_default_company")
         self.assertIsNone(payload["company_scope"]["company"])
@@ -309,11 +368,14 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertEqual(payload["scope"]["accounting_overview_enabled"], True)
         self.assertEqual(payload["scope"]["receivables_count_posture_enabled"], False)
         self.assertEqual(payload["scope"]["receivables_amount_summary_enabled"], False)
+        self.assertEqual(payload["scope"]["payables_count_posture_enabled"], False)
         self.assertEqual(payload["company_scope"]["state"], "scoped")
         self.assertEqual(payload["receivables_posture"]["state"], "unavailable")
         self.assertEqual(payload["receivables_posture"]["bucket_counts"], {})
         self.assertEqual(payload["receivables_posture"]["policy"]["reason"], "low_count_policy_not_ready")
         self.assertEqual(payload["receivables_posture"]["policy"]["accounts_user_raw_counts_enabled"], False)
+        self.assertEqual(payload["payables_count_posture"]["state"], "unavailable")
+        self.assertEqual(payload["payables_count_posture"]["bucket_counts"], {})
 
     def test_overview_context_restricts_non_finance_roles_without_rows(self):
         with patch.object(service.frappe, "get_roles", return_value=["Sales User"]), patch.object(
@@ -330,6 +392,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertEqual(payload["posture_cards"], [])
         self.assertEqual(payload["lanes"], [])
         self.assertEqual(payload["rows"], [])
+        self.assertEqual(payload["payables_count_posture"], {})
 
     def test_system_manager_executive_and_non_finance_get_no_receivables_counts(self):
         cases = [
@@ -347,6 +410,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
                 self.assertEqual(payload["scope"].get("receivables_count_posture_enabled"), False)
                 self.assertEqual(payload["receivables_posture"], {})
                 self.assertEqual(payload["receivables_amount_summary"], {})
+                self.assertEqual(payload["payables_count_posture"], {})
                 self.assertEqual(payload["rows"], [])
                 self.assertEqual(payload["amounts"], [])
                 self.assertEqual(payload["documents"], [])
@@ -457,19 +521,201 @@ class TestFinanceAccountingShell(unittest.TestCase):
             "write_off",
             "customer_statement",
             "customer_reminder",
+            "supplier_rows",
+            "purchase_invoice_rows",
+            "payment_entry_rows",
+            "FORBIDDEN_PAYABLES_VALUE_KEYS",
+            "FORBIDDEN_PAYABLES_VALUE_KEY_TOKENS",
+            "isForbiddenPayablesValueKey",
+            "hasForbiddenPayablesPayloadShape",
+            "hasForbiddenRawFinancePayload",
+            "payment_schedule_rows",
+            "payment_schedules",
+            "bank_account_rows",
+            "bank_transaction_rows",
+            "bank_reference_rows",
+            "bank_detail_rows",
+            "payment_schedule",
+            "payment_schedule_id",
+            "payment_schedule_name",
+            "bank_account",
+            "bank_account_no",
+            "bank_account_number",
+            "bank_transaction",
+            "bank_transaction_id",
+            "bank_reference",
+            "bank_reference_no",
+            "bank_details",
+            "iban",
+            "swift_code",
+            "routing_number",
+            "supplier_name",
+            "supplier_id",
+            "purchase_invoice",
+            "bill_no",
+            "bill_date",
+            "payable_account",
+            "party_name",
+            "supplier_group",
+            "payment_order",
+            "supplier_bank_account",
+            "supplier_contact",
+            "supplier_tax_id",
+            "supplier_statement",
+            "supplier_payment_communication",
+            "payment_order_created",
+            "payment_run_performed",
+            "purchase_invoice_lifecycle_performed",
             "financeDataBoundaryPayload",
             "receivables_amount_summary",
+            "payables_count_posture",
             "rawPayloadHasFinancialRows",
             "rawPayloadHasFinancialRows || hasFinancialRows(normalized)",
             "return renderPolicyViolation(normalized)",
         ):
             self.assertIn(expected, source)
 
-        self.assertLess(source.index("const rawPayloadHasFinancialRows = hasFinancialRows(financeDataBoundaryPayload(payload))"), source.index("const normalized = normalizePayload(payload)"))
+        self.assertLess(source.index("const rawPayloadHasFinancialRows = hasForbiddenRawFinancePayload(payload)"), source.index("const normalized = normalizePayload(payload)"))
         self.assertLess(source.index("rawPayloadHasFinancialRows || hasFinancialRows(normalized)"), source.index('normalized.state.kind === "restricted"'))
+        load_start = source.index("function loadOverviewContext")
+        load_guard = source.index("const rawPayloadHasFinancialRows = hasForbiddenRawFinancePayload(payload);", load_start)
+        guarded_cache = source.index("target.__financeControlDeskOverviewPayload = rawPayloadHasFinancialRows ? null : payload;", load_start)
+        self.assertLess(load_guard, guarded_cache)
         self.assertNotIn("navigation: safePayload.navigation", source)
         self.assertNotIn("sidebar: safePayload.sidebar", source)
         self.assertNotIn("financial_rows_loaded", source)
+
+    def test_frontend_raw_guard_blocks_nested_payment_schedule_rows_and_identities(self):
+        cases = (
+            {"payment_schedule_rows": [{"payment_schedule_name": "PS-0001"}]},
+            {"nested": {"payment_schedule": "PS-0001"}},
+            {"nested": {"paymentSchedule": "PS-0002"}},
+        )
+        for posture in cases:
+            with self.subTest(posture=posture):
+                result = _frontend_guard_probe(_frontend_guard_payload(posture))
+
+                self.assertTrue(result["raw_forbidden"])
+                self.assertFalse(result["normalized_forbidden"])
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+
+    def test_frontend_raw_guard_blocks_nested_bank_identity_and_transaction_shapes(self):
+        cases = (
+            {"bank_transaction_rows": [{"bank_account_number": "000-111"}]},
+            {"nested": {"bank_reference": "BANK-REF-1", "iban": "MM00TEST"}},
+            {"bank_details": {"swift_code": "TESTMMRX"}},
+            {"nested": {"reference_number": "BANK-REF-2"}},
+            {"nested": {"bankAccountNumber": "000-112"}},
+            {"nested": {"transaction_id": "BANK-TXN-1"}},
+            {"nested": {"bank_party_account_number": "000-222"}},
+            {"nested": {"bank_account_details": "restricted"}},
+            {"nested": {"iban_number": "MM00TEST2"}},
+            {"nested": {"swift_number": "TESTMMR2"}},
+        )
+        for posture in cases:
+            with self.subTest(posture=posture):
+                result = _frontend_guard_probe(_frontend_guard_payload(posture))
+
+                self.assertTrue(result["raw_forbidden"])
+                self.assertFalse(result["normalized_forbidden"])
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+
+    def test_frontend_raw_guard_allows_safe_payment_schedule_policy_metadata(self):
+        posture = {
+            "state": "unavailable",
+            "bucket_counts": {},
+            "policy": {
+                "payment_schedule_supported": False,
+                "payment_schedule_presence_gate_required": True,
+                "payment_schedule_rows_returned": False,
+            },
+        }
+        result = _frontend_guard_probe(_frontend_guard_payload(posture))
+
+        self.assertFalse(result["raw_forbidden"])
+        self.assertFalse(result["normalized_forbidden"])
+        self.assertFalse(result["policy_violation"])
+        self.assertTrue(result["ready"])
+
+    def test_frontend_raw_guard_allows_valid_payables_ready_and_unavailable_payloads(self):
+        cases = (
+            {
+                "state": "ready",
+                "source_state": "ready",
+                "bucket_counts": {
+                    "not_due": 2,
+                    "overdue_1_30": 1,
+                    "overdue_31_60": 0,
+                    "overdue_61_90": 0,
+                    "overdue_over_90": 0,
+                },
+                "policy": {"aggregate_counts_only": True, "monetary_values_enabled": False},
+            },
+            {
+                "state": "unavailable",
+                "source_state": "unavailable",
+                "bucket_counts": {},
+                "policy": {"payment_schedule_supported": False, "runtime_count_enabled": False},
+            },
+        )
+        for posture in cases:
+            with self.subTest(state=posture["state"]):
+                result = _frontend_guard_probe(_frontend_guard_payload(posture))
+
+                self.assertFalse(result["raw_forbidden"])
+                self.assertFalse(result["normalized_forbidden"])
+                self.assertFalse(result["policy_violation"])
+                self.assertTrue(result["ready"])
+
+    def test_frontend_blocks_payables_amount_shapes_but_allows_approved_receivables_amounts(self):
+        blocked_cases = (
+            {"bucket_amounts": {"not_due": 100}},
+            {"outstanding_amount": 100},
+            {"paymentAmount": 100},
+            {"grandTotal": 100},
+            {"currency": "MMK"},
+            {"baseGrandTotal": 100},
+            {"roundedTotal": 100},
+            {"paidAmount": 100},
+            {"allocatedAmount": 100},
+            {"totalOutstanding": 100},
+        )
+        for extra in blocked_cases:
+            with self.subTest(extra=extra):
+                posture = {
+                    "state": "unavailable",
+                    "source_state": "unavailable",
+                    "bucket_counts": {},
+                    "policy": {"monetary_values_enabled": False},
+                    **extra,
+                }
+                result = _frontend_guard_probe(_frontend_guard_payload(posture))
+
+                self.assertTrue(result["raw_forbidden"])
+                self.assertFalse(result["normalized_forbidden"])
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+
+        payload = _frontend_guard_payload({
+            "state": "unavailable",
+            "source_state": "unavailable",
+            "bucket_counts": {},
+            "policy": {"monetary_values_enabled": False},
+        })
+        payload["receivables_amount_summary"] = {
+            "state": "ready",
+            "currency": "MMK",
+            "bucket_amounts": {"current": 100},
+            "grand_total": 100,
+        }
+        result = _frontend_guard_probe(payload)
+
+        self.assertFalse(result["raw_forbidden"])
+        self.assertFalse(result["normalized_forbidden"])
+        self.assertFalse(result["policy_violation"])
+        self.assertTrue(result["ready"])
 
     def test_frontend_source_keeps_f3_boundary(self):
         source = _frontend_source()
@@ -493,7 +739,6 @@ class TestFinanceAccountingShell(unittest.TestCase):
             r"download\(",
             r"export_data",
             r"Sales Invoice",
-            r"Purchase Invoice",
             r"GL Entry",
             r"Payment Entry",
             r"Journal Entry",

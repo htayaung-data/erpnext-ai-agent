@@ -24,11 +24,24 @@ FINANCE_RESOLVER_PHASE = "f4b_role_company_resolver"
 FINANCE_RECEIVABLES_SOURCE_POLICY_PHASE = "f4c_receivables_source_read_policy"
 FINANCE_RECEIVABLES_COUNT_PHASE = "f4d_receivables_count_posture"
 FINANCE_RECEIVABLES_AMOUNT_PHASE = "f4h_payment_ledger_amount_summary"
+FINANCE_PAYABLES_COUNT_PHASE = "f5c_payables_count_posture"
 FINANCE_APPROVED_COMPANY_NAME = "Mingalar Mobile Distribution Co., Ltd."
 FINANCE_APPROVED_COMPANY_CURRENCY = "MMK"
 RECEIVABLES_COUNT_SOURCE = "Sales Invoice"
 RECEIVABLES_COUNT_QUERY_FIELD = {"COUNT": "name", "as": "count"}
 RECEIVABLES_COUNT_SOURCE_INVALID_REASON = "sales_invoice_count_source_invalid"
+PAYABLES_COUNT_SOURCE = "Purchase Invoice"
+PAYABLES_SCHEDULE_CHILD_SOURCE = "Payment Schedule"
+PAYABLES_COUNT_QUERY_FIELD = {"COUNT": "name", "as": "count"}
+PAYABLES_COUNT_SOURCE_INVALID_REASON = "purchase_invoice_count_source_invalid"
+PAYABLES_COUNT_BUCKETS = (
+    {"key": "not_due", "label": "Current / not overdue", "from_days": None, "to_days": 0},
+    {"key": "overdue_1_30", "label": "1-30 overdue", "from_days": 1, "to_days": 30},
+    {"key": "overdue_31_60", "label": "31-60 overdue", "from_days": 31, "to_days": 60},
+    {"key": "overdue_61_90", "label": "61-90 overdue", "from_days": 61, "to_days": 90},
+    {"key": "overdue_over_90", "label": ">90 overdue", "from_days": 91, "to_days": None},
+)
+PAYABLES_OPEN_STATUSES = ("Unpaid", "Overdue", "Partly Paid")
 RECEIVABLES_AMOUNT_SOURCE = "Payment Ledger Entry"
 RECEIVABLES_AMOUNT_MIN_BUCKET_VOUCHER_COUNT = 3
 RECEIVABLES_AMOUNT_MIN_BUCKET_DIVERSITY_COUNT = 3
@@ -658,21 +671,21 @@ class _ReceivablesCountUnavailable(Exception):
         super().__init__(reason)
 
 
-def _extract_count(records: object) -> int:
+def _extract_count(records: object, invalid_reason: str = RECEIVABLES_COUNT_SOURCE_INVALID_REASON) -> int:
     if not isinstance(records, list) or len(records) != 1:
-        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+        raise _ReceivablesCountUnavailable(invalid_reason)
     first = records[0]
     if not isinstance(first, dict) or set(first) != {"count"}:
-        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+        raise _ReceivablesCountUnavailable(invalid_reason)
     value = first.get("count")
     if isinstance(value, bool) or value in (None, ""):
-        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+        raise _ReceivablesCountUnavailable(invalid_reason)
     try:
         count = Decimal(str(value))
     except (InvalidOperation, ValueError):
-        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+        raise _ReceivablesCountUnavailable(invalid_reason)
     if count < 0 or count != count.to_integral_value():
-        raise _ReceivablesCountUnavailable(RECEIVABLES_COUNT_SOURCE_INVALID_REASON)
+        raise _ReceivablesCountUnavailable(invalid_reason)
     return int(count)
 
 
@@ -834,6 +847,283 @@ def build_receivables_count_posture(
 
     return _receivables_count_payload("ready", "receivables_count_posture_ready", active_resolver, policy, permission, as_of, bucket_counts)
 
+
+
+
+def _payables_bucket_labels() -> list[dict[str, str]]:
+    return [{"key": cstr(bucket.get("key")), "label": cstr(bucket.get("label"))} for bucket in PAYABLES_COUNT_BUCKETS]
+
+
+def _payables_candidate_count_filters(company_name: str) -> list[list[object]]:
+    return [
+        ["company", "=", company_name],
+        ["docstatus", "=", 1],
+        ["outstanding_amount", ">", 0],
+        ["is_return", "=", 0],
+        ["return_against", "is", "not set"],
+    ]
+
+
+def _payables_open_count_filters(company_name: str) -> list[list[object]]:
+    filters = _payables_candidate_count_filters(company_name)
+    filters.append(["status", "in", list(PAYABLES_OPEN_STATUSES)])
+    return filters
+
+
+def _payables_submitted_company_filters(company_name: str) -> list[list[object]]:
+    return [["company", "=", company_name], ["docstatus", "=", 1]]
+
+
+def _payables_bucket_filters(company_name: str, bucket_key: str, as_of: date) -> list[list[object]]:
+    filters = _payables_open_count_filters(company_name)
+    if bucket_key == "not_due":
+        filters.append(["due_date", ">=", as_of.isoformat()])
+    elif bucket_key == "overdue_1_30":
+        filters.append(["due_date", "between", [(as_of - timedelta(days=30)).isoformat(), (as_of - timedelta(days=1)).isoformat()]])
+    elif bucket_key == "overdue_31_60":
+        filters.append(["due_date", "between", [(as_of - timedelta(days=60)).isoformat(), (as_of - timedelta(days=31)).isoformat()]])
+    elif bucket_key == "overdue_61_90":
+        filters.append(["due_date", "between", [(as_of - timedelta(days=90)).isoformat(), (as_of - timedelta(days=61)).isoformat()]])
+    elif bucket_key == "overdue_over_90":
+        filters.append(["due_date", "<=", (as_of - timedelta(days=91)).isoformat()])
+    else:
+        filters.append(["due_date", "is", "set"])
+    return filters
+
+
+class _PayablesCountUnavailable(Exception):
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _extract_payables_count(records: object) -> int:
+    try:
+        return _extract_count(records, PAYABLES_COUNT_SOURCE_INVALID_REASON)
+    except _ReceivablesCountUnavailable as exc:
+        raise _PayablesCountUnavailable(exc.reason)
+
+
+def verify_payables_source_permission(
+    context: dict[str, object] | None = None,
+    permission_checker: object = None,
+) -> dict[str, object]:
+    checker = permission_checker or getattr(frappe, "has_permission", None)
+    user = cstr((context or {}).get("user") or getattr(frappe.session, "user", None) or "").strip()
+    if not callable(checker):
+        return {
+            "source": PAYABLES_COUNT_SOURCE,
+            "source_permission_checked": False,
+            "source_permission_verified": False,
+            "reason": "source_permission_checker_unavailable",
+        }
+    try:
+        allowed = bool(checker(PAYABLES_COUNT_SOURCE, ptype="read", user=user or None))
+    except TypeError:
+        try:
+            allowed = bool(checker(PAYABLES_COUNT_SOURCE, "read"))
+        except Exception:
+            allowed = False
+    except Exception:
+        allowed = False
+    return {
+        "source": PAYABLES_COUNT_SOURCE,
+        "source_permission_checked": True,
+        "source_permission_verified": allowed,
+        "reason": "source_permission_allowed" if allowed else "source_permission_denied",
+    }
+
+
+def _permission_preserving_payables_count(filters: list[list[object]], list_getter: object = None) -> int:
+    getter = list_getter or getattr(frappe, "get_list", None)
+    if not callable(getter):
+        raise _PayablesCountUnavailable("permission_preserving_payables_count_reader_unavailable")
+    try:
+        records = getter(
+            PAYABLES_COUNT_SOURCE,
+            filters=filters,
+            fields=[PAYABLES_COUNT_QUERY_FIELD],
+            limit_page_length=1,
+        )
+    except Exception:
+        raise _PayablesCountUnavailable("permission_preserving_payables_count_unavailable")
+    return _extract_payables_count(records or [])
+
+
+def _payables_count_with_extra_filter(company_name: str, extra_filter: list[object], list_getter: object = None, base: str = "open") -> int:
+    filters = _payables_open_count_filters(company_name) if base == "open" else _payables_submitted_company_filters(company_name)
+    filters.append(extra_filter)
+    return _permission_preserving_payables_count(filters, list_getter=list_getter)
+
+
+def _permission_preserving_payables_schedule_presence_count(company_name: str, list_getter: object = None) -> int:
+    filters = _payables_open_count_filters(company_name)
+    filters.extend(
+        (
+            [PAYABLES_SCHEDULE_CHILD_SOURCE, "parent", "is", "set"],
+            [PAYABLES_SCHEDULE_CHILD_SOURCE, "parenttype", "=", PAYABLES_COUNT_SOURCE],
+            [PAYABLES_SCHEDULE_CHILD_SOURCE, "parentfield", "=", "payment_schedule"],
+        )
+    )
+    return _permission_preserving_payables_count(filters, list_getter=list_getter)
+
+
+def _safe_payables_policy(
+    resolver: dict[str, object],
+    permission: dict[str, object],
+    reason: str,
+    runtime_enabled: bool = False,
+) -> dict[str, object]:
+    return {
+        "source": PAYABLES_COUNT_SOURCE,
+        "reason": reason,
+        "resolver_state": resolver.get("state"),
+        "resolver_source": resolver.get("source"),
+        "role_category": resolver.get("role_category"),
+        "source_permission_checked": bool(permission.get("source_permission_checked")),
+        "source_permission_verified": bool(permission.get("source_permission_verified")),
+        "source_read_policy_ready": runtime_enabled,
+        "runtime_count_enabled": runtime_enabled,
+        "manager_only": True,
+        "accounts_user_counts_enabled": False,
+        "aggregate_counts_only": True,
+        "due_date_basis_only": True,
+        "posting_date_fallback_enabled": False,
+        "due_soon_enabled": False,
+        "payment_terms_supported": False,
+        "payment_schedule_supported": False,
+        "payment_schedule_presence_gate_required": True,
+        "payment_schedule_rows_returned": False,
+        "on_hold_supported": False,
+        "returns_supported": False,
+        "identifiers_enabled": False,
+        "monetary_values_enabled": False,
+        "native_navigation_enabled": False,
+        "external_output_enabled": False,
+        "execution_enabled": False,
+    }
+
+
+def _payables_company_scope(selected_company: object, runtime_enabled: bool) -> dict[str, object] | None:
+    if not runtime_enabled or not isinstance(selected_company, dict):
+        return None
+    return {
+        "name": selected_company.get("name"),
+        "label": selected_company.get("label") or selected_company.get("name"),
+    }
+
+
+def _payables_count_payload(
+    state_value: str,
+    reason: str,
+    resolver: dict[str, object],
+    permission: dict[str, object],
+    as_of: date,
+    bucket_counts: dict[str, int] | None = None,
+) -> dict[str, object]:
+    runtime_enabled = state_value == "ready"
+    selected_company = resolver.get("selected_company") if isinstance(resolver, dict) else None
+    return {
+        "phase": FINANCE_PAYABLES_COUNT_PHASE,
+        "state": state_value,
+        "source_state": state_value,
+        "company_scope": _payables_company_scope(selected_company, runtime_enabled),
+        "as_of_date": as_of.isoformat(),
+        "bucket_labels": _payables_bucket_labels(),
+        "bucket_counts": dict(bucket_counts or {}),
+        "policy": _safe_payables_policy(resolver, permission, reason, runtime_enabled=runtime_enabled),
+        "no_effect": no_effect_flags(),
+    }
+
+
+def build_payables_count_posture(
+    context: dict[str, object] | None = None,
+    requested_company: str | None = None,
+    resolver: dict[str, object] | None = None,
+    as_of_date: object = None,
+    permission_checker: object = None,
+    list_getter: object = None,
+    browser_filters: dict[str, object] | None = None,
+) -> dict[str, object]:
+    active_context = context or build_context()
+    active_resolver = resolver or resolve_finance_role_company_scope(
+        context=active_context,
+        requested_company=requested_company,
+    )
+    as_of = _normalize_as_of_date(as_of_date)
+    empty_permission = {
+        "source": PAYABLES_COUNT_SOURCE,
+        "source_permission_checked": False,
+        "source_permission_verified": False,
+        "reason": "source_permission_not_checked",
+    }
+    if browser_filters:
+        return _payables_count_payload("unavailable", "browser_filters_not_allowed", active_resolver, empty_permission, as_of)
+    if active_resolver.get("state") != "scoped":
+        return _payables_count_payload(
+            "unavailable",
+            cstr(active_resolver.get("reason") or "resolver_not_scoped"),
+            active_resolver,
+            empty_permission,
+            as_of,
+        )
+    if active_resolver.get("role_category") != "manager":
+        return _payables_count_payload("unavailable", "accounts_manager_required", active_resolver, empty_permission, as_of)
+
+    selected_company = active_resolver.get("selected_company") if isinstance(active_resolver, dict) else None
+    company_name = cstr((selected_company or {}).get("name") if isinstance(selected_company, dict) else "").strip()
+    company_currency = cstr((selected_company or {}).get("currency") if isinstance(selected_company, dict) else "").strip()
+    if company_name != FINANCE_APPROVED_COMPANY_NAME or company_currency != FINANCE_APPROVED_COMPANY_CURRENCY:
+        return _payables_count_payload("unavailable", "approved_company_scope_required", active_resolver, empty_permission, as_of)
+
+    permission = verify_payables_source_permission(active_context, permission_checker=permission_checker)
+    if not permission.get("source_permission_verified"):
+        return _payables_count_payload("unavailable", "source_permission_denied", active_resolver, permission, as_of)
+
+    try:
+        candidate_count = _permission_preserving_payables_count(
+            _payables_candidate_count_filters(company_name),
+            list_getter=list_getter,
+        )
+        approved_status_count = _permission_preserving_payables_count(
+            _payables_open_count_filters(company_name),
+            list_getter=list_getter,
+        )
+        if candidate_count != approved_status_count:
+            return _payables_count_payload(
+                "unavailable",
+                "purchase_invoice_status_not_supported",
+                active_resolver,
+                permission,
+                as_of,
+            )
+        if _permission_preserving_payables_schedule_presence_count(company_name, list_getter=list_getter) > 0:
+            return _payables_count_payload("unavailable", "payment_schedule_not_supported", active_resolver, permission, as_of)
+        complexity_checks = (
+            ("missing_due_date_policy_not_ready", ["due_date", "is", "not set"], "open"),
+            ("future_posting_date_not_supported", ["posting_date", ">", as_of.isoformat()], "open"),
+            ("payment_terms_not_supported", ["payment_terms_template", "is", "set"], "open"),
+            ("advances_not_supported", ["total_advance", ">", 0], "open"),
+            ("on_hold_not_supported", ["on_hold", "=", 1], "open"),
+            ("returns_debit_notes_not_supported", ["is_return", "=", 1], "submitted"),
+            ("returns_debit_notes_not_supported", ["return_against", "is", "set"], "submitted"),
+        )
+        for reason, extra_filter, base in complexity_checks:
+            if _payables_count_with_extra_filter(company_name, extra_filter, list_getter=list_getter, base=base) > 0:
+                return _payables_count_payload("unavailable", reason, active_resolver, permission, as_of)
+        bucket_counts = {
+            cstr(bucket.get("key")): _permission_preserving_payables_count(
+                _payables_bucket_filters(company_name, cstr(bucket.get("key")), as_of),
+                list_getter=list_getter,
+            )
+            for bucket in PAYABLES_COUNT_BUCKETS
+        }
+    except _PayablesCountUnavailable as exc:
+        return _payables_count_payload("unavailable", exc.reason, active_resolver, permission, as_of)
+    except Exception:
+        return _payables_count_payload("unavailable", "payables_count_posture_unavailable", active_resolver, permission, as_of)
+
+    return _payables_count_payload("ready", "payables_count_posture_ready", active_resolver, permission, as_of, bucket_counts)
 
 
 class _ReceivablesAmountUnavailable(Exception):
@@ -1409,6 +1699,14 @@ def no_effect_flags() -> dict[str, bool]:
         "report_run": False,
         "email_sent": False,
         "portal_action_performed": False,
+        "supplier_notification_sent": False,
+        "supplier_statement_sent": False,
+        "supplier_payment_communication_sent": False,
+        "payment_request_created": False,
+        "payment_order_created": False,
+        "payment_run_performed": False,
+        "supplier_bank_or_contact_exposed": False,
+        "purchase_invoice_lifecycle_performed": False,
         "user_or_role_mutated": False,
     }
 
@@ -1569,12 +1867,15 @@ def _overview_cards(
     period_scope: dict[str, object],
     receivables_posture: dict[str, object] | None = None,
     receivables_amount_summary: dict[str, object] | None = None,
+    payables_count_posture: dict[str, object] | None = None,
 ) -> list[dict[str, object]]:
     company_state = "ready" if company_scope.get("state") == "scoped" else "unavailable"
     receivables_ready = bool(receivables_posture and receivables_posture.get("state") == "ready")
     receivables_counts = receivables_posture.get("bucket_counts") if receivables_ready else {}
     receivables_amount_ready = bool(receivables_amount_summary and receivables_amount_summary.get("state") == "ready")
+    payables_ready = bool(payables_count_posture and payables_count_posture.get("state") == "ready")
     label_by_key = {item["key"]: item["label"] for item in _bucket_labels()}
+    payables_label_by_key = {item["key"]: item["label"] for item in _payables_bucket_labels()}
 
     def amount_bucket_parts() -> list[str]:
         amount_summary = receivables_amount_summary.get("bucket_amounts") if receivables_amount_ready else {}
@@ -1610,6 +1911,29 @@ def _overview_cards(
         receivables_state = "ready"
     elif receivables_posture:
         receivables_detail = "Receivables aggregate posture is unavailable: " + cstr((receivables_posture.get("policy") or {}).get("reason") or "policy gate not ready") + ". No row-level financial data is returned or shown, and manager aggregate amount values are unavailable."
+
+    payables_detail = "Payables aggregate count posture is unavailable. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown."
+    payables_value = "No counts"
+    payables_state = "unavailable"
+    if payables_ready:
+        payables_counts = payables_count_posture.get("bucket_counts") or {}
+        payables_detail = "; ".join(
+            f"{payables_label_by_key.get(key, key)}: {payables_counts.get(key, 0)}"
+            for key in ("not_due", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90")
+        )
+        payables_detail = f"Purchase Invoice aggregate count buckets only. Current / not overdue includes invoices due today or later. {payables_detail}. No supplier names, invoice IDs, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable."
+        payables_value = "Aggregate counts only"
+        payables_state = "ready"
+    elif payables_count_posture:
+        reason = cstr((payables_count_posture.get('policy') or {}).get('reason') or 'policy gate not ready')
+        if reason in {'payment_schedule_not_supported', 'payment_terms_not_supported'}:
+            payables_detail = 'Payables counts are unavailable because some supplier invoices use payment schedules that this overview does not interpret. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments.'
+            payables_value = 'Unavailable'
+        elif reason == 'accounts_manager_required':
+            payables_detail = 'Manager-only payables posture. AP count posture is available only to Accounts Manager in this phase. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown.'
+        else:
+            payables_detail = 'Payables aggregate count posture is unavailable until the approved role, company, source, and permission gates pass. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown.'
+
     return [
         {
             "key": "workspace_readiness",
@@ -1646,9 +1970,9 @@ def _overview_cards(
         {
             "key": "payables_posture",
             "title": "Payables posture",
-            "state": "unavailable",
-            "detail": "Supplier balances, invoice rows, amounts, and aging counts remain blocked until F5 approvals.",
-            "value": "No counts",
+            "state": payables_state,
+            "detail": payables_detail,
+            "value": payables_value,
             "rows": [],
         },
         {
@@ -1683,7 +2007,8 @@ def _overview_payload(context: dict[str, object]) -> dict[str, object]:
     period_scope = _period_scope(company_scope)
     receivables_posture = build_receivables_count_posture(context=context, resolver=company_resolver) if allowed else None
     receivables_amount_summary = build_receivables_payment_ledger_amount_summary(context=context, resolver=company_resolver) if allowed else None
-    cards = _overview_cards(company_scope, period_scope, receivables_posture, receivables_amount_summary) if allowed else []
+    payables_count_posture = build_payables_count_posture(context=context, resolver=company_resolver) if allowed else None
+    cards = _overview_cards(company_scope, period_scope, receivables_posture, receivables_amount_summary, payables_count_posture) if allowed else []
     payload_state = restricted_state()
     if allowed:
         payload_state = overview_ready_state() if company_scope.get("state") == "scoped" else overview_unavailable_state()
@@ -1698,6 +2023,7 @@ def _overview_payload(context: dict[str, object]) -> dict[str, object]:
             "accounting_overview_enabled": bool(allowed and company_scope.get("state") == "scoped"),
             "receivables_count_posture_enabled": bool(receivables_posture and receivables_posture.get("state") == "ready"),
             "receivables_amount_summary_enabled": bool(receivables_amount_summary and receivables_amount_summary.get("state") == "ready"),
+            "payables_count_posture_enabled": bool(payables_count_posture and payables_count_posture.get("state") == "ready"),
             "company_scope_required": True,
             "financial_data_enabled": False,
             "financial_rows_enabled": False,
@@ -1710,7 +2036,7 @@ def _overview_payload(context: dict[str, object]) -> dict[str, object]:
         "overview": {
             "phase": FINANCE_OVERVIEW_PHASE,
             "title": "Read-only accounting posture",
-            "detail": "Company-scoped posture only. Sales Invoice count buckets and manager-only Payment Ledger MMK amount buckets are aggregate signals; row-level data, reports, exports, and execution remain blocked.",
+            "detail": "Company-scoped posture only. Receivables and Payables signals are aggregate-only when their gates pass; row-level data, reports, exports, and execution remain blocked.",
             "company_scope": company_scope,
             "company_resolver": company_resolver or {},
             "period_scope": period_scope,
@@ -1721,6 +2047,7 @@ def _overview_payload(context: dict[str, object]) -> dict[str, object]:
         },
         "receivables_posture": receivables_posture or {},
         "receivables_amount_summary": receivables_amount_summary or {},
+        "payables_count_posture": payables_count_posture or {},
         "company_scope": company_scope,
         "period_scope": period_scope,
         "posture_cards": cards,

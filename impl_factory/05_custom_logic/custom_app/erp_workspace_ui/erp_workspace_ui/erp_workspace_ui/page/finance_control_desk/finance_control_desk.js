@@ -299,6 +299,23 @@
     "accounts",
     "payment_ledger_rows",
     "gl_rows",
+    "supplier_rows",
+    "suppliers",
+    "purchase_invoice_rows",
+    "purchase_invoices",
+    "payment_entry_rows",
+    "payment_entries",
+    "payment_schedule_rows",
+    "payment_schedules",
+    "bank_account_rows",
+    "bank_accounts",
+    "bank_transaction_rows",
+    "bank_transactions",
+    "bank_reference_rows",
+    "bank_references",
+    "bank_detail_rows",
+    "bank_details",
+    "bank_rows",
   ]);
 
   const FORBIDDEN_IDENTITY_KEYS = new Set([
@@ -318,8 +335,107 @@
     "payment_ledger_entry_name",
     "gl_entry",
     "gl_entry_name",
+    "payment_schedule",
+    "payment_schedule_id",
+    "payment_schedule_name",
+    "payment_schedule_parent",
+    "payment_schedule_parent_name",
+    "supplier",
+    "supplier_id",
+    "supplier_name",
+    "supplier_group",
+    "supplier_bank_account",
+    "supplier_bank_details",
+    "supplier_contact",
+    "supplier_tax_id",
+    "bank",
+    "bank_id",
+    "bank_name",
+    "bank_account",
+    "bank_account_id",
+    "bank_account_name",
+    "bank_account_no",
+    "bank_account_number",
+    "bank_account_details",
+    "bank_party_account",
+    "bank_party_account_id",
+    "bank_party_account_number",
+    "bank_transaction",
+    "bank_transaction_id",
+    "bank_transaction_name",
+    "bank_transaction_reference",
+    "bank_transaction_reference_number",
+    "bank_reference",
+    "bank_reference_id",
+    "bank_reference_no",
+    "bank_reference_number",
+    "transaction_id",
+    "transaction_name",
+    "reference",
+    "reference_id",
+    "reference_no",
+    "reference_number",
+    "bank_detail",
+    "bank_details",
+    "iban",
+    "iban_number",
+    "swift",
+    "swift_code",
+    "swift_number",
+    "swift_bic",
+    "bank_swift",
+    "bank_swift_code",
+    "bic",
+    "bic_code",
+    "routing_number",
+    "branch_code",
+    "purchase_invoice",
+    "purchase_invoice_id",
+    "purchase_invoice_name",
+    "bill_no",
+    "bill_date",
+    "payable_account",
+    "party",
+    "party_id",
+    "party_name",
+    "remarks",
+    "payment_order",
+    "payment_order_id",
     "doctype",
     "docname",
+  ]);
+
+  const FORBIDDEN_PAYABLES_VALUE_KEYS = new Set([
+    "amount",
+    "amounts",
+    "bucket_amounts",
+    "grand_total",
+    "outstanding_amount",
+    "payment_amount",
+    "base_amount",
+    "currency",
+    "currencies",
+    "account_currency",
+    "party_currency",
+    "supplier_balance",
+    "ap_balance",
+    "cash_requirement",
+  ]);
+
+  const FORBIDDEN_PAYABLES_VALUE_KEY_TOKENS = new Set([
+    "amount",
+    "amounts",
+    "balance",
+    "balances",
+    "currency",
+    "currencies",
+    "outstanding",
+    "rate",
+    "rates",
+    "total",
+    "totals",
+    "value",
+    "values",
   ]);
 
   const FORBIDDEN_SURFACE_KEYS = new Set([
@@ -354,6 +470,15 @@
     "customer_reminder",
     "customer_action",
     "supplier_action",
+    "supplier_notification",
+    "supplier_statement",
+    "supplier_payment_communication",
+    "payment_order_created",
+    "payment_request",
+    "payment_request_created",
+    "payment_run",
+    "payment_run_performed",
+    "purchase_invoice_lifecycle_performed",
     "communication",
     "save",
     "submit",
@@ -388,7 +513,11 @@
   ]);
 
   function normalizeKey(key) {
-    return String(key || "").replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toLowerCase();
+    return String(key || "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+      .replace(/[^a-z0-9]+/gi, "_")
+      .replace(/^_+|_+$/g, "")
+      .toLowerCase();
   }
 
   function isEmptyBoundaryValue(value) {
@@ -423,12 +552,34 @@
     });
   }
 
+  function isForbiddenPayablesValueKey(key) {
+    const normalizedKey = normalizeKey(key);
+    return FORBIDDEN_PAYABLES_VALUE_KEYS.has(normalizedKey)
+      || normalizedKey.split("_").some((token) => FORBIDDEN_PAYABLES_VALUE_KEY_TOKENS.has(token));
+  }
+
+  function hasForbiddenPayablesPayloadShape(value) {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+    if (Array.isArray(value)) {
+      return value.some((item) => hasForbiddenPayablesPayloadShape(item));
+    }
+    return Object.entries(value).some(([key, nested]) => {
+      if (isForbiddenPayablesValueKey(key)) {
+        return !isEmptyBoundaryValue(nested);
+      }
+      return hasForbiddenPayablesPayloadShape(nested);
+    });
+  }
+
   function financeDataBoundaryPayload(payload) {
     const safePayload = payload && typeof payload === "object" ? payload : {};
     return {
       overview: safePayload.overview,
       receivables_posture: safePayload.receivables_posture,
       receivables_amount_summary: safePayload.receivables_amount_summary,
+      payables_count_posture: safePayload.payables_count_posture,
       company_scope: safePayload.company_scope,
       period_scope: safePayload.period_scope,
       posture_cards: safePayload.posture_cards,
@@ -439,6 +590,12 @@
       documents: safePayload.documents,
       no_effect: safePayload.no_effect,
     };
+  }
+
+  function hasForbiddenRawFinancePayload(payload) {
+    const safePayload = payload && typeof payload === "object" ? payload : {};
+    return hasForbiddenFinancePayloadShape(financeDataBoundaryPayload(safePayload))
+      || hasForbiddenPayablesPayloadShape(safePayload.payables_count_posture);
   }
 
   function hasFinancialRows(payload) {
@@ -503,13 +660,13 @@
     `).join("");
     const noRowsCopy = hasFinancialRows(payload)
       ? "Policy violation: row-level financial data was returned to this page. The page blocks rendering, linking, export, and action surfaces for that response, and this response must not be accepted for manual review."
-      : "Finance overview shows scoped aggregate posture only. The backend may perform bounded aggregate source reads, but row-level accounting data is not returned, shown, linked, exported, or actionable. Approved managers may see aggregate receivables count buckets and MMK amount buckets when all gates pass.";
+      : "Finance overview shows scoped aggregate posture only. The backend may perform bounded aggregate source reads, but row-level accounting data is not returned, shown, linked, exported, or actionable. Approved managers may see aggregate receivables buckets and count-only Payables buckets when all gates pass.";
     const noEffectCopy = allNoEffectFlagsFalse(payload.no_effect)
       ? "The backend context reports no document, ledger, payment, reconciliation, tax, notification, or export effect."
       : "The shell treats this response as display-only and does not expose execution controls.";
     const overviewCopy = payload.overview && payload.overview.detail
       ? payload.overview.detail
-      : "Company-scoped posture only. Approved managers may see aggregate receivables count buckets and MMK amount buckets when all gates pass; row-level data, reports, exports, and execution remain blocked.";
+      : "Company-scoped posture only. Approved managers may see aggregate receivables buckets and count-only Payables buckets when all gates pass; row-level data, reports, exports, and execution remain blocked.";
 
     return `
       <main class="finance-control-shell" data-erpw-workspace="finance" data-finance-f3-overview="ready">
@@ -540,10 +697,10 @@
               </div>
             </div>
             <div class="finance-control-state-row">
-              <div class="finance-control-state-label">Unavailable</div>
+              <div class="finance-control-state-label">Read-only</div>
               <div class="finance-control-state-text">
-                <strong>Payables, cash, and ledger rows are not active</strong>
-                <span>Those lanes reopen only after field allowlists, company scope rules, and role visibility are approved. Receivables is limited to aggregate count buckets and manager-only MMK amount buckets when all gates pass.</span>
+                <strong>Payables stays count-only and fail-closed</strong>
+                <span>Counts appear only when Finance can prove that candidate invoices do not use payment schedules. Otherwise Payables remains unavailable. AP amounts, supplier/invoice rows, cash truth, ledger rows, reports, exports, and payment actions remain blocked.</span>
               </div>
             </div>
             <div class="finance-control-state-row">
@@ -646,7 +803,7 @@
   }
 
   function renderPayload(payload) {
-    const rawPayloadHasFinancialRows = hasFinancialRows(financeDataBoundaryPayload(payload));
+    const rawPayloadHasFinancialRows = hasForbiddenRawFinancePayload(payload);
     const normalized = normalizePayload(payload);
     if (rawPayloadHasFinancialRows || hasFinancialRows(normalized)) {
       return renderPolicyViolation(normalized);
@@ -699,7 +856,8 @@
     }
     callOverviewContext()
       .then((payload) => {
-        target.__financeControlDeskOverviewPayload = payload;
+        const rawPayloadHasFinancialRows = hasForbiddenRawFinancePayload(payload);
+        target.__financeControlDeskOverviewPayload = rawPayloadHasFinancialRows ? null : payload;
         setHtml(target, renderPayload(payload));
       })
       .catch(() => {
@@ -717,6 +875,19 @@
     }
     target.__financeControlDeskInitialized = true;
     loadOverviewContext(target);
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = Object.freeze({
+      financeDataBoundaryPayload,
+      hasForbiddenFinancePayloadShape,
+      hasForbiddenPayablesPayloadShape,
+      hasForbiddenRawFinancePayload,
+      isForbiddenPayablesValueKey,
+      normalizePayload,
+      renderPayload,
+    });
+    return;
   }
 
   const pageDef = frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
