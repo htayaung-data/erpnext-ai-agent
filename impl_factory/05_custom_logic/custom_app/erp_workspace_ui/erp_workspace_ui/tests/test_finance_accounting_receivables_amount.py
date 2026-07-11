@@ -954,6 +954,7 @@ class TestFinanceReceivablesPaymentLedgerAmountSummary(unittest.TestCase):
         self.assertIn("Sales Invoice count buckets are unavailable", receivables_card["detail"])
         self.assertIn("Manager-only Payment Ledger MMK amount buckets are available", receivables_card["detail"])
         self.assertIn("No row-level customer, invoice, voucher, account, Payment Ledger, route, report, export, or action detail is returned, shown, linked, exported, or actionable.", receivables_card["detail"])
+        self.assertNotIn("source_permission_denied", receivables_card["detail"])
         self.assertIn("Current / not due: 600.0 MMK", receivables_card["detail"])
         self.assertNotIn("No rows or amounts are loaded", receivables_card["detail"])
         self.assertEqual(receivables_card["value"], "MMK buckets only")

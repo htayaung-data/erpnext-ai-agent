@@ -112,6 +112,7 @@ process.stdout.write(JSON.stringify({
   normalized_forbidden: guard.hasForbiddenFinancePayloadShape(normalizedPayload),
   policy_violation: html.includes("Policy violation blocked"),
   ready: html.includes('data-finance-f3-overview="ready"'),
+  rendered_html: html,
 }));
 """
     result = subprocess.run(
@@ -376,6 +377,37 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertEqual(payload["receivables_posture"]["policy"]["accounts_user_raw_counts_enabled"], False)
         self.assertEqual(payload["payables_count_posture"]["state"], "unavailable")
         self.assertEqual(payload["payables_count_posture"]["bucket_counts"], {})
+        receivables_card = next(card for card in payload["posture_cards"] if card["key"] == "receivables_posture")
+        self.assertIn("Manager-only receivables posture", receivables_card["detail"])
+        self.assertIn("available only to Accounts Manager", receivables_card["detail"])
+        self.assertIn("No customer, invoice, voucher, account, report, export, or action data is shown.", receivables_card["detail"])
+        self.assertNotIn("low_count_policy_not_ready", receivables_card["detail"])
+        self.assertNotIn("accounts_manager_required", receivables_card["detail"])
+        self.assertNotIn("low_count_policy_not_ready", repr(payload["lanes"]))
+
+    def test_manager_receivables_source_failure_card_hides_internal_reason_and_keeps_ap_copy(self):
+        cards = service._overview_cards(
+            {"state": "scoped", "company": _COMPANY_SCOPE["name"], "detail": "Company scoped."},
+            {"state": "unavailable", "detail": "Fiscal period deferred."},
+            receivables_posture={
+                "state": "unavailable",
+                "policy": {"reason": "source_permission_denied", "role_category": "manager"},
+            },
+            receivables_amount_summary={"state": "unavailable"},
+            payables_count_posture={
+                "state": "unavailable",
+                "policy": {"reason": "payment_schedule_not_supported"},
+            },
+        )
+
+        receivables_card = next(card for card in cards if card["key"] == "receivables_posture")
+        payables_card = next(card for card in cards if card["key"] == "payables_posture")
+        self.assertIn("Receivables posture is unavailable", receivables_card["detail"])
+        self.assertIn("No customer, invoice, voucher, account, report, export, or action data is shown.", receivables_card["detail"])
+        self.assertNotIn("source_permission_denied", receivables_card["detail"])
+        self.assertNotIn("resolver_not_scoped", receivables_card["detail"])
+        self.assertIn("some supplier invoices use payment schedules", payables_card["detail"])
+        self.assertNotIn("payment_schedule_not_supported", payables_card["detail"])
 
     def test_overview_context_restricts_non_finance_roles_without_rows(self):
         with patch.object(service.frappe, "get_roles", return_value=["Sales User"]), patch.object(
@@ -668,6 +700,29 @@ class TestFinanceAccountingShell(unittest.TestCase):
                 self.assertFalse(result["normalized_forbidden"])
                 self.assertFalse(result["policy_violation"])
                 self.assertTrue(result["ready"])
+
+    def test_frontend_replaces_nested_receivables_reason_code_before_rendering(self):
+        payload = _frontend_guard_payload({
+            "state": "unavailable",
+            "source_state": "unavailable",
+            "bucket_counts": {},
+            "policy": {"runtime_count_enabled": False},
+        })
+        payload["posture_cards"] = [{
+            "key": "receivables_posture",
+            "title": "Receivables posture",
+            "state": "unavailable",
+            "detail": "Receivables aggregate posture is unavailable: source_permission_denied.",
+            "value": "No counts",
+            "rows": [],
+        }]
+        result = _frontend_guard_probe(payload)
+
+        self.assertTrue(result["ready"])
+        self.assertFalse(result["policy_violation"])
+        self.assertNotIn("source_permission_denied", result["rendered_html"])
+        self.assertIn("Receivables posture is unavailable", result["rendered_html"])
+        self.assertIn("No customer, invoice, voucher, account, report, export, or action data is shown.", result["rendered_html"])
 
     def test_frontend_blocks_payables_amount_shapes_but_allows_approved_receivables_amounts(self):
         blocked_cases = (

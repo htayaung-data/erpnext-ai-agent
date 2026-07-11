@@ -284,6 +284,22 @@
     };
   }
 
+  const INTERNAL_FINANCE_REASON_PATTERN = /\b[a-z][a-z0-9]*_[a-z0-9_]+\b/;
+  const RECEIVABLES_UNAVAILABLE_FALLBACK = "Receivables posture is unavailable. Aggregate receivables counts and manager-only amount posture are not shown. No customer, invoice, voucher, account, report, export, or action data is shown.";
+
+  function visibleLaneDetail(lane) {
+    const safeLane = lane && typeof lane === "object" ? lane : {};
+    const detail = String(safeLane.detail || "");
+    if (
+      safeLane.key === "receivables_posture"
+      && safeLane.state !== "ready"
+      && INTERNAL_FINANCE_REASON_PATTERN.test(detail)
+    ) {
+      return RECEIVABLES_UNAVAILABLE_FALLBACK;
+    }
+    return detail || "This posture is not active for this read-only phase.";
+  }
+
   const FORBIDDEN_COLLECTION_KEYS = new Set([
     "rows",
     "records",
@@ -652,7 +668,7 @@
     const laneCards = lanes.map((lane) => `
       <article class="finance-control-panel" data-finance-posture-key="${escapeHtml(lane.key || "posture")}">
         <h2 class="finance-control-panel-title">${escapeHtml(lane.title || "Finance posture")}</h2>
-        <p class="finance-control-panel-copy">${escapeHtml(lane.detail || "This posture is not active for this read-only phase.")}</p>
+        <p class="finance-control-panel-copy">${escapeHtml(visibleLaneDetail(lane))}</p>
         <div class="finance-control-chip-row" aria-label="${escapeHtml(lane.title || "Posture")} state">
           <span class="finance-control-chip${lane.state === "ready" ? "" : " is-muted"}">${escapeHtml(lane.value || lane.state || "Unavailable")}</span>
         </div>
@@ -884,6 +900,7 @@
       hasForbiddenPayablesPayloadShape,
       hasForbiddenRawFinancePayload,
       isForbiddenPayablesValueKey,
+      visibleLaneDetail,
       normalizePayload,
       renderPayload,
     });

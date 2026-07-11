@@ -1889,7 +1889,11 @@ def _overview_cards(
         return parts
 
     no_row_level_exposure = "No row-level customer, invoice, voucher, account, Payment Ledger, route, report, export, or action detail is returned, shown, linked, exported, or actionable."
-    receivables_detail = "Receivables aggregate posture is unavailable. Row-level financial data remains blocked."
+    receivables_policy = (receivables_posture or {}).get("policy") or {}
+    receivables_role_category = cstr(receivables_policy.get("role_category") or "")
+    receivables_manager_only_copy = "Manager-only receivables posture. Aggregate receivables counts and amount posture are available only to Accounts Manager in this phase. No customer, invoice, voucher, account, report, export, or action data is shown."
+    receivables_unavailable_copy = "Receivables posture is unavailable. Aggregate receivables counts and manager-only amount posture are not shown. No customer, invoice, voucher, account, report, export, or action data is shown."
+    receivables_detail = receivables_unavailable_copy
     receivables_value = "No counts"
     receivables_state = "unavailable"
     if receivables_ready:
@@ -1905,12 +1909,14 @@ def _overview_cards(
             receivables_value = "Aggregate counts only"
         receivables_state = "ready"
     elif receivables_amount_ready:
-        reason = cstr((receivables_posture or {}).get("policy", {}).get("reason") or "count policy gate not ready")
-        receivables_detail = f"Sales Invoice count buckets are unavailable: {reason}. Manager-only Payment Ledger MMK amount buckets are available. {'; '.join(amount_bucket_parts())}. {no_row_level_exposure}"
+        receivables_detail = f"Sales Invoice count buckets are unavailable. Manager-only Payment Ledger MMK amount buckets are available. {'; '.join(amount_bucket_parts())}. {no_row_level_exposure}"
         receivables_value = "MMK buckets only"
         receivables_state = "ready"
     elif receivables_posture:
-        receivables_detail = "Receivables aggregate posture is unavailable: " + cstr((receivables_posture.get("policy") or {}).get("reason") or "policy gate not ready") + ". No row-level financial data is returned or shown, and manager aggregate amount values are unavailable."
+        if receivables_role_category == "normal_finance":
+            receivables_detail = receivables_manager_only_copy
+        else:
+            receivables_detail = receivables_unavailable_copy
 
     payables_detail = "Payables aggregate count posture is unavailable. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown."
     payables_value = "No counts"
