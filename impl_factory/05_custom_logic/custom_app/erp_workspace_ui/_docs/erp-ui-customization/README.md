@@ -402,3 +402,4 @@ Future workspaces must start from Core + Adapter, not by copying Sales Console o
 - `finance-accounting-phase-f5s-payment-schedule-semantics-safe-detection-ap-count-re-readiness-proof-2026-07-10.md`
 - `finance-accounting-phase-f5t1-payables-payload-guard-documentation-hardening-2026-07-10.md`
 - `finance-accounting-phase-f5w1-accounts-user-receivables-unavailable-state-copy-hardening-2026-07-11.md`
+- `finance-accounting-phase-f5x-payables-count-manual-browser-acceptance-final-closure-status-2026-07-11.md`
