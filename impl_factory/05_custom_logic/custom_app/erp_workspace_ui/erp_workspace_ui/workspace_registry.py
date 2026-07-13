@@ -4,6 +4,8 @@ from copy import deepcopy
 from typing import Any
 
 
+WORKSPACE_SIDEBAR_SCHEMA_VERSION = "workspace-sidebar.v1"
+
 _SALES_WORKSPACE: dict[str, Any] = {
 	"workspace_id": "sales",
 	"status": "frozen",
@@ -75,6 +77,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"purchase_request_review": "procurement-console-purchase-request-review",
 		"purchase_request_form": "procurement-console-purchase-request-form",
 		"rfq_review": "procurement-console-rfq-review",
+		"rfq_form": "procurement-console-rfq-form",
 		"supplier_quotation_form": "procurement-console-supplier-quotation-form",
 		"supplier_quotation_review": "procurement-console-supplier-quotation-review",
 		"purchase_order_form": "procurement-console-purchase-order-form",
@@ -93,6 +96,9 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"managed_purchase_request_context": "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_context",
 		"managed_purchase_request_save": "erp_workspace_ui.procurement_console.managed_purchase_request.save_managed_purchase_request_draft",
 		"managed_purchase_request_item_defaults": "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_item_defaults",
+		"managed_rfq_context": "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_context",
+		"managed_rfq_save": "erp_workspace_ui.procurement_console.managed_rfq.save_managed_rfq_draft",
+		"managed_rfq_item_defaults": "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_item_defaults",
 		"managed_supplier_quotation_context": "erp_workspace_ui.procurement_console.managed_supplier_quotation.get_managed_supplier_quotation_context",
 		"managed_supplier_quotation_save": "erp_workspace_ui.procurement_console.managed_supplier_quotation.save_managed_supplier_quotation_draft",
 		"managed_supplier_quotation_item_defaults": "erp_workspace_ui.procurement_console.managed_supplier_quotation.get_managed_supplier_quotation_item_defaults",
@@ -319,10 +325,10 @@ _WAREHOUSE_WORKSPACE: dict[str, Any] = {
 
 _FINANCE_WORKSPACE: dict[str, Any] = {
 	"workspace_id": "finance",
-	"status": "f4_ar_aggregate_posture",
+	"status": "cycle_1_f6_quality_gate_pending",
 	"title": "Finance Control Desk",
 	"workspace_family": "Finance & Accounting",
-	"mode_label": "Finance & Accounting Workspace",
+	"mode_label": "Read-only aggregate posture",
 	"role_family": "Finance & Accounting",
 	"routes": {
 		"home": "finance-control-desk",
@@ -338,20 +344,20 @@ _FINANCE_WORKSPACE: dict[str, Any] = {
 	"directory_queues_by_doctype": {},
 	"sidebar": {
 		"home_key": "finance_control_desk_home",
-		"home_label": "Foundation",
+		"home_label": "Overview",
 		"section_key": "workspace",
 		"section_label": "Workspace",
 	},
 	"search": {
 		"enabled": False,
-		"mode": "finance_f4_ar_aggregate_posture_no_rows",
+		"mode": "finance_cycle_1_aggregate_posture_no_rows",
 		"placement": "none",
-		"placeholder": "Finance search is not active for AR aggregate posture",
+		"placeholder": "Finance search is not available in Cycle 1",
 	},
 	"fallback_items": [
 		{
 			"key": "finance_control_desk_home",
-			"label": "Foundation",
+			"label": "Overview",
 			"icon": "home",
 			"target": {"kind": "page", "route": "finance-control-desk"},
 		},
@@ -390,7 +396,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Finance Control Desk",
 		"wave": "first",
 		"priority": 4,
-		"status": "f4_ar_aggregate_posture",
+		"status": "cycle_1_f6_quality_gate_pending",
 	},
 	{
 		"workspace_id": "executive",

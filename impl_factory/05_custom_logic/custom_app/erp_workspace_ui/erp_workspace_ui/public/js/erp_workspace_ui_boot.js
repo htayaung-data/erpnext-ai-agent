@@ -2358,14 +2358,19 @@
 
     const user = String((frappe.session && frappe.session.user) || (frappe.boot && frappe.boot.user && frappe.boot.user.name) || "");
     if (!user || user === "Guest" || user === "Administrator") return;
-    if (hasAnyBootRole(["Purchase User", "Purchase Manager", "Purchase Master Manager"])) {
-      roleHomeRedirectDone = true;
-      frappe.set_route("procurement-console");
-      return;
-    }
     if (hasAnyBootRole(["Sales Manager", "Sales User", "Sales Master Manager", "Sales Executive", "Key Account Sales"])) {
       roleHomeRedirectDone = true;
       frappe.set_route(salesWorkspaceRoute("launcher", "sales-console-home"));
+      return;
+    }
+    if (hasAnyBootRole(["Purchase User", "Purchase Manager", "Purchase Master Manager"])) {
+      roleHomeRedirectDone = true;
+      frappe.set_route("procurement-console-home");
+      return;
+    }
+    if (hasAnyBootRole(["Accounts Manager", "Accounts User"])) {
+      roleHomeRedirectDone = true;
+      frappe.set_route("finance-control-desk");
       return;
     }
     if (hasWarehouseOperationalHomeRole() && !hasWarehouseDeskBypassRole()) {

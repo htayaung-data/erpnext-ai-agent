@@ -207,6 +207,8 @@ mkdir -p "$SCRIPT_DIR/artifacts" "$SCRIPT_DIR/test-results"
 docker run --rm \
 	--network "$NETWORK" \
 	-v "$SCRIPT_DIR:/work" \
+	-v "$SCRIPT_DIR/..:/erpw-app:ro" \
+	-e ERPW_APP_ROOT="/erpw-app" \
 	"${EXTRA_DOCKER_ARGS[@]}" \
 	-w /work \
 	-e CI="${CI:-1}" \

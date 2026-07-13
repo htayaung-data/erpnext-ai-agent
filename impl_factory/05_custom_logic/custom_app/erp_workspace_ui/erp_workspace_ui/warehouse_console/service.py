@@ -10,7 +10,10 @@ import frappe
 from frappe import _
 from frappe.utils import cstr, flt, getdate, now_datetime, nowdate
 
-from erp_workspace_ui.workspace_registry import get_warehouse_workspace_definition
+from erp_workspace_ui.workspace_registry import (
+	WORKSPACE_SIDEBAR_SCHEMA_VERSION,
+	get_warehouse_workspace_definition,
+)
 
 
 WAREHOUSE_ROLES = frozenset({"Warehouse Manager", "Warehouse User", "Stock Manager", "Stock User"})
@@ -917,6 +920,7 @@ def build_sidebar(context: dict[str, object] | None = None) -> dict[str, object]
 	items = list(workspace.get("fallback_items") or []) if not context or has_warehouse_access(context) else []
 	payload_state = ready_state() if not context or has_warehouse_access(context) else restricted_state()
 	return {
+		"schema_version": WORKSPACE_SIDEBAR_SCHEMA_VERSION,
 		"workspace_id": workspace.get("workspace_id"),
 		"title": workspace.get("title"),
 		"mode_label": workspace.get("mode_label"),
@@ -1191,6 +1195,7 @@ def get_warehouse_console_sidebar_context() -> dict[str, object]:
 	context = build_context()
 	payload_state = ready_state() if has_warehouse_access(context) else restricted_state()
 	return {
+		"schema_version": WORKSPACE_SIDEBAR_SCHEMA_VERSION,
 		"workspace": warehouse_workspace_public_context(),
 		"context": context,
 		"scope": {

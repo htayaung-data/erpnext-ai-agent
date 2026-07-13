@@ -362,15 +362,15 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual(
             {
                 "finance-overview-refresh",
-                "finance-sidebar-foundation-navigation",
+                "finance-sidebar-overview-navigation",
             },
             set(finance_actions),
         )
         self.assertEqual("current_shell", finance_actions["finance-overview-refresh"]["target_kind"])
-        self.assertEqual("page", finance_actions["finance-sidebar-foundation-navigation"]["target_kind"])
+        self.assertEqual("page", finance_actions["finance-sidebar-overview-navigation"]["target_kind"])
         self.assertEqual(
             "/desk/finance-control-desk",
-            finance_actions["finance-sidebar-foundation-navigation"]["target_route_pattern"],
+            finance_actions["finance-sidebar-overview-navigation"]["target_route_pattern"],
         )
 
         forbidden_labels = {
@@ -690,6 +690,20 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("page", action["target_kind"])
         self.assertEqual("/desk/procurement-console-*", action["target_route_pattern"])
         self.assertIsNone(action.get("native_exception_ref"))
+
+
+    def test_finance_cycle1_route_and_actions_are_truthful_and_execution_blocked(self):
+        finance_route = next(item for item in ROUTE_MANIFEST if item.get("workspace_id") == "finance")
+        self.assertEqual(finance_route["route_key"], "finance-control-desk")
+        self.assertEqual(finance_route["required_smoke_category"], "finance_cycle1_source_smoke")
+        self.assertIn("AR counts and MMK amount buckets", finance_route["notes"])
+        self.assertIn("AP counts", finance_route["notes"])
+        self.assertNotIn("F2", finance_route["notes"])
+        self.assertNotIn("F3", finance_route["notes"])
+        finance_actions = [item for item in ACTION_MANIFEST if item.get("workspace_id") == "finance"]
+        self.assertTrue(finance_actions)
+        self.assertTrue(all(item.get("action_key") in {"refresh", "sidebar_overview_navigation"} for item in finance_actions))
+        self.assertTrue(all(item.get("label") not in {"Post", "Pay", "Submit", "Cancel", "Export"} for item in finance_actions))
 
 
 if __name__ == "__main__":

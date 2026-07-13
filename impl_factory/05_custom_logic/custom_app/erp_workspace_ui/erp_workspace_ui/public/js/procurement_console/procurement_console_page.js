@@ -12,6 +12,26 @@
   const READINESS_METHOD = procurementMethods.manager_readiness || "erp_workspace_ui.procurement_console.readiness.get_procurement_manager_readiness";
   const QUICK_FIND_METHOD = procurementMethods.quickFind || procurementMethods.quick_find || "erp_workspace_ui.procurement_console.service.get_procurement_quick_find_suggestions";
   const QUICK_FIND_DEBOUNCE_MS = 240;
+  const QUICK_FIND_WORKSPACE_ID = "procurement";
+  const QUICK_FIND_ALLOWED_PAGE_ROUTES = new Set([
+    procurementRoutes.supplierDetail || "procurement-console-supplier",
+    procurementRoutes.itemDetail || "procurement-console-item",
+    procurementRoutes.purchaseRequestReview || "procurement-console-purchase-request-review",
+    procurementRoutes.purchaseRequestForm || "procurement-console-purchase-request-form",
+    procurementRoutes.rfqReview || "procurement-console-rfq-review",
+    procurementRoutes.rfqForm || "procurement-console-rfq-form",
+    procurementRoutes.supplierQuotationReview || "procurement-console-supplier-quotation-review",
+    procurementRoutes.supplierQuotationForm || "procurement-console-supplier-quotation-form",
+    procurementRoutes.poFollowUp || "procurement-console-po-follow-up",
+    procurementRoutes.purchaseOrderForm || "procurement-console-purchase-order-form",
+  ]);
+  const QUICK_FIND_ALLOWED_REPORT_KEYS = new Set([
+    "procurement_reports_index",
+    "supplier_quotation_comparison",
+    "purchase_order_analysis",
+    "demand_to_order_coverage",
+    "item_purchase_history",
+  ]);
   const QUICK_FIND_ROW_BADGE_LABELS = Object.freeze({
     suppliers: "Supplier",
     supplier: "Supplier",
@@ -35,6 +55,8 @@
   let activeOverviewGuardBound = false;
   let overviewRenderSerial = 0;
   let activeOverviewRenderState = null;
+  let quickFindRouteGuardBound = false;
+  const quickFindInvalidationHandlers = new Set();
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
   }
@@ -160,15 +182,142 @@
     return Array.isArray(route) && String(route[0] || "") === PAGE_KEY;
   }
 
+  function isPlainQuickFindObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+
+  function hasExactQuickFindKeys(value, expected) {
+    if (!isPlainQuickFindObject(value)) return false;
+    return JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected.slice().sort());
+  }
+
+  function normalizeQuickFindQuery(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  }
+
+  function createProcurementQuickFindAuthority(options) {
+    const opts = options || {};
+    const getRouteIdentity = opts.getRouteIdentity || (() => "");
+    const isActive = opts.isActive || (() => false);
+    let generation = 0;
+    function begin(query) {
+      generation += 1;
+      return Object.freeze({
+        generation,
+        workspaceId: QUICK_FIND_WORKSPACE_ID,
+        routeIdentity: getRouteIdentity(),
+        normalizedQuery: normalizeQuickFindQuery(query),
+      });
+    }
+    function invalidate() {
+      generation += 1;
+    }
+    function isCurrent(authority, query) {
+      return Boolean(
+        authority
+        && authority.generation === generation
+        && authority.workspaceId === QUICK_FIND_WORKSPACE_ID
+        && authority.routeIdentity === getRouteIdentity()
+        && authority.normalizedQuery === normalizeQuickFindQuery(query)
+        && isActive()
+      );
+    }
+    return Object.freeze({ begin, invalidate, isCurrent, normalizeQuery: normalizeQuickFindQuery });
+  }
+
+  const quickFindAuthority = createProcurementQuickFindAuthority({
+    getRouteIdentity: overviewRouteSignature,
+    isActive: isActiveProcurementRoute,
+  });
+
+  function beginQuickFindRequest(query) {
+    return quickFindAuthority.begin(query);
+  }
+
+  function invalidateQuickFindRequests() {
+    quickFindAuthority.invalidate();
+    quickFindInvalidationHandlers.forEach((handler) => handler());
+  }
+
+  function quickFindSelectionCurrent(authority, query, connected, coordinator) {
+    const activeCoordinator = coordinator || quickFindAuthority;
+    return connected === true && activeCoordinator.isCurrent(authority, query);
+  }
+
+  function quickFindOpenCurrent(state, result, authority, query, connected, coordinator) {
+    return Boolean(state)
+      && state.authority === authority
+      && state.selected === result
+      && quickFindSelectionCurrent(authority, query, connected, coordinator);
+  }
+
+  function quickFindRequestCurrent(authority, query) {
+    return quickFindAuthority.isCurrent(authority, query);
+  }
+
+  function bindQuickFindRouteGuard() {
+    if (quickFindRouteGuardBound) return;
+    quickFindRouteGuardBound = true;
+    const invalidate = () => invalidateQuickFindRequests();
+    if (frappe.router && typeof frappe.router.on === "function") frappe.router.on("change", invalidate);
+    window.addEventListener("hashchange", invalidate);
+    window.addEventListener("popstate", invalidate);
+  }
+
+  function procurementTargetAllowed(target) {
+    if (!isPlainQuickFindObject(target)) return false;
+    if (target.kind === "page") {
+      const keysAllowed = hasExactQuickFindKeys(target, ["kind", "route", "route_parts"])
+        || hasExactQuickFindKeys(target, ["kind", "options", "route", "route_parts"]);
+      if (!keysAllowed) return false;
+      if (!QUICK_FIND_ALLOWED_PAGE_ROUTES.has(target.route)) return false;
+      if (!Array.isArray(target.route_parts) || target.route_parts.length !== 1
+        || typeof target.route_parts[0] !== "string" || !target.route_parts[0].trim()
+        || target.route_parts[0] !== target.route_parts[0].trim() || target.route_parts[0].length > 180) return false;
+      return !Object.prototype.hasOwnProperty.call(target, "options")
+        || (isPlainQuickFindObject(target.options) && Object.keys(target.options).length === 0);
+    }
+    if (target.kind === "report_page") {
+      return hasExactQuickFindKeys(target, ["filters", "kind", "report_key"])
+        && QUICK_FIND_ALLOWED_REPORT_KEYS.has(target.report_key)
+        && isPlainQuickFindObject(target.filters)
+        && Object.keys(target.filters).length === 0;
+    }
+    return false;
+  }
+
+  function quickFindResultAllowed(result) {
+    if (!isPlainQuickFindObject(result) || !procurementTargetAllowed(result.target)) return false;
+    const preview = result.preview;
+    if (!isPlainQuickFindObject(preview) || !procurementTargetAllowed(preview.target)) return false;
+    return JSON.stringify(result.target) === JSON.stringify(preview.target);
+  }
+
+  function quickFindPayloadAllowed(payload, authority) {
+    if (!isPlainQuickFindObject(payload) || !quickFindRequestCurrent(authority, payload.query)) return false;
+    if (!["ready", "empty", "idle", "restricted", "unavailable"].includes(payload.state)) return false;
+    if (normalizeQuickFindQuery(payload.query) !== authority.normalizedQuery) return false;
+    if (!Array.isArray(payload.results) || !payload.results.every(quickFindResultAllowed)) return false;
+    if (!Array.isArray(payload.groups)) return false;
+    return payload.groups.every((group) => isPlainQuickFindObject(group)
+      && Array.isArray(group.results) && group.results.every(quickFindResultAllowed));
+  }
+
   function executeTarget(target) {
-    if (!target) return;
-    if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
-    if (target.kind === "report_page" && target.report_key) return routeToReport(target.report_key, target.filters || null);
-    if (target.kind === "page" && target.route) {
+    if (!procurementTargetAllowed(target) || !isActiveProcurementRoute()) return false;
+    if (target.kind === "report_page") {
+      routeToReport(target.report_key, target.filters);
+      return true;
+    }
+    if (target.kind === "page") {
       frappe.route_options = target.options || {};
       const parts = [target.route].concat(Array.isArray(target.route_parts) ? target.route_parts : []);
-      return frappe.set_route.apply(frappe, parts);
+      frappe.set_route.apply(frappe, parts);
+      return true;
     }
+    return false;
   }
 
   function makeInsightCard(config) {
@@ -412,11 +561,12 @@
     const $input = $section.find("[data-procurement-quick-find-input]").first();
     const $clear = $section.find("[data-procurement-quick-find-clear]").first();
     let timer = null;
-    let requestSerial = 0;
-    const state = { results: [], selected: null };
+    const state = { results: [], selected: null, authority: null };
+    bindQuickFindRouteGuard();
 
     function resetPreview() {
       state.selected = null;
+      state.authority = null;
       $section.data("erpwQuickFindSelected", null);
       $section.find("[data-procurement-quick-find-preview]").attr("hidden", "hidden").empty();
     }
@@ -430,11 +580,12 @@
       $section.find("[data-procurement-quick-find-status]").attr("data-state", mode || "idle").text(message || "");
     }
 
-    function renderSuggestions(payload) {
+    function renderSuggestions(payload, authority) {
       const groups = Array.isArray(payload && payload.groups) ? payload.groups : [];
       const $panel = $section.find("[data-procurement-quick-find-suggestions]").first();
       $panel.empty();
       state.results = [];
+      state.authority = authority;
       groups.forEach((group) => {
         const results = Array.isArray(group.results) ? group.results : [];
         if (!results.length) return;
@@ -449,7 +600,7 @@
               <span class="erpw-procurement-quick-find-option-meta">${escapeHtml(businessQuickFindCopy(result.subtitle || result.meta || "Procurement result", result))}</span>
             </button>
           `);
-          $option.on("click", () => selectQuickFindResult($section, state, result));
+          $option.on("click", () => selectQuickFindResult($section, state, result, authority));
           $group.append($option);
         });
         $panel.append($group);
@@ -462,40 +613,70 @@
       }
     }
 
-    function runSearch() {
-      const query = String($input.val() || "").trim();
-      $clear.prop("hidden", !query);
+    function resetForInput() {
+      state.results = [];
+      closeSuggestions();
       resetPreview();
+    }
+    const sectionNode = $section.get(0);
+    if (sectionNode && sectionNode.__erpwQuickFindInvalidationHandler) {
+      quickFindInvalidationHandlers.delete(sectionNode.__erpwQuickFindInvalidationHandler);
+    }
+    const invalidateSection = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = null;
+      $input.val("");
+      $clear.prop("hidden", true);
+      resetForInput();
+      setStatus("Type at least 2 characters to search visible Procurement records.", "idle");
+      if (!sectionNode || !sectionNode.isConnected) {
+        quickFindInvalidationHandlers.delete(invalidateSection);
+        if (sectionNode) delete sectionNode.__erpwQuickFindInvalidationHandler;
+      }
+    };
+    if (sectionNode) sectionNode.__erpwQuickFindInvalidationHandler = invalidateSection;
+    quickFindInvalidationHandlers.add(invalidateSection);
+    function runSearch(authority) {
+      const query = authority.normalizedQuery;
+      if (!quickFindRequestCurrent(authority, $input.val())) return;
+      $clear.prop("hidden", !query);
       if (query.length < 2) {
-        state.results = [];
-        closeSuggestions();
         setStatus("Type at least 2 characters to search visible Procurement records.", "idle");
         return;
       }
-      const serial = ++requestSerial;
       setStatus("Searching visible Procurement records...", "loading");
       frappe.call({ method: QUICK_FIND_METHOD, args: { query, limit: 12 } }).then((response) => {
-        if (serial !== requestSerial || !$section.get(0).isConnected || !isActiveProcurementRoute()) return;
+        if (!quickFindRequestCurrent(authority, $input.val()) || !$section.get(0).isConnected) return;
         const payload = response && response.message ? response.message : {};
-        if (payload.state === "ready") {
-          setStatus(payload.message || "Results ready. Select a result to preview before opening.", "ready");
-          renderSuggestions(payload);
-        } else {
-          state.results = [];
-          closeSuggestions();
-          setStatus(payload.message || "No visible Procurement records match this search.", payload.state || "empty");
+        if (!quickFindPayloadAllowed(payload, authority)) {
+          resetForInput();
+          setStatus("Procurement Quick Find is temporarily unavailable.", "unavailable");
+          return;
         }
-      }).catch((error) => {
-        if (serial !== requestSerial || !$section.get(0).isConnected) return;
-        state.results = [];
-        closeSuggestions();
-        setStatus(error && error.message ? error.message : "Quick Find could not search right now.", "error");
+        if (payload.state === "ready") {
+          setStatus("Results ready. Select a result to preview before opening.", "ready");
+          renderSuggestions(payload, authority);
+        } else {
+          resetForInput();
+          setStatus("No visible Procurement records match this search.", "empty");
+        }
+      }).catch(() => {
+        if (!quickFindRequestCurrent(authority, $input.val()) || !$section.get(0).isConnected) return;
+        resetForInput();
+        setStatus("Quick Find could not search right now.", "error");
       });
     }
 
     $input.on("input", () => {
       if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(runSearch, QUICK_FIND_DEBOUNCE_MS);
+      const authority = beginQuickFindRequest($input.val());
+      resetForInput();
+      $clear.prop("hidden", !authority.normalizedQuery);
+      if (authority.normalizedQuery.length < 2) {
+        setStatus("Type at least 2 characters to search visible Procurement records.", "idle");
+        return;
+      }
+      timer = window.setTimeout(() => runSearch(authority), QUICK_FIND_DEBOUNCE_MS);
     });
     $input.on("keydown", (event) => {
       if (event.key === "Escape") {
@@ -507,22 +688,28 @@
       }
     });
     $clear.on("click", () => {
+      invalidateQuickFindRequests();
+      if (timer) window.clearTimeout(timer);
+      timer = null;
       $input.val("");
       $clear.prop("hidden", true);
-      state.results = [];
-      closeSuggestions();
-      resetPreview();
+      resetForInput();
       setStatus("Type at least 2 characters to search visible Procurement records.", "idle");
       $input.trigger("focus");
     });
   }
 
-  function selectQuickFindResult($section, state, result) {
+  function selectQuickFindResult($section, state, result, authority) {
+    const sectionNode = $section.get(0);
+    const query = $section.find("[data-procurement-quick-find-input]").val();
+    if (!quickFindSelectionCurrent(authority, query, Boolean(sectionNode && sectionNode.isConnected))) return false;
+    if (state.authority !== authority || !quickFindResultAllowed(result)) return false;
     state.selected = result;
     $section.data("erpwQuickFindSelected", result);
     $section.find("[data-procurement-quick-find-suggestions]").attr("hidden", "hidden");
     $section.find("[data-procurement-quick-find-input]").attr("aria-expanded", "false");
-    renderQuickFindPreview($section, result);
+    renderQuickFindPreview($section, state, result, authority);
+    return true;
   }
 
   function businessQuickFindBoundaryNote(note, result) {
@@ -539,7 +726,7 @@
     return value;
   }
 
-  function renderQuickFindPreview($section, result) {
+  function renderQuickFindPreview($section, state, result, authority) {
     const preview = (result && result.preview) || {};
     const facts = Array.isArray(preview.facts) ? preview.facts : [];
     const chips = Array.isArray(preview.chips) ? preview.chips : [];
@@ -569,8 +756,14 @@
       </div>
     `);
     $preview.find("[data-procurement-quick-find-open]").on("click", () => {
-      const selected = $section.data("erpwQuickFindSelected") || result;
-      executeTarget((selected.preview && selected.preview.target) || selected.target);
+      const currentQuery = $section.find("[data-procurement-quick-find-input]").val();
+      const sectionNode = $section.get(0);
+      if (!quickFindOpenCurrent(state, result, authority, currentQuery, Boolean(sectionNode && sectionNode.isConnected))) return;
+      const selected = $section.data("erpwQuickFindSelected");
+      if (selected !== result) return;
+      const target = (selected.preview && selected.preview.target) || selected.target;
+      if (!procurementTargetAllowed(target)) return;
+      executeTarget(target);
     });
     $section.find("[data-procurement-quick-find-status]").attr("data-state", "preview").text("Preview selected. Use Open to navigate.");
   }
@@ -1055,6 +1248,11 @@
     window.setInterval(() => {
       if (shouldSelfRenderOverview()) renderActiveOverviewRoute();
     }, 160);
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = Object.freeze({ createProcurementQuickFindAuthority, quickFindSelectionCurrent, quickFindOpenCurrent });
+    return;
   }
 
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};

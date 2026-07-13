@@ -1,7 +1,7 @@
 /* global frappe */
 
 (function () {
-  const root = window;
+  const root = typeof window !== "undefined" ? window : globalThis;
   const consoleRuntime = root.erpWorkspaceConsoleRuntime || {};
   const sidebarRuntime = root.erpWorkspaceConsoleSidebar = root.erpWorkspaceConsoleSidebar || {};
   function currentWorkspaceRegistry() {
@@ -45,6 +45,8 @@
   const salesWorkspace = workspaceFromRegistry("sales");
   const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
   const salesMethods = salesWorkspace && salesWorkspace.methods ? salesWorkspace.methods : {};
+  const SIDEBAR_CONTEXT_SCHEMA_VERSION = "workspace-sidebar.v1";
+  const MANAGED_SEARCH_SCHEMA_VERSION = "workspace-search.v1";
   const STYLE_ID = "erpw-sales-console-sidebar-style";
   const SIDEBAR_METHOD = salesMethods.sidebarContext || "erp_workspace_ui.sales_console.service.get_sales_console_sidebar_context";
   const SEARCH_METHOD = salesMethods.workspaceSearch || "erp_workspace_ui.sales_console.service.search_sales_console_workspace";
@@ -189,10 +191,65 @@
     };
   }
 
-  let cachedContext = null;
-  let cachedWorkspaceId = "";
-  let contextPromise = null;
-  let contextPromiseWorkspaceId = "";
+  function createWorkspaceContextCoordinator() {
+    const states = new Map();
+    let serial = 0;
+
+    function stateFor(workspaceKey) {
+      const key = String(workspaceKey || "").trim();
+      if (!states.has(key)) states.set(key, { payload: null, promise: null, token: 0 });
+      return states.get(key);
+    }
+
+    function prime(workspaceKey, payload) {
+      const state = stateFor(workspaceKey);
+      state.token = ++serial;
+      state.payload = payload;
+      state.promise = null;
+      return payload;
+    }
+
+    function peek(workspaceKey) {
+      return stateFor(workspaceKey).payload;
+    }
+
+    function clear(workspaceKey) {
+      const key = String(workspaceKey || "").trim();
+      const selected = key ? [states.get(key)].filter(Boolean) : Array.from(states.values());
+      selected.forEach((state) => {
+        state.token = ++serial;
+        state.payload = null;
+        state.promise = null;
+      });
+      if (key) states.delete(key);
+      else states.clear();
+    }
+
+    function load(workspaceKey, requestFactory, fallbackFactory) {
+      const state = stateFor(workspaceKey);
+      if (state.payload) return Promise.resolve(state.payload);
+      if (state.promise) return state.promise;
+      const token = ++serial;
+      state.token = token;
+      const promise = Promise.resolve().then(requestFactory).then((payload) => {
+        if (state.token !== token) return state.payload;
+        state.payload = payload;
+        return payload;
+      }).catch(() => {
+        if (state.token !== token) return state.payload;
+        state.payload = fallbackFactory();
+        return state.payload;
+      }).finally(() => {
+        if (state.token === token) state.promise = null;
+      });
+      state.promise = promise;
+      return promise;
+    }
+
+    return Object.freeze({ clear, load, peek, prime });
+  }
+
+  const contextCoordinator = createWorkspaceContextCoordinator();
   let syncTimer = null;
   let mutationSyncTimer = null;
   let sidebarMutationObserver = null;
@@ -200,7 +257,10 @@
   let searchDialog = null;
   let searchTimer = null;
   let searchRequestToken = 0;
+  let searchNormalizedQuery = "";
   let searchResults = [];
+  let activeSearchEnvelope = null;
+  const searchGenerationCoordinator = createManagedSearchGenerationCoordinator();
   let searchActiveIndex = -1;
 
   function escapeHtml(value) {
@@ -864,6 +924,7 @@
   }
 
   function clearSidebarArtifacts(route) {
+    contextCoordinator.clear();
     setManagedBodyState(false);
     setManagedSidebarHeader(false);
     removeSidebar();
@@ -944,6 +1005,12 @@
     `;
   }
 
+  function restoreNativeAttribute(node, name, wasPresent, value) {
+    if (!node || !name) return;
+    if (wasPresent) node.setAttribute(name, value || "");
+    else node.removeAttribute(name);
+  }
+
   function setManagedSidebarHeader(enabled) {
     let parts = getSidebarHeaderParts();
     if (!parts && enabled) {
@@ -959,6 +1026,13 @@
         header.dataset.erpwNativeHeaderIcon = icon ? icon.innerHTML : "";
         header.dataset.erpwNativeHeaderTitle = title ? title.textContent : "";
         header.dataset.erpwNativeHeaderSubtitle = subtitle ? subtitle.textContent : "";
+        header.dataset.erpwNativeHeaderHadHref = header.hasAttribute("href") ? "1" : "0";
+        header.dataset.erpwNativeHeaderHref = header.getAttribute("href") || "";
+        const nativeDropIcon = header.querySelector(".drop-icon");
+        header.dataset.erpwNativeDropHadAriaHidden = nativeDropIcon && nativeDropIcon.hasAttribute("aria-hidden") ? "1" : "0";
+        header.dataset.erpwNativeDropAriaHidden = nativeDropIcon ? nativeDropIcon.getAttribute("aria-hidden") || "" : "";
+        header.dataset.erpwNativeDropHadTabindex = nativeDropIcon && nativeDropIcon.hasAttribute("tabindex") ? "1" : "0";
+        header.dataset.erpwNativeDropTabindex = nativeDropIcon ? nativeDropIcon.getAttribute("tabindex") || "" : "";
       }
       header.classList.add("erpw-sales-console-sidebar-header");
       header.setAttribute("href", config.homePath);
@@ -983,10 +1057,22 @@
     if (icon) icon.innerHTML = header.dataset.erpwNativeHeaderIcon || "";
     if (title) title.textContent = header.dataset.erpwNativeHeaderTitle || "";
     if (subtitle) subtitle.textContent = header.dataset.erpwNativeHeaderSubtitle || "";
+    restoreNativeAttribute(header, "href", header.dataset.erpwNativeHeaderHadHref === "1", header.dataset.erpwNativeHeaderHref);
+    const dropIcon = header.querySelector(".drop-icon");
+    if (dropIcon) {
+      restoreNativeAttribute(dropIcon, "aria-hidden", header.dataset.erpwNativeDropHadAriaHidden === "1", header.dataset.erpwNativeDropAriaHidden);
+      restoreNativeAttribute(dropIcon, "tabindex", header.dataset.erpwNativeDropHadTabindex === "1", header.dataset.erpwNativeDropTabindex);
+    }
     delete header.dataset.erpwNativeHeaderCaptured;
     delete header.dataset.erpwNativeHeaderIcon;
     delete header.dataset.erpwNativeHeaderTitle;
     delete header.dataset.erpwNativeHeaderSubtitle;
+    delete header.dataset.erpwNativeHeaderHadHref;
+    delete header.dataset.erpwNativeHeaderHref;
+    delete header.dataset.erpwNativeDropHadAriaHidden;
+    delete header.dataset.erpwNativeDropAriaHidden;
+    delete header.dataset.erpwNativeDropHadTabindex;
+    delete header.dataset.erpwNativeDropTabindex;
   }
 
   function ensureSidebarWrapper() {
@@ -1027,12 +1113,15 @@
         { key: config.workspaceId === "procurement" ? "procurement_console_home" : "sales_console_home", label: "Overview", icon: "home", target: { kind: "page", route: config.homeRoute } },
       ];
     return {
+      schema_version: SIDEBAR_CONTEXT_SCHEMA_VERSION,
       workspace: config.workspace,
       sidebar: {
+        schema_version: SIDEBAR_CONTEXT_SCHEMA_VERSION,
         workspace_id: config.workspaceId,
         title: config.title,
         mode_label: config.modeLabel,
-        scope_label: "",
+        scope_label: config.workspaceId === "finance" ? "Read-only overview" : "",
+        items: fallbackItems,
         sections: [
           {
             key: config.sidebar.sectionKey || (config.workspaceId === "procurement" ? "workspace" : "browse"),
@@ -1164,6 +1253,237 @@
     return true;
   }
 
+  function sidebarTargetSignature(target) {
+    if (!target || typeof target !== "object" || Array.isArray(target)) return "";
+    const keys = Object.keys(target).sort();
+    if (target.kind === "page" && keys.length === 2 && keys[0] === "kind" && keys[1] === "route") {
+      if (typeof target.route !== "string" || !target.route || target.route !== target.route.trim()) return "";
+      return `page:${target.route}`;
+    }
+    if (target.kind === "worklist" && keys.length === 2 && keys[0] === "kind" && keys[1] === "queue_key") {
+      if (typeof target.queue_key !== "string" || !target.queue_key || target.queue_key !== target.queue_key.trim()) return "";
+      return `worklist:${target.queue_key}`;
+    }
+    return "";
+  }
+
+  function sidebarTargetAllowed(workspace, target) {
+    const signature = sidebarTargetSignature(target);
+    if (!signature || !workspace) return false;
+    const allowed = new Set(
+      (Array.isArray(workspace.fallbackItems) ? workspace.fallbackItems : [])
+        .map((item) => sidebarTargetSignature(item && item.target))
+        .filter(Boolean)
+    );
+    return allowed.has(signature);
+  }
+
+  function isPlainSearchObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+
+  function hasOnlySearchKeys(value, allowed, required) {
+    if (!isPlainSearchObject(value)) return false;
+    const allowedKeys = new Set(allowed || []);
+    const requiredKeys = new Set(required || []);
+    return Object.keys(value).every((key) => allowedKeys.has(key))
+      && Array.from(requiredKeys).every((key) => Object.prototype.hasOwnProperty.call(value, key));
+  }
+
+  function managedSearchRouteIdentity(route) {
+    if (!Array.isArray(route)) return "";
+    return JSON.stringify(route.map((part) => String(part == null ? "" : part)));
+  }
+
+  function managedSearchTargetSignature(config, target) {
+    if (!config || !target || !isPlainSearchObject(target)) return "";
+    const keys = Object.keys(target).sort();
+    if (target.kind === "worklist") {
+      if (!["sales", "procurement"].includes(config.workspaceId)) return "";
+      if (JSON.stringify(keys) !== JSON.stringify(["filters", "kind", "queue_key"])) return "";
+      if (!isPlainSearchObject(target.filters) || Object.keys(target.filters).length !== 1
+        || typeof target.filters.keyword !== "string" || !target.filters.keyword.trim()
+        || target.filters.keyword !== target.filters.keyword.trim() || target.filters.keyword.length > 120) return "";
+      const queueKey = typeof target.queue_key === "string" ? target.queue_key : "";
+      if (!queueKey || queueKey !== queueKey.trim()) return "";
+      const allowedQueues = new Set((config.fallbackItems || [])
+        .map((item) => item && item.target)
+        .filter((item) => item && item.kind === "worklist")
+        .map((item) => item.queue_key));
+      return allowedQueues.has(queueKey) ? `worklist:${queueKey}:${target.filters.keyword}` : "";
+    }
+    if (target.kind === "warehouse_page" && config.workspaceId === "warehouse") {
+      const route = typeof target.route === "string" ? target.route : "";
+      const routes = config.routes || {};
+      const allowedRouteShapes = new Map([
+        [routes.receiving, "route_parts"],
+        [routes.picking, "route_parts"],
+        [routes.stockException, "context_token"],
+        [routes.stockPosture, "context_token"],
+        [routes.movement, "context_token"],
+      ].filter(([allowedRoute]) => typeof allowedRoute === "string" && allowedRoute));
+      const expectedShape = allowedRouteShapes.get(route);
+      if (!route || route !== route.trim() || !expectedShape) return "";
+      const expectedKeys = expectedShape === "route_parts"
+        ? ["kind", "route", "route_parts"]
+        : ["context_token", "kind", "route"];
+      if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) return "";
+      if (expectedShape === "route_parts") {
+        if (!Array.isArray(target.route_parts) || !target.route_parts.length || target.route_parts.length > 2
+          || target.route_parts.some((part) => typeof part !== "string" || !part.trim() || part !== part.trim() || part.length > 180)) return "";
+        return `warehouse_page:${route}:${target.route_parts.join("/")}`;
+      }
+      if (typeof target.context_token !== "string" || !target.context_token.trim()
+        || target.context_token !== target.context_token.trim() || target.context_token.length > 512) return "";
+      return `warehouse_page:${route}:${target.context_token}`;
+    }
+    return "";
+  }
+
+  function managedSearchTargetAllowed(config, target) {
+    return Boolean(managedSearchTargetSignature(config, target));
+  }
+
+  function validateSearchPreview(config, preview, topLevelTarget) {
+    if (!hasOnlySearchKeys(
+      preview,
+      ["title", "subtitle", "chips", "facts", "target", "primary_action_label", "boundary_note"],
+      ["title", "subtitle", "chips", "facts", "target", "primary_action_label", "boundary_note"]
+    )) return false;
+    if (![preview.title, preview.subtitle, preview.primary_action_label, preview.boundary_note]
+      .every((value) => typeof value === "string")) return false;
+    if (!Array.isArray(preview.chips) || preview.chips.some((value) => typeof value !== "string")) return false;
+    if (!Array.isArray(preview.facts) || preview.facts.some((fact) => !hasOnlySearchKeys(fact, ["label", "value"], ["label", "value"])
+      || typeof fact.label !== "string" || typeof fact.value !== "string")) return false;
+    const previewTarget = managedSearchTargetSignature(config, preview.target);
+    return Boolean(previewTarget) && previewTarget === managedSearchTargetSignature(config, topLevelTarget);
+  }
+
+  function validateManagedSearchResult(config, item) {
+    const allowedKeys = [
+      "id", "result_type", "group_key", "group", "group_label", "doctype", "name", "label", "title",
+      "subtitle", "meta", "badge_label", "result_label", "target", "preview", "primary_action_label",
+    ];
+    if (!hasOnlySearchKeys(item, allowedKeys, ["target"])) return false;
+    if (!Object.entries(item).every(([key, value]) => key === "target" || key === "preview" || typeof value === "string")) return false;
+    if (!managedSearchTargetAllowed(config, item.target)) return false;
+    if (Object.prototype.hasOwnProperty.call(item, "preview") && !validateSearchPreview(config, item.preview, item.target)) return false;
+    return true;
+  }
+
+  function validateManagedSearchPayload(config, payload) {
+    const allowedKeys = ["state", "query", "message", "groups", "results", "no_effect"];
+    if (!hasOnlySearchKeys(payload, allowedKeys, ["state", "query", "message", "results"])) return false;
+    if (!["idle", "empty", "ready", "restricted", "unavailable"].includes(payload.state)
+      || typeof payload.query !== "string" || typeof payload.message !== "string"
+      || !Array.isArray(payload.results) || !payload.results.every((item) => validateManagedSearchResult(config, item))) return false;
+    if (Object.prototype.hasOwnProperty.call(payload, "no_effect")
+      && (!isPlainSearchObject(payload.no_effect) || !Object.values(payload.no_effect).every((value) => value === false))) return false;
+    if (Object.prototype.hasOwnProperty.call(payload, "groups")) {
+      if (!Array.isArray(payload.groups) || payload.groups.some((group) => !hasOnlySearchKeys(group, ["key", "label", "results"], ["key", "label", "results"])
+        || typeof group.key !== "string" || typeof group.label !== "string" || !Array.isArray(group.results)
+        || !group.results.every((item) => validateManagedSearchResult(config, item)))) return false;
+    }
+    return true;
+  }
+
+  function normalizedManagedSearchItem(config, item) {
+    return Object.freeze({
+      group_label: String(item.group_label || item.group || procurementSearchLabel(item, config, "group") || item.doctype || "Record"),
+      badge_label: String(item.badge_label || item.result_label || procurementSearchLabel(item, config, "badge") || item.doctype || "Record"),
+      label: String(item.label || item.title || item.name || "Unnamed record"),
+      meta: String(item.meta || item.subtitle || ""),
+      target: Object.freeze(Object.assign(
+        {},
+        item.target,
+        item.target && item.target.filters ? { filters: Object.freeze(Object.assign({}, item.target.filters)) } : {},
+        item.target && item.target.route_parts ? { route_parts: Object.freeze(item.target.route_parts.slice()) } : {}
+      )),
+    });
+  }
+
+  function normalizeManagedSearchQuery(query) {
+    return String(query || "").trim();
+  }
+
+  function createManagedSearchGenerationCoordinator() {
+    let generation = 0;
+    let routeIdentity = "";
+    let normalizedQuery = "";
+    function begin(route, query) {
+      generation += 1;
+      routeIdentity = managedSearchRouteIdentity(route);
+      normalizedQuery = normalizeManagedSearchQuery(query);
+      return Object.freeze({ requestToken: generation, routeIdentity, normalizedQuery });
+    }
+    function current(route, requestToken, query) {
+      return Number.isInteger(requestToken)
+        && requestToken === generation
+        && managedSearchRouteIdentity(route) === routeIdentity
+        && normalizeManagedSearchQuery(query) === normalizedQuery;
+    }
+    function invalidate() {
+      generation += 1;
+      routeIdentity = "";
+      normalizedQuery = "";
+      return Object.freeze({ requestToken: generation, routeIdentity, normalizedQuery });
+    }
+    return Object.freeze({ begin, current, invalidate });
+  }
+
+  function createManagedSearchEnvelope(config, route, requestToken, normalizedQuery, payload) {
+    const queryIdentity = normalizeManagedSearchQuery(normalizedQuery);
+    if (!config || !queryIdentity || !validateManagedSearchPayload(config, payload)
+      || normalizeManagedSearchQuery(payload.query) !== queryIdentity
+      || !Number.isInteger(requestToken) || requestToken < 1) return null;
+    const routeIdentity = managedSearchRouteIdentity(route);
+    if (!routeIdentity) return null;
+    return Object.freeze({
+      schema_version: MANAGED_SEARCH_SCHEMA_VERSION,
+      workspace_id: config.workspaceId,
+      route_identity: routeIdentity,
+      request_token: requestToken,
+      normalized_query: queryIdentity,
+      payload: Object.freeze({
+        state: payload.state,
+        query: queryIdentity,
+        message: payload.message,
+        results: Object.freeze(payload.results.map((item) => normalizedManagedSearchItem(config, item))),
+      }),
+    });
+  }
+
+  function managedSearchEnvelopeCurrent(envelope, config, route, requestToken, normalizedQuery) {
+    const queryIdentity = normalizeManagedSearchQuery(normalizedQuery);
+    return hasOnlySearchKeys(envelope, ["schema_version", "workspace_id", "route_identity", "request_token", "normalized_query", "payload"], ["schema_version", "workspace_id", "route_identity", "request_token", "normalized_query", "payload"])
+      && envelope.schema_version === MANAGED_SEARCH_SCHEMA_VERSION
+      && envelope.workspace_id === config.workspaceId
+      && envelope.route_identity === managedSearchRouteIdentity(route)
+      && envelope.request_token === requestToken
+      && envelope.normalized_query === queryIdentity
+      && envelope.payload
+      && envelope.payload.query === queryIdentity;
+  }
+
+  function dispatchManagedSearchTarget(envelope, index, config, route, requestToken, normalizedQuery, executor) {
+    if (!managedSearchEnvelopeCurrent(envelope, config, route, requestToken, normalizedQuery)) return false;
+    const item = envelope.payload && envelope.payload.results ? envelope.payload.results[index] : null;
+    if (!item || !managedSearchTargetAllowed(config, item.target) || typeof executor !== "function") return false;
+    executor(item.target);
+    return true;
+  }
+
+  function executeSidebarTarget(target) {
+    const route = getRoute();
+    if (!isManagedRoute(route)) return false;
+    const config = workspaceConfig(route);
+    if (!sidebarTargetAllowed(config.workspace, target)) return false;
+    executeTarget(target);
+    return true;
+  }
+
   function executeTarget(target) {
     if (!target) return;
     const config = workspaceConfig(getRoute());
@@ -1180,11 +1500,6 @@
       return;
     }
     if (target.kind === "page" && target.route) return routeToPage(target.route);
-    if (target.kind === "new_doc" && target.doctype) return frappe.new_doc(target.doctype);
-    if (target.kind === "form" && target.doctype && target.name) return frappe.set_route("Form", target.doctype, target.name);
-    if (target.kind === "list" && target.doctype) return routeToList(target.doctype, target.filters || null);
-    if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);
-    if (target.kind === "report_page" && target.report_key) return routeToReportPage(target.report_key);
     if (target.kind === "worklist" && target.queue_key) {
       const route = getRoute();
       const config = workspaceConfig(route);
@@ -1230,13 +1545,16 @@
     };
   }
 
-  function resetWorkspaceSearch(message) {
+  function resetWorkspaceSearch(message, normalizedQuery = "") {
     resetSearchTimer();
-    searchRequestToken += 1;
+    const generation = searchGenerationCoordinator.begin(getRoute(), normalizedQuery);
+    searchRequestToken = generation.requestToken;
+    searchNormalizedQuery = generation.normalizedQuery;
     searchResults = [];
+    activeSearchEnvelope = null;
     searchActiveIndex = -1;
     const elements = currentSearchElements();
-    if (!elements) return;
+    if (!elements) return searchRequestToken;
     if (message) {
       elements.$status.text(message).removeAttr("hidden");
     } else {
@@ -1244,6 +1562,7 @@
     }
     elements.$results.empty().attr("hidden", true);
     elements.$input.attr("aria-expanded", "false").removeAttr("aria-activedescendant");
+    return searchRequestToken;
   }
 
   function setWorkspaceSearchActive(index) {
@@ -1269,17 +1588,25 @@
   function chooseWorkspaceSearchResult(index) {
     const item = searchResults[index];
     if (!item) return false;
-    if (searchDialog) searchDialog.hide();
-    executeTarget(item.target || null);
-    return true;
+    const route = getRoute();
+    const config = workspaceConfig(route);
+    const dispatched = dispatchManagedSearchTarget(
+      activeSearchEnvelope, index, config, route, searchRequestToken, searchNormalizedQuery, executeTarget
+    );
+    if (dispatched && searchDialog) searchDialog.hide();
+    return dispatched;
   }
 
-  function renderWorkspaceSearchResults(payload) {
+  function renderWorkspaceSearchResults(envelope) {
     const elements = currentSearchElements();
     if (!elements) return;
-    const config = workspaceConfig(getRoute());
+    const route = getRoute();
+    const config = workspaceConfig(route);
+    if (!managedSearchEnvelopeCurrent(envelope, config, route, searchRequestToken, searchNormalizedQuery)) return false;
+    const payload = envelope.payload;
 
-    searchResults = Array.isArray(payload && payload.results) ? payload.results : [];
+    activeSearchEnvelope = envelope;
+    searchResults = Array.isArray(payload.results) ? payload.results : [];
     searchActiveIndex = searchResults.length ? 0 : -1;
 
     if (!searchResults.length) {
@@ -1336,19 +1663,22 @@
     elements.$results.find("[data-erpw-sales-search-index]").on("click", function () {
       chooseWorkspaceSearchResult(Number(this.getAttribute("data-erpw-sales-search-index")));
     });
+    return true;
   }
 
-  function runWorkspaceSearch(query) {
-    const needle = String(query || "").trim();
-    const requestToken = searchRequestToken + 1;
-    searchRequestToken = requestToken;
+  function runWorkspaceSearch(query, generation = null) {
+    const needle = normalizeManagedSearchQuery(query);
+    const requestRoute = generation && Array.isArray(generation.route)
+      ? generation.route.slice()
+      : getRoute().slice();
+    const requestToken = generation && Number.isInteger(generation.requestToken)
+      ? generation.requestToken
+      : resetWorkspaceSearch(null, needle);
 
-    if (needle.length < 2) {
-      resetWorkspaceSearch();
-      return;
-    }
+    if (needle.length < 2 || requestToken !== searchRequestToken || needle !== searchNormalizedQuery
+      || !searchGenerationCoordinator.current(requestRoute, requestToken, needle)) return;
 
-    const config = workspaceConfig(getRoute());
+    const config = workspaceConfig(requestRoute);
     const elements = currentSearchElements();
     if (elements) {
       elements.$status.text("Searching...").removeAttr("hidden");
@@ -1358,23 +1688,36 @@
       method: config.searchMethod,
       args: { query: needle, limit: 12 },
     })).then((response) => {
-      if (requestToken !== searchRequestToken) return;
-      renderWorkspaceSearchResults(response && response.message ? response.message : {});
+      if (requestToken !== searchRequestToken || needle !== searchNormalizedQuery
+        || !searchGenerationCoordinator.current(requestRoute, requestToken, needle)) return;
+      const currentRoute = getRoute();
+      const currentConfig = workspaceConfig(currentRoute);
+      if (currentConfig.workspaceId !== config.workspaceId
+        || managedSearchRouteIdentity(currentRoute) !== managedSearchRouteIdentity(requestRoute)) return;
+      const envelope = createManagedSearchEnvelope(
+        config, requestRoute, requestToken, needle, response && response.message ? response.message : {}
+      );
+      if (!envelope) {
+        resetWorkspaceSearch(`${config.title} search is temporarily unavailable.`, needle);
+        return;
+      }
+      renderWorkspaceSearchResults(envelope);
     }).catch(() => {
-      if (requestToken !== searchRequestToken) return;
-      resetWorkspaceSearch(`${config.title} search is temporarily unavailable.`);
+      if (requestToken !== searchRequestToken || needle !== searchNormalizedQuery
+        || !searchGenerationCoordinator.current(requestRoute, requestToken, needle)
+        || workspaceConfig(getRoute()).workspaceId !== config.workspaceId
+        || managedSearchRouteIdentity(getRoute()) !== managedSearchRouteIdentity(requestRoute)) return;
+      resetWorkspaceSearch(`${config.title} search is temporarily unavailable.`, needle);
     });
   }
 
   function scheduleWorkspaceSearch(query) {
-    const needle = String(query || "").trim();
-    resetSearchTimer();
-    if (needle.length < 2) {
-      resetWorkspaceSearch();
-      return;
-    }
+    const needle = normalizeManagedSearchQuery(query);
+    const requestRoute = getRoute().slice();
+    const requestToken = resetWorkspaceSearch(null, needle);
+    if (needle.length < 2) return;
     searchTimer = window.setTimeout(() => {
-      runWorkspaceSearch(needle);
+      runWorkspaceSearch(needle, { requestToken, route: requestRoute });
     }, 160);
   }
 
@@ -1491,50 +1834,111 @@
     }, 30);
   }
 
+  function workspaceIdentity(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+    const hasCamel = Object.prototype.hasOwnProperty.call(value, "workspaceId");
+    const hasSnake = Object.prototype.hasOwnProperty.call(value, "workspace_id");
+    if (hasCamel && (typeof value.workspaceId !== "string" || !value.workspaceId || value.workspaceId !== value.workspaceId.trim())) return "";
+    if (hasSnake && (typeof value.workspace_id !== "string" || !value.workspace_id || value.workspace_id !== value.workspace_id.trim())) return "";
+
+    const camel = hasCamel ? value.workspaceId : "";
+    const snake = hasSnake ? value.workspace_id : "";
+    if (camel && snake && camel !== snake) return "";
+    return camel || snake;
+  }
+  function sidebarItemsValid(items, workspace) {
+    return Array.isArray(items) && items.every((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      if (Object.keys(item).some((key) => !["key", "label", "icon", "target"].includes(key))) return false;
+      return typeof item.key === "string"
+        && typeof item.label === "string"
+        && typeof item.icon === "string"
+        && sidebarTargetAllowed(workspace, item.target);
+    });
+  }
+
+
+  function sidebarSectionsValid(sidebar, workspace) {
+    if (!sidebar || typeof sidebar !== "object" || Array.isArray(sidebar) || !Array.isArray(sidebar.sections)) return false;
+    return sidebar.sections.every((section) => {
+      if (!section || typeof section !== "object" || Array.isArray(section)) return false;
+      if (Object.keys(section).some((key) => !["key", "label", "items"].includes(key))) return false;
+      if (typeof section.key !== "string" || typeof section.label !== "string" || !Array.isArray(section.items)) return false;
+      return sidebarItemsValid(section.items, workspace);
+    });
+  }
+
+  function financeSidebarCopyValid(sidebar, expectedWorkspaceId) {
+    if (expectedWorkspaceId !== "finance") return true;
+    const sections = Array.isArray(sidebar.sections) ? sidebar.sections : [];
+    const rootItems = Array.isArray(sidebar.items) ? sidebar.items : [];
+    const validItems = (items) => items.length === 1
+      && items[0].key === "finance_control_desk_home"
+      && items[0].label === "Overview"
+      && items[0].icon === "home";
+    return sidebar.title === "Finance Control Desk"
+      && sidebar.mode_label === "Read-only aggregate posture"
+      && ["Read-only overview", "Restricted"].includes(sidebar.scope_label)
+      && sections.length === 1
+      && sections[0].key === "workspace"
+      && sections[0].label === "Workspace"
+      && validItems(rootItems)
+      && validItems(Array.isArray(sections[0].items) ? sections[0].items : []);
+  }
+
+  function sidebarPayloadMatchesWorkspace(payload, expectedWorkspaceId) {
+    if (typeof expectedWorkspaceId !== "string" || !expectedWorkspaceId || expectedWorkspaceId !== expectedWorkspaceId.trim()) return false;
+    const expected = expectedWorkspaceId;
+    const topLevel = workspaceIdentity(payload && payload.workspace);
+    const nested = workspaceIdentity(payload && payload.sidebar);
+    const workspace = workspaceFromRegistry(expected);
+    return Boolean(expected && payload && payload.sidebar && workspace)
+      && payload.schema_version === SIDEBAR_CONTEXT_SCHEMA_VERSION
+      && sidebarItemsValid(payload.sidebar.items, workspace)
+      && payload.sidebar.schema_version === SIDEBAR_CONTEXT_SCHEMA_VERSION
+      && topLevel === expected
+      && nested === expected
+      && sidebarSectionsValid(payload.sidebar, workspace)
+      && financeSidebarCopyValid(payload.sidebar, expected);
+  }
+
   function primePayload(payload) {
-    if (!payload || !payload.sidebar) return false;
+    const expectedKey = workspaceConfig(getRoute()).workspaceId;
+    if (!sidebarPayloadMatchesWorkspace(payload, expectedKey)) return false;
     const workspace = payload.workspace || {};
-    cachedWorkspaceId = workspaceId(workspace) || workspaceId(workspaceConfig(getRoute()).workspace);
-    cachedContext = {
+    const key = workspaceId(workspace);
+    contextCoordinator.prime(key, {
+      schema_version: payload.schema_version,
       workspace,
       context: payload.context || {},
       scope: payload.scope || {},
       ui_profile: payload.ui_profile || {},
       sidebar: payload.sidebar || {},
       fetched_at: payload.fetched_at || null,
-    };
+    });
     return true;
   }
 
-  function loadSidebarContext() {
-    const route = getRoute();
+  function loadSidebarContext(routeOverride) {
+    const route = Array.isArray(routeOverride) ? routeOverride : getRoute();
     const config = workspaceConfig(route);
-    if (cachedContext && cachedContext.sidebar && cachedWorkspaceId === config.workspaceId) {
-      return Promise.resolve(cachedContext);
-    }
-
-    if (contextPromise && contextPromiseWorkspaceId === config.workspaceId) return contextPromise;
-
-    contextPromiseWorkspaceId = config.workspaceId;
-    contextPromise = Promise.resolve(frappe.call({
-      method: config.sidebarContextMethod,
-    })).then((response) => {
-      const payload = response && response.message ? response.message : {};
-      cachedContext = payload && payload.sidebar ? payload : fallbackContext(route);
-      cachedWorkspaceId = config.workspaceId;
-      return cachedContext;
-    }).catch(() => {
-      cachedContext = fallbackContext(route);
-      cachedWorkspaceId = config.workspaceId;
-      return cachedContext;
-    }).then((payload) => {
-      contextPromise = null;
-      contextPromiseWorkspaceId = "";
-      return payload;
-    });
-
-    return contextPromise;
+    const routeSignature = JSON.stringify(route || []);
+    const routeIsCurrent = () => {
+      const currentRoute = getRoute();
+      return workspaceConfig(currentRoute).workspaceId === config.workspaceId
+        && JSON.stringify(currentRoute || []) === routeSignature;
+    };
+    return contextCoordinator.load(
+      config.workspaceId,
+      () => Promise.resolve(frappe.call({ method: config.sidebarContextMethod })).then((response) => {
+        if (!routeIsCurrent()) return null;
+        const payload = response && response.message ? response.message : {};
+        return sidebarPayloadMatchesWorkspace(payload, config.workspaceId) ? payload : fallbackContext(route);
+      }),
+      () => routeIsCurrent() ? fallbackContext(route) : null
+    );
   }
+
 
   function buildSignature(sidebar, activeKey, config) {
     const searchConfig = config && config.search ? config.search : {};
@@ -1553,10 +1957,14 @@
 
   function renderSidebar(contextPayload, activeKey) {
     ensureStyles();
+    const config = workspaceConfig(getRoute());
+    if (!sidebarPayloadMatchesWorkspace(contextPayload, config.workspaceId)) {
+      removeSidebar();
+      return false;
+    }
     const wrapper = ensureSidebarWrapper();
     if (!wrapper) return false;
 
-    const config = workspaceConfig(getRoute());
     const fallbackPayload = fallbackContext(getRoute()) || {};
     const sidebar = contextPayload && contextPayload.sidebar ? contextPayload.sidebar : fallbackPayload.sidebar;
     if (!sidebar) {
@@ -1686,7 +2094,7 @@
         event.stopPropagation();
         if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
         const item = wrapper._erpwSidebarItems && wrapper._erpwSidebarItems.get(element.getAttribute("data-erpw-sidebar-index"));
-        executeTarget(item && item.target ? item.target : null);
+        executeSidebarTarget(item && item.target ? item.target : null);
       });
     });
 
@@ -1709,11 +2117,18 @@
 
     const activeKey = resolveActiveKey(route);
     const config = workspaceConfig(route);
-    const initialContext = cachedContext && cachedContext.sidebar && cachedWorkspaceId === config.workspaceId
-      ? cachedContext
-      : fallbackContext(route);
+    const routeSignature = JSON.stringify(route || []);
+    const initialContext = contextCoordinator.peek(config.workspaceId) || fallbackContext(route);
     renderSidebar(initialContext, activeKey);
-    return loadSidebarContext().then((contextPayload) => renderSidebar(contextPayload, activeKey));
+    return loadSidebarContext(route).then((contextPayload) => {
+      if (!contextPayload) return false;
+      const currentRoute = getRoute();
+      const currentConfig = workspaceConfig(currentRoute);
+      if (currentConfig.workspaceId !== config.workspaceId || JSON.stringify(currentRoute || []) !== routeSignature) {
+        return false;
+      }
+      return renderSidebar(contextPayload, resolveActiveKey(currentRoute));
+    });
   }
 
   function scheduleSync(delayMs) {
@@ -1742,12 +2157,16 @@
     syncTimer = window.setTimeout(tick, Number.isFinite(delayMs) ? delayMs : 0);
   }
 
+  function synchronizeSidebarRoute(route, managedSync, unmanagedClear) {
+    if (isManagedRoute(route)) return managedSync();
+    return unmanagedClear(route);
+  }
+
   function scheduleSyncSeries() {
     [0, 40, 90, 160, 260, 420, 720].forEach((delay) => {
       window.setTimeout(() => {
-        if (isManagedRoute(getRoute())) {
-          syncSidebarNow();
-        }
+        const route = getRoute();
+        synchronizeSidebarRoute(route, syncSidebarNow, clearSidebarArtifacts);
       }, delay);
     });
   }
@@ -1785,16 +2204,51 @@
     openWorkspaceSearch("");
   }
 
+  function handleSidebarRouteChange(route, managedSchedule, unmanagedClear, deferManaged) {
+    if (!isManagedRoute(route)) {
+      contextCoordinator.clear();
+    } else {
+      contextCoordinator.clear(workspaceConfig(route).workspaceId);
+    }
+    if (!isManagedRoute(route)) {
+      unmanagedClear(route);
+      return false;
+    }
+    managedSchedule();
+    if (typeof deferManaged === "function") deferManaged(managedSchedule);
+    return true;
+  }
+
+  function handleCurrentRouteChange() {
+    resetSearchTimer();
+    const generation = searchGenerationCoordinator.invalidate();
+    searchRequestToken = generation.requestToken;
+    searchNormalizedQuery = generation.normalizedQuery;
+    searchResults = [];
+    activeSearchEnvelope = null;
+    searchActiveIndex = -1;
+    if (searchDialog && typeof searchDialog.hide === "function") {
+      searchDialog.hide();
+    }
+    const route = getRoute();
+    handleSidebarRouteChange(
+      route,
+      scheduleSyncSeries,
+      clearSidebarArtifacts,
+      (callback) => {
+        if (typeof frappe.after_ajax === "function") frappe.after_ajax(callback);
+      }
+    );
+  }
+
   function bindListeners() {
     if (listenersBound) return;
     listenersBound = true;
     if (frappe.router && typeof frappe.router.on === "function") {
-      frappe.router.on("change", () => {
-        frappe.after_ajax(() => scheduleSyncSeries());
-      });
+      frappe.router.on("change", handleCurrentRouteChange);
     }
-    window.addEventListener("hashchange", () => scheduleSyncSeries());
-    window.addEventListener("popstate", () => scheduleSyncSeries());
+    window.addEventListener("hashchange", handleCurrentRouteChange);
+    window.addEventListener("popstate", handleCurrentRouteChange);
     document.addEventListener("readystatechange", () => scheduleSync(10));
     if (document.body) {
       bindSidebarMutationObserver();
@@ -1805,13 +2259,41 @@
     document.addEventListener("keydown", handleWorkspaceSearchShortcut, true);
   }
 
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = Object.freeze({
+      SIDEBAR_CONTEXT_SCHEMA_VERSION,
+      MANAGED_SEARCH_SCHEMA_VERSION,
+      normalizeManagedSearchQuery,
+      createManagedSearchGenerationCoordinator,
+      managedSearchRouteIdentity,
+      managedSearchTargetAllowed,
+      createManagedSearchEnvelope,
+      managedSearchEnvelopeCurrent,
+      dispatchManagedSearchTarget,
+      createWorkspaceContextCoordinator,
+      handleSidebarRouteChange,
+      sidebarPayloadMatchesWorkspace,
+      financeSidebarCopyValid,
+      isManagedRoute,
+      fallbackContext,
+      sidebarTargetAllowed,
+      synchronizeSidebarRoute,
+      setManagedSidebarHeader,
+      restoreNativeAttribute,
+    });
+    return;
+  }
+
   bindListeners();
   scheduleSyncSeries();
 
+  delete sidebarRuntime.executeTarget;
   root.erpWorkspaceConsoleSidebar = Object.assign(sidebarRuntime, {
-    executeTarget,
+    executeSidebarTarget,
+    createManagedSearchGenerationCoordinator,
     primePayload,
     refresh() {
+      contextCoordinator.clear(workspaceConfig(getRoute()).workspaceId);
       scheduleSyncSeries();
     },
     syncSidebarNow,

@@ -13,6 +13,126 @@
   const INQUIRY_AI_METHOD = "erp_workspace_ui.sales_console.service.generate_customer_inquiry_assist";
   const consoleRuntime = window.erpWorkspaceConsoleRuntime || {};
 
+  function createSalesGuideScheduler(options) {
+    const opts = options || {};
+    const getRoute = opts.getRoute || (() => []);
+    const ensureGuide = opts.ensureGuide || (() => false);
+    const removeGuide = opts.removeGuide || (() => {});
+    const scheduleInterval = opts.scheduleInterval || ((callback, delay) => window.setInterval(callback, delay));
+    const cancelInterval = opts.cancelInterval || ((timerId) => window.clearInterval(timerId));
+    let timer = null;
+    let generation = 0;
+
+    function routeIdentity(route) {
+      return Array.isArray(route) ? JSON.stringify(route.map((part) => String(part == null ? "" : part))) : "";
+    }
+
+    function cancel(remove) {
+      generation += 1;
+      if (timer !== null) {
+        cancelInterval(timer);
+        timer = null;
+      }
+      if (remove !== false) removeGuide();
+    }
+
+    function schedule(openGuide) {
+      cancel(false);
+      const expectedRoute = routeIdentity(getRoute());
+      const expectedGeneration = generation;
+      const currentRoute = getRoute();
+      if (!Array.isArray(currentRoute) || currentRoute[0] !== PAGE_KEY || routeIdentity(currentRoute) !== expectedRoute) return false;
+      let attempts = 0;
+      timer = scheduleInterval(() => {
+        const route = getRoute();
+        if (generation !== expectedGeneration) {
+          return;
+        }
+        if (!Array.isArray(route) || route[0] !== PAGE_KEY || routeIdentity(route) !== expectedRoute) {
+          cancel();
+          return;
+        }
+        attempts += 1;
+        if (ensureGuide(openGuide) || attempts >= 12) {
+          cancelInterval(timer);
+          timer = null;
+        }
+      }, 500);
+      return true;
+    }
+
+    return Object.freeze({ schedule, cancel });
+  }
+
+  function createSalesBootstrapAuthority(options) {
+    const opts = options || {};
+    const getRoute = opts.getRoute || (() => []);
+    let generation = 0;
+    const routeIdentity = (route) => Array.isArray(route)
+      ? JSON.stringify(route.map((part) => String(part == null ? "" : part)))
+      : "";
+    function begin() {
+      const route = getRoute();
+      generation += 1;
+      return Object.freeze({ generation, route_identity: routeIdentity(route) });
+    }
+    function isCurrent(token) {
+      const route = getRoute();
+      return Boolean(token)
+        && token.generation === generation
+        && Array.isArray(route)
+        && route[0] === PAGE_KEY
+        && token.route_identity === routeIdentity(route);
+    }
+    function invalidate() { generation += 1; }
+    return Object.freeze({ begin, isCurrent, invalidate });
+  }
+  function createSalesInquiryAuthority(options) {
+    const opts = options || {};
+    const getRoute = opts.getRoute || (() => []);
+    let routeEpoch = 0;
+    const channelGenerations = Object.create(null);
+    const normalizeQuery = (value) => String(value || "").replace(/\s+/g, " ").trim().slice(0, 180);
+    const routeIdentity = (route) => Array.isArray(route)
+      ? JSON.stringify(route.map((part) => String(part == null ? "" : part)))
+      : "";
+    function begin(query, channel) {
+      const channelKey = String(channel || "");
+      channelGenerations[channelKey] = (channelGenerations[channelKey] || 0) + 1;
+      return Object.freeze({
+        route_epoch: routeEpoch,
+        channel_generation: channelGenerations[channelKey],
+        workspace_id: "sales",
+        route_identity: routeIdentity(getRoute()),
+        normalized_query: normalizeQuery(query),
+        channel: channelKey,
+      });
+    }
+    function isCurrent(token, query, channel) {
+      const route = getRoute();
+      const channelKey = String(channel || "");
+      return Boolean(token)
+        && token.route_epoch === routeEpoch
+        && token.channel_generation === channelGenerations[channelKey]
+        && token.workspace_id === "sales"
+        && token.route_identity === routeIdentity(route)
+        && token.normalized_query === normalizeQuery(query)
+        && token.channel === channelKey
+        && Array.isArray(route)
+        && route[0] === PAGE_KEY;
+    }
+    function invalidate(channel) {
+      const channelKey = String(channel || "");
+      if (channelKey) {
+        channelGenerations[channelKey] = (channelGenerations[channelKey] || 0) + 1;
+        return;
+      }
+      routeEpoch += 1;
+    }
+    return Object.freeze({ begin, isCurrent, invalidate, normalizeQuery });
+  }
+
+
   function getConsoleRuntimeMethod(name) {
     const method = consoleRuntime[name];
     if (typeof method === "function") return method;
@@ -1675,28 +1795,8 @@
       return;
     }
 
-    if (target.kind === "new_doc" && target.doctype) {
-      openNewDoc(target.doctype);
-      return;
-    }
-
-    if (target.kind === "form" && target.doctype && target.name) {
-      frappe.set_route("Form", target.doctype, target.name);
-      return;
-    }
-
-    if (target.kind === "list" && target.doctype) {
-      routeToList(target.doctype, target.filters || null);
-      return;
-    }
-
     if (target.kind === "report_page" && target.report_key) {
       routeToReportPage(target.report_key);
-      return;
-    }
-
-    if (target.kind === "report" && target.report_name) {
-      routeToReport(target.report_name, target.filters || null);
       return;
     }
 
@@ -2183,7 +2283,6 @@
       chooseInquirySuggestion(pageState, $section, Number(this.getAttribute("data-suggestion-index")));
     });
   }
-
   function chooseInquirySuggestion(pageState, $section, index) {
     const state = getInquirySuggestState(pageState);
     const item = state.items[index];
@@ -2213,6 +2312,7 @@
     const state = getInquirySuggestState(pageState);
     const requestToken = state.requestToken + 1;
     state.requestToken = requestToken;
+    const authority = pageState.inquiryAuthority.begin(query, "suggest");
 
     if (String(query || "").trim().length < 2) {
       resetInquirySuggestions(pageState, $section);
@@ -2224,6 +2324,7 @@
         method: INQUIRY_SUGGEST_METHOD,
         args: { query },
       });
+      if (!pageState.inquiryAuthority.isCurrent(authority, query, "suggest")) return;
       if (requestToken !== getInquirySuggestState(pageState).requestToken) return;
 
       const payload = response && response.message ? response.message : {};
@@ -2233,6 +2334,7 @@
       }
       resetInquirySuggestions(pageState, $section);
     } catch (error) {
+      if (!pageState.inquiryAuthority.isCurrent(authority, query, "suggest")) return;
       if (requestToken !== getInquirySuggestState(pageState).requestToken) return;
       resetInquirySuggestions(pageState, $section);
     }
@@ -2263,7 +2365,10 @@
     $wrap.attr("hidden", true);
   }
 
-  function resetInquiryView(pageState, $section) {
+  function resetInquiryView(pageState, $section, options) {
+    const settings = Object.assign({ focus: true }, options || {});
+    pageState.inquiryAuthority.invalidate();
+    clearInquirySuggestionTimer(pageState);
     pageState.inquiry = null;
     pageState.inquiryAssist = null;
     const $input = $section.find("[data-inquiry-input]");
@@ -2272,7 +2377,7 @@
     $section.find("[data-inquiry-status]").text("Type at least 2 characters to search.");
     $section.find("[data-inquiry-result]").empty().attr("hidden", true);
     resetInquiryAssist($section, "Generate a concise AI brief after resolving the inquiry.");
-    $input.trigger("focus");
+    if (settings.focus) $input.trigger("focus");
   }
 
   function showInquiryAssistReady($section, result) {
@@ -2327,6 +2432,7 @@
       return;
     }
 
+    const authority = pageState.inquiryAuthority.begin(inquiry.query || "", "assist");
     const $status = $section.find("[data-inquiry-ai-status]");
     const $button = $section.find("[data-inquiry-ai-generate]");
     const idleLabel = $button.attr("data-idle-label") || $button.text() || "Generate AI Brief";
@@ -2342,6 +2448,7 @@
           name: inquiry.anchor && inquiry.anchor.name,
         },
       });
+      if (!pageState.inquiryAuthority.isCurrent(authority, inquiry.query || "", "assist")) return;
       const payload = response && response.message ? response.message : {};
       pageState.inquiryAssist = payload;
       if (payload.state === "ready") {
@@ -2351,6 +2458,7 @@
       $status.text(payload.message || "AI brief is not available for this inquiry.");
       $button.text(idleLabel).removeClass("is-busy").prop("disabled", false);
     } catch (error) {
+      if (!pageState.inquiryAuthority.isCurrent(authority, inquiry.query || "", "assist")) return;
       $status.text("AI brief is temporarily unavailable.");
       $button.text(idleLabel).removeClass("is-busy").prop("disabled", false);
     }
@@ -2379,6 +2487,7 @@
       return;
     }
 
+    const authority = pageState.inquiryAuthority.begin(query, "search");
     resetInquirySuggestions(pageState, $section);
     $status.text("Searching linked customer and document context...");
     renderInquiryPlaceholder($result, "Resolving the commercial chain...");
@@ -2392,6 +2501,7 @@
           name: selectedName,
         },
       });
+      if (!pageState.inquiryAuthority.isCurrent(authority, query, "search")) return;
       const result = response && response.message ? response.message : {};
       pageState.inquiry = result;
 
@@ -2413,6 +2523,7 @@
       $status.text(result.message || "No matching customer chain was found.");
       resetInquiryAssist($section, result.message || "AI brief is available only after a visible customer chain is resolved.");
     } catch (error) {
+      if (!pageState.inquiryAuthority.isCurrent(authority, query, "search")) return;
       renderInquiryPlaceholder($result, "Customer inquiry is not available right now.");
       $status.text("Customer inquiry is temporarily unavailable.");
       resetInquiryAssist($section, "AI brief is temporarily unavailable.");
@@ -2625,27 +2736,63 @@
     return true;
   }
 
+  function removeSidebarGuide() {
+    const guide = document.querySelector("[data-sales-console-guide='1']");
+    if (guide && guide.parentNode) guide.parentNode.removeChild(guide);
+  }
+
+  const sidebarGuideScheduler = createSalesGuideScheduler({
+    getRoute: () => (typeof frappe.get_route === "function" ? frappe.get_route() : []),
+    ensureGuide: ensureSidebarGuide,
+    removeGuide: removeSidebarGuide,
+  });
+
   function scheduleSidebarGuide(openGuide) {
-    let attempts = 0;
-    const timer = window.setInterval(() => {
-      attempts += 1;
-      if (ensureSidebarGuide(openGuide) || attempts >= 12) {
-        window.clearInterval(timer);
-      }
-    }, 500);
+    return sidebarGuideScheduler.schedule(openGuide);
+  }
+
+  function bindSidebarGuideLifecycle(wrapper, pageState) {
+    if (!wrapper) return false;
+    const jquery = window.jQuery || window.$ || (typeof $ === "function" ? $ : null);
+    if (typeof jquery !== "function") return false;
+    jquery(wrapper)
+      .off("hide.salesConsoleGuide")
+      .on("hide.salesConsoleGuide", () => {
+        sidebarGuideScheduler.cancel();
+        if (pageState && pageState.inquiryAuthority) {
+          const $inquiry = jquery(wrapper).find("[data-section-key='inquiry']").first();
+          if ($inquiry.length) resetInquiryView(pageState, $inquiry, { focus: false });
+          else {
+            pageState.inquiryAuthority.invalidate();
+            clearInquirySuggestionTimer(pageState);
+          }
+        }
+        if (pageState && pageState.bootstrapAuthority) {
+          pageState.bootstrapAuthority.invalidate();
+          if (pageState.bootstrapState === "loading") pageState.bootstrapState = "invalidated";
+        }
+      });
+    return true;
   }
 
   async function loadBootstrap($root, pageState) {
+    const authority = pageState.bootstrapAuthority;
+    const requestToken = authority.begin();
+    pageState.bootstrapState = "loading";
     try {
       const response = await frappe.call({
         method: BOOTSTRAP_METHOD,
       });
 
+      if (!authority.isCurrent(requestToken)) return;
       const payload = response && response.message ? response.message : {};
       pageState.payload = payload;
-      if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.primePayload === "function") {
-        window.erpWorkspaceConsoleSidebar.primePayload(payload);
-        window.erpWorkspaceConsoleSidebar.refresh();
+      const sidebarRuntime = window.erpWorkspaceConsoleSidebar;
+      if (sidebarRuntime && typeof sidebarRuntime.primePayload === "function") {
+        const primed = sidebarRuntime.primePayload(payload);
+        if (primed && typeof sidebarRuntime.syncSidebarNow === "function") {
+          sidebarRuntime.syncSidebarNow();
+        }
       }
 
       applyHeaderContent($root, payload);
@@ -2662,7 +2809,9 @@
       });
 
       hydrateKnownMetrics($root, payload);
-      window.setTimeout(() => hydrateKnownMetrics($root, payload), 30);
+      window.setTimeout(() => {
+        if (authority.isCurrent(requestToken)) hydrateKnownMetrics($root, payload);
+      }, 30);
 
       try {
         const reportsCatalog = Array.isArray(payload.reports_catalog) && payload.reports_catalog.length
@@ -2673,8 +2822,11 @@
         $root.find('[data-section="reports"]').hide();
       }
 
+      pageState.bootstrapState = "ready";
       $root.attr("data-erpw-console-bootstrap", "ready");
     } catch (error) {
+      if (!authority.isCurrent(requestToken)) return;
+      pageState.bootstrapState = "degraded";
       $root.attr("data-erpw-console-bootstrap", "degraded");
       frappe.show_alert({
         message: __("Sales Console data is not available yet."),
@@ -2726,10 +2878,22 @@
     });
     syncNativeChrome(page, "Overview");
 
-    const pageState = { payload: {} };
+    const pageState = {
+      payload: {},
+      bootstrapState: "idle",
+      bootstrapAuthority: createSalesBootstrapAuthority({
+        getRoute: () => (typeof frappe.get_route === "function" ? frappe.get_route() : []),
+      }),
+      inquiryAuthority: createSalesInquiryAuthority({
+        getRoute: () => (typeof frappe.get_route === "function" ? frappe.get_route() : []),
+      }),
+    };
     const openGuide = () => showGuideDialog(pageState.payload);
+    wrapper.__salesConsolePageState = pageState;
+    wrapper.__salesConsoleOpenGuide = openGuide;
 
     const $root = $('<div class="sales-console-shell" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="loading"></div>');
+    wrapper.__salesConsoleRoot = $root;
 
     const $header = $(`
       <section class="sales-console-card sales-console-header">
@@ -2892,6 +3056,17 @@
     $inquirySection.find("[data-inquiry-clear]").on("click", () => resetInquiryView(pageState, $inquirySection));
     $inquirySection.find("[data-inquiry-ai-generate]").on("click", () => runInquiryAssist(pageState, $inquirySection));
     $inquirySection.find("[data-inquiry-input]").on("input", () => {
+      pageState.inquiryAuthority.invalidate();
+      clearInquirySuggestionTimer(pageState);
+      resetInquirySuggestions(pageState, $inquirySection);
+      pageState.inquiry = null;
+      pageState.inquiryAssist = null;
+      $inquirySection.find("[data-inquiry-result]").empty().attr("hidden", true);
+      const normalizedInput = pageState.inquiryAuthority.normalizeQuery($inquirySection.find("[data-inquiry-input]").val());
+      $inquirySection.find("[data-inquiry-status]").text(
+        normalizedInput.length < 2 ? "Type at least 2 characters to search." : "Press Search to review the current sales chain."
+      );
+      resetInquiryAssist($inquirySection, "Generate a concise AI brief after resolving the inquiry.");
       scheduleInquirySuggestions(pageState, $inquirySection);
     });
     $inquirySection.find("[data-inquiry-input]").on("focus", () => {
@@ -3138,6 +3313,7 @@
     }
     bindConsoleNavigationDelegates($root, pageState);
 
+    bindSidebarGuideLifecycle(wrapper, pageState);
     scheduleSidebarGuide(openGuide);
     loadBootstrap($root, pageState);
   }
@@ -3148,6 +3324,40 @@
     } catch (error) {
       renderFailureState(wrapper, error);
     }
+  }
+
+  function shouldReloadSalesBootstrap(pageState) {
+    return Boolean(pageState) && !["ready", "loading"].includes(pageState.bootstrapState);
+  }
+
+  function resumeCachedSalesPage(wrapper, hasShell, options) {
+    if (!hasShell || !wrapper) return false;
+    const opts = options || {};
+    const bindLifecycle = opts.bindLifecycle || bindSidebarGuideLifecycle;
+    const scheduleGuide = opts.scheduleGuide || scheduleSidebarGuide;
+    const reloadBootstrap = opts.reloadBootstrap || loadBootstrap;
+    const pageState = wrapper.__salesConsolePageState;
+    bindLifecycle(wrapper, pageState);
+    if (typeof wrapper.__salesConsoleOpenGuide === "function") {
+      scheduleGuide(wrapper.__salesConsoleOpenGuide);
+    }
+    if (shouldReloadSalesBootstrap(pageState) && wrapper.__salesConsoleRoot) {
+      reloadBootstrap(wrapper.__salesConsoleRoot, pageState);
+    }
+    return true;
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = Object.freeze({
+      createSalesGuideScheduler,
+      createSalesBootstrapAuthority,
+      createSalesInquiryAuthority,
+      shouldReloadSalesBootstrap,
+      resumeCachedSalesPage,
+      scheduleSidebarGuide,
+      bindSidebarGuideLifecycle,
+    });
+    return;
   }
 
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
@@ -3162,7 +3372,7 @@
       syncNativeChrome(wrapper.page, "Overview");
     }
     const host = wrapper && wrapper.page && wrapper.page.body ? wrapper.page.body : wrapper;
-    if ($(host || []).find(".sales-console-shell").length) return;
+    if (resumeCachedSalesPage(wrapper, $(host || []).find(".sales-console-shell").length > 0)) return;
     renderSafely(wrapper);
   };
 })();

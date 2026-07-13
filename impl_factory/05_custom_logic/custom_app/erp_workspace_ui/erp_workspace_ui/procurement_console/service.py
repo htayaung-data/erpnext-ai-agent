@@ -4,7 +4,10 @@ import frappe
 from frappe import _
 from frappe.utils import cstr, now_datetime
 
-from erp_workspace_ui.workspace_registry import get_procurement_workspace_definition
+from erp_workspace_ui.workspace_registry import (
+	WORKSPACE_SIDEBAR_SCHEMA_VERSION,
+	get_procurement_workspace_definition,
+)
 
 
 PROCUREMENT_ROLES = frozenset({"Purchase User", "Purchase Manager", "Purchase Master Manager"})
@@ -153,6 +156,7 @@ def build_sidebar(context: dict[str, object] | None = None) -> dict[str, object]
 		"Buyer workbench queues are available for procurement roles.",
 	) if not context or has_procurement_access(context) else restricted_state()
 	return {
+		"schema_version": WORKSPACE_SIDEBAR_SCHEMA_VERSION,
 		"workspace_id": workspace.get("workspace_id"),
 		"title": workspace.get("title"),
 		"mode_label": workspace.get("mode_label"),
@@ -223,6 +227,7 @@ def get_procurement_console_sidebar_context() -> dict[str, object]:
 		"Buyer workbench queues are available for procurement roles.",
 	) if has_procurement_access(context) else restricted_state()
 	return {
+		"schema_version": WORKSPACE_SIDEBAR_SCHEMA_VERSION,
 		"workspace": procurement_workspace_public_context(),
 		"context": context,
 		"scope": {
@@ -761,7 +766,7 @@ def _search_result_from_row(plan: dict[str, object], row: dict[str, object]) -> 
 	label_field = cstr(plan.get("label_field")).strip()
 	keyword_field = cstr(plan.get("keyword_field")).strip()
 	label = cstr(row.get(label_field)).strip() or name
-	keyword = cstr(row.get(keyword_field)).strip() or name
+	keyword = (cstr(row.get(keyword_field)).strip() or name)[:120]
 	meta_parts = [cstr(row.get(field)).strip() for field in plan.get("meta_fields") or []]
 	meta = " | ".join(part for part in meta_parts if part)
 	return {

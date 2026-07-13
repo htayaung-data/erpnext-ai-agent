@@ -149,15 +149,20 @@
   }
 
   function executeTarget(target) {
-    if (!target) return;
-    if (target.kind === "page" && target.route) {
-      const routeParts = Array.isArray(target.route_parts) ? target.route_parts : [];
-      frappe.route_options = target.options && typeof target.options === "object" ? Object.assign({}, target.options) : {};
-      return frappe.set_route.apply(frappe, [target.route].concat(routeParts));
+    if (!target || typeof target !== "object" || Array.isArray(target)) return false;
+    if (target.kind === "worklist" && typeof target.queue_key === "string" && target.queue_key.trim()) {
+      routeToWorklist(target.queue_key, target.filters || null);
+      return true;
     }
-    if (target.kind === "list" && target.doctype) return routeToList(target.doctype, target.filters || null);
-    if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);
-    if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
+    const allowedRoutes = new Set(["procurement-console-supplier", "procurement-console-item", "procurement-console-purchase-request-review", "procurement-console-purchase-request-form", "procurement-console-rfq-review", "procurement-console-rfq-form", "procurement-console-supplier-quotation-review", "procurement-console-supplier-quotation-form", "procurement-console-po-follow-up", "procurement-console-purchase-order-form"]);
+    if (target.kind === "page" && allowedRoutes.has(target.route)
+      && Array.isArray(target.route_parts) && target.route_parts.length === 1
+      && typeof target.route_parts[0] === "string" && target.route_parts[0].trim()) {
+      frappe.route_options = target.options && typeof target.options === "object" ? Object.assign({}, target.options) : {};
+      frappe.set_route(target.route, target.route_parts[0]);
+      return true;
+    }
+    return false;
   }
 
   function loadingConfig(queueKey) {

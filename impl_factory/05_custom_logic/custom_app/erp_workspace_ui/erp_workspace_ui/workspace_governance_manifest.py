@@ -281,7 +281,7 @@ ROUTE_MANIFEST: tuple[dict[str, Any], ...] = (
 	_route("warehouse", "warehouse-console-stock-exception", "detail", "productized_detail", "/desk/warehouse-console-stock-exception/<encoded-context>", "warehouse_stock_exception_review_shell", required_smoke_category="warehouse_phase_w6b_smoke", notes="Read-only stock exception review with custom Warehouse drilldowns only."),
 	_route("warehouse", "warehouse-console-stock-posture", "detail", "productized_detail", "/desk/warehouse-console-stock-posture/<encoded-context>", "warehouse_stock_posture_shell", required_smoke_category="warehouse_phase_w7a_smoke", notes="Read-only item and warehouse stock posture review with custom Warehouse drilldowns only."),
 	_route("warehouse", "warehouse-console-movement", "detail", "productized_detail", "/desk/warehouse-console-movement/<encoded-context>", "warehouse_movement_review_shell", required_smoke_category="warehouse_phase_w8b_smoke", notes="Read-only movement review with custom Warehouse drilldowns only."),
-	_route("finance", "finance-control-desk", "overview", "productized_overview", "/desk/finance-control-desk", "finance_control_desk_shell", required_smoke_category="finance_phase_f3_overview", notes="F3 read-only Finance & Accounting overview posture. No financial rows, amounts, ERP report APIs, native routes, or accounting execution."),
+	_route("finance", "finance-control-desk", "overview", "productized_overview", "/desk/finance-control-desk", "finance_control_desk_shell", required_smoke_category="finance_cycle1_source_smoke", notes="Cycle 1 read-only aggregate posture: Accounts Manager-only AR counts and MMK amount buckets, plus Accounts Manager-only AP counts when all semantic gates pass. No rows, native reports, routes, exports, or execution."),
 )
 
 ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
@@ -432,8 +432,8 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("warehouse-sidebar-stock-exceptions-navigation", "warehouse", "warehouse-sidebar", "sidebar_stock_exceptions_navigation", "productized_navigation", "worklist", label="Stock Exceptions", target_route_pattern="/desk/warehouse-console-worklist/stock-exceptions", notes="Sidebar entry opens the read-only stock exceptions view."),
 	_action("warehouse-sidebar-movement-navigation", "warehouse", "warehouse-sidebar", "sidebar_movement_navigation", "productized_navigation", "worklist", label="Movement Visibility", target_route_pattern="/desk/warehouse-console-worklist/movement-visibility", notes="Sidebar entry opens the read-only movement visibility view."),
 	_action("warehouse-sidebar-transfer-navigation", "warehouse", "warehouse-sidebar", "sidebar_transfer_navigation", "productized_navigation", "worklist", label="Transfer Visibility", target_route_pattern="/desk/warehouse-console-worklist/transfer-visibility", notes="Sidebar entry opens the read-only transfer visibility view."),
-	_action("finance-overview-refresh", "finance", "finance-control-desk", "refresh", "productized_secondary_action", "current_shell", label="Refresh", notes="F3 overview context reload only. No financial rows, report APIs, native routes, or accounting execution."),
-	_action("finance-sidebar-foundation-navigation", "finance", "finance-sidebar", "sidebar_foundation_navigation", "productized_navigation", "page", label="Foundation", target_route_pattern="/desk/finance-control-desk", notes="Sidebar entry opens the Finance & Accounting read-only overview shell."),
+	_action("finance-overview-refresh", "finance", "finance-control-desk", "refresh", "productized_secondary_action", "current_shell", label="Refresh", notes="Reloads only the Cycle 1 read-only aggregate posture. No rows, native reports, routes, exports, or accounting execution."),
+	_action("finance-sidebar-overview-navigation", "finance", "finance-sidebar", "sidebar_overview_navigation", "productized_navigation", "page", label="Overview", target_route_pattern="/desk/finance-control-desk", notes="Sidebar entry opens the Cycle 1 read-only aggregate posture: manager-only AR count/MMK amount and AP count when all gates pass; no rows, native reports, exports, or execution."),
 )
 
 FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
@@ -460,7 +460,7 @@ FORBIDDEN_MUTATION_GUARDS: tuple[dict[str, Any], ...] = (
 	},
 	{
 		"workspace_id": "finance",
-		"scope": "f2_shell_and_future_cycle_1_visibility_pages",
+		"scope": "cycle_1_manager_aggregate_ar_mmk_and_ap_count_posture_no_rows_or_execution",
 		"labels": FORBIDDEN_MUTATION_LABELS,
 		"allowed_only_when": "future Owner/Security approved Finance execution phase and manifest update",
 		"policy_doc": "_docs/erp-ui-customization/native-exception-policy-v1.md",

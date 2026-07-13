@@ -52,8 +52,8 @@
 
   function routeToSalesConsole() {
     const sidebar = root.erpWorkspaceConsoleSidebar || {};
-    if (typeof sidebar.executeTarget === "function") {
-      sidebar.executeTarget({ kind: "page", route: SALES_HOME_ROUTE });
+    if (typeof sidebar.executeSidebarTarget === "function") {
+      sidebar.executeSidebarTarget({ kind: "page", route: SALES_HOME_ROUTE });
       return true;
     }
     frappe.set_route(SALES_HOME_ROUTE);

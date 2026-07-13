@@ -2136,6 +2136,46 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("PERSISTENT_DEFAULT_HOME_PAGE_RULES", source)
         self.assertIn("BOOT_HOME_PAGE_RULES", source)
 
+    def test_managed_system_user_inventory_is_bounded_deterministic_and_fail_closed(self):
+        original_get_list = fake_frappe.get_list
+        calls = []
+
+        def bounded_get_list(doctype, **kwargs):
+            calls.append((doctype, kwargs))
+            return ["accounts@example.com", "sales@example.com"]
+
+        try:
+            fake_frappe.get_list = bounded_get_list
+            self.assertEqual(
+                boot._managed_system_users(),
+                ["accounts@example.com", "sales@example.com"],
+            )
+            self.assertEqual(calls[0][0], "User")
+            self.assertEqual(calls[0][1]["order_by"], "name asc")
+            self.assertEqual(calls[0][1]["limit_start"], 0)
+            self.assertEqual(
+                calls[0][1]["limit_page_length"],
+                boot.MANAGED_SYSTEM_USER_MAX_ROWS + 1,
+            )
+
+            fake_frappe.get_list = lambda *args, **kwargs: [
+                f"user-{index}@example.test"
+                for index in range(boot.MANAGED_SYSTEM_USER_MAX_ROWS + 1)
+            ]
+            self.assertEqual(boot._managed_system_users(), [])
+            fake_frappe.get_list = lambda *args, **kwargs: ["duplicate@example.test", "duplicate@example.test"]
+            self.assertEqual(boot._managed_system_users(), [])
+            fake_frappe.get_list = lambda *args, **kwargs: [""]
+            self.assertEqual(boot._managed_system_users(), [])
+
+            def denied_get_list(*args, **kwargs):
+                raise fake_frappe.PermissionError("denied")
+
+            fake_frappe.get_list = denied_get_list
+            self.assertEqual(boot._managed_system_users(), [])
+        finally:
+            fake_frappe.get_list = original_get_list
+
     def test_non_finance_roles_do_not_receive_finance_control_desk_home(self):
         cases = (
             ("system@example.com", ["System Manager"]),
@@ -2258,6 +2298,41 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         directory_payload = service.search_procurement_console_workspace("Alpha")
         self.assertTrue(directory_payload["results"])
         self.assertTrue(all((item["target"] or {}).get("kind") == "worklist" for item in directory_payload["results"]))
+
+    def test_procurement_quick_find_client_invalidates_stale_input_and_governs_targets(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "public"
+            / "js"
+            / "procurement_console"
+            / "procurement_console_page.js"
+        ).read_text()
+
+        self.assertIn("function beginQuickFindRequest(query)", source)
+        self.assertIn("function invalidateQuickFindRequests()", source)
+        self.assertIn("function quickFindRequestCurrent(authority, query)", source)
+        self.assertIn("function procurementTargetAllowed(target)", source)
+        self.assertIn("const authority = beginQuickFindRequest($input.val());", source)
+        self.assertIn("state.authority = authority;", source)
+        self.assertIn("invalidateQuickFindRequests();", source)
+        self.assertIn("function quickFindOpenCurrent(state, result, authority, query, connected, coordinator)", source)
+        self.assertIn("renderQuickFindPreview($section, state, result, authority);", source)
+        self.assertIn(
+            "if (!quickFindOpenCurrent(state, result, authority, currentQuery, Boolean(sectionNode && sectionNode.isConnected))) return;",
+            source,
+        )
+        self.assertIn("if (!quickFindRequestCurrent(authority, $input.val())) return;", source)
+        self.assertIn("if (!procurementTargetAllowed(target)) return;", source)
+        self.assertNotIn("requestSerial", source)
+        for forbidden in (
+            'target.kind === "new_doc"',
+            'target.kind === "form"',
+            'target.kind === "list"',
+            'target.kind === "report"',
+            'target.kind === "export"',
+            'target.kind === "print"',
+        ):
+            self.assertNotIn(forbidden, source)
 
     def test_procurement_workspace_search_restricted_for_non_procurement_user(self):
         _set_user("sales@example.com", ["Sales User"])
@@ -2401,12 +2476,25 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         self.assertIn("function routeToRoleHome", source)
         self.assertIn("Purchase Manager", source)
-        self.assertIn('frappe.set_route("procurement-console")', source)
+        self.assertIn('frappe.set_route("procurement-console-home")', source)
         self.assertIn('salesWorkspaceRoute("launcher", "sales-console-home")', source)
+        self.assertIn('frappe.set_route("finance-control-desk")', source)
         self.assertIn("hasWarehouseOperationalHomeRole", source)
         self.assertIn("hasWarehouseDeskBypassRole", source)
         self.assertIn('frappe.set_route("warehouse-console")', source)
         self.assertIn("scheduleRoleHomeRedirect", source)
+        self.assertLess(
+            source.index('salesWorkspaceRoute("launcher", "sales-console-home")'),
+            source.index('frappe.set_route("procurement-console-home")'),
+        )
+        self.assertLess(
+            source.index('frappe.set_route("procurement-console-home")'),
+            source.index('frappe.set_route("finance-control-desk")'),
+        )
+        self.assertLess(
+            source.index('frappe.set_route("finance-control-desk")'),
+            source.index('frappe.set_route("warehouse-console")'),
+        )
 
     def test_phase3_smoke_covers_direct_po_follow_up_route(self):
         smoke_path = Path(__file__).resolve().parents[2] / "ui_smoke" / "procurement_phase3_smoke.js"
@@ -2548,6 +2636,23 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn('frappe.set_route(config.reportRoute, slug)', source)
         self.assertIn('fallbackToProcurementManagedRoute(config, config.reportRoute, slug, ".erpw-report-shell")', source)
         self.assertGreaterEqual(source.count('event.stopImmediatePropagation'), 3)
+        self.assertNotIn('target.kind === "new_doc"', execute_target)
+        self.assertNotIn('target.kind === "form"', execute_target)
+        self.assertNotIn('target.kind === "list"', execute_target)
+        self.assertNotIn('target.kind === "report"', execute_target)
+        browser_exports = source[source.index("root.erpWorkspaceConsoleSidebar = Object.assign"):]
+        self.assertNotIn("\n    executeTarget,", browser_exports)
+        self.assertIn("\n    executeSidebarTarget,", browser_exports)
+        child_actions = (
+            Path(__file__).resolve().parents[1]
+            / "public"
+            / "js"
+            / "runtime"
+            / "child_page"
+            / "child_page_operating_actions.js"
+        ).read_text()
+        self.assertIn("sidebar.executeSidebarTarget", child_actions)
+        self.assertNotIn("sidebar.executeTarget", child_actions)
 
     def test_supplier_directory_uses_ready_read_only_list_contract(self):
         payload = worklist.get_procurement_console_worklist_context("supplier_directory")

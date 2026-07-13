@@ -91,6 +91,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "purchase_request_review": "procurement-console-purchase-request-review",
                 "purchase_request_form": "procurement-console-purchase-request-form",
                 "rfq_review": "procurement-console-rfq-review",
+                "rfq_form": "procurement-console-rfq-form",
                 "supplier_quotation_form": "procurement-console-supplier-quotation-form",
                 "supplier_quotation_review": "procurement-console-supplier-quotation-review",
                 "purchase_order_form": "procurement-console-purchase-order-form",
@@ -119,6 +120,18 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["managed_purchase_request_item_defaults"],
             "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_item_defaults",
+        )
+        self.assertEqual(
+            workspace["methods"]["managed_rfq_context"],
+            "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["managed_rfq_save"],
+            "erp_workspace_ui.procurement_console.managed_rfq.save_managed_rfq_draft",
+        )
+        self.assertEqual(
+            workspace["methods"]["managed_rfq_item_defaults"],
+            "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_item_defaults",
         )
         self.assertEqual(
             workspace["methods"]["managed_supplier_quotation_context"],
@@ -384,10 +397,10 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         workspace = get_finance_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "finance")
-        self.assertEqual(workspace["status"], "f4_ar_aggregate_posture")
+        self.assertEqual(workspace["status"], "cycle_1_f6_quality_gate_pending")
         self.assertEqual(workspace["title"], "Finance Control Desk")
         self.assertEqual(workspace["workspace_family"], "Finance & Accounting")
-        self.assertEqual(workspace["mode_label"], "Finance & Accounting Workspace")
+        self.assertEqual(workspace["mode_label"], "Read-only aggregate posture")
         self.assertEqual(
             workspace["routes"],
             {
@@ -410,9 +423,9 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             workspace["search"],
             {
                 "enabled": False,
-                "mode": "finance_f4_ar_aggregate_posture_no_rows",
+                "mode": "finance_cycle_1_aggregate_posture_no_rows",
                 "placement": "none",
-                "placeholder": "Finance search is not active for AR aggregate posture",
+                "placeholder": "Finance search is not available in Cycle 1",
             },
         )
         self.assertEqual(
@@ -420,7 +433,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             [
                 {
                     "key": "finance_control_desk_home",
-                    "label": "Foundation",
+                    "label": "Overview",
                     "icon": "home",
                     "target": {"kind": "page", "route": "finance-control-desk"},
                 },
@@ -495,9 +508,55 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(warehouse["recommended_name"], "Warehouse Console")
         self.assertEqual(warehouse["status"], "w8c_transfer_visibility")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
-        self.assertEqual(finance["status"], "f4_ar_aggregate_posture")
+        self.assertEqual(finance["status"], "cycle_1_f6_quality_gate_pending")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")
         self.assertEqual(executive["status"], "name_review")
+
+    def test_python_and_browser_roadmap_statuses_match_for_active_workspaces(self):
+        app_root = Path(__file__).resolve().parents[1]
+        browser_source = (app_root / "public/js/runtime/console/workspace_registry.js").read_text()
+        for item in get_workspace_roadmap()[:4]:
+            self.assertIn(
+                f'workspaceId: "{item["workspace_id"]}", matrixName: "{item["matrix_name"]}"',
+                browser_source,
+            )
+            self.assertIn(f'status: "{item["status"]}"', browser_source)
+        self.assertNotIn('status: "w8b_movement_review"', browser_source)
+
+    def test_browser_registry_includes_active_procurement_and_warehouse_contracts(self):
+        app_root = Path(__file__).resolve().parents[1]
+        browser_source = (app_root / "public/js/runtime/console/workspace_registry.js").read_text()
+
+        self.assertIn('rfqForm: "procurement-console-rfq-form"', browser_source)
+        self.assertIn('managedRfqContext: "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_context"', browser_source)
+        self.assertIn('managedRfqSave: "erp_workspace_ui.procurement_console.managed_rfq.save_managed_rfq_draft"', browser_source)
+        self.assertIn('managedRfqItemDefaults: "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_item_defaults"', browser_source)
+        self.assertIn('customerReturnIntakeDraft: "erp_workspace_ui.warehouse_console.service.save_warehouse_customer_return_intake_draft"', browser_source)
+        self.assertIn('customerReturnManagerDecision: "erp_workspace_ui.warehouse_console.service.save_warehouse_customer_return_manager_decision"', browser_source)
+        self.assertIn('supplierReturnCandidateDraft: "erp_workspace_ui.warehouse_console.service.save_warehouse_supplier_return_candidate_draft"', browser_source)
+        self.assertIn('supplierReturnManagerDecision: "erp_workspace_ui.warehouse_console.service.save_warehouse_supplier_return_manager_decision"', browser_source)
+
+    def test_all_sidebar_producers_emit_the_shared_versioned_identity_contract(self):
+        app_root = Path(__file__).resolve().parents[1]
+        producer_paths = {
+            "sales": app_root / "sales_console/service.py",
+            "procurement": app_root / "procurement_console/service.py",
+            "warehouse": app_root / "warehouse_console/service.py",
+            "finance": app_root / "finance_accounting/service.py",
+        }
+        for workspace_id, path in producer_paths.items():
+            with self.subTest(workspace_id=workspace_id):
+                source = path.read_text(encoding="utf-8")
+                self.assertIn("WORKSPACE_SIDEBAR_SCHEMA_VERSION", source)
+                self.assertIn('"schema_version": WORKSPACE_SIDEBAR_SCHEMA_VERSION', source)
+                self.assertIn('"workspace_id": workspace.get("workspace_id")', source)
+
+        sidebar_source = (app_root / "public/js/runtime/console/workspace_console_sidebar.js").read_text(encoding="utf-8")
+        self.assertIn('SIDEBAR_CONTEXT_SCHEMA_VERSION = "workspace-sidebar.v1"', sidebar_source)
+        self.assertIn("sidebarTargetAllowed", sidebar_source)
+        self.assertIn("sidebarSectionsValid", sidebar_source)
+        self.assertIn("topLevel === expected", sidebar_source)
+        self.assertIn("nested === expected", sidebar_source)
 
     def test_hooks_still_keep_sales_as_default_home_and_app_screen(self):
         include_js = list(hooks.app_include_js)

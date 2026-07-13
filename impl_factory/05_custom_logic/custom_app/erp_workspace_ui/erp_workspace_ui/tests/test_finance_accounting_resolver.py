@@ -300,21 +300,25 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertEqual(records, [_COMPANY])
         self.assertEqual(calls[0][0], "Company")
         self.assertNotIn("filters", calls[0][1])
+        self.assertEqual(calls[0][1]["order_by"], "name asc")
+        self.assertEqual(calls[0][1]["limit_start"], 0)
+        self.assertEqual(
+            calls[0][1]["limit_page_length"],
+            service.FINANCE_COMPANY_SCOPE_MAX_ROWS + 1,
+        )
         self.assertNotIn("disabled", repr(calls[0][1]))
 
-    def test_runtime_company_count_does_not_filter_disabled_field(self):
-        calls = []
+    def test_runtime_company_lookup_fails_closed_above_explicit_cap(self):
+        def fake_get_list(doctype, **kwargs):
+            self.assertEqual(doctype, "Company")
+            self.assertEqual(kwargs["limit_start"], 0)
+            self.assertEqual(kwargs["limit_page_length"], service.FINANCE_COMPANY_SCOPE_MAX_ROWS + 1)
+            return [dict(_COMPANY, name=f"Company {index}") for index in range(service.FINANCE_COMPANY_SCOPE_MAX_ROWS + 1)]
 
-        class _Database:
-            def count(self, doctype, filters=None):
-                calls.append((doctype, filters))
-                return 1
+        with patch.object(service.frappe, "get_list", side_effect=fake_get_list, create=True):
+            records = service._load_enabled_company_records()
 
-        with patch.object(service.frappe, "db", _Database(), create=True):
-            count = service._count_enabled_companies()
-
-        self.assertEqual(count, 1)
-        self.assertEqual(calls, [("Company", None)])
+        self.assertIsNone(records)
 
     def test_company_field_permission_error_returns_controlled_unavailable_state(self):
         def denied_get_list(doctype, **kwargs):
@@ -336,7 +340,7 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
 
-    def test_accounts_manager_single_company_fallback_skips_user_permission_lookup_when_denied(self):
+    def test_accounts_manager_single_visible_company_falls_back_when_user_permission_read_is_denied(self):
         calls = []
 
         def guarded_get_list(doctype, **kwargs):
@@ -347,29 +351,23 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
                 raise _FrappePermissionError("Insufficient Permission for User Permission")
             return []
 
-        class _Database:
-            def count(self, doctype, filters=None):
-                self.last_call = (doctype, filters)
-                return 1
-
-        database = _Database()
         with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
             service.frappe,
             "get_list",
             side_effect=guarded_get_list,
             create=True,
-        ), patch.object(service.frappe, "db", database, create=True):
+        ):
             payload = service.get_finance_role_company_resolver_context()
 
         self.assertEqual(payload["resolver"]["state"], "scoped")
         self.assertEqual(payload["resolver"]["source"], "single_company_site_fallback")
-        self.assertEqual(payload["resolver"]["reason"], "single_enabled_company_without_company_permission_lookup")
-        self.assertNotIn("User Permission", [doctype for doctype, _kwargs in calls])
+        self.assertEqual(payload["resolver"]["reason"], "single_permission_visible_company_without_user_permission_read")
+        self.assertIn("User Permission", [doctype for doctype, _kwargs in calls])
         self.assertEqual(payload["rows"], [])
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
 
-    def test_accounts_user_single_company_fallback_skips_user_permission_lookup_when_denied(self):
+    def test_accounts_user_single_visible_company_falls_back_when_user_permission_read_is_denied(self):
         calls = []
 
         def guarded_get_list(doctype, **kwargs):
@@ -379,23 +377,19 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
             if doctype == "User Permission":
                 raise _FrappePermissionError("Insufficient Permission for User Permission")
             return []
-
-        class _Database:
-            def count(self, doctype, filters=None):
-                return 1
 
         with patch.object(service.frappe, "get_roles", return_value=["Accounts User"]), patch.object(
             service.frappe,
             "get_list",
             side_effect=guarded_get_list,
             create=True,
-        ), patch.object(service.frappe, "db", _Database(), create=True):
+        ):
             payload = service.get_finance_role_company_resolver_context()
 
         self.assertEqual(payload["resolver"]["state"], "scoped")
         self.assertEqual(payload["resolver"]["source"], "single_company_site_fallback")
         self.assertEqual(payload["resolver"]["amount_visibility_candidate"], False)
-        self.assertNotIn("User Permission", [doctype for doctype, _kwargs in calls])
+        self.assertIn("User Permission", [doctype for doctype, _kwargs in calls])
         self.assertEqual(payload["rows"], [])
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
@@ -430,16 +424,12 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
                 raise _FrappePermissionError("Insufficient Permission for User Permission")
             return []
 
-        class _Database:
-            def count(self, doctype, filters=None):
-                return 2
-
         with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
             service.frappe,
             "get_list",
             side_effect=guarded_get_list,
             create=True,
-        ), patch.object(service.frappe, "db", _Database(), create=True):
+        ):
             payload = service.get_finance_role_company_resolver_context()
 
         self.assertEqual(payload["resolver"]["state"], "unavailable")
@@ -448,16 +438,72 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
 
+    def test_malformed_permission_visible_company_records_fail_closed_before_permission_lookup(self):
+        malformed_records = (
+            {"name": _COMPANY["name"], "company_name": _COMPANY["name"], "default_currency": ""},
+            {"company": _COMPANY["name"], "label": _COMPANY["name"], "currency": "MMK"},
+            {**_COMPANY, "unexpected": "value"},
+        )
+        for record in malformed_records:
+            calls = []
+
+            def guarded_get_list(doctype, **kwargs):
+                calls.append(doctype)
+                if doctype == "Company":
+                    return [record]
+                raise AssertionError("malformed company scope must stop before User Permission lookup")
+
+            with self.subTest(record=record), patch.object(
+                service.frappe, "get_roles", return_value=["Accounts Manager"]
+            ), patch.object(service.frappe, "get_list", side_effect=guarded_get_list, create=True):
+                payload = service.get_finance_role_company_resolver_context()
+
+            self.assertEqual(payload["resolver"]["state"], "unavailable")
+            self.assertEqual(payload["resolver"]["reason"], "company_lookup_malformed")
+            self.assertEqual(calls, ["Company"])
+
+    def test_user_permission_lookup_is_bounded_and_deterministic(self):
+        calls = []
+
+        def fake_get_list(doctype, **kwargs):
+            calls.append((doctype, kwargs))
+            return [{"for_value": _COMPANY["name"]}]
+
+        with patch.object(service.frappe, "get_list", side_effect=fake_get_list, create=True):
+            values = service._load_company_user_permission_values("finance.lead@meet.com")
+
+        self.assertEqual(values, [_COMPANY["name"]])
+        self.assertEqual(calls[0][0], "User Permission")
+        self.assertEqual(calls[0][1]["order_by"], "for_value asc")
+        self.assertEqual(calls[0][1]["limit_start"], 0)
+        self.assertEqual(
+            calls[0][1]["limit_page_length"],
+            service.FINANCE_COMPANY_PERMISSION_MAX_ROWS + 1,
+        )
+
+    def test_user_permission_over_cap_and_malformed_records_fail_closed(self):
+        over_cap = [
+            {"for_value": f"Company {index}"}
+            for index in range(service.FINANCE_COMPANY_PERMISSION_MAX_ROWS + 1)
+        ]
+        cases = (
+            over_cap,
+            [{"for_value": _COMPANY["name"], "unexpected": "value"}],
+            [{"for_value": ""}],
+            [{"for_value": _COMPANY["name"]}, {"for_value": _COMPANY["name"]}],
+        )
+        for records in cases:
+            with self.subTest(records=records[:2]), patch.object(
+                service.frappe, "get_list", return_value=records, create=True
+            ):
+                self.assertIsNone(service._load_company_user_permission_values("finance.lead@meet.com"))
+
     def test_resolver_context_returns_only_metadata_and_no_effect_flags(self):
         with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
             service,
             "_load_enabled_company_records",
             return_value=[_COMPANY],
-        ), patch.object(service, "_load_company_user_permission_values", return_value=[]), patch.object(
-            service,
-            "_count_enabled_companies",
-            return_value=1,
-        ):
+        ), patch.object(service, "_load_company_user_permission_values", return_value=[]):
             payload = service.get_finance_role_company_resolver_context()
 
         self.assertEqual(payload["phase"], service.FINANCE_RESOLVER_PHASE)
@@ -475,6 +521,7 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         forbidden_patterns = [
             r"frappe\.get_all",
             r"frappe\.db\.sql",
+            r"frappe\.db\.count",
             r"ignore_permissions",
             r"#Form/",
             r"frappe\.set_route",
@@ -499,6 +546,8 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertIn('getattr(frappe, "get_list", None)', source)
         self.assertNotIn('filters={"disabled": 0}', source)
         self.assertNotIn('counter("Company", {"disabled": 0})', source)
+        self.assertNotIn('record.get("disabled")', source)
+        self.assertNotIn("_count_enabled_companies", source)
         self.assertNotIn('count(name) as count', source)
 
 

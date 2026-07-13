@@ -6,7 +6,7 @@ Enterprise ERPNext workspace and console experience for the UI workstream.
 
 - Own role-based ERPNext workspace and page implementation for the UI branch.
 - Keep workspace UX implementation separate from the AI Assistant app.
-- Provide the production home for consoles such as `Sales Console`.
+- Provide controlled workspace consoles for Sales, Procurement, Warehouse, and Finance.
 
 ### Ownership Boundary
 
@@ -18,7 +18,7 @@ Enterprise ERPNext workspace and console experience for the UI workstream.
 
 - app foundation and module ownership
 - Sales Console implementation surface
-- future workspace/page assets for console families
+- current workspace/page assets for Sales, Procurement, Warehouse, and Finance, with later families governed by the roadmap
 - multi-workspace registry and route ownership foundation
 
 ### Current Sales Console Source Of Truth
@@ -49,7 +49,7 @@ The active multi-workspace registry lives in:
 1. `erp_workspace_ui/workspace_registry.py`
 2. `erp_workspace_ui/public/js/runtime/console/workspace_registry.js`
 
-The registry currently keeps Sales Console frozen and records the matrix-based roadmap for Procurement Console, Warehouse Console, Finance Console, Executive Console, Customer Service Console, HR and Admin Console, and ERP Admin Console.
+The registry keeps Sales Console frozen, registers the current Procurement, Warehouse, and Finance workspaces, and records later console families in the matrix-based roadmap.
 
 The confirmed Sale Console surface is:
 

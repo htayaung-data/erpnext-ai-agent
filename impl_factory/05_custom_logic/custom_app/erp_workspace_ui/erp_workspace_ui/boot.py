@@ -53,6 +53,7 @@ MANAGED_DESK_HOME_PAGES = {
 	"warehouse-console",
 	"finance-control-desk",
 }
+MANAGED_SYSTEM_USER_MAX_ROWS = 2000
 
 
 def _current_user_roles(user: str) -> set[str]:
@@ -166,16 +167,25 @@ def _managed_system_users() -> list[str]:
 	if not callable(getter):
 		return []
 	try:
-		return list(
-			getter(
-				"User",
-				filters={"enabled": 1, "user_type": "System User"},
-				pluck="name",
-			)
-			or []
+		records = getter(
+			"User",
+			filters={"enabled": 1, "user_type": "System User"},
+			pluck="name",
+			order_by="name asc",
+			limit_start=0,
+			limit_page_length=MANAGED_SYSTEM_USER_MAX_ROWS + 1,
 		)
 	except Exception:
 		return []
+	if not isinstance(records, list) or len(records) > MANAGED_SYSTEM_USER_MAX_ROWS:
+		return []
+	users: list[str] = []
+	for record in records:
+		user = str(record or "").strip()
+		if not user or user in users:
+			return []
+		users.append(user)
+	return users
 
 
 def sync_managed_default_apps() -> dict[str, str | None]:

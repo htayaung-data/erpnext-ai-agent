@@ -68,36 +68,217 @@ def _sidebar_source() -> str:
     return _SIDEBAR_SOURCE.read_text(encoding="utf-8")
 
 
-def _frontend_guard_payload(payables_posture: dict[str, object]) -> dict[str, object]:
-    return {
-        "workspace": {
-            "title": "Finance Control Desk",
-            "workspace_family": "Finance & Accounting",
-        },
-        "state": {
-            "kind": "ready",
-            "title": "Read-only overview ready",
-            "detail": "Aggregate posture only.",
-        },
-        "scope": {"execution_enabled": False},
-        "overview": {"detail": "Company-scoped aggregate posture only."},
-        "company_scope": {},
-        "payables_count_posture": payables_posture,
-        "posture_cards": [{
-            "key": "payables_posture",
-            "title": "Payables posture",
-            "state": payables_posture.get("state", "unavailable"),
-            "detail": "Count-only posture.",
-            "value": "Aggregate counts only" if payables_posture.get("state") == "ready" else "Unavailable",
-            "rows": [],
-        }],
-        "lanes": [],
-        "rows": [],
-        "metrics": [],
-        "amounts": [],
-        "documents": [],
-        "no_effect": {"payment_entry_created": False, "report_run": False},
+def _frontend_no_effect():
+    return {key: False for key in (
+        "erp_document_created", "erp_document_updated", "gl_entry_created", "journal_entry_created",
+        "payment_entry_created", "reconciliation_performed", "tax_filing_performed", "period_close_performed",
+        "notification_sent", "export_generated", "row_level_financial_data_returned", "native_route_opened",
+        "report_run", "email_sent", "portal_action_performed", "supplier_notification_sent",
+        "supplier_statement_sent", "supplier_payment_communication_sent", "payment_request_created",
+        "payment_order_created", "payment_run_performed", "supplier_bank_or_contact_exposed",
+        "purchase_invoice_lifecycle_performed", "user_or_role_mutated",
+    )}
+
+
+def _bucket_labels(keys):
+    labels = {
+        "current": "Current / not due",
+        "not_due": "Current / not overdue",
+        "overdue_1_30": "1-30 overdue",
+        "overdue_31_60": "31-60 overdue",
+        "overdue_61_90": "61-90 overdue",
+        "overdue_over_90": ">90 overdue",
     }
+    return [{"key": key, "label": labels[key]} for key in keys]
+
+
+def _frontend_receivables_count_posture():
+    keys = ("current", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90")
+    return {
+        "phase": "f4d_receivables_count_posture",
+        "state": "unavailable",
+        "company_scope": None,
+        "as_of_date": "2026-07-11",
+        "bucket_labels": _bucket_labels(keys),
+        "bucket_counts": {},
+        "policy": {
+            "source": "Sales Invoice", "reason": "accounts_manager_required", "resolver_state": "scoped",
+            "resolver_source": "single_company_site_fallback", "role_category": "normal_finance",
+            "policy_contract_accepted": False, "resolver_scoped": True, "role_eligible_for_count_policy": False,
+            "source_permission_checked": False, "source_permission_verified": False,
+            "future_activity_source_permission_checked": False, "future_activity_source_permission_verified": False,
+            "source_read_policy_ready": False, "runtime_count_enabled": False, "low_count_suppression_ready": False,
+            "manager_aggregate_counts_only": True, "count_source": "Sales Invoice",
+            "semantic_guard_sources": ["Payment Schedule", "Payment Ledger Entry"],
+            "payment_schedule_supported": False, "payment_schedule_presence_gate_required": True,
+            "future_posting_supported": False, "future_payment_ledger_activity_supported": False,
+            "accounts_user_raw_counts_enabled": False, "identifiers_enabled": False,
+            "monetary_values_enabled": False, "native_navigation_enabled": False,
+            "external_output_enabled": False, "execution_enabled": False,
+        },
+        "no_effect": _frontend_no_effect(),
+        "rows_returned": False,
+        "amounts_returned": False,
+        "documents_returned": False,
+        "runtime_count_enabled": False,
+    }
+
+
+def _frontend_receivables_amount_posture(state="unavailable"):
+    keys = ("current", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90")
+    ready = state == "ready"
+    payload = {
+        "phase": "f4h_payment_ledger_amount_summary",
+        "state": state,
+        "company_scope": dict(_COMPANY_SCOPE) if ready else None,
+        "as_of_date": "2026-07-11",
+        "currency": "MMK" if ready else "",
+        "bucket_labels": _bucket_labels(keys),
+        "bucket_counts": {key: 0 for key in keys} if ready else {},
+        "bucket_amounts": {key: "0.00" for key in keys} if ready else {},
+        "suppressed_buckets": {},
+        "policy": {
+            "source": "Payment Ledger Entry", "reason": "payment_ledger_amount_summary_ready" if ready else "accounts_manager_required",
+            "resolver_state": "scoped", "resolver_source": "single_company_site_fallback", "role_category": "manager" if ready else "normal_finance",
+            "source_permission_checked": ready, "source_permission_verified": ready,
+            "source_metadata_checked": ready, "source_metadata_verified": ready,
+            "runtime_amount_summary_enabled": ready, "manager_only": True, "company_currency": "MMK",
+            "currency_precision_verified": ready, "currency_precision": 2 if ready else None,
+            "currency_precision_source": "erpnext.accounts.utils.get_currency_precision" if ready else None,
+            "currency_rounding_method": "Banker's Rounding" if ready else None,
+            "amount_serialization": "fixed_decimal_string" if ready else "unavailable",
+            "payment_terms_supported": False, "payment_terms_detection": "sales_invoice_schedule_gate_and_payment_ledger_due_date_consistency",
+            "payment_schedule_rows_read": False, "split_payment_terms_fail_closed": True,
+            "aging_date_basis": "due_date_only", "posting_date_fallback_enabled": False,
+            "split_receivable_accounts_supported": False,
+            "voucher_set_reconciliation": "account_voucher_type_voucher_party",
+            "voucher_set_reconciliation_verified": ready, "voucher_identities_returned": False,
+            "credit_returns_supported": False, "minimum_voucher_population": 3, "minimum_diversity_population": 3, "identifiers_enabled": False,
+            "native_navigation_enabled": False, "external_output_enabled": False, "execution_enabled": False,
+        },
+        "no_effect": _frontend_no_effect(),
+        "rows_returned": False,
+        "amounts_are_aggregate": ready,
+        "documents_returned": False,
+        "runtime_payment_ledger_amount_summary_enabled": ready,
+    }
+    if ready:
+        payload["grand_total"] = "0.00"
+    return payload
+
+
+def _frontend_payables_posture(overrides):
+    keys = ("not_due", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90")
+    requested = dict(overrides or {})
+    policy_overrides = dict(requested.pop("policy", {}) or {})
+    state = requested.get("state", "unavailable")
+    ready = state == "ready"
+    payload = {
+        "phase": "f5c_payables_count_posture",
+        "state": state,
+        "source_state": state,
+        "company_scope": {"name": _COMPANY_SCOPE["name"], "label": _COMPANY_SCOPE["label"]} if ready else None,
+        "as_of_date": "2026-07-11",
+        "bucket_labels": _bucket_labels(keys),
+        "bucket_counts": {key: 0 for key in keys} if ready else {},
+        "policy": {
+            "source": "Purchase Invoice", "reason": "payables_count_posture_ready" if ready else "payment_schedule_not_supported",
+            "resolver_state": "scoped", "resolver_source": "single_company_site_fallback", "role_category": "manager",
+            "source_permission_checked": True, "source_permission_verified": True,
+            "source_read_policy_ready": ready, "runtime_count_enabled": ready, "manager_only": True,
+            "accounts_user_counts_enabled": False, "aggregate_counts_only": True, "due_date_basis_only": True,
+            "posting_date_fallback_enabled": False, "due_soon_enabled": False, "payment_terms_supported": False,
+            "payment_schedule_supported": False, "payment_schedule_presence_gate_required": True,
+            "payment_schedule_rows_returned": False, "on_hold_supported": False, "returns_supported": False,
+            "identifiers_enabled": False, "monetary_values_enabled": False, "native_navigation_enabled": False,
+            "external_output_enabled": False, "execution_enabled": False,
+        },
+        "no_effect": _frontend_no_effect(),
+    }
+    payload.update(requested)
+    payload["policy"].update(policy_overrides)
+    return payload
+
+
+def _frontend_guard_payload(payables_posture: dict[str, object]) -> dict[str, object]:
+    posture = _frontend_payables_posture(payables_posture)
+    company_scope = {
+        "state": "scoped", "source": "single_company_site_fallback", "company": _COMPANY_SCOPE["name"],
+        "company_label": _COMPANY_SCOPE["label"], "currency": "MMK", "title": "Company scope active",
+        "detail": "Finance posture is limited to the approved company shown here.",
+    }
+    if posture["state"] == "ready":
+        labels = {item["key"]: item["label"] for item in posture["bucket_labels"]}
+        counts = "; ".join(f"{labels[key]}: {posture['bucket_counts'][key]}" for key in (
+            "not_due", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90"
+        ))
+        card_detail = f"Purchase Invoice aggregate count buckets only. Current / not overdue includes invoices due today or later. {counts}. No supplier names, invoice IDs, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable."
+        card_value = "Aggregate counts only"
+    elif posture["policy"]["reason"] in {"payment_schedule_not_supported", "payment_terms_not_supported"}:
+        card_detail = "Payables counts are unavailable because some supplier invoices use payment schedules that this overview does not interpret. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments."
+        card_value = "Unavailable"
+    elif posture["policy"]["reason"] == "accounts_manager_required":
+        card_detail = "Manager-only payables posture. AP count posture is available only to Accounts Manager in this phase. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown."
+        card_value = "No counts"
+    else:
+        card_detail = "Payables aggregate count posture is unavailable until the approved role, company, source, and permission gates pass. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown."
+        card_value = "No counts"
+    card = {
+        "key": "payables_posture", "title": "Payables posture", "state": posture["state"],
+        "detail": card_detail, "value": card_value, "rows": [],
+    }
+    return {
+        "schema_version": "finance-overview.v1",
+        "workspace": {"workspace_id": "finance", "status": "cycle_1_f6_quality_gate_pending", "title": "Finance Control Desk", "workspace_family": "Finance & Accounting", "mode_label": "Read-only aggregate posture"},
+        "state": {"kind": "ready", "title": "Read-only accounting overview is ready", "detail": "Scoped posture shows aggregate data only: no document rows, reports, exports, or execution routes."},
+        "scope": {
+            "scope_mode": "finance_cycle_1_aggregate_posture", "phase": "finance_cycle_1_aggregate_posture",
+            "default_routing_enabled": False, "accounting_overview_enabled": True,
+            "receivables_count_posture_enabled": False, "receivables_amount_summary_enabled": False,
+            "payables_count_posture_enabled": posture["state"] == "ready", "company_scope_required": True,
+            "financial_data_enabled": False, "financial_rows_enabled": False, "monetary_values_enabled": False,
+            "execution_enabled": False,
+        },
+        "overview": {"phase": "finance_cycle_1_aggregate_posture", "title": "Read-only accounting posture", "detail": "Company-scoped posture only. Receivables and Payables signals are aggregate-only when their gates pass; row-level data, reports, exports, and execution remain blocked."},
+        "receivables_posture": _frontend_receivables_count_posture(),
+        "receivables_amount_summary": _frontend_receivables_amount_posture(),
+        "company_scope": company_scope,
+        "period_scope": {"state": "unavailable", "title": "Fiscal period posture deferred", "detail": "Fiscal calendars and close records remain deferred until the owner approves the period policy."},
+        "payables_count_posture": posture,
+        "posture_cards": [card],
+        "lanes": [dict(card)],
+        "rows": [], "metrics": [], "amounts": [], "documents": [],
+        "no_effect": _frontend_no_effect(),
+        "fetched_at": "2026-07-11 12:00:00",
+    }
+
+
+def _frontend_coherent_receivables_amount_payload():
+    payload = _frontend_guard_payload({"state": "unavailable"})
+    count = _frontend_receivables_count_posture()
+    count["state"] = "ready"
+    count["company_scope"] = dict(_COMPANY_SCOPE)
+    count["bucket_counts"] = {key: 0 for key in ("current", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90")}
+    count["runtime_count_enabled"] = True
+    count["policy"].update(
+        role_category="manager",
+        resolver_state="scoped",
+        resolver_scoped=True,
+        policy_contract_accepted=True,
+        source_read_policy_ready=True,
+        source_permission_checked=True,
+        source_permission_verified=True,
+        future_activity_source_permission_checked=True,
+        future_activity_source_permission_verified=True,
+        runtime_count_enabled=True,
+    )
+    payload["receivables_posture"] = count
+    payload["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
+    payload["scope"]["receivables_count_posture_enabled"] = True
+    payload["scope"]["receivables_amount_summary_enabled"] = True
+    payload["scope"]["monetary_values_enabled"] = True
+    return payload
+
 
 
 def _frontend_guard_probe(payload: dict[str, object]) -> dict[str, object]:
@@ -110,8 +291,8 @@ const html = guard.renderPayload(payload);
 process.stdout.write(JSON.stringify({
   raw_forbidden: guard.hasForbiddenRawFinancePayload(payload),
   normalized_forbidden: guard.hasForbiddenFinancePayloadShape(normalizedPayload),
-  policy_violation: html.includes("Policy violation blocked"),
-  ready: html.includes('data-finance-f3-overview="ready"'),
+  policy_violation: html.includes('data-finance-payload-rejected="1"'),
+  ready: html.includes('data-finance-cycle1-overview="ready"'),
   rendered_html: html,
 }));
 """
@@ -122,6 +303,21 @@ process.stdout.write(JSON.stringify({
         text=True,
     )
     return json.loads(result.stdout)
+
+
+def _frontend_contract_valid(payload: dict[str, object]) -> bool:
+    script = """
+const contract = require(process.argv[1]);
+const payload = JSON.parse(process.argv[2]);
+process.stdout.write(contract.validateFinanceOverviewPayload(payload) ? "true" : "false");
+"""
+    result = subprocess.run(
+        ["node", "-e", script, str(_FRONTEND_SOURCE), json.dumps(payload, separators=(",", ":"))],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout == "true"
 
 
 
@@ -224,16 +420,26 @@ class TestFinanceAccountingShell(unittest.TestCase):
             side_effect=_permission_allowed,
         ), patch.object(
             service,
+            "verify_receivables_amount_source_permission",
+            side_effect=_permission_allowed,
+        ), patch.object(
+            service,
+            "_permission_preserving_receivables_future_activity_count",
+            return_value=0,
+        ), patch.object(
+            service,
             "_permission_preserving_receivables_count",
             side_effect=_fake_bucket_count,
+        ), patch.object(
+            service,
+            "_permission_preserving_receivables_schedule_integrity_gate",
+            return_value=0,
         ):
             payload = service.get_finance_control_desk_overview_context()
 
         self.assertEqual(payload["state"]["kind"], "ready")
-        self.assertNotIn("user", payload["context"])
-        self.assertNotIn("roles", payload["context"])
-        self.assertNotIn("finance@example.test", repr(payload["context"]))
-        self.assertEqual(payload["context"]["role_variant"], "accounts_manager")
+        self.assertNotIn("context", payload)
+        self.assertNotIn("finance@example.test", repr(payload))
         self.assertEqual(payload["scope"]["scope_mode"], service.FINANCE_OVERVIEW_PHASE)
         self.assertEqual(payload["scope"]["accounting_overview_enabled"], True)
         self.assertEqual(payload["scope"]["receivables_count_posture_enabled"], True)
@@ -263,15 +469,14 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertTrue(payload["posture_cards"])
         self.assertTrue(all(card["rows"] == [] for card in payload["posture_cards"]))
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
+        self.assertTrue(_frontend_contract_valid(payload))
         self.assertEqual(
             set(payload),
             {
+                "schema_version",
                 "workspace",
-                "context",
                 "scope",
                 "state",
-                "sidebar",
-                "navigation",
                 "overview",
                 "receivables_posture",
                 "receivables_amount_summary",
@@ -425,6 +630,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertEqual(payload["lanes"], [])
         self.assertEqual(payload["rows"], [])
         self.assertEqual(payload["payables_count_posture"], {})
+        self.assertTrue(_frontend_contract_valid(payload))
 
     def test_system_manager_executive_and_non_finance_get_no_receivables_counts(self):
         cases = [
@@ -500,10 +706,10 @@ class TestFinanceAccountingShell(unittest.TestCase):
             "renderRestricted",
             "renderLoading",
             "renderUnavailable",
-            'data-finance-f3-overview="ready"',
-            'data-finance-f3-overview="restricted"',
-            'data-finance-f3-overview="loading"',
-            'data-finance-f3-overview="unavailable"',
+            'data-finance-cycle1-overview="ready"',
+            'data-finance-cycle1-overview="restricted"',
+            'data-finance-cycle1-overview="loading"',
+            'data-finance-cycle1-overview="unavailable"',
             "Finance Control Desk is restricted",
             "No row-level data shown",
             "Aggregate source reads only",
@@ -601,21 +807,269 @@ class TestFinanceAccountingShell(unittest.TestCase):
             "financeDataBoundaryPayload",
             "receivables_amount_summary",
             "payables_count_posture",
-            "rawPayloadHasFinancialRows",
-            "rawPayloadHasFinancialRows || hasFinancialRows(normalized)",
-            "return renderPolicyViolation(normalized)",
+            "validateFinanceOverviewPayload",
+            "hasForbiddenRawFinancePayload",
+            "return renderPolicyViolation()",
         ):
             self.assertIn(expected, source)
 
-        self.assertLess(source.index("const rawPayloadHasFinancialRows = hasForbiddenRawFinancePayload(payload)"), source.index("const normalized = normalizePayload(payload)"))
-        self.assertLess(source.index("rawPayloadHasFinancialRows || hasFinancialRows(normalized)"), source.index('normalized.state.kind === "restricted"'))
+        self.assertLess(source.index("const contractValid = validateFinanceOverviewPayload(payload)"), source.index("const normalized = normalizePayload(payload)"))
+        self.assertLess(source.index("!contractValid || hasFinancialRows(normalized)"), source.index('normalized.state.kind === "restricted"'))
         load_start = source.index("function loadOverviewContext")
-        load_guard = source.index("const rawPayloadHasFinancialRows = hasForbiddenRawFinancePayload(payload);", load_start)
-        guarded_cache = source.index("target.__financeControlDeskOverviewPayload = rawPayloadHasFinancialRows ? null : payload;", load_start)
+        load_guard = source.index("if (!validateFinanceOverviewPayload(payload))", load_start)
+        guarded_cache = source.index("target.__financeControlDeskOverviewPayload = payload;", load_start)
         self.assertLess(load_guard, guarded_cache)
         self.assertNotIn("navigation: safePayload.navigation", source)
         self.assertNotIn("sidebar: safePayload.sidebar", source)
         self.assertNotIn("financial_rows_loaded", source)
+
+    def test_frontend_ready_contract_rejects_empty_postures_and_object_copy_fields(self):
+        empty_postures = _frontend_guard_payload({"state": "unavailable"})
+        empty_postures["receivables_posture"] = {}
+        object_copy = _frontend_guard_payload({"state": "unavailable"})
+        object_copy["posture_cards"][0]["detail"] = {"supplier_rows": []}
+        object_value = _frontend_guard_payload({"state": "unavailable"})
+        object_value["posture_cards"][0]["value"] = {"amount": "0.00"}
+        for label, payload in (("empty_posture", empty_postures), ("object_detail", object_copy), ("object_value", object_value)):
+            with self.subTest(label=label):
+                result = _frontend_guard_probe(payload)
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+
+    def test_frontend_exact_contract_rejects_unknown_incomplete_or_execution_enabled_payloads(self):
+        cases = []
+        unknown = _frontend_guard_payload({"state": "unavailable"})
+        unknown["unexpected_finance_section"] = {}
+        cases.append(("unknown_top_level", unknown))
+        incomplete_no_effect = _frontend_guard_payload({"state": "unavailable"})
+        incomplete_no_effect["no_effect"].pop("report_run")
+        cases.append(("incomplete_no_effect", incomplete_no_effect))
+        execution = _frontend_guard_payload({"state": "unavailable"})
+        execution["scope"]["execution_enabled"] = True
+        cases.append(("execution_enabled", execution))
+        unknown_policy = _frontend_guard_payload({"state": "unavailable"})
+        unknown_policy["payables_count_posture"]["policy"]["internal_account_alias"] = "hidden"
+        cases.append(("unknown_policy", unknown_policy))
+        date_mismatch = _frontend_guard_payload({"state": "unavailable"})
+        date_mismatch["receivables_amount_summary"]["as_of_date"] = "2026-07-10"
+        cases.append(("as_of_mismatch", date_mismatch))
+        nested_company_detail = _frontend_guard_payload({"state": "unavailable"})
+        nested_company_detail["company_scope"]["detail"] = {"GL2Rows": [{"name": "GL-1"}]}
+        cases.append(("nested_company_detail", nested_company_detail))
+        plural_routes = _frontend_guard_payload({"state": "unavailable"})
+        plural_routes["period_scope"]["detail"] = {"routes": ["/desk/query-report/General-Ledger"]}
+        cases.append(("plural_routes", plural_routes))
+        acronym_amount = _frontend_guard_payload({"state": "unavailable"})
+        acronym_amount["payables_count_posture"]["policy"]["APBalance"] = "1.00"
+        cases.append(("acronym_amount", acronym_amount))
+        contradictory_count_policy = _frontend_guard_payload({"state": "unavailable"})
+        contradictory_count_policy["receivables_posture"]["policy"]["payment_schedule_supported"] = True
+        cases.append(("receivables_schedule_claim", contradictory_count_policy))
+        contradictory_amount_policy = _frontend_guard_payload({"state": "unavailable"})
+        contradictory_amount_policy["receivables_amount_summary"]["policy"]["payment_schedule_rows_read"] = True
+        cases.append(("amount_schedule_rows_claim", contradictory_amount_policy))
+        contradictory_payables_policy = _frontend_guard_payload({"state": "unavailable"})
+        contradictory_payables_policy["payables_count_posture"]["policy"]["accounts_user_counts_enabled"] = True
+        cases.append(("accounts_user_payables_claim", contradictory_payables_policy))
+        impossible_as_of = _frontend_guard_payload({"state": "unavailable"})
+        impossible_as_of["receivables_posture"]["as_of_date"] = "2026-99-99"
+        impossible_as_of["receivables_amount_summary"]["as_of_date"] = "2026-99-99"
+        impossible_as_of["payables_count_posture"]["as_of_date"] = "2026-99-99"
+        cases.append(("impossible_as_of", impossible_as_of))
+        invalid_fetched_at = _frontend_guard_payload({"state": "unavailable"})
+        invalid_fetched_at["fetched_at"] = "2026-07-11 12:00:00 trailing"
+        cases.append(("invalid_fetched_at", invalid_fetched_at))
+        stale_workspace_status = _frontend_guard_payload({"state": "unavailable"})
+        stale_workspace_status["workspace"]["status"] = "cycle_1_ar_amount_ap_count_posture"
+        cases.append(("stale_workspace_status", stale_workspace_status))
+        direct_copy_mutations = (
+            ("workspace_title", ("workspace", "title"), "Supplier Acme Trading"),
+            ("workspace_family", ("workspace", "workspace_family"), "Customer balances"),
+            ("workspace_mode", ("workspace", "mode_label"), "100 MMK ready"),
+            ("state_title", ("state", "title"), "Supplier Acme Trading"),
+            ("state_detail", ("state", "detail"), "Customer owes 100 MMK"),
+            ("overview_title", ("overview", "title"), "Invoice balances"),
+            ("overview_detail", ("overview", "detail"), "Supplier Acme Trading owes 100 MMK"),
+            ("company_title", ("company_scope", "title"), "Bank account posture"),
+            ("company_detail", ("company_scope", "detail"), "IBAN account is ready"),
+            ("period_title", ("period_scope", "title"), "General Ledger ready"),
+            ("period_detail", ("period_scope", "detail"), "Open the monthly report"),
+        )
+        for label, (section, field), unsafe_copy in direct_copy_mutations:
+            payload = _frontend_guard_payload({"state": "unavailable"})
+            payload[section][field] = unsafe_copy
+            cases.append((label, payload))
+        policy_truth_mutations = {
+            "receivables_posture": {
+                "count_source": "Payment Ledger Entry",
+                "semantic_guard_sources": ["Payment Schedule"],
+                "low_count_suppression_ready": True,
+                "manager_aggregate_counts_only": False,
+                "payment_schedule_presence_gate_required": False,
+                "future_posting_supported": True,
+                "future_payment_ledger_activity_supported": True,
+                "accounts_user_raw_counts_enabled": True,
+                "monetary_values_enabled": True,
+            },
+            "receivables_amount_summary": {
+                "manager_only": False,
+                "company_currency": "USD",
+                "payment_terms_supported": True,
+                "payment_terms_detection": "unproven",
+                "split_payment_terms_fail_closed": False,
+                "aging_date_basis": "posting_date",
+                "posting_date_fallback_enabled": True,
+                "split_receivable_accounts_supported": True,
+                "voucher_set_reconciliation": "voucher_no_only",
+                "voucher_set_reconciliation_verified": True,
+                "voucher_identities_returned": True,
+                "credit_returns_supported": True,
+                "minimum_voucher_population": 2,
+                "minimum_diversity_population": 2,
+            },
+            "payables_count_posture": {
+                "manager_only": False,
+                "aggregate_counts_only": False,
+                "due_date_basis_only": False,
+                "posting_date_fallback_enabled": True,
+                "due_soon_enabled": True,
+                "payment_terms_supported": True,
+                "payment_schedule_supported": True,
+                "payment_schedule_presence_gate_required": False,
+                "payment_schedule_rows_returned": True,
+                "on_hold_supported": True,
+                "returns_supported": True,
+                "monetary_values_enabled": True,
+            },
+        }
+        for posture_key, mutations in policy_truth_mutations.items():
+            for policy_key, invalid_value in mutations.items():
+                payload = _frontend_guard_payload({"state": "unavailable"})
+                payload[posture_key]["policy"][policy_key] = invalid_value
+                cases.append((f"{posture_key}_{policy_key}", payload))
+
+
+        invalid_scope_scalar = _frontend_guard_payload({"state": "unavailable"})
+        invalid_scope_scalar["scope"]["financial_rows_enabled"] = "false"
+        cases.append(("invalid_scope_scalar", invalid_scope_scalar))
+        invalid_policy_boolean = _frontend_guard_payload({"state": "unavailable"})
+        invalid_policy_boolean["payables_count_posture"]["policy"]["source_permission_checked"] = "false"
+        cases.append(("invalid_policy_boolean", invalid_policy_boolean))
+        invalid_policy_string = _frontend_guard_payload({"state": "unavailable"})
+        invalid_policy_string["receivables_posture"]["policy"]["source"] = False
+        cases.append(("invalid_policy_string", invalid_policy_string))
+
+        for label, payload in cases:
+            with self.subTest(label=label):
+                result = _frontend_guard_probe(payload)
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+
+    def test_frontend_ready_contract_requires_manager_company_source_and_permission_evidence(self):
+        mutations = []
+        ready_ap = _frontend_guard_payload({"state": "ready"})
+        mutations.append(("ap_role", ready_ap, lambda payload: payload["payables_count_posture"]["policy"].update(role_category="normal_finance")))
+        ready_ap_permission = _frontend_guard_payload({"state": "ready"})
+        mutations.append(("ap_permission", ready_ap_permission, lambda payload: payload["payables_count_posture"]["policy"].update(source_permission_verified=False)))
+        ready_ap_unchecked = _frontend_guard_payload({"state": "ready"})
+        mutations.append(("ap_permission_unchecked", ready_ap_unchecked, lambda payload: payload["payables_count_posture"]["policy"].update(source_permission_checked=False)))
+        ready_ap_company = _frontend_guard_payload({"state": "ready"})
+        mutations.append(("ap_company", ready_ap_company, lambda payload: payload["payables_count_posture"].update(company_scope=None)))
+        ready_amount = _frontend_guard_payload({"state": "unavailable"})
+        ready_amount["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
+        ready_amount["scope"]["receivables_amount_summary_enabled"] = True
+        ready_amount["scope"]["monetary_values_enabled"] = True
+        mutations.append(("amount_metadata", ready_amount, lambda payload: payload["receivables_amount_summary"]["policy"].update(source_metadata_verified=False)))
+        amount_unchecked = _frontend_guard_payload({"state": "unavailable"})
+        amount_unchecked["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
+        amount_unchecked["scope"]["receivables_amount_summary_enabled"] = True
+        amount_unchecked["scope"]["monetary_values_enabled"] = True
+        mutations.append(("amount_permission_unchecked", amount_unchecked, lambda payload: payload["receivables_amount_summary"]["policy"].update(source_permission_checked=False)))
+        amount_wrong_precision = _frontend_guard_payload({"state": "unavailable"})
+        amount_wrong_precision["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
+        amount_wrong_precision["scope"]["receivables_amount_summary_enabled"] = True
+        amount_wrong_precision["scope"]["monetary_values_enabled"] = True
+        mutations.append(("amount_precision", amount_wrong_precision, lambda payload: payload["receivables_amount_summary"]["policy"].update(currency_precision=-1)))
+        amount_wrong_company_currency = _frontend_guard_payload({"state": "unavailable"})
+        amount_wrong_company_currency["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
+        amount_wrong_company_currency["scope"]["receivables_amount_summary_enabled"] = True
+        amount_wrong_company_currency["scope"]["monetary_values_enabled"] = True
+        mutations.append(("amount_company_currency", amount_wrong_company_currency, lambda payload: payload["company_scope"].update(currency="USD")))
+        amount_numeric_value = _frontend_guard_payload({"state": "unavailable"})
+        amount_numeric_value["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
+        amount_numeric_value["scope"]["receivables_amount_summary_enabled"] = True
+        amount_numeric_value["scope"]["monetary_values_enabled"] = True
+        mutations.append(("amount_numeric_value", amount_numeric_value, lambda payload: payload["receivables_amount_summary"]["bucket_amounts"].update(current=0)))
+        amount_wrong_scale = _frontend_guard_payload({"state": "unavailable"})
+        amount_wrong_scale["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
+        amount_wrong_scale["scope"]["receivables_amount_summary_enabled"] = True
+        amount_wrong_scale["scope"]["monetary_values_enabled"] = True
+        mutations.append(("amount_wrong_scale", amount_wrong_scale, lambda payload: payload["receivables_amount_summary"]["bucket_amounts"].update(current="1.2")))
+        ready_count = _frontend_guard_payload({"state": "unavailable"})
+        count = _frontend_receivables_count_posture()
+        count["state"] = "ready"
+        count["company_scope"] = dict(_COMPANY_SCOPE)
+        count["bucket_counts"] = {key: 0 for key in ("current", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90")}
+        count["runtime_count_enabled"] = True
+        count["policy"].update(role_category="manager", resolver_state="scoped", resolver_scoped=True, policy_contract_accepted=True, source_read_policy_ready=True, source_permission_verified=True, future_activity_source_permission_verified=True, runtime_count_enabled=True)
+        ready_count["receivables_posture"] = count
+        ready_count["scope"]["receivables_count_posture_enabled"] = True
+        mutations.append(("count_permission", ready_count, lambda payload: payload["receivables_posture"]["policy"].update(source_permission_verified=False)))
+
+        for label, payload, mutate in mutations:
+            with self.subTest(label=label):
+                mutate(payload)
+                result = _frontend_guard_probe(payload)
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+
+    def test_frontend_top_level_unavailable_copy_never_renders_internal_reason_codes(self):
+        payload = _frontend_guard_payload({"state": "unavailable"})
+        payload["state"] = {
+            "kind": "unavailable",
+            "title": "Finance unavailable",
+            "detail": "Permission denied while resolving Finance source",
+        }
+        payload["scope"]["accounting_overview_enabled"] = False
+        result = _frontend_guard_probe(payload)
+        self.assertTrue(result["policy_violation"])
+        self.assertFalse(result["ready"])
+        self.assertNotIn("Permission denied while resolving Finance source", result["rendered_html"])
+        self.assertIn("Controlled unavailable state", result["rendered_html"])
+
+    def test_frontend_maps_all_technical_business_copy_patterns_to_controlled_unavailable(self):
+        cases = (
+            ("snake_case", lambda payload: payload["posture_cards"][0].update(detail="source_permission_denied")),
+            ("camelCase", lambda payload: payload["state"].update(title="resolverStateDenied")),
+            ("acronym_led", lambda payload: payload["posture_cards"][0].update(value="GLSourceDenied")),
+            ("nested_copy", lambda payload: payload["overview"].update(detail="Finance resolverStateDenied")),
+            ("contract_valid_but_unsafe", lambda payload: payload["lanes"][0].update(title="APPolicyMismatch")),
+            ("mixed_acronym_snake", lambda payload: payload["state"].update(detail="AR_source_denied")),
+            ("mixed_camel_snake", lambda payload: payload["posture_cards"][0].update(detail="resolverState_denied")),
+            ("unlisted_acronym", lambda payload: payload["lanes"][0].update(value="VATResolverDenied")),
+        )
+        for label, mutate in cases:
+            with self.subTest(label=label):
+                payload = _frontend_guard_payload({"state": "unavailable"})
+                mutate(payload)
+                result = _frontend_guard_probe(payload)
+
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+                self.assertIn("Controlled unavailable state", result["rendered_html"])
+                self.assertNotIn("source_permission_denied", result["rendered_html"])
+                self.assertNotIn("resolverStateDenied", result["rendered_html"])
+                self.assertNotIn("GLSourceDenied", result["rendered_html"])
+                self.assertNotIn("APPolicyMismatch", result["rendered_html"])
+                self.assertNotIn("AR_source_denied", result["rendered_html"])
+                self.assertNotIn("resolverState_denied", result["rendered_html"])
+                self.assertNotIn("VATResolverDenied", result["rendered_html"])
+
+    def test_frontend_exact_contract_accepts_complete_count_only_unavailable_payload(self):
+        result = _frontend_guard_probe(_frontend_guard_payload({"state": "unavailable"}))
+        self.assertFalse(result["raw_forbidden"])
+        self.assertFalse(result["policy_violation"])
+        self.assertTrue(result["ready"])
 
     def test_frontend_raw_guard_blocks_nested_payment_schedule_rows_and_identities(self):
         cases = (
@@ -653,6 +1107,92 @@ class TestFinanceAccountingShell(unittest.TestCase):
                 self.assertFalse(result["normalized_forbidden"])
                 self.assertTrue(result["policy_violation"])
                 self.assertFalse(result["ready"])
+
+    def test_frontend_amount_suppression_contract_is_exact(self):
+        mutations = []
+
+        overlap = _frontend_coherent_receivables_amount_payload()
+        overlap["receivables_amount_summary"]["suppressed_buckets"]["current"] = {
+            "suppressed": True,
+            "reason": "suppressed_low_population",
+        }
+        overlap["receivables_amount_summary"].pop("grand_total")
+        mutations.append(overlap)
+
+        grand_total_with_suppression = _frontend_coherent_receivables_amount_payload()
+        grand_total_with_suppression["receivables_amount_summary"]["bucket_amounts"].pop("current")
+        grand_total_with_suppression["receivables_amount_summary"]["suppressed_buckets"]["current"] = {
+            "suppressed": True,
+            "reason": "suppressed_low_population",
+        }
+        mutations.append(grand_total_with_suppression)
+
+        wrong_reason = _frontend_coherent_receivables_amount_payload()
+        wrong_reason["receivables_amount_summary"]["bucket_amounts"].pop("current")
+        wrong_reason["receivables_amount_summary"]["suppressed_buckets"]["current"] = {
+            "suppressed": True,
+            "reason": "internal_reason",
+        }
+        wrong_reason["receivables_amount_summary"].pop("grand_total")
+        mutations.append(wrong_reason)
+
+        incomplete = _frontend_coherent_receivables_amount_payload()
+        incomplete["receivables_amount_summary"]["bucket_amounts"].pop("current")
+        mutations.append(incomplete)
+
+        for payload in mutations:
+            result = _frontend_guard_probe(payload)
+            self.assertTrue(result["policy_violation"])
+            self.assertFalse(result["ready"])
+
+    def test_frontend_rejects_acronym_led_and_nested_policy_aliases(self):
+        cases = (
+            {"GLRows": [{"docname": "GLE-1"}]},
+            {"APBalance": "100.00"},
+            {"PLEName": "PLE-1"},
+            {"nested": {"customerCode": "CUST-1"}},
+            {"nativeUrl": "/unsafe"},
+            {"executeAction": "submit"},
+        )
+        for unsafe_reason in cases:
+            payload = _frontend_guard_payload({"state": "unavailable"})
+            payload["receivables_posture"]["policy"]["reason"] = unsafe_reason
+            with self.subTest(unsafe_reason=unsafe_reason):
+                result = _frontend_guard_probe(payload)
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+
+    def test_frontend_rejects_identity_route_and_action_text_in_allowed_card_fields(self):
+        cases = (
+            ("identity", "CUST-0001"),
+            ("native_route", "/desk/query-report/General-Ledger"),
+            ("execution_action", "Submit Payment Entry"),
+            ("unapproved_business_copy", "Quarterly payables summary"),
+        )
+        for label, unsafe_value in cases:
+            payload = _frontend_guard_payload({"state": "unavailable"})
+            payload["posture_cards"][0]["detail"] = unsafe_value
+            payload["lanes"][0]["detail"] = unsafe_value
+            with self.subTest(label=label):
+                result = _frontend_guard_probe(payload)
+                self.assertTrue(result["policy_violation"])
+                self.assertFalse(result["ready"])
+
+    def test_frontend_rejects_unknown_card_key_title_and_value_contracts(self):
+        cases = []
+        unknown_key = _frontend_guard_payload({"state": "unavailable"})
+        unknown_key["posture_cards"][0]["key"] = "customer_posture"
+        cases.append(unknown_key)
+        wrong_title = _frontend_guard_payload({"state": "unavailable"})
+        wrong_title["posture_cards"][0]["title"] = "Customer CUST-0001"
+        cases.append(wrong_title)
+        wrong_value = _frontend_guard_payload({"state": "unavailable"})
+        wrong_value["posture_cards"][0]["value"] = "SINV-0001"
+        cases.append(wrong_value)
+        for payload in cases:
+            result = _frontend_guard_probe(payload)
+            self.assertTrue(result["policy_violation"])
+            self.assertFalse(result["ready"])
 
     def test_frontend_raw_guard_allows_safe_payment_schedule_policy_metadata(self):
         posture = {
@@ -718,13 +1258,12 @@ class TestFinanceAccountingShell(unittest.TestCase):
         }]
         result = _frontend_guard_probe(payload)
 
-        self.assertTrue(result["ready"])
-        self.assertFalse(result["policy_violation"])
+        self.assertFalse(result["ready"])
+        self.assertTrue(result["policy_violation"])
         self.assertNotIn("source_permission_denied", result["rendered_html"])
-        self.assertIn("Receivables posture is unavailable", result["rendered_html"])
-        self.assertIn("No customer, invoice, voucher, account, report, export, or action data is shown.", result["rendered_html"])
+        self.assertIn("Controlled unavailable state", result["rendered_html"])
 
-    def test_frontend_blocks_payables_amount_shapes_but_allows_approved_receivables_amounts(self):
+    def test_frontend_blocks_payables_amount_shapes_and_requires_count_ready_before_amounts(self):
         blocked_cases = (
             {"bucket_amounts": {"not_due": 100}},
             {"outstanding_amount": 100},
@@ -759,20 +1298,59 @@ class TestFinanceAccountingShell(unittest.TestCase):
             "bucket_counts": {},
             "policy": {"monetary_values_enabled": False},
         })
-        payload["receivables_amount_summary"] = {
-            "state": "ready",
-            "currency": "MMK",
-            "bucket_amounts": {"current": 100},
-            "grand_total": 100,
-        }
+        payload["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
+        payload["scope"]["receivables_amount_summary_enabled"] = True
+        payload["scope"]["monetary_values_enabled"] = True
         result = _frontend_guard_probe(payload)
 
         self.assertFalse(result["raw_forbidden"])
         self.assertFalse(result["normalized_forbidden"])
-        self.assertFalse(result["policy_violation"])
-        self.assertTrue(result["ready"])
+        self.assertTrue(result["policy_violation"])
+        self.assertFalse(result["ready"])
 
-    def test_frontend_source_keeps_f3_boundary(self):
+        count = _frontend_receivables_count_posture()
+        count["state"] = "ready"
+        count["company_scope"] = dict(_COMPANY_SCOPE)
+        count["bucket_counts"] = {key: 0 for key in ("current", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90")}
+        count["runtime_count_enabled"] = True
+        count["policy"].update(
+            role_category="manager",
+            resolver_state="scoped",
+            resolver_scoped=True,
+            policy_contract_accepted=True,
+            source_read_policy_ready=True,
+            source_permission_checked=True,
+            source_permission_verified=True,
+            future_activity_source_permission_checked=True,
+            future_activity_source_permission_verified=True,
+            runtime_count_enabled=True,
+        )
+        payload["receivables_posture"] = count
+        payload["scope"]["receivables_count_posture_enabled"] = True
+        coherent = _frontend_guard_probe(payload)
+        self.assertFalse(coherent["policy_violation"])
+        self.assertTrue(coherent["ready"])
+
+    def test_frontend_displays_validated_as_of_and_refresh_timestamps(self):
+        result = _frontend_guard_probe(_frontend_guard_payload({"state": "unavailable"}))
+
+        self.assertTrue(result["ready"])
+        self.assertIn("As of 2026-07-11", result["rendered_html"])
+        self.assertIn("Refreshed 2026-07-11 12:00:00", result["rendered_html"])
+        self.assertNotIn("??", result["rendered_html"])
+
+    def test_finance_cycle1_source_lifecycle_smoke(self):
+        smoke = _SOURCE_ROOT.parent / "ui_smoke/finance_cycle1_source_smoke.js"
+        result = subprocess.run(
+            ["node", str(smoke)],
+            cwd=str(_SOURCE_ROOT.parent),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn("Finance Cycle 1 source smoke passed", result.stdout)
+
+    def test_frontend_source_keeps_cycle1_boundary(self):
         source = _frontend_source()
         forbidden_patterns = [
             r"frappe\.get_all",
@@ -793,7 +1371,6 @@ class TestFinanceAccountingShell(unittest.TestCase):
             r"frappe\.sendmail|sendmail\s*\(",
             r"download\(",
             r"export_data",
-            r"Sales Invoice",
             r"GL Entry",
             r"Payment Entry",
             r"Journal Entry",
@@ -806,6 +1383,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertNotIn("rows.forEach", source)
         self.assertNotIn("renderRows", source)
         self.assertIn("hasFinancialRows", source)
+        self.assertEqual(source.count('value.policy.source === "Sales Invoice"'), 1)
 
     def test_backend_source_keeps_f3_boundary(self):
         source = _service_source()
@@ -835,7 +1413,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertIn('getattr(frappe, "get_list", None)', source)
         self.assertIn('getattr(frappe, "has_permission", None)', source)
         self.assertIn("public_context(context)", source)
-        self.assertIn("Finance Control Desk is available for approved read-only posture", source)
+        self.assertIn("Finance Control Desk is ready", source)
         self.assertNotIn("F2 shell is registered", source)
 
 

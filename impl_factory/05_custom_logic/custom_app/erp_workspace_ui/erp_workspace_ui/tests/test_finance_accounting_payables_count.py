@@ -4,7 +4,7 @@ import re
 import sys
 import types
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 
@@ -271,6 +271,33 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertEqual(payload["policy"]["reason"], "payables_count_posture_ready")
         self.assertEqual(permission_calls, [("Purchase Invoice", {"ptype": "read", "user": "finance.lead@meet.com"})])
         self.assertEqual(len(calls), 15)
+
+    def test_invalid_supplied_as_of_values_fail_closed_before_source_reads(self):
+        invalid_values = (
+            "",
+            " 2026-07-06",
+            "2026-07-06 ",
+            "2026-07-06T00:00:00",
+            datetime(2026, 7, 6, 0, 0, 0),
+            datetime(2026, 7, 6, 0, 0, 0, tzinfo=timezone.utc),
+        )
+        for invalid_value in invalid_values:
+            with self.subTest(value=repr(invalid_value)):
+                payload = service.build_payables_count_posture(
+                    context=_context(),
+                    resolver=_resolver(),
+                    as_of_date=invalid_value,
+                    permission_checker=lambda *args, **kwargs: (_ for _ in ()).throw(
+                        AssertionError("permission gate must not run for invalid date")
+                    ),
+                    list_getter=lambda *args, **kwargs: (_ for _ in ()).throw(
+                        AssertionError("source adapter must not run for invalid date")
+                    ),
+                )
+                self.assert_safe_payables_response(payload)
+                self.assertEqual(payload["state"], "unavailable")
+                self.assertEqual(payload["policy"]["reason"], "invalid_as_of_date")
+                self.assertEqual(payload["bucket_counts"], {})
 
     def test_query_contract_uses_selected_company_and_required_filters(self):
         calls = []

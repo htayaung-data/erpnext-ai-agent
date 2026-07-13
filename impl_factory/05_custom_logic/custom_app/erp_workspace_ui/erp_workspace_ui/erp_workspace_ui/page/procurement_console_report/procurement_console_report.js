@@ -84,15 +84,24 @@
   }
 
   function executeTarget(target) {
-    if (!target) return;
-    if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
-    if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);
-    if (target.kind === "report_page") return routeToReportPage(target.report_key || REPORT_INDEX_KEY, target.filters || null);
-    if (target.kind === "page" && target.route) {
-      frappe.route_options = target.options || {};
-      const parts = [target.route].concat(Array.isArray(target.route_parts) ? target.route_parts : []);
-      return frappe.set_route.apply(frappe, parts);
+    if (!target || typeof target !== "object" || Array.isArray(target)) return false;
+    if (target.kind === "worklist" && typeof target.queue_key === "string" && target.queue_key.trim()) {
+      routeToWorklist(target.queue_key, target.filters || null);
+      return true;
     }
+    if (target.kind === "report_page" && typeof target.report_key === "string" && target.report_key.trim()) {
+      routeToReportPage(target.report_key, target.filters || null);
+      return true;
+    }
+    const allowedRoutes = new Set(["procurement-console-supplier", "procurement-console-item", "procurement-console-purchase-request-review", "procurement-console-purchase-request-form", "procurement-console-rfq-review", "procurement-console-rfq-form", "procurement-console-supplier-quotation-review", "procurement-console-supplier-quotation-form", "procurement-console-po-follow-up", "procurement-console-purchase-order-form"]);
+    if (target.kind === "page" && allowedRoutes.has(target.route)
+      && Array.isArray(target.route_parts) && target.route_parts.length === 1
+      && typeof target.route_parts[0] === "string" && target.route_parts[0].trim()) {
+      frappe.route_options = target.options && typeof target.options === "object" ? Object.assign({}, target.options) : {};
+      frappe.set_route(target.route, target.route_parts[0]);
+      return true;
+    }
+    return false;
   }
 
   function pathRouteSignature() {

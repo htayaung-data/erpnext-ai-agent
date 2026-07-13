@@ -9,7 +9,10 @@ import frappe
 from frappe import _
 from frappe.utils import cint, cstr, get_fullname, getdate, now_datetime, nowdate
 
-from erp_workspace_ui.workspace_registry import get_sales_workspace_definition
+from erp_workspace_ui.workspace_registry import (
+	WORKSPACE_SIDEBAR_SCHEMA_VERSION,
+	get_sales_workspace_definition,
+)
 
 try:
 	from ai_assistant_ui.qwen_chat.artifact_narrative import (
@@ -103,6 +106,7 @@ def get_sales_console_bootstrap() -> dict[str, object]:
 	navigation = _build_navigation(today, context, scope)
 
 	return {
+		"schema_version": WORKSPACE_SIDEBAR_SCHEMA_VERSION,
 		"workspace": _sales_workspace_public_context(),
 		"context": context,
 		"scope": scope,
@@ -132,6 +136,7 @@ def get_sales_console_sidebar_context() -> dict[str, object]:
 	navigation = _build_navigation(today, context, scope)
 
 	return {
+		"schema_version": WORKSPACE_SIDEBAR_SCHEMA_VERSION,
 		"workspace": _sales_workspace_public_context(),
 		"context": context,
 		"scope": scope,
@@ -712,10 +717,15 @@ def _build_sales_console_sidebar(
 		)
 
 	return {
+		"schema_version": WORKSPACE_SIDEBAR_SCHEMA_VERSION,
+		"workspace_id": workspace.get("workspace_id"),
 		"title": workspace.get("title") or "Sales Console",
 		"mode_label": ui_profile.get("mode_label") or workspace.get("mode_label") or "Sales Workspace",
 		"scope_label": scope.get("scope_label") or "",
 		"role_label": context.get("primary_role") or workspace.get("role_family") or "Sales",
+		"active_key": workspace_sidebar.get("home_key") or "sales_console_home",
+		"home_key": workspace_sidebar.get("home_key") or "sales_console_home",
+		"items": browse_items,
 		"sections": sections,
 	}
 
@@ -1985,7 +1995,7 @@ def _search_sales_console_customer_candidates(
 		)
 		if score <= 0:
 			continue
-		keyword = cstr(row.get("name") or row.get("customer_name")).strip()
+		keyword = cstr(row.get("name") or row.get("customer_name")).strip()[:120]
 		if not keyword:
 			continue
 		results.append(
@@ -2037,7 +2047,7 @@ def _search_sales_console_item_candidates(*, query: str, limit: int) -> list[dic
 		)
 		if score <= 0:
 			continue
-		item_code = cstr(row.get("item_code") or row.get("name") or row.get("item_name")).strip()
+		item_code = cstr(row.get("item_code") or row.get("name") or row.get("item_name")).strip()[:120]
 		if not item_code:
 			continue
 		results.append(
@@ -2105,7 +2115,11 @@ def _search_sales_console_document_candidates(
 				"name": row.get("name"),
 				"label": row.get("name"),
 				"meta": _build_sales_console_document_search_meta(doctype, row),
-				"target": {"kind": "form", "doctype": doctype, "name": row.get("name")},
+				"target": {
+					"kind": "worklist",
+					"queue_key": "quotation_directory" if doctype == "Quotation" else "sales_order_directory",
+					"filters": {"keyword": cstr(row.get("name")).strip()[:120]},
+				},
 				"_sort_score": score,
 				"_sort_modified": row.get("modified") or "",
 			}

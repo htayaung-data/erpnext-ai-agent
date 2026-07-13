@@ -60,6 +60,32 @@ from erp_workspace_ui.sales_console import service
 
 
 class TestSalesConsoleServiceContracts(unittest.TestCase):
+    def test_bootstrap_emits_the_versioned_sidebar_contract(self):
+        sidebar = {
+            "schema_version": service.WORKSPACE_SIDEBAR_SCHEMA_VERSION,
+            "workspace_id": "sales",
+            "sections": [],
+        }
+        with patch.object(service, "_build_context", return_value={"role_variant": "sales_user"}), patch.object(
+            service, "_build_scope", return_value={}
+        ), patch.object(service, "_build_ui_profile", return_value={}), patch.object(
+            service, "_build_reports_catalog", return_value=[]
+        ), patch.object(service, "_build_navigation", return_value={}), patch.object(
+            service, "_build_work", return_value={}
+        ), patch.object(service, "_build_lifecycle", return_value={}), patch.object(
+            service, "_build_blockers", return_value={}
+        ), patch.object(service, "_build_queues", return_value={}), patch.object(
+            service, "_build_insights", return_value={}
+        ), patch.object(
+            service, "_sales_workspace_public_context", return_value={"workspace_id": "sales", "title": "Sales Console"}
+        ), patch.object(service, "_build_sales_console_sidebar", return_value=sidebar):
+            result = service.get_sales_console_bootstrap()
+
+        self.assertEqual(result["schema_version"], service.WORKSPACE_SIDEBAR_SCHEMA_VERSION)
+        self.assertEqual(result["workspace"]["workspace_id"], "sales")
+        self.assertEqual(result["sidebar"]["schema_version"], service.WORKSPACE_SIDEBAR_SCHEMA_VERSION)
+        self.assertEqual(result["sidebar"]["workspace_id"], "sales")
+
     def test_resolve_return_documents_blocks_customer_fallback_for_quotation_anchor(self):
         invoice_calls = []
         delivery_calls = []
@@ -416,10 +442,12 @@ class TestSalesConsoleServiceContracts(unittest.TestCase):
         self.assertEqual(results_by_doctype["Customer"]["target"]["filters"]["keyword"], "CUST-ACME")
         self.assertEqual(results_by_doctype["Item"]["target"]["kind"], "worklist")
         self.assertEqual(results_by_doctype["Item"]["target"]["queue_key"], "item_directory")
-        self.assertEqual(results_by_doctype["Quotation"]["target"]["kind"], "form")
-        self.assertEqual(results_by_doctype["Quotation"]["target"]["doctype"], "Quotation")
-        self.assertEqual(results_by_doctype["Sales Order"]["target"]["kind"], "form")
-        self.assertEqual(results_by_doctype["Sales Order"]["target"]["doctype"], "Sales Order")
+        self.assertEqual(results_by_doctype["Quotation"]["target"], {
+            "kind": "worklist", "queue_key": "quotation_directory", "filters": {"keyword": "QTN-0001"},
+        })
+        self.assertEqual(results_by_doctype["Sales Order"]["target"], {
+            "kind": "worklist", "queue_key": "sales_order_directory", "filters": {"keyword": "SO-0001"},
+        })
 
     def test_sales_console_workspace_search_stays_idle_for_short_query(self):
         result = service.search_sales_console_workspace("a")

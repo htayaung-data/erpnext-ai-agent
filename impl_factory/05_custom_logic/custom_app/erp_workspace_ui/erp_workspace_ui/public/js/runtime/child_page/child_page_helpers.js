@@ -5,6 +5,7 @@
   const salesWorkspace = typeof workspaceRegistry.sales === "function" ? workspaceRegistry.sales() : null;
   const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
   const SALES_WORKLIST_ROUTE = salesRoutes.worklist || "sales-console-worklist";
+  const SALES_OWNED_PAGE_ROUTES = new Set(Object.values(salesRoutes).filter((route) => typeof route === "string" && route));
   let draftBodyGateStylesInjected = false;
   const draftPerformanceState = childPageRuntime.draftPerformanceState = childPageRuntime.draftPerformanceState || {
     sessions: Object.create(null),
@@ -438,14 +439,72 @@
     return true;
   }
 
+  function isPlainTarget(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+
+  function hasOnlyTargetKeys(target, required, optional) {
+    if (!isPlainTarget(target)) return false;
+    const allowed = new Set([].concat(required || [], optional || []));
+    return (required || []).every((key) => Object.prototype.hasOwnProperty.call(target, key))
+      && Object.keys(target).every((key) => allowed.has(key));
+  }
+
+  function isSalesOwnedRoute() {
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (!Array.isArray(route) || !route.length) return false;
+    const pageKey = String(route[0] || "");
+    if (SALES_OWNED_PAGE_ROUTES.has(pageKey)) return true;
+    return pageKey === "Form" && SALES_CONSOLE_ENHANCED_FORM_DOCTYPES.has(normalizeDoctype(route[1]));
+  }
+
+  function salesTargetAllowed(target) {
+    if (!isPlainTarget(target) || !isSalesOwnedRoute()) return false;
+    if (Object.prototype.hasOwnProperty.call(target, "notice") && typeof target.notice !== "string") return false;
+    if (target.kind === "worklist") {
+      return hasOnlyTargetKeys(target, ["kind", "queue_key"], ["filters", "notice"])
+        && typeof target.queue_key === "string" && target.queue_key.trim() === target.queue_key && !!target.queue_key
+        && (!Object.prototype.hasOwnProperty.call(target, "filters") || target.filters === null || isPlainTarget(target.filters));
+    }
+    if (target.kind === "new_doc") {
+      return hasOnlyTargetKeys(target, ["doctype", "kind"], ["notice"])
+        && new Set(["Quotation", "Sales Order"]).has(normalizeDoctype(target.doctype));
+    }
+    if (target.kind === "form") {
+      const doctype = normalizeDoctype(target.doctype);
+      return hasOnlyTargetKeys(target, ["doctype", "kind", "name"], ["filters", "notice"])
+        && typeof target.name === "string" && target.name.trim() === target.name && !!target.name
+        && (SALES_CONSOLE_ENHANCED_FORM_DOCTYPES.has(doctype)
+          || !!getDirectoryQueueForDoctype(doctype)
+          || SALES_CONSOLE_DEFERRED_DOCTYPES.has(doctype))
+        && (!Object.prototype.hasOwnProperty.call(target, "filters") || target.filters === null || isPlainTarget(target.filters));
+    }
+    if (target.kind === "list") {
+      const doctype = normalizeDoctype(target.doctype);
+      return hasOnlyTargetKeys(target, ["doctype", "kind"], ["filters", "notice"])
+        && (!!getDirectoryQueueForDoctype(doctype)
+          || SALES_CONSOLE_FORM_ONLY_DOCTYPES.has(doctype)
+          || SALES_CONSOLE_DEFERRED_DOCTYPES.has(doctype))
+        && (!Object.prototype.hasOwnProperty.call(target, "filters") || target.filters === null || isPlainTarget(target.filters));
+    }
+    return false;
+  }
+
   function routeToSalesConsoleTarget(target) {
-    if (!target || typeof target !== "object") return false;
+    if (!salesTargetAllowed(target)) return false;
     if (target.notice) {
       frappe.show_alert({ message: __(target.notice), indicator: "blue" });
     }
 
     if (target.kind === "worklist" && target.queue_key) {
       return routeToWorklist(target.queue_key, target.filters || null);
+    }
+
+    if (target.kind === "new_doc") {
+      frappe.new_doc(normalizeDoctype(target.doctype));
+      return true;
     }
 
     if (target.kind === "form" && target.doctype && target.name) {
@@ -499,19 +558,6 @@
 
     return false;
   }
-
-  function routeToDoc(doctype, name) {
-    if (!doctype || !name) return;
-    if (routeToSalesConsoleTarget({ kind: "form", doctype, name })) return;
-    frappe.set_route("Form", doctype, name);
-  }
-
-  function routeToList(doctype, filters) {
-    if (routeToSalesConsoleTarget({ kind: "list", doctype, filters })) return;
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
-    frappe.set_route("List", doctype);
-  }
-
 
   function scrollViewportTop() {
     try {
@@ -1174,7 +1220,11 @@
     seedDraftPerformanceSession,
   });
 
-  childPageRuntime.helpers = Object.assign({}, childPageRuntime.helpers || {}, {
+  const existingHelpers = Object.assign({}, childPageRuntime.helpers || {});
+  delete existingHelpers.routeToDoc;
+  delete existingHelpers.routeToList;
+  delete existingHelpers.routeToWorklist;
+  childPageRuntime.helpers = Object.assign(existingHelpers, {
     ensureChildPageHostSlot,
     escapeHtml,
     formatMoney,
@@ -1191,9 +1241,6 @@
     applySalesConsoleDocumentActionPolicy,
     applySalesConsoleGuidancePolicy,
     routeToSalesConsoleTarget,
-    routeToWorklist,
-    routeToDoc,
-    routeToList,
     scheduleFormTask,
     ensureDraftBodyPlaceholder,
     publishDraftPerformanceSummary,

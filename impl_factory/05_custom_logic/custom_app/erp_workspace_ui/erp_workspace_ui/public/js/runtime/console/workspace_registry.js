@@ -178,6 +178,10 @@
       returnsWorkHub: "erp_workspace_ui.warehouse_console.service.get_warehouse_returns_work_hub",
       internalTransferWorkflow: "erp_workspace_ui.warehouse_console.service.get_warehouse_internal_transfer_workflow",
       cycleCountWorkflow: "erp_workspace_ui.warehouse_console.service.get_warehouse_cycle_count_workflow",
+      customerReturnIntakeDraft: "erp_workspace_ui.warehouse_console.service.save_warehouse_customer_return_intake_draft",
+      customerReturnManagerDecision: "erp_workspace_ui.warehouse_console.service.save_warehouse_customer_return_manager_decision",
+      supplierReturnCandidateDraft: "erp_workspace_ui.warehouse_console.service.save_warehouse_supplier_return_candidate_draft",
+      supplierReturnManagerDecision: "erp_workspace_ui.warehouse_console.service.save_warehouse_supplier_return_manager_decision",
       stockExceptions: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exceptions",
       stockExceptionReview: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_exception_review",
       stockPostureReview: "erp_workspace_ui.warehouse_console.service.get_warehouse_stock_posture_review",
@@ -230,10 +234,10 @@
 
   const financeWorkspace = {
     workspaceId: "finance",
-    status: "f4_ar_aggregate_posture",
+    status: "cycle_1_f6_quality_gate_pending",
     title: "Finance Control Desk",
     workspaceFamily: "Finance & Accounting",
-    modeLabel: "Finance & Accounting Workspace",
+    modeLabel: "Read-only aggregate posture",
     roleFamily: "Finance & Accounting",
     routes: {
       home: "finance-control-desk",
@@ -249,18 +253,18 @@
     directoryQueuesByDoctype: {},
     sidebar: {
       homeKey: "finance_control_desk_home",
-      homeLabel: "Foundation",
+      homeLabel: "Overview",
       sectionKey: "workspace",
       sectionLabel: "Workspace",
     },
     search: {
       enabled: false,
-      mode: "finance_f4_ar_aggregate_posture_no_rows",
+      mode: "finance_cycle_1_aggregate_posture_no_rows",
       placement: "none",
-      placeholder: "Finance search is not active for AR aggregate posture",
+      placeholder: "Finance search is not available in Cycle 1",
     },
     fallbackItems: [
-      { key: "finance_control_desk_home", label: "Foundation", icon: "home", target: { kind: "page", route: "finance-control-desk" } },
+      { key: "finance_control_desk_home", label: "Overview", icon: "home", target: { kind: "page", route: "finance-control-desk" } },
     ],
   };
 
@@ -274,8 +278,8 @@
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
     { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
-    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w8b_movement_review" },
-    { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "f4_ar_aggregate_posture" },
+    { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "w8c_transfer_visibility" },
+    { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "cycle_1_f6_quality_gate_pending" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
     { workspaceId: "customer_service", matrixName: "Customer Service Console", recommendedName: "Customer Service Console", wave: "second", priority: 6, status: "planned" },
     { workspaceId: "hr_admin", matrixName: "HR and Admin Console", recommendedName: "HR and Admin Console", wave: "second", priority: 7, status: "planned" },
