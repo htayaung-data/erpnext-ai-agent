@@ -6,7 +6,7 @@ import types
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class _FrappePermissionError(Exception):
@@ -21,6 +21,7 @@ def _install_frappe_stub() -> None:
     frappe_stub.PermissionError = _FrappePermissionError
     frappe_stub.session = types.SimpleNamespace(user=None)
     frappe_stub.get_roles = lambda user=None: []
+    frappe_stub.has_permission = lambda *args, **kwargs: False
     frappe_stub.defaults = types.SimpleNamespace(get_user_default=lambda key: None)
     frappe_stub._ = lambda value: value
     frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn) if not args else args[0]
@@ -340,18 +341,23 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
 
-    def test_accounts_manager_single_visible_company_falls_back_when_user_permission_read_is_denied(self):
+    def test_accounts_manager_single_visible_company_never_attempts_user_permission_read(self):
         calls = []
+        browser_messages = []
 
+        permission_checker = Mock()
         def guarded_get_list(doctype, **kwargs):
             calls.append((doctype, kwargs))
             if doctype == "Company":
                 return [_COMPANY]
             if doctype == "User Permission":
+                browser_messages.append("Insufficient Permission for User Permission")
                 raise _FrappePermissionError("Insufficient Permission for User Permission")
             return []
 
         with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
+            service.frappe, "has_permission", new=permission_checker, create=True
+        ), patch.object(
             service.frappe,
             "get_list",
             side_effect=guarded_get_list,
@@ -362,23 +368,30 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertEqual(payload["resolver"]["state"], "scoped")
         self.assertEqual(payload["resolver"]["source"], "single_company_site_fallback")
         self.assertEqual(payload["resolver"]["reason"], "single_permission_visible_company_without_user_permission_read")
-        self.assertIn("User Permission", [doctype for doctype, _kwargs in calls])
+        self.assertEqual([doctype for doctype, _kwargs in calls], ["Company"])
+        self.assertEqual(browser_messages, [])
+        permission_checker.assert_not_called()
         self.assertEqual(payload["rows"], [])
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
 
-    def test_accounts_user_single_visible_company_falls_back_when_user_permission_read_is_denied(self):
+    def test_accounts_user_single_visible_company_never_attempts_user_permission_read(self):
         calls = []
+        browser_messages = []
+        permission_checker = Mock()
 
         def guarded_get_list(doctype, **kwargs):
             calls.append((doctype, kwargs))
             if doctype == "Company":
                 return [_COMPANY]
             if doctype == "User Permission":
+                browser_messages.append("Insufficient Permission for User Permission")
                 raise _FrappePermissionError("Insufficient Permission for User Permission")
             return []
 
         with patch.object(service.frappe, "get_roles", return_value=["Accounts User"]), patch.object(
+            service.frappe, "has_permission", new=permission_checker, create=True
+        ), patch.object(
             service.frappe,
             "get_list",
             side_effect=guarded_get_list,
@@ -389,7 +402,9 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertEqual(payload["resolver"]["state"], "scoped")
         self.assertEqual(payload["resolver"]["source"], "single_company_site_fallback")
         self.assertEqual(payload["resolver"]["amount_visibility_candidate"], False)
-        self.assertIn("User Permission", [doctype for doctype, _kwargs in calls])
+        self.assertEqual([doctype for doctype, _kwargs in calls], ["Company"])
+        self.assertEqual(browser_messages, [])
+        permission_checker.assert_not_called()
         self.assertEqual(payload["rows"], [])
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
@@ -416,15 +431,25 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
 
-    def test_multi_company_user_permission_denial_is_controlled_unavailable(self):
+    def test_multi_company_without_user_permission_authority_never_attempts_read(self):
+        calls = []
+        browser_messages = []
+
         def guarded_get_list(doctype, **kwargs):
+            calls.append(doctype)
             if doctype == "Company":
                 return [_COMPANY, _OTHER_COMPANY]
             if doctype == "User Permission":
+                browser_messages.append("Insufficient Permission for User Permission")
                 raise _FrappePermissionError("Insufficient Permission for User Permission")
             return []
 
         with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
+            service.frappe,
+            "has_permission",
+            return_value=False,
+            create=True,
+        ), patch.object(
             service.frappe,
             "get_list",
             side_effect=guarded_get_list,
@@ -434,9 +459,113 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
 
         self.assertEqual(payload["resolver"]["state"], "unavailable")
         self.assertEqual(payload["resolver"]["reason"], "company_permission_lookup_unavailable")
+        self.assertEqual(calls, ["Company"])
+        self.assertEqual(browser_messages, [])
         self.assertEqual(payload["rows"], [])
         self.assertEqual(payload["amounts"], [])
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
+
+    def test_multi_company_user_permission_read_requires_non_throwing_authority(self):
+        calls = []
+        permission_checks = []
+
+        def guarded_get_list(doctype, **kwargs):
+            calls.append(doctype)
+            if doctype == "Company":
+                return [_COMPANY, _OTHER_COMPANY]
+            if doctype == "User Permission":
+                return [{"for_value": _COMPANY["name"]}]
+            return []
+
+        def safe_has_permission(*args, **kwargs):
+            permission_checks.append((args, kwargs))
+            return True
+
+        with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
+            service.frappe,
+            "has_permission",
+            side_effect=safe_has_permission,
+            create=True,
+        ), patch.object(
+            service.frappe,
+            "get_list",
+            side_effect=guarded_get_list,
+            create=True,
+        ):
+            payload = service.get_finance_role_company_resolver_context()
+
+        self.assertEqual(payload["resolver"]["state"], "scoped")
+        self.assertEqual(payload["resolver"]["source"], "company_user_permission")
+        self.assertEqual(calls, ["Company", "User Permission"])
+        self.assertEqual(len(permission_checks), 1)
+        self.assertEqual(permission_checks[0][0], ("User Permission",))
+        self.assertEqual(permission_checks[0][1]["ptype"], "read")
+        self.assertEqual(permission_checks[0][1]["user"], "finance.lead@meet.com")
+        self.assertIs(permission_checks[0][1]["throw"], False)
+
+    def test_multi_company_authority_failure_stops_before_user_permission_read(self):
+        calls = []
+
+        def guarded_get_list(doctype, **kwargs):
+            calls.append(doctype)
+            if doctype == "Company":
+                return [_COMPANY, _OTHER_COMPANY]
+            raise AssertionError("authority failure must stop before User Permission read")
+
+        with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
+            service.frappe,
+            "has_permission",
+            side_effect=RuntimeError("permission authority unavailable"),
+            create=True,
+        ), patch.object(service.frappe, "get_list", side_effect=guarded_get_list, create=True):
+            payload = service.get_finance_role_company_resolver_context()
+
+        self.assertEqual(payload["resolver"]["state"], "unavailable")
+        self.assertEqual(payload["resolver"]["reason"], "company_permission_lookup_unavailable")
+        self.assertEqual(calls, ["Company"])
+
+    def test_denied_user_permission_read_discards_only_new_frappe_messages(self):
+        calls = []
+        existing_message = {"message": "Existing safe message"}
+        message_log = [existing_message]
+
+        def guarded_get_list(doctype, **kwargs):
+            calls.append(doctype)
+            if doctype == "Company":
+                return [_COMPANY, _OTHER_COMPANY]
+            if doctype == "User Permission":
+                service.frappe.local.message_log.append(
+                    {"message": "Insufficient Permission for User Permission"}
+                )
+                raise _FrappePermissionError("Insufficient Permission for User Permission")
+            return []
+
+        with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
+            service.frappe, "local", types.SimpleNamespace(message_log=message_log), create=True
+        ), patch.object(
+            service.frappe, "has_permission", return_value=True, create=True
+        ), patch.object(service.frappe, "get_list", side_effect=guarded_get_list, create=True):
+            payload = service.get_finance_role_company_resolver_context()
+
+        self.assertEqual(payload["resolver"]["state"], "unavailable")
+        self.assertEqual(payload["resolver"]["reason"], "company_permission_lookup_unavailable")
+        self.assertEqual(calls, ["Company", "User Permission"])
+        self.assertEqual(message_log, [existing_message])
+        self.assertNotIn("Insufficient Permission for User Permission", repr(message_log))
+
+    def test_single_visible_company_rejects_out_of_scope_request_before_permission_check(self):
+        permission_checker = Mock()
+
+        with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
+            service.frappe, "has_permission", new=permission_checker, create=True
+        ), patch.object(service.frappe, "get_list", return_value=[_COMPANY], create=True):
+            payload = service.get_finance_role_company_resolver_context(
+                requested_company=_OTHER_COMPANY["name"]
+            )
+
+        self.assertEqual(payload["resolver"]["state"], "restricted")
+        self.assertEqual(payload["resolver"]["reason"], "requested_company_outside_scope")
+        permission_checker.assert_not_called()
 
     def test_malformed_permission_visible_company_records_fail_closed_before_permission_lookup(self):
         malformed_records = (
@@ -474,6 +603,8 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
 
         self.assertEqual(values, [_COMPANY["name"]])
         self.assertEqual(calls[0][0], "User Permission")
+        self.assertEqual(calls[0][1]["filters"], {"user": "finance.lead@meet.com", "allow": "Company"})
+        self.assertEqual(calls[0][1]["fields"], ["for_value"])
         self.assertEqual(calls[0][1]["order_by"], "for_value asc")
         self.assertEqual(calls[0][1]["limit_start"], 0)
         self.assertEqual(
@@ -549,6 +680,8 @@ class TestFinanceRoleCompanyResolver(unittest.TestCase):
         self.assertNotIn('record.get("disabled")', source)
         self.assertNotIn("_count_enabled_companies", source)
         self.assertNotIn('count(name) as count', source)
+        self.assertRegex(source, r'checker\(\s*"User Permission",')
+        self.assertIn('throw=False', source)
 
 
 if __name__ == "__main__":

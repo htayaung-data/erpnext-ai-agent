@@ -51,6 +51,7 @@
       }
       .finance-control-title {
         margin: 0;
+        color: #f8fafc;
         font-size: 30px;
         line-height: 1.08;
         font-weight: 760;
@@ -159,11 +160,16 @@
       .finance-control-list {
         display: grid;
         gap: 10px;
+        min-width: 0;
+        max-width: 100%;
       }
       .finance-control-state-row {
+        box-sizing: border-box;
         display: grid;
         grid-template-columns: minmax(140px, 0.32fr) minmax(0, 1fr);
         gap: 12px;
+        min-width: 0;
+        max-width: 100%;
         align-items: start;
         padding: 12px 0;
         border-top: 1px solid #edf0f4;
@@ -173,6 +179,7 @@
         padding-top: 0;
       }
       .finance-control-state-label {
+        box-sizing: border-box;
         display: inline-flex;
         width: max-content;
         max-width: 100%;
@@ -186,6 +193,7 @@
         font-weight: 750;
         text-transform: uppercase;
         letter-spacing: 0.05em;
+        overflow-wrap: anywhere;
       }
       .finance-control-state-label.is-ready {
         background: #ecfdf3;
@@ -196,19 +204,24 @@
         color: #475569;
       }
       .finance-control-state-text {
+        box-sizing: border-box;
         min-width: 0;
+        width: 100%;
+        max-width: 100%;
       }
       .finance-control-state-text strong {
         display: block;
         margin-bottom: 3px;
         font-size: 13px;
         color: #202b3d;
+        overflow-wrap: anywhere;
       }
       .finance-control-state-text span {
         display: block;
         font-size: 12.25px;
         line-height: 1.55;
         color: #5d6878;
+        overflow-wrap: anywhere;
       }
       .finance-control-boundary {
         border-left: 3px solid #22c55e;
@@ -227,12 +240,30 @@
         display: grid;
         align-content: center;
       }
+      .finance-control-presentation-shell {
+        position: relative;
+        min-width: 0;
+      }
+      .finance-control-live-status {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+        border: 0;
+      }
       @media (max-width: 860px) {
         .finance-control-grid {
           grid-template-columns: 1fr;
         }
         .finance-control-state-row {
-          grid-template-columns: 1fr;
+          grid-template-columns: minmax(0, 1fr);
         }
         .finance-control-actions {
           justify-content: flex-start;
@@ -254,15 +285,42 @@
   function resolvePageWrapper(wrapper) {
     const candidate = wrapper && wrapper.jquery ? wrapper[0] : wrapper;
     if (candidate && candidate.querySelector) return candidate;
-    const pageWrapper = frappe && frappe.container && frappe.container.page;
-    if (pageWrapper && pageWrapper.querySelector) return pageWrapper;
     return null;
+  }
+
+  function pageBodyElement(page) {
+    const body = page && page.body;
+    if (body && body.nodeType === 1) return body;
+    if (body && body.jquery && body[0] && body[0].nodeType === 1) return body[0];
+    return null;
+  }
+
+  function ownedPageBody(pageWrapper) {
+    const page = pageWrapper && pageWrapper.page;
+    const body = pageBodyElement(page);
+    if (!page || page.parent !== pageWrapper || !body) return null;
+    if (typeof pageWrapper.contains !== "function" || !pageWrapper.contains(body)) return null;
+    if (!body.classList || !body.classList.contains("layout-main-section")) return null;
+    return body;
+  }
+
+  function ensureFinancePage(wrapper) {
+    const pageWrapper = resolvePageWrapper(wrapper);
+    if (!pageWrapper) return null;
+    const pageApi = frappe && frappe.ui;
+    if (!pageWrapper.page && pageApi && typeof pageApi.make_app_page === "function") {
+      pageApi.make_app_page({
+        parent: pageWrapper,
+        title: "Finance Control Desk",
+        single_column: true,
+      });
+    }
+    return ownedPageBody(pageWrapper) ? pageWrapper : null;
   }
 
   function resolveTarget(wrapper) {
     const pageWrapper = resolvePageWrapper(wrapper);
-    if (pageWrapper) return pageWrapper.querySelector(".layout-main-section") || pageWrapper;
-    return document.getElementById("body");
+    return ownedPageBody(pageWrapper);
   }
 
   function normalizePayload(payload) {
@@ -336,6 +394,13 @@
       return FINANCE_UNAVAILABLE_FALLBACK;
     }
     return detail || "This posture is not active for this read-only phase.";
+  }
+
+  function visiblePostureValue(lane) {
+    const safeLane = lane && typeof lane === "object" ? lane : {};
+    if (["receivables_posture", "payables_posture"].includes(safeLane.key)
+      && safeLane.state !== "ready") return "Unavailable";
+    return businessSafeText(safeLane.value, "Unavailable");
   }
 
   function visibleUnavailableMessage() {
@@ -730,15 +795,18 @@
   ]);
   const PAYABLES_POLICY_KEYS = Object.freeze([
     "source", "reason", "resolver_state", "resolver_source", "role_category", "source_permission_checked",
-    "source_permission_verified", "source_read_policy_ready", "runtime_count_enabled", "manager_only",
-    "accounts_user_counts_enabled", "aggregate_counts_only", "due_date_basis_only", "posting_date_fallback_enabled",
-    "due_soon_enabled", "payment_terms_supported", "payment_schedule_supported", "payment_schedule_presence_gate_required",
-    "payment_schedule_rows_returned", "on_hold_supported", "returns_supported", "identifiers_enabled",
+    "source_permission_verified", "future_activity_source", "future_activity_source_permission_checked",
+    "future_activity_source_permission_verified", "future_activity_gate_required",
+    "future_payment_ledger_activity_supported", "source_read_policy_ready", "runtime_count_enabled",
+    "manager_only", "accounts_user_counts_enabled", "aggregate_counts_only", "due_date_basis_only",
+    "posting_date_fallback_enabled", "due_soon_enabled", "payment_terms_supported",
+    "payment_schedule_supported", "payment_schedule_presence_gate_required", "payment_schedule_rows_returned",
+    "on_hold_supported", "returns_supported", "identifiers_enabled",
     "monetary_values_enabled", "native_navigation_enabled", "external_output_enabled", "execution_enabled",
   ]);
   const POLICY_STRING_KEYS = new Set([
     "source", "reason", "resolver_state", "resolver_source", "role_category", "count_source",
-    "company_currency", "amount_serialization",
+    "company_currency", "amount_serialization", "future_activity_source",
     "payment_terms_detection", "aging_date_basis", "voucher_set_reconciliation",
   ]);
   const POLICY_STRING_OR_NULL_KEYS = new Set([
@@ -842,6 +910,11 @@
 
   function validatePayablesPolicyTruth(value) {
     return value.source === "Purchase Invoice"
+      && value.future_activity_source === "Payment Ledger Entry"
+      && value.future_activity_gate_required === true
+      && value.future_payment_ledger_activity_supported === false
+      && (!value.runtime_count_enabled || (value.future_activity_source_permission_checked === true
+        && value.future_activity_source_permission_verified === true))
       && value.manager_only === true
       && value.accounts_user_counts_enabled === false
       && value.aggregate_counts_only === true
@@ -986,6 +1059,10 @@
     const keys = ["scope_mode", "phase", "default_routing_enabled", "accounting_overview_enabled", "receivables_count_posture_enabled", "receivables_amount_summary_enabled", "payables_count_posture_enabled", "company_scope_required", "financial_data_enabled", "financial_rows_enabled", "monetary_values_enabled", "execution_enabled"];
     const booleanKeys = keys.filter((key) => !["scope_mode", "phase"].includes(key));
     return validateStringFields(value, keys, { booleanKeys })
+      && ["finance_cycle_1_aggregate_posture", "restricted"].includes(value.scope_mode)
+      && value.phase === "finance_cycle_1_aggregate_posture"
+      && value.company_scope_required === true
+      && value.financial_data_enabled === false
       && value.default_routing_enabled === false
       && value.financial_rows_enabled === false
       && value.execution_enabled === false;
@@ -1031,8 +1108,8 @@
   function isFixedScaleDecimal(value, precision) {
     if (typeof value !== "string" || !Number.isInteger(precision) || precision < 0 || precision > 8) return false;
     const pattern = precision === 0
-      ? /^-?\d+$/
-      : new RegExp(`^-?\\d+\\.\\d{${precision}}$`);
+      ? /^\d+$/
+      : new RegExp(`^\\d+\\.\\d{${precision}}$`);
     return pattern.test(value);
   }
 
@@ -1212,6 +1289,23 @@
     return null;
   }
 
+  function postureCardMatchesPosture(item, payload) {
+    if (item.key === "receivables_posture") {
+      const countReady = payload.receivables_posture && payload.receivables_posture.state === "ready";
+      const amountReady = payload.receivables_amount_summary && payload.receivables_amount_summary.state === "ready";
+      if (!countReady) return item.state !== "ready" && item.value === "No counts";
+      if (amountReady) return item.state === "ready" && item.value === "Aggregate counts + MMK buckets";
+      return item.state === "ready" && item.value === "Aggregate counts only";
+    }
+    if (item.key === "payables_posture") {
+      const ready = payload.payables_count_posture && payload.payables_count_posture.state === "ready";
+      return ready
+        ? item.state === "ready" && item.value === "Aggregate counts only"
+        : item.state !== "ready" && ["No counts", "Unavailable"].includes(item.value);
+    }
+    return true;
+  }
+
   function validatePostureCards(value, payload) {
     if (!Array.isArray(value)) return false;
     if (value.length === 0) return true;
@@ -1224,6 +1318,7 @@
       const contract = POSTURE_CARD_CONTRACT[item.key];
       if (!contract || seen.has(item.key) || item.title !== contract.title) return false;
       seen.add(item.key);
+      if (!postureCardMatchesPosture(item, payload)) return false;
       if (item.key === "company_scope") {
         const companyName = payload.company_scope && typeof payload.company_scope.company === "string" ? payload.company_scope.company : "";
         if (!(item.value === "Not set" || (!!companyName && item.value === companyName))) return false;
@@ -1274,6 +1369,10 @@
     if (!validateBusinessFacingCopy(payload)) return false;
     if (![payload.metrics, payload.amounts, payload.documents, payload.rows].every(isEmptyArray)) return false;
     if (!validateNoEffect(payload.no_effect)) return false;
+    const expectedScopeMode = payload.state.kind === "restricted"
+      ? "restricted"
+      : "finance_cycle_1_aggregate_posture";
+    if (payload.scope.scope_mode !== expectedScopeMode) return false;
     const postureDates = [payload.receivables_posture, payload.receivables_amount_summary, payload.payables_count_posture]
       .filter((posture) => isPlainObject(posture) && Object.keys(posture).length > 0)
       .map((posture) => posture.as_of_date);
@@ -1383,7 +1482,7 @@
         <h2 class="finance-control-panel-title">${escapeHtml(businessSafeText(lane.title, "Finance posture unavailable"))}</h2>
         <p class="finance-control-panel-copy">${escapeHtml(visibleLaneDetail(lane))}</p>
         <div class="finance-control-chip-row" aria-label="${escapeHtml(businessSafeText(lane.title, "Finance posture"))} state">
-          <span class="finance-control-chip${lane.state === "ready" ? "" : " is-muted"}">${escapeHtml(businessSafeText(lane.value, "Unavailable"))}</span>
+          <span class="finance-control-chip${lane.state === "ready" ? "" : " is-muted"}">${escapeHtml(visiblePostureValue(lane))}</span>
         </div>
       </article>
     `).join("");
@@ -1624,7 +1723,9 @@
       const opts = options || {};
       if (!opts.force && inFlight) return inFlight.promise;
       const token = ++requestSerial;
-      const request = Promise.resolve().then(() => callContext());
+      const request = Promise.resolve().then(() => (
+        token === requestSerial ? callContext() : null
+      ));
       const settled = request.then((payload) => {
         if (token !== requestSerial) return { stale: true, payload: null };
         if (typeof opts.onPayload === "function") opts.onPayload(payload);
@@ -1647,18 +1748,171 @@
   function bindRefresh(target) {
     const refresh = target.querySelector("[data-finance-refresh]");
     if (!refresh) return;
-    refresh.addEventListener("click", () => loadOverviewContext(target, { force: true }));
+    refresh.addEventListener("click", () => {
+      if (target.__financeRefreshFocusIntent) {
+        target.__financeRefreshFocusIntent.invalidate();
+      }
+      const refreshFocusIntent = createFinanceRefreshFocusIntent(target, refresh);
+      target.__financeRefreshFocusIntent = refreshFocusIntent;
+      loadOverviewContext(target, {
+        force: true,
+        refreshFocusIntent,
+        userInitiated: true,
+      });
+    });
+  }
+
+  function ensurePresentationShell(target) {
+    let presentationShell = target.querySelector("[data-finance-presentation-shell]");
+    if (presentationShell && presentationShell.parentElement !== target) presentationShell = null;
+    let renderHost = presentationShell && presentationShell.querySelector("[data-finance-render-host]");
+    let liveStatus = presentationShell && presentationShell.querySelector("[data-finance-live-status]");
+    if (!presentationShell || !renderHost || !liveStatus) {
+      target.innerHTML = `
+        <div class="finance-control-presentation-shell" data-finance-presentation-shell="1">
+          <div data-finance-render-host="1"></div>
+          <p class="finance-control-live-status" data-finance-live-status="1" role="status" aria-live="polite" aria-atomic="true"></p>
+        </div>
+      `;
+      presentationShell = target.querySelector("[data-finance-presentation-shell]");
+      renderHost = presentationShell && presentationShell.querySelector("[data-finance-render-host]");
+      liveStatus = presentationShell && presentationShell.querySelector("[data-finance-live-status]");
+    }
+    return { presentationShell, renderHost, liveStatus };
   }
 
   function setHtml(target, html) {
     if (!target || target === document.body || target.id === "body") return;
-    target.innerHTML = html;
+    const presentation = ensurePresentationShell(target);
+    if (presentation.renderHost) {
+      presentation.renderHost.innerHTML = html;
+    } else {
+      target.innerHTML = `<div class="finance-control-presentation-shell" data-finance-presentation-shell="1">
+        <div data-finance-render-host="1">${html}</div>
+        <p class="finance-control-live-status" data-finance-live-status="1" role="status" aria-live="polite" aria-atomic="true"></p>
+      </div>`;
+    }
     bindRefresh(target);
+  }
+
+  function scheduleFinanceAnnouncement(callback, scheduler) {
+    if (typeof scheduler === "function") {
+      scheduler(callback);
+      return;
+    }
+    const browser = typeof window !== "undefined" ? window : globalThis;
+    if (typeof browser.queueMicrotask === "function") {
+      browser.queueMicrotask(callback);
+      return;
+    }
+    Promise.resolve().then(callback);
+  }
+
+  function invalidateFinanceAnnouncement(target, clearStatus) {
+    if (!target) return 0;
+    const generation = Number(target.__financeLiveStatusGeneration || 0) + 1;
+    target.__financeLiveStatusGeneration = generation;
+    if (clearStatus) {
+      const liveStatus = target.querySelector("[data-finance-live-status]");
+      if (liveStatus) liveStatus.textContent = "";
+    }
+    return generation;
+  }
+
+  function announceFinanceStatus(target, message, options) {
+    if (!target) return false;
+    const liveStatus = target.querySelector("[data-finance-live-status]");
+    if (!liveStatus) return false;
+    const safeMessage = businessSafeText(message, "Finance overview updated.");
+    const generation = invalidateFinanceAnnouncement(target, true);
+    scheduleFinanceAnnouncement(() => {
+      if (target.__financeLiveStatusGeneration !== generation) return;
+      const currentStatus = target.querySelector("[data-finance-live-status]");
+      if (currentStatus !== liveStatus) return;
+      currentStatus.textContent = safeMessage;
+    }, options && options.scheduler);
+    return true;
+  }
+
+  function createFinanceRefreshFocusIntent(target, refresh, options) {
+    const opts = options || {};
+    const activeDocument = opts.document
+      || (refresh && refresh.ownerDocument)
+      || (typeof document !== "undefined" ? document : null);
+    let eligible = Boolean(refresh && activeDocument && activeDocument.activeElement === refresh);
+    let released = false;
+    const onFocusIn = (event) => {
+      if (!released && eligible && event && event.target !== refresh) eligible = false;
+    };
+    if (eligible && typeof activeDocument.addEventListener === "function") {
+      activeDocument.addEventListener("focusin", onFocusIn, true);
+    }
+    function release() {
+      if (released) return;
+      released = true;
+      if (activeDocument && typeof activeDocument.removeEventListener === "function") {
+        activeDocument.removeEventListener("focusin", onFocusIn, true);
+      }
+    }
+    return Object.freeze({
+      shouldRestore() {
+        return !released && eligible;
+      },
+      invalidate() {
+        eligible = false;
+        release();
+      },
+      release,
+    });
+  }
+
+  function restoreFinanceRefreshFocus(target, shouldRestore) {
+    if (!target || !shouldRestore) return false;
+    const refresh = target.querySelector("[data-finance-refresh]");
+    if (!refresh || typeof refresh.focus !== "function") return false;
+    try {
+      refresh.focus({ preventScroll: true });
+    } catch (_error) {
+      refresh.focus();
+    }
+    return true;
+  }
+
+  function completionAnnouncement(payload, outcome, userInitiated) {
+    const action = userInitiated ? "refreshed" : "loaded";
+    if (outcome === "error") {
+      return `Finance overview could not be ${action}. No financial posture was shown.`;
+    }
+    if (outcome === "rejected") {
+      return "Finance overview could not be shown safely.";
+    }
+    const kind = payload && payload.state && payload.state.kind;
+    if (kind === "ready") return `Finance overview ${action}.`;
+    if (kind === "restricted") return `Finance overview ${action}. Access remains limited for this role.`;
+    return `Finance overview ${action}. Current posture is unavailable.`;
+  }
+
+  function completeFinanceRequest(target, options) {
+    const opts = options || {};
+    const focusIntent = opts.refreshFocusIntent || null;
+    setRequestBusy(target, false);
+    restoreFinanceRefreshFocus(
+      target,
+      focusIntent && typeof focusIntent.shouldRestore === "function"
+        ? focusIntent.shouldRestore()
+        : Boolean(opts.restoreRefreshFocus)
+    );
+    if (focusIntent && typeof focusIntent.release === "function") focusIntent.release();
+    if (target && target.__financeRefreshFocusIntent === focusIntent) {
+      target.__financeRefreshFocusIntent = null;
+    }
+    announceFinanceStatus(target, opts.statusMessage || "Finance overview updated.");
   }
 
   function setRequestBusy(target, busy) {
     if (!target) return;
-    target.setAttribute("aria-busy", busy ? "true" : "false");
+    const renderHost = target.querySelector("[data-finance-render-host]") || target;
+    renderHost.setAttribute("aria-busy", busy ? "true" : "false");
     const refresh = target.querySelector("[data-finance-refresh]");
     if (refresh) refresh.disabled = Boolean(busy);
   }
@@ -1670,35 +1924,70 @@
     return target.__financeControlDeskRequestCoordinator;
   }
 
+  function hasCurrentFinanceTargetAuthority(target) {
+    if (!target) return false;
+    const owner = target.__financeControlDeskOwnerWrapper;
+    if (!owner) return true;
+    return owner.__financeControlDeskHideTarget === target
+      && owner.__financeControlDeskTargetGeneration === target.__financeControlDeskTargetGeneration
+      && resolveTarget(owner) === target;
+  }
+
   function loadOverviewContext(target, options) {
     ensureStyle();
     const opts = options || {};
+    const refreshFocusIntent = opts.refreshFocusIntent || null;
+    const userInitiated = Boolean(opts.userInitiated);
+    let statusMessage = "Finance overview updated.";
     if (!target || target === document.body || target.id === "body") return Promise.resolve({ stale: true });
-    if (!target.__financeControlDeskOverviewPayload) setHtml(target, renderLoading());
+    if (!hasCurrentFinanceTargetAuthority(target)) return Promise.resolve({ stale: true });
+    if (opts.force && target.__financeRefreshFocusIntent
+      && target.__financeRefreshFocusIntent !== refreshFocusIntent) {
+      target.__financeRefreshFocusIntent.invalidate();
+      target.__financeRefreshFocusIntent = null;
+    }
+    target.__financeControlDeskOverviewPayload = null;
+    invalidateFinanceAnnouncement(target, true);
+    setHtml(target, renderLoading());
     setRequestBusy(target, true);
     return coordinatorFor(target).load({
       force: Boolean(opts.force),
       onPayload(payload) {
+        if (!hasCurrentFinanceTargetAuthority(target)) return;
         if (!validateFinanceOverviewPayload(payload)) {
           target.__financeControlDeskOverviewPayload = null;
           setHtml(target, renderPolicyViolation());
+          statusMessage = completionAnnouncement(null, "rejected", userInitiated);
           return;
         }
-        target.__financeControlDeskOverviewPayload = payload;
+        target.__financeControlDeskOverviewPayload = null;
         setHtml(target, renderPayload(payload));
+        statusMessage = completionAnnouncement(payload, "payload", userInitiated);
       },
       onError() {
+        if (!hasCurrentFinanceTargetAuthority(target)) return;
         target.__financeControlDeskOverviewPayload = null;
         setHtml(target, renderUnavailable());
+        statusMessage = completionAnnouncement(null, "error", userInitiated);
       },
       onSettled() {
-        setRequestBusy(target, false);
+        if (!hasCurrentFinanceTargetAuthority(target)) {
+          if (refreshFocusIntent && typeof refreshFocusIntent.invalidate === "function") {
+            refreshFocusIntent.invalidate();
+          }
+          return;
+        }
+        completeFinanceRequest(target, { refreshFocusIntent, statusMessage });
       },
     });
   }
 
   function bindFinancePageHide(pageWrapper, target, binder) {
-    if (!pageWrapper || !target || pageWrapper.__financeControlDeskHideBound) return false;
+    if (!pageWrapper || !target) return false;
+    const previousTarget = pageWrapper.__financeControlDeskHideTarget;
+    if (previousTarget === target) return false;
+    if (previousTarget) invalidateTarget(previousTarget);
+    const generation = Number(pageWrapper.__financeControlDeskTargetGeneration || 0) + 1;
     const activeBinder = binder || ((node, handler) => {
       const browser = typeof window !== "undefined" ? window : globalThis;
       const jquery = browser.jQuery || browser.$;
@@ -1706,29 +1995,42 @@
       jquery(node).off("hide.financeControlDesk").on("hide.financeControlDesk", handler);
       return true;
     });
-    if (activeBinder(pageWrapper, () => invalidateTarget(target)) === false) return false;
+    const hideHandler = () => {
+      if (pageWrapper.__financeControlDeskHideTarget !== target
+        || pageWrapper.__financeControlDeskTargetGeneration !== generation) return;
+      invalidateTarget(target);
+    };
+    if (activeBinder(pageWrapper, hideHandler) === false) return false;
     pageWrapper.__financeControlDeskHideBound = true;
+    pageWrapper.__financeControlDeskHideTarget = target;
+    pageWrapper.__financeControlDeskTargetGeneration = generation;
+    target.__financeControlDeskOwnerWrapper = pageWrapper;
+    target.__financeControlDeskTargetGeneration = generation;
     return true;
   }
 
   function render(wrapper) {
-    const pageWrapper = resolvePageWrapper(wrapper);
+    const pageWrapper = ensureFinancePage(wrapper);
     const target = resolveTarget(pageWrapper);
     if (!target || target === document.body || target.id === "body") return;
-    bindFinancePageHide(pageWrapper, target);
-    if (target.__financeControlDeskOverviewPayload) {
-      setHtml(target, renderPayload(target.__financeControlDeskOverviewPayload));
-    }
+    const bound = bindFinancePageHide(pageWrapper, target);
+    if (!bound && pageWrapper.__financeControlDeskHideTarget !== target) return;
     target.__financeControlDeskInitialized = true;
     return loadOverviewContext(target, { force: false });
   }
 
   function invalidateTarget(target) {
     if (!target || target === document.body || target.id === "body") return;
+    if (target.__financeRefreshFocusIntent) {
+      target.__financeRefreshFocusIntent.invalidate();
+      target.__financeRefreshFocusIntent = null;
+    }
     if (target.__financeControlDeskRequestCoordinator) {
       target.__financeControlDeskRequestCoordinator.invalidate();
     }
+    invalidateFinanceAnnouncement(target, true);
     target.__financeControlDeskOverviewPayload = null;
+    setHtml(target, renderLoading());
     setRequestBusy(target, false);
   }
 
@@ -1745,15 +2047,29 @@
       hasForbiddenRawFinancePayload,
       isForbiddenPayablesValueKey,
       visibleLaneDetail,
+      visiblePostureValue,
       isBusinessSafeText,
       businessSafeText,
       normalizePayload,
       validateFinanceOverviewPayload,
       createOverviewContextRequest,
       createOverviewRequestCoordinator,
+      createFinanceRefreshFocusIntent,
+      invalidateFinanceAnnouncement,
+      announceFinanceStatus,
+      restoreFinanceRefreshFocus,
+      completionAnnouncement,
+      completeFinanceRequest,
+      setHtml,
+      bindRefresh,
       bindFinancePageHide,
+      pageBodyElement,
+      ownedPageBody,
+      ensureFinancePage,
       resolvePageWrapper,
       resolveTarget,
+      loadOverviewContext,
+      invalidateTarget,
       render,
       hide,
       renderPayload,

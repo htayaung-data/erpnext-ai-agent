@@ -8,7 +8,7 @@ import types
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class _FrappePermissionError(Exception):
@@ -52,6 +52,8 @@ _FRONTEND_SOURCE = _SOURCE_ROOT / "erp_workspace_ui/page/finance_control_desk/fi
 _PAGE_METADATA_SOURCE = _SOURCE_ROOT / "erp_workspace_ui/page/finance_control_desk/finance_control_desk.json"
 _SERVICE_SOURCE = _SOURCE_ROOT / "finance_accounting/service.py"
 _SIDEBAR_SOURCE = _SOURCE_ROOT / "public/js/runtime/console/workspace_console_sidebar.js"
+_RESPONSIVE_SMOKE_SOURCE = _SOURCE_ROOT.parent / "ui_smoke/finance_cycle1_responsive_smoke.js"
+_SOURCE_SMOKE_SOURCE = _SOURCE_ROOT.parent / "ui_smoke/finance_cycle1_source_smoke.js"
 _F4D_DOC_SOURCE = _SOURCE_ROOT.parent / "_docs/erp-ui-customization/finance-accounting-phase-f4d-receivables-count-posture-2026-07-06.md"
 _F4K1_DOC_SOURCE = _SOURCE_ROOT.parent / "_docs/erp-ui-customization/finance-accounting-phase-f4k1-ar-copy-traceability-remediation-2026-07-07.md"
 
@@ -185,6 +187,10 @@ def _frontend_payables_posture(overrides):
             "source": "Purchase Invoice", "reason": "payables_count_posture_ready" if ready else "payment_schedule_not_supported",
             "resolver_state": "scoped", "resolver_source": "single_company_site_fallback", "role_category": "manager",
             "source_permission_checked": True, "source_permission_verified": True,
+            "future_activity_source": "Payment Ledger Entry",
+            "future_activity_source_permission_checked": True,
+            "future_activity_source_permission_verified": True,
+            "future_activity_gate_required": True, "future_payment_ledger_activity_supported": False,
             "source_read_policy_ready": ready, "runtime_count_enabled": ready, "manager_only": True,
             "accounts_user_counts_enabled": False, "aggregate_counts_only": True, "due_date_basis_only": True,
             "posting_date_fallback_enabled": False, "due_soon_enabled": False, "payment_terms_supported": False,
@@ -497,6 +503,158 @@ class TestFinanceAccountingShell(unittest.TestCase):
             self.assertEqual(set(card), {"key", "title", "state", "detail", "value", "rows"})
             self.assertEqual(card["rows"], [])
 
+    def test_overview_single_company_scope_returns_without_user_permission_message(self):
+        calls = []
+        browser_messages = []
+        permission_checker = Mock()
+        receivables_unavailable = {
+            "state": "unavailable",
+            "bucket_counts": {},
+            "policy": {"reason": "source_unavailable", "role_category": "manager"},
+        }
+        payables_unavailable = {
+            "state": "unavailable",
+            "bucket_counts": {},
+            "policy": {"reason": "source_unavailable", "role_category": "manager"},
+        }
+
+        def guarded_get_list(doctype, **kwargs):
+            calls.append(doctype)
+            if doctype == "Company":
+                return [{
+                    "name": _COMPANY_SCOPE["name"],
+                    "company_name": _COMPANY_SCOPE["label"],
+                    "default_currency": _COMPANY_SCOPE["currency"],
+                }]
+            if doctype == "User Permission":
+                browser_messages.append("Insufficient Permission for User Permission")
+                raise PermissionError("Insufficient Permission for User Permission")
+            raise AssertionError(f"unexpected source read: {doctype}")
+
+        with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
+            service.frappe,
+            "get_list",
+            side_effect=guarded_get_list,
+            create=True,
+        ), patch.object(
+            service.frappe, "has_permission", new=permission_checker, create=True
+        ), patch.object(
+            service,
+            "build_receivables_count_posture",
+            return_value=receivables_unavailable,
+        ), patch.object(
+            service,
+            "build_payables_count_posture",
+            return_value=payables_unavailable,
+        ):
+            payload = service.get_finance_control_desk_overview_context()
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["company_scope"]["state"], "scoped")
+        self.assertEqual(payload["company_scope"]["source"], "single_company_site_fallback")
+        self.assertEqual(calls, ["Company"])
+        self.assertEqual(browser_messages, [])
+        permission_checker.assert_not_called()
+        self.assertEqual(payload["receivables_posture"]["state"], "unavailable")
+        self.assertEqual(payload["payables_count_posture"]["state"], "unavailable")
+        self.assertEqual(payload["rows"], [])
+        self.assertEqual(payload["amounts"], [])
+        self.assertEqual(payload["documents"], [])
+
+    def test_accounts_user_overview_uses_single_company_fallback_without_permission_message(self):
+        calls = []
+        browser_messages = []
+        permission_checker = Mock()
+
+        def guarded_get_list(doctype, **kwargs):
+            calls.append(doctype)
+            if doctype == "Company":
+                return [{
+                    "name": _COMPANY_SCOPE["name"],
+                    "company_name": _COMPANY_SCOPE["label"],
+                    "default_currency": _COMPANY_SCOPE["currency"],
+                }]
+            if doctype == "User Permission":
+                browser_messages.append("Insufficient Permission for User Permission")
+                raise PermissionError("Insufficient Permission for User Permission")
+            raise AssertionError(f"Accounts User must not read Finance source rows: {doctype}")
+
+        with patch.object(service.frappe, "get_roles", return_value=["Accounts User"]), patch.object(
+            service.frappe,
+            "get_list",
+            side_effect=guarded_get_list,
+            create=True,
+        ), patch.object(
+            service.frappe, "has_permission", new=permission_checker, create=True
+        ):
+            payload = service.get_finance_control_desk_overview_context()
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["company_scope"]["state"], "scoped")
+        self.assertEqual(payload["company_scope"]["source"], "single_company_site_fallback")
+        self.assertEqual(payload["receivables_posture"]["state"], "unavailable")
+        self.assertEqual(payload["receivables_posture"]["bucket_counts"], {})
+        self.assertEqual(payload["receivables_amount_summary"]["state"], "unavailable")
+        self.assertEqual(payload["receivables_amount_summary"]["bucket_amounts"], {})
+        self.assertEqual(payload["payables_count_posture"]["state"], "unavailable")
+        self.assertEqual(payload["payables_count_posture"]["bucket_counts"], {})
+        self.assertEqual(calls, ["Company"])
+        self.assertEqual(browser_messages, [])
+        permission_checker.assert_not_called()
+        self.assertEqual(payload["rows"], [])
+        self.assertEqual(payload["amounts"], [])
+        self.assertEqual(payload["documents"], [])
+
+    def test_all_finance_list_adapters_discard_new_permission_messages(self):
+        as_of = datetime(2026, 7, 16).date()
+        local = types.SimpleNamespace(message_log=[])
+        adapters = {
+            "receivables_count": lambda getter: service._permission_preserving_receivables_count(
+                [], list_getter=getter
+            ),
+            "receivables_schedule": lambda getter: service._permission_preserving_receivables_schedule_integrity_gate(
+                _COMPANY_SCOPE["name"], as_of, list_getter=getter
+            ),
+            "receivables_future_activity": lambda getter: service._permission_preserving_receivables_future_activity_count(
+                _COMPANY_SCOPE["name"], as_of, list_getter=getter
+            ),
+            "payables_count": lambda getter: service._permission_preserving_payables_count(
+                [], list_getter=getter
+            ),
+            "payables_future_activity": lambda getter: service._permission_preserving_payables_future_activity_count(
+                _COMPANY_SCOPE["name"], as_of, list_getter=getter
+            ),
+            "receivables_payment_ledger_pages": lambda getter: service._permission_preserving_payment_ledger_rows(
+                _COMPANY_SCOPE["name"], as_of, ["SINV-TEST-0001"], list_getter=getter
+            ),
+            "receivables_invoice_reconciliation": lambda getter: service._permission_preserving_receivables_invoice_identity_sets(
+                _COMPANY_SCOPE["name"], as_of, list_getter=getter
+            ),
+        }
+
+        for name, adapter in adapters.items():
+            with self.subTest(adapter=name):
+                local.message_log[:] = ["preexisting message"]
+
+                def denied_getter(_doctype, **_kwargs):
+                    local.message_log.append("Insufficient Permission for source")
+                    raise PermissionError("permission denied")
+
+                with patch.object(service.frappe, "local", local, create=True):
+                    with self.assertRaises(Exception):
+                        adapter(denied_getter)
+                self.assertEqual(local.message_log, ["preexisting message"])
+
+        source = _SERVICE_SOURCE.read_text(encoding="utf-8")
+        direct_getter_calls = [
+            line.strip()
+            for line in source.splitlines()
+            if re.search(r"\bgetter\(", line)
+            and "return getter(doctype, **kwargs)" not in line
+            and "field = getter(fieldname)" not in line
+        ]
+        self.assertEqual(direct_getter_calls, [])
+
     def test_user_default_company_alone_does_not_authorize_overview_or_counts(self):
         with patch.object(service.frappe, "get_roles", return_value=["Accounts Manager"]), patch.object(
             service.frappe.defaults,
@@ -683,6 +841,98 @@ class TestFinanceAccountingShell(unittest.TestCase):
         with self.assertRaises(frappe.PermissionError):
             service.get_finance_control_desk_overview_context()
 
+    def test_frontend_mounts_once_inside_standard_frappe_page_body(self):
+        source = _frontend_source()
+        source_smoke = _SOURCE_SMOKE_SOURCE.read_text(encoding="utf-8")
+        responsive_smoke = _RESPONSIVE_SMOKE_SOURCE.read_text(encoding="utf-8")
+
+        for expected in (
+            "function pageBodyElement(page)",
+            "function ownedPageBody(pageWrapper)",
+            "function ensureFinancePage(wrapper)",
+            'pageApi.make_app_page({',
+            'title: "Finance Control Desk"',
+            "single_column: true",
+            "page.parent !== pageWrapper",
+            "pageWrapper.contains(body)",
+            'body.classList.contains("layout-main-section")',
+            "return ownedPageBody(pageWrapper)",
+            "const pageWrapper = ensureFinancePage(wrapper)",
+            "__financeControlDeskHideTarget",
+        ):
+            self.assertIn(expected, source)
+        self.assertEqual(source.count('pageApi.make_app_page({'), 1)
+        for forbidden in (
+            "frappe.container && frappe.container.page",
+            'pageWrapper.querySelector(".layout-main-section")',
+            'document.getElementById("body")',
+        ):
+            self.assertNotIn(forbidden, source)
+
+        for expected in (
+            "strictPageOwnershipFailures",
+            "global Page fallback must not alter another workspace",
+            "descendant fallback must not alter an unowned container",
+            "candidateBody.__financeControlDeskInitialized",
+            "candidateBody.__financeLiveStatusGeneration",
+            "ownership failure must stop before RPC",
+            'jquery(pageWrapper).trigger("hide")',
+        ):
+            self.assertIn(expected, source_smoke)
+
+        for expected in (
+            "window.__financePageCreations",
+            "Finance must create exactly one Frappe Page",
+            "shellMountedInPageBody",
+            "presentationStructureOwned",
+            "liveStatusOffsetParentOwned",
+            "liveStatusContained",
+            "documentScrollRange",
+            "mainTrailingSpace",
+            "shellBottomSpace",
+            "long Finance content must remain naturally scrollable",
+            "ownedLifecycle",
+            "hideBound",
+            'window.jQuery(wrapper).trigger("hide")',
+            '["unavailable", null]',
+        ):
+            self.assertIn(expected, responsive_smoke)
+
+    def test_frontend_live_status_is_contained_by_finance_owned_presentation_shell(self):
+        source = _frontend_source()
+        source_smoke = _SOURCE_SMOKE_SOURCE.read_text(encoding="utf-8")
+        responsive_smoke = _RESPONSIVE_SMOKE_SOURCE.read_text(encoding="utf-8")
+
+        for expected in (
+            ".finance-control-presentation-shell {",
+            "position: relative;",
+            'data-finance-presentation-shell="1"',
+            'target.querySelector("[data-finance-presentation-shell]")',
+            "presentationShell.parentElement !== target",
+            'presentationShell.querySelector("[data-finance-render-host]")',
+            'presentationShell.querySelector("[data-finance-live-status]")',
+            "top: 0;",
+            "left: 0;",
+        ):
+            self.assertIn(expected, source)
+        self.assertNotIn("position: fixed;", source)
+
+        for expected in (
+            "Finance presentation shell must be owned by the Page body",
+            "Finance live region must use the owned presentation shell as its positioning context",
+            "Finance live-region identity must survive rerender",
+        ):
+            self.assertIn(expected, source_smoke)
+
+        for expected in (
+            "liveStatus.offsetParent === presentationShell",
+            "liveStatusBox.left >= presentationShellBox.left",
+            "liveStatusBox.bottom <= presentationShellBox.bottom",
+            "document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight",
+            "Frappe main section must own Finance scrolling",
+        ):
+            self.assertIn(expected, responsive_smoke)
+
     def test_frontend_calls_role_aware_overview_context(self):
         source = _frontend_source()
 
@@ -817,8 +1067,9 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertLess(source.index("!contractValid || hasFinancialRows(normalized)"), source.index('normalized.state.kind === "restricted"'))
         load_start = source.index("function loadOverviewContext")
         load_guard = source.index("if (!validateFinanceOverviewPayload(payload))", load_start)
-        guarded_cache = source.index("target.__financeControlDeskOverviewPayload = payload;", load_start)
-        self.assertLess(load_guard, guarded_cache)
+        guarded_render = source.index("setHtml(target, renderPayload(payload));", load_start)
+        self.assertLess(load_guard, guarded_render)
+        self.assertNotIn("target.__financeControlDeskOverviewPayload = payload;", source)
         self.assertNotIn("navigation: safePayload.navigation", source)
         self.assertNotIn("sidebar: safePayload.sidebar", source)
         self.assertNotIn("financial_rows_loaded", source)
@@ -928,6 +1179,9 @@ class TestFinanceAccountingShell(unittest.TestCase):
                 "minimum_diversity_population": 2,
             },
             "payables_count_posture": {
+                "future_activity_source": "GL Entry",
+                "future_activity_gate_required": False,
+                "future_payment_ledger_activity_supported": True,
                 "manager_only": False,
                 "aggregate_counts_only": False,
                 "due_date_basis_only": False,
@@ -952,6 +1206,18 @@ class TestFinanceAccountingShell(unittest.TestCase):
         invalid_scope_scalar = _frontend_guard_payload({"state": "unavailable"})
         invalid_scope_scalar["scope"]["financial_rows_enabled"] = "false"
         cases.append(("invalid_scope_scalar", invalid_scope_scalar))
+        invalid_phase = _frontend_guard_payload({"state": "unavailable"})
+        invalid_phase["scope"]["phase"] = "finance_cycle_2"
+        cases.append(("invalid_scope_phase", invalid_phase))
+        invalid_scope_mode = _frontend_guard_payload({"state": "unavailable"})
+        invalid_scope_mode["scope"]["scope_mode"] = "restricted"
+        cases.append(("invalid_scope_mode_for_ready_shell", invalid_scope_mode))
+        invalid_company_required = _frontend_guard_payload({"state": "unavailable"})
+        invalid_company_required["scope"]["company_scope_required"] = False
+        cases.append(("invalid_company_scope_required", invalid_company_required))
+        invalid_financial_data = _frontend_guard_payload({"state": "unavailable"})
+        invalid_financial_data["scope"]["financial_data_enabled"] = True
+        cases.append(("invalid_financial_data_enabled", invalid_financial_data))
         invalid_policy_boolean = _frontend_guard_payload({"state": "unavailable"})
         invalid_policy_boolean["payables_count_posture"]["policy"]["source_permission_checked"] = "false"
         cases.append(("invalid_policy_boolean", invalid_policy_boolean))
@@ -973,38 +1239,28 @@ class TestFinanceAccountingShell(unittest.TestCase):
         mutations.append(("ap_permission", ready_ap_permission, lambda payload: payload["payables_count_posture"]["policy"].update(source_permission_verified=False)))
         ready_ap_unchecked = _frontend_guard_payload({"state": "ready"})
         mutations.append(("ap_permission_unchecked", ready_ap_unchecked, lambda payload: payload["payables_count_posture"]["policy"].update(source_permission_checked=False)))
+        ready_ap_future_permission = _frontend_guard_payload({"state": "ready"})
+        mutations.append(("ap_future_permission", ready_ap_future_permission, lambda payload: payload["payables_count_posture"]["policy"].update(future_activity_source_permission_verified=False)))
+        ready_ap_future_unchecked = _frontend_guard_payload({"state": "ready"})
+        mutations.append(("ap_future_permission_unchecked", ready_ap_future_unchecked, lambda payload: payload["payables_count_posture"]["policy"].update(future_activity_source_permission_checked=False)))
         ready_ap_company = _frontend_guard_payload({"state": "ready"})
         mutations.append(("ap_company", ready_ap_company, lambda payload: payload["payables_count_posture"].update(company_scope=None)))
-        ready_amount = _frontend_guard_payload({"state": "unavailable"})
-        ready_amount["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
-        ready_amount["scope"]["receivables_amount_summary_enabled"] = True
-        ready_amount["scope"]["monetary_values_enabled"] = True
+        ready_amount = _frontend_coherent_receivables_amount_payload()
         mutations.append(("amount_metadata", ready_amount, lambda payload: payload["receivables_amount_summary"]["policy"].update(source_metadata_verified=False)))
-        amount_unchecked = _frontend_guard_payload({"state": "unavailable"})
-        amount_unchecked["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
-        amount_unchecked["scope"]["receivables_amount_summary_enabled"] = True
-        amount_unchecked["scope"]["monetary_values_enabled"] = True
+        amount_unchecked = _frontend_coherent_receivables_amount_payload()
         mutations.append(("amount_permission_unchecked", amount_unchecked, lambda payload: payload["receivables_amount_summary"]["policy"].update(source_permission_checked=False)))
-        amount_wrong_precision = _frontend_guard_payload({"state": "unavailable"})
-        amount_wrong_precision["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
-        amount_wrong_precision["scope"]["receivables_amount_summary_enabled"] = True
-        amount_wrong_precision["scope"]["monetary_values_enabled"] = True
+        amount_wrong_precision = _frontend_coherent_receivables_amount_payload()
         mutations.append(("amount_precision", amount_wrong_precision, lambda payload: payload["receivables_amount_summary"]["policy"].update(currency_precision=-1)))
-        amount_wrong_company_currency = _frontend_guard_payload({"state": "unavailable"})
-        amount_wrong_company_currency["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
-        amount_wrong_company_currency["scope"]["receivables_amount_summary_enabled"] = True
-        amount_wrong_company_currency["scope"]["monetary_values_enabled"] = True
+        amount_wrong_company_currency = _frontend_coherent_receivables_amount_payload()
         mutations.append(("amount_company_currency", amount_wrong_company_currency, lambda payload: payload["company_scope"].update(currency="USD")))
-        amount_numeric_value = _frontend_guard_payload({"state": "unavailable"})
-        amount_numeric_value["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
-        amount_numeric_value["scope"]["receivables_amount_summary_enabled"] = True
-        amount_numeric_value["scope"]["monetary_values_enabled"] = True
+        amount_numeric_value = _frontend_coherent_receivables_amount_payload()
         mutations.append(("amount_numeric_value", amount_numeric_value, lambda payload: payload["receivables_amount_summary"]["bucket_amounts"].update(current=0)))
-        amount_wrong_scale = _frontend_guard_payload({"state": "unavailable"})
-        amount_wrong_scale["receivables_amount_summary"] = _frontend_receivables_amount_posture("ready")
-        amount_wrong_scale["scope"]["receivables_amount_summary_enabled"] = True
-        amount_wrong_scale["scope"]["monetary_values_enabled"] = True
+        amount_wrong_scale = _frontend_coherent_receivables_amount_payload()
         mutations.append(("amount_wrong_scale", amount_wrong_scale, lambda payload: payload["receivables_amount_summary"]["bucket_amounts"].update(current="1.2")))
+        amount_negative = _frontend_coherent_receivables_amount_payload()
+        mutations.append(("amount_negative", amount_negative, lambda payload: payload["receivables_amount_summary"]["bucket_amounts"].update(current="-1.00")))
+        amount_negative_total = _frontend_coherent_receivables_amount_payload()
+        mutations.append(("amount_negative_total", amount_negative_total, lambda payload: payload["receivables_amount_summary"].update(grand_total="-1.00")))
         ready_count = _frontend_guard_payload({"state": "unavailable"})
         count = _frontend_receivables_count_posture()
         count["state"] = "ready"
@@ -1015,6 +1271,10 @@ class TestFinanceAccountingShell(unittest.TestCase):
         ready_count["receivables_posture"] = count
         ready_count["scope"]["receivables_count_posture_enabled"] = True
         mutations.append(("count_permission", ready_count, lambda payload: payload["receivables_posture"]["policy"].update(source_permission_verified=False)))
+
+        valid_amount = _frontend_guard_probe(_frontend_coherent_receivables_amount_payload())
+        self.assertFalse(valid_amount["policy_violation"])
+        self.assertTrue(valid_amount["ready"])
 
         for label, payload, mutate in mutations:
             with self.subTest(label=label):
@@ -1263,6 +1523,53 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertNotIn("source_permission_denied", result["rendered_html"])
         self.assertIn("Controlled unavailable state", result["rendered_html"])
 
+    def test_frontend_unavailable_count_labels_are_business_facing(self):
+        script = """
+const guard = require(process.argv[1]);
+process.stdout.write(JSON.stringify({
+  receivables: guard.visiblePostureValue({ key: 'receivables_posture', state: 'unavailable', value: 'No counts' }),
+  payables: guard.visiblePostureValue({ key: 'payables_posture', state: 'restricted', value: 'No counts' }),
+  ready_zero: guard.visiblePostureValue({ key: 'payables_posture', state: 'ready', value: 'Aggregate counts only' }),
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script, str(_FRONTEND_SOURCE)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        values = json.loads(result.stdout)
+
+        self.assertEqual(values["receivables"], "Unavailable")
+        self.assertEqual(values["payables"], "Unavailable")
+        self.assertEqual(values["ready_zero"], "Aggregate counts only")
+        self.assertNotIn("No counts", values.values())
+
+        unavailable = _frontend_guard_payload({
+            "state": "unavailable",
+            "policy": {"reason": "accounts_manager_required"},
+        })
+        unavailable_result = _frontend_guard_probe(unavailable)
+        self.assertTrue(unavailable_result["ready"])
+        self.assertNotIn(">No counts<", unavailable_result["rendered_html"])
+        self.assertIn(">Unavailable<", unavailable_result["rendered_html"])
+
+        ready_zero = _frontend_guard_payload({"state": "ready"})
+        ready_zero_result = _frontend_guard_probe(ready_zero)
+        self.assertTrue(ready_zero_result["ready"])
+        self.assertIn("Current / not overdue: 0", ready_zero_result["rendered_html"])
+        self.assertIn(">Aggregate counts only<", ready_zero_result["rendered_html"])
+
+    def test_frontend_rejects_card_state_that_contradicts_nested_payables_posture(self):
+        payload = _frontend_guard_payload({
+            "state": "unavailable",
+            "policy": {"reason": "accounts_manager_required"},
+        })
+        payload["posture_cards"][0].update(state="ready", value="Aggregate counts only")
+        payload["lanes"][0].update(state="ready", value="Aggregate counts only")
+
+        self.assertFalse(_frontend_contract_valid(payload))
+
     def test_frontend_blocks_payables_amount_shapes_and_requires_count_ready_before_amounts(self):
         blocked_cases = (
             {"bucket_amounts": {"not_due": 100}},
@@ -1448,6 +1755,64 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertIn('config.workspaceId === "warehouse" || config.workspaceId === "finance"', source)
         self.assertIn("openNativeNotifications", source)
         self.assertIn("data-erpw-sales-notifications-open", source)
+
+    def test_shared_sidebar_and_finance_refresh_keep_accessibility_contract(self):
+        sidebar = _sidebar_source()
+        frontend = _frontend_source()
+
+        self.assertIn(".erpw-sales-console-sidebar-utility:focus-visible", sidebar)
+        self.assertIn(".erpw-sales-console-sidebar-link:focus-visible", sidebar)
+        self.assertIn(".erpw-sales-console-sidebar-header:focus-visible", sidebar)
+        self.assertIn('.collapse-sidebar-link):focus-visible', sidebar)
+        self.assertIn(".erpw-sales-console-search-result:focus-visible", sidebar)
+        self.assertIn("inset 0 0 0 3px #2563eb", sidebar)
+        self.assertIn(".erpw-sales-console-search-bar:has(.erpw-sales-console-search-input:focus-visible)", sidebar)
+        self.assertIn("box-shadow: inset 0 0 0 3px #2563eb", sidebar)
+        self.assertIn('role="status"', sidebar)
+        self.assertIn('aria-live="polite"', sidebar)
+        self.assertIn('aria-atomic="true"', sidebar)
+        self.assertIn('aria-current="page"', sidebar)
+        self.assertNotIn("0 0 0 2px rgba(255, 255, 255, 0.9)", sidebar)
+        self.assertIn('role="status" aria-live="polite" aria-atomic="true"', frontend)
+        self.assertIn("createFinanceRefreshFocusIntent(target, refresh)", frontend)
+        self.assertIn("event.target !== refresh", frontend)
+        self.assertIn("target.__financeLiveStatusGeneration !== generation", frontend)
+        self.assertIn('currentStatus.textContent = safeMessage', frontend)
+        self.assertIn("announceFinanceStatus(target, opts.statusMessage", frontend)
+        self.assertIn("if (token === requestSerial && typeof opts.onSettled", frontend)
+
+    def test_governed_search_focus_and_managed_detail_routes_are_exhaustive(self):
+        sidebar = _sidebar_source()
+        responsive_smoke = _RESPONSIVE_SMOKE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("bindManagedSearchResultFocus", sidebar)
+        self.assertIn("applyManagedSearchActiveState", sidebar)
+        self.assertIn('resultRoot.addEventListener("focusin", handler)', sidebar)
+        self.assertIn('input.removeAttribute("aria-activedescendant")', sidebar)
+        self.assertIn("containManagedDialogFocus", sidebar)
+        self.assertIn('off("keydown.erpWorkspaceSearchFocus")', sidebar)
+        self.assertIn("restoreWorkspaceSearchFocus", sidebar)
+        self.assertIn("resetWorkspaceSearch();", sidebar)
+        self.assertIn("itemKeys.has(item.key)", sidebar)
+        self.assertIn("registeredKeys.has(item.key)", sidebar)
+        self.assertIn("const sectionItemKeys = new Set();", sidebar)
+        for route_name in (
+            "poFollowUp", "supplierDetail", "itemDetail", "purchaseRequestReview",
+            "purchaseRequestForm", "rfqForm", "rfqReview", "supplierQuotationForm",
+            "supplierQuotationReview", "purchaseOrderForm", "receiving", "picking",
+            "stockException", "stockPosture", "movement",
+        ):
+            self.assertIn(f"{route_name}:", sidebar)
+
+        self.assertIn("verifyActualFinanceRendererGeometry", responsive_smoke)
+        self.assertIn('window.frappe.pages["finance-control-desk"]', responsive_smoke)
+        self.assertIn("verifyManagedDetailRouteActiveStates", responsive_smoke)
+        self.assertIn("managed_detail_routes", responsive_smoke)
+        for width in (1366, 390, 320):
+            self.assertIn(f"width: {width}", responsive_smoke)
+
+        self.assertIn(".finance-control-list {", frontend := _frontend_source())
+        self.assertIn("overflow-wrap: anywhere", frontend)
 
     def test_finance_registry_targets_remain_page_only(self):
         from erp_workspace_ui.workspace_registry import get_finance_workspace_definition

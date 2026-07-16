@@ -723,6 +723,34 @@ class TestFinanceReceivablesPaymentLedgerAmountSummary(unittest.TestCase):
         self.assertEqual(payload["policy"]["amount_serialization"], "unavailable")
         self.assertNotIn("invalid-payment-ledger-row", repr(payload))
 
+    def test_non_list_payment_ledger_page_forms_fail_closed_without_partial_amounts(self):
+        invalid_pages = (None, False, 0, "", {"name": "PLE-1"}, ({"name": "PLE-1"},))
+        for invalid_page in invalid_pages:
+            with self.subTest(page_type=type(invalid_page).__name__):
+                payload = service.build_receivables_payment_ledger_amount_summary(
+                    context=_context(),
+                    resolver=_resolver(),
+                    as_of_date="2026-07-06",
+                    permission_checker=_permission_checker(True),
+                    metadata_provider=_metadata_provider(),
+                    currency_contract_provider=lambda currency: _currency_contract(),
+                    future_activity_list_getter=_future_activity_getter([]),
+                    list_getter=lambda doctype, **kwargs: invalid_page,
+                    invoice_identity_list_getter=lambda doctype, **kwargs: [{"count": 0}]
+                    if kwargs.get("fields") == [service.RECEIVABLES_COUNT_QUERY_FIELD] else [],
+                )
+
+                self.assert_invalid_source_response(payload)
+                self.assertEqual(
+                    payload["policy"]["reason"],
+                    service.RECEIVABLES_AMOUNT_SOURCE_INVALID_REASON,
+                )
+                self.assertEqual(payload["bucket_counts"], {})
+                self.assertEqual(payload["bucket_amounts"], {})
+                self.assertEqual(payload["suppressed_buckets"], {})
+                self.assertNotIn("grand_total", payload)
+                self.assertNotIn("PLE-1", repr(payload))
+
     def test_missing_required_payment_ledger_fields_fail_closed_without_partial_amounts(self):
         required_field_mutations = {
             "company": "",

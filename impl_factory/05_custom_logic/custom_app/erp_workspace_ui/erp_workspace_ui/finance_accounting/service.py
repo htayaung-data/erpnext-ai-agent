@@ -39,8 +39,10 @@ RECEIVABLES_SCHEDULE_INTEGRITY_MAX_ROWS = 2
 RECEIVABLES_SCHEDULE_INTEGRITY_INVALID_REASON = "payment_schedule_integrity_unavailable"
 PAYABLES_COUNT_SOURCE = "Purchase Invoice"
 PAYABLES_SCHEDULE_CHILD_SOURCE = "Payment Schedule"
+PAYABLES_FUTURE_ACTIVITY_SOURCE = "Payment Ledger Entry"
 PAYABLES_COUNT_QUERY_FIELD = {"COUNT": "name", "as": "count"}
 PAYABLES_COUNT_SOURCE_INVALID_REASON = "purchase_invoice_count_source_invalid"
+PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON = "payment_ledger_future_activity_source_invalid"
 PAYABLES_COUNT_BUCKETS = (
     {"key": "not_due", "label": "Current / not overdue", "from_days": None, "to_days": 0},
     {"key": "overdue_1_30", "label": "1-30 overdue", "from_days": 1, "to_days": 30},
@@ -237,12 +239,24 @@ def classify_finance_role_scope(roles: object) -> dict[str, object]:
     }
 
 
+def _permission_preserving_list_call(getter: object, doctype: str, **kwargs: object) -> object:
+    message_log = getattr(getattr(frappe, "local", None), "message_log", None)
+    message_count = len(message_log) if isinstance(message_log, list) else None
+    try:
+        return getter(doctype, **kwargs)
+    except Exception:
+        if message_count is not None and isinstance(message_log, list):
+            del message_log[message_count:]
+        raise
+
+
 def _safe_config_list(doctype: str, max_rows: int, **kwargs: object) -> list[dict[str, object]] | None:
     getter = getattr(frappe, "get_list", None)
     if not callable(getter) or not isinstance(max_rows, int) or isinstance(max_rows, bool) or max_rows <= 0:
         return None
     try:
-        records = getter(
+        records = _permission_preserving_list_call(
+            getter,
             doctype,
             **kwargs,
             limit_start=0,
@@ -292,6 +306,24 @@ def _load_company_user_permission_values(user: str | None) -> list[str] | None:
             return None
         values.append(value)
     return values
+
+
+def _can_read_company_user_permissions(user: str | None) -> bool:
+    """Check configuration authority without triggering a permission exception."""
+    checker = getattr(frappe, "has_permission", None)
+    if not user or not callable(checker):
+        return False
+    try:
+        return bool(
+            checker(
+                "User Permission",
+                ptype="read",
+                user=user,
+                throw=False,
+            )
+        )
+    except Exception:
+        return False
 
 
 def _company_record(record: object) -> dict[str, object]:
@@ -409,8 +441,34 @@ def resolve_finance_role_company_scope(
     if not companies or injected_company_count == 0:
         return _scope_payload("unavailable", "unavailable", role_scope, "no_enabled_company")
 
+    single_visible_company = len(companies) == 1 and injected_company_count in (None, 1)
+    if company_user_permissions is _COMPANY_SCOPE_UNSET and single_visible_company:
+        if requested and requested != companies[0].get("name"):
+            return _scope_payload(
+                "restricted",
+                "restricted",
+                role_scope,
+                "requested_company_outside_scope",
+                available_company_count=1,
+            )
+        return _scope_payload(
+            "scoped",
+            "single_company_site_fallback",
+            role_scope,
+            "single_permission_visible_company_without_user_permission_read",
+            companies[0],
+            1,
+        )
+
     if company_user_permissions is _COMPANY_SCOPE_UNSET:
-        permission_values = _load_company_user_permission_values(user)
+        # Frappe get_list can queue a browser-visible permission message before
+        # raising. Never attempt this read unless the non-throwing authority
+        # check proves it is safe for the current user.
+        permission_values = (
+            _load_company_user_permission_values(user)
+            if _can_read_company_user_permissions(user)
+            else None
+        )
     else:
         raw_permission_values = list(company_user_permissions or [])
         permission_values = [cstr(value).strip() for value in raw_permission_values if cstr(value).strip()]
@@ -455,10 +513,8 @@ def resolve_finance_role_company_scope(
             )
         return _scope_payload("unavailable", "unavailable", role_scope, "company_permission_not_enabled")
 
-    # When User Permission is unreadable, fallback is allowed only when the
-    # permission-preserving Company query itself proves one visible company.
-    # No site-wide or permission-bypassing cardinality API is used.
-    single_visible_company = len(companies) == 1 and injected_company_count in (None, 1)
+    # Explicitly injected policy inputs retain the pure resolver contract used
+    # by source tests; runtime one-company fallback has already returned above.
     if single_visible_company:
         if requested and requested != companies[0].get("name"):
             return _scope_payload(
@@ -747,7 +803,8 @@ def _permission_preserving_receivables_schedule_integrity_gate(
         raise _ReceivablesCountUnavailable(RECEIVABLES_SCHEDULE_INTEGRITY_INVALID_REASON)
 
     try:
-        candidates = getter(
+        candidates = _permission_preserving_list_call(
+            getter,
             RECEIVABLES_COUNT_SOURCE,
             filters=_receivables_base_count_filters(company_name, as_of),
             fields=["name"],
@@ -772,7 +829,8 @@ def _permission_preserving_receivables_schedule_integrity_gate(
     if not candidate_names:
         return 0
     try:
-        relationships = getter(
+        relationships = _permission_preserving_list_call(
+            getter,
             RECEIVABLES_SCHEDULE_CHILD_SOURCE,
             filters=[["parent", "in", candidate_names]],
             fields=["parent", "parenttype", "parentfield"],
@@ -859,7 +917,8 @@ def _permission_preserving_receivables_count(filters: list[list[object]], list_g
     getter = list_getter or getattr(frappe, "get_list", None)
     if not callable(getter):
         raise RuntimeError("permission_preserving_count_reader_unavailable")
-    records = getter(
+    records = _permission_preserving_list_call(
+        getter,
         RECEIVABLES_COUNT_SOURCE,
         filters=filters,
         fields=[RECEIVABLES_COUNT_QUERY_FIELD],
@@ -877,7 +936,8 @@ def _permission_preserving_receivables_future_activity_count(
     if not callable(getter):
         raise _ReceivablesCountUnavailable("future_payment_ledger_activity_gate_unavailable")
     try:
-        records = getter(
+        records = _permission_preserving_list_call(
+            getter,
             RECEIVABLES_AMOUNT_SOURCE,
             filters=[
                 ["company", "=", company_name],
@@ -1129,9 +1189,9 @@ class _PayablesCountUnavailable(Exception):
         super().__init__(reason)
 
 
-def _extract_payables_count(records: object) -> int:
+def _extract_payables_count(records: object, invalid_reason: str = PAYABLES_COUNT_SOURCE_INVALID_REASON) -> int:
     try:
-        return _extract_count(records, PAYABLES_COUNT_SOURCE_INVALID_REASON)
+        return _extract_count(records, invalid_reason)
     except _ReceivablesCountUnavailable as exc:
         raise _PayablesCountUnavailable(exc.reason)
 
@@ -1171,7 +1231,8 @@ def _permission_preserving_payables_count(filters: list[list[object]], list_gett
     if not callable(getter):
         raise _PayablesCountUnavailable("permission_preserving_payables_count_reader_unavailable")
     try:
-        records = getter(
+        records = _permission_preserving_list_call(
+            getter,
             PAYABLES_COUNT_SOURCE,
             filters=filters,
             fields=[PAYABLES_COUNT_QUERY_FIELD],
@@ -1179,7 +1240,61 @@ def _permission_preserving_payables_count(filters: list[list[object]], list_gett
         )
     except Exception:
         raise _PayablesCountUnavailable("permission_preserving_payables_count_unavailable")
-    return _extract_payables_count(records or [])
+    return _extract_payables_count(records)
+
+
+def verify_payables_future_activity_source_permission(
+    context: dict[str, object] | None = None,
+    permission_checker: object = None,
+) -> dict[str, object]:
+    checker = permission_checker or getattr(frappe, "has_permission", None)
+    user = cstr((context or {}).get("user") or getattr(frappe.session, "user", None) or "").strip()
+    if not callable(checker):
+        return {
+            "future_activity_source_permission_checked": False,
+            "future_activity_source_permission_verified": False,
+            "reason": "future_activity_source_permission_checker_unavailable",
+        }
+    try:
+        allowed = bool(checker(PAYABLES_FUTURE_ACTIVITY_SOURCE, ptype="read", user=user or None))
+    except TypeError:
+        try:
+            allowed = bool(checker(PAYABLES_FUTURE_ACTIVITY_SOURCE, "read"))
+        except Exception:
+            allowed = False
+    except Exception:
+        allowed = False
+    return {
+        "future_activity_source_permission_checked": True,
+        "future_activity_source_permission_verified": allowed,
+        "reason": "future_activity_source_permission_allowed" if allowed else "future_activity_source_permission_denied",
+    }
+
+
+def _permission_preserving_payables_future_activity_count(
+    company_name: str,
+    as_of: date,
+    list_getter: object = None,
+) -> int:
+    getter = list_getter or getattr(frappe, "get_list", None)
+    if not callable(getter):
+        raise _PayablesCountUnavailable("permission_preserving_payables_future_activity_reader_unavailable")
+    try:
+        records = _permission_preserving_list_call(
+            getter,
+            PAYABLES_FUTURE_ACTIVITY_SOURCE,
+            filters=[
+                ["company", "=", company_name],
+                ["party_type", "=", "Supplier"],
+                ["delinked", "=", 0],
+                ["posting_date", ">", as_of.isoformat()],
+            ],
+            fields=[PAYABLES_COUNT_QUERY_FIELD],
+            limit_page_length=1,
+        )
+    except Exception:
+        raise _PayablesCountUnavailable("permission_preserving_payables_future_activity_unavailable")
+    return _extract_payables_count(records, PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON)
 
 
 def _payables_count_with_extra_filter(company_name: str, extra_filter: list[object], list_getter: object = None, base: str = "open") -> int:
@@ -1214,6 +1329,11 @@ def _safe_payables_policy(
         "role_category": resolver.get("role_category"),
         "source_permission_checked": bool(permission.get("source_permission_checked")),
         "source_permission_verified": bool(permission.get("source_permission_verified")),
+        "future_activity_source": PAYABLES_FUTURE_ACTIVITY_SOURCE,
+        "future_activity_source_permission_checked": bool(permission.get("future_activity_source_permission_checked")),
+        "future_activity_source_permission_verified": bool(permission.get("future_activity_source_permission_verified")),
+        "future_activity_gate_required": True,
+        "future_payment_ledger_activity_supported": False,
         "source_read_policy_ready": runtime_enabled,
         "runtime_count_enabled": runtime_enabled,
         "manager_only": True,
@@ -1292,6 +1412,8 @@ def build_payables_count_posture(
         "source": PAYABLES_COUNT_SOURCE,
         "source_permission_checked": False,
         "source_permission_verified": False,
+        "future_activity_source_permission_checked": False,
+        "future_activity_source_permission_verified": False,
         "reason": "source_permission_not_checked",
     }
     if invalid_as_of:
@@ -1318,6 +1440,20 @@ def build_payables_count_posture(
     permission = verify_payables_source_permission(active_context, permission_checker=permission_checker)
     if not permission.get("source_permission_verified"):
         return _payables_count_payload("unavailable", "source_permission_denied", active_resolver, permission, as_of)
+    permission.update(
+        verify_payables_future_activity_source_permission(
+            active_context,
+            permission_checker=permission_checker,
+        )
+    )
+    if not permission.get("future_activity_source_permission_verified"):
+        return _payables_count_payload(
+            "unavailable",
+            "future_activity_source_permission_denied",
+            active_resolver,
+            permission,
+            as_of,
+        )
 
     try:
         candidate_count = _permission_preserving_payables_count(
@@ -1350,6 +1486,14 @@ def build_payables_count_posture(
         for reason, extra_filter, base in complexity_checks:
             if _payables_count_with_extra_filter(company_name, extra_filter, list_getter=list_getter, base=base) > 0:
                 return _payables_count_payload("unavailable", reason, active_resolver, permission, as_of)
+        if _permission_preserving_payables_future_activity_count(company_name, as_of, list_getter=list_getter) > 0:
+            return _payables_count_payload(
+                "unavailable",
+                "future_payment_ledger_activity_not_supported",
+                active_resolver,
+                permission,
+                as_of,
+            )
         bucket_counts = {
             cstr(bucket.get("key")): _permission_preserving_payables_count(
                 _payables_bucket_filters(company_name, cstr(bucket.get("key")), as_of),
@@ -1617,8 +1761,10 @@ def _permission_preserving_payment_ledger_rows(
             }
             if or_filters is not None:
                 options["or_filters"] = or_filters
-            records = getter(RECEIVABLES_AMOUNT_SOURCE, **options)
-            page = list(records or [])
+            records = _permission_preserving_list_call(getter, RECEIVABLES_AMOUNT_SOURCE, **options)
+            if not isinstance(records, list):
+                raise _ReceivablesAmountUnavailable(RECEIVABLES_AMOUNT_SOURCE_INVALID_REASON)
+            page = records
             if not page:
                 break
             total_seen += len(page)
@@ -1681,7 +1827,8 @@ def _permission_preserving_receivables_invoice_identity_sets(
         raise _ReceivablesAmountUnavailable(RECEIVABLES_IDENTITY_SOURCE_INVALID_REASON)
 
     try:
-        return_records = getter(
+        return_records = _permission_preserving_list_call(
+            getter,
             RECEIVABLES_COUNT_SOURCE,
             filters=[
                 ["company", "=", company_name],
@@ -1708,7 +1855,8 @@ def _permission_preserving_receivables_invoice_identity_sets(
     while True:
         current_page_size = min(page_size, max_rows + 1 - total_seen)
         try:
-            records = getter(
+            records = _permission_preserving_list_call(
+                getter,
                 RECEIVABLES_COUNT_SOURCE,
                 filters=_receivables_identity_filters(company_name, as_of),
                 fields=list(RECEIVABLES_IDENTITY_SOURCE_FIELDS),

@@ -262,6 +262,8 @@
   let activeSearchEnvelope = null;
   const searchGenerationCoordinator = createManagedSearchGenerationCoordinator();
   let searchActiveIndex = -1;
+  let searchReturnFocus = null;
+  let searchRestoreFocusOnClose = false;
 
   function escapeHtml(value) {
     if (typeof consoleRuntime.escapeHtml === "function") {
@@ -448,6 +450,7 @@
         box-shadow: none;
         text-align: left;
         transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
+        outline: none;
       }
       .erpw-sales-console-sidebar-utility:hover {
         background: rgba(255, 255, 255, 0.92);
@@ -573,12 +576,12 @@
       .erpw-sales-console-sidebar-link:active {
         outline: none;
       }
+      .${MANAGED_BODY_CLASS} .body-sidebar :is(a, button, [role="button"], .collapse-sidebar-link):focus-visible,
+      .erpw-sales-console-sidebar-header:focus-visible,
+      .erpw-sales-console-sidebar-utility:focus-visible,
       .erpw-sales-console-sidebar-link:focus-visible {
         outline: none;
-        border-color: rgba(230, 235, 242, 0.98);
-        box-shadow:
-          0 1px 2px rgba(15, 23, 42, 0.04),
-          0 0 0 2px rgba(255, 255, 255, 0.9);
+        box-shadow: inset 0 0 0 3px #2563eb;
       }
       .erpw-sales-console-sidebar-icon {
         width: 26px;
@@ -664,6 +667,10 @@
         color: #a3afbf;
         font-weight: 500;
       }
+      .erpw-sales-console-search-bar:has(.erpw-sales-console-search-input:focus-visible) {
+        outline: 3px solid #2563eb;
+        outline-offset: 2px;
+      }
       .erpw-sales-console-search-status {
         font-size: 12px;
         line-height: 1.5;
@@ -709,8 +716,15 @@
       }
       .erpw-sales-console-search-result:hover,
       .erpw-sales-console-search-result.is-active {
-        border-color: rgba(203, 213, 225, 0.96);
+        border-color: #2563eb;
         box-shadow:
+          0 1px 2px rgba(15, 23, 42, 0.04),
+          0 10px 20px rgba(15, 23, 42, 0.05);
+      }
+      .erpw-sales-console-search-result:focus-visible {
+        outline: none;
+        box-shadow:
+          inset 0 0 0 3px #2563eb,
           0 1px 2px rgba(15, 23, 42, 0.04),
           0 10px 20px rgba(15, 23, 42, 0.05);
       }
@@ -848,6 +862,36 @@
     return false;
   }
 
+  const MANAGED_DETAIL_ROUTE_ACTIVE_KEYS = Object.freeze({
+    procurement: Object.freeze({
+      poFollowUp: "purchase_order_directory",
+      supplierDetail: "supplier_directory",
+      itemDetail: "buying_item_directory",
+      purchaseRequestReview: "purchase_request_directory",
+      purchaseRequestForm: "purchase_request_directory",
+      rfqForm: "rfq_directory",
+      rfqReview: "rfq_directory",
+      supplierQuotationForm: "supplier_quotation_directory",
+      supplierQuotationReview: "supplier_quotation_directory",
+      purchaseOrderForm: "purchase_order_directory",
+    }),
+    warehouse: Object.freeze({
+      receiving: "inbound_receiving",
+      picking: "outbound_picking",
+      stockException: "stock_exceptions",
+      stockPosture: "stock_exceptions",
+      movement: "movement_visibility",
+    }),
+  });
+
+  function managedDetailRouteActiveKey(config, pageKey) {
+    const workspaceRoutes = config && config.routes ? config.routes : {};
+    const routeMap = MANAGED_DETAIL_ROUTE_ACTIVE_KEYS[String(config && config.workspaceId || "")];
+    if (!routeMap) return "";
+    const routeName = Object.keys(routeMap).find((key) => workspaceRoutes[key] === pageKey);
+    return routeName ? routeMap[routeName] : "";
+  }
+
   function resolveActiveKey(route) {
     if (!Array.isArray(route) || !route.length) return "";
     const pageKey = String(route[0] || "");
@@ -878,7 +922,8 @@
       if (reportKey === "supplier_quotation_comparison") return "supplier_quotation_comparison";
       return "procurement_reports";
     }
-    if (config.workspaceId === "procurement" && config.routes && pageKey === config.routes.poFollowUp) return "purchase_order_directory";
+    const managedDetailKey = managedDetailRouteActiveKey(config, pageKey);
+    if (managedDetailKey) return managedDetailKey;
     if (pageKey === config.reportRoute) return "";
     return "";
   }
@@ -1560,9 +1605,49 @@
     } else {
       elements.$status.text("").attr("hidden", true);
     }
+    applyManagedSearchActiveState(elements.$results.get(0), elements.$input.get(0), -1);
     elements.$results.empty().attr("hidden", true);
-    elements.$input.attr("aria-expanded", "false").removeAttr("aria-activedescendant");
+    elements.$input.attr("aria-expanded", "false");
     return searchRequestToken;
+  }
+
+  function applyManagedSearchActiveState(resultRoot, input, index) {
+    const items = resultRoot
+      ? Array.from(resultRoot.querySelectorAll("[data-erpw-sales-search-index]"))
+      : [];
+    items.forEach((item) => {
+      item.classList.remove("is-active");
+      item.setAttribute("aria-selected", "false");
+    });
+    const active = Number.isInteger(index)
+      ? items.find((item) => Number(item.getAttribute("data-erpw-sales-search-index")) === index)
+      : null;
+    if (!active) {
+      if (input) input.removeAttribute("aria-activedescendant");
+      return -1;
+    }
+    active.classList.add("is-active");
+    active.setAttribute("aria-selected", "true");
+    if (input && active.id) input.setAttribute("aria-activedescendant", active.id);
+    if (typeof active.scrollIntoView === "function") active.scrollIntoView({ block: "nearest" });
+    return index;
+  }
+
+  function bindManagedSearchResultFocus(resultRoot, activate) {
+    if (!resultRoot || typeof resultRoot.addEventListener !== "function" || typeof activate !== "function") return false;
+    if (resultRoot.__erpwManagedSearchFocusHandler) {
+      resultRoot.removeEventListener("focusin", resultRoot.__erpwManagedSearchFocusHandler);
+    }
+    const handler = (event) => {
+      const option = event.target && event.target.closest
+        ? event.target.closest("[data-erpw-sales-search-index]")
+        : null;
+      if (!option || !resultRoot.contains(option)) return;
+      activate(Number(option.getAttribute("data-erpw-sales-search-index")));
+    };
+    resultRoot.__erpwManagedSearchFocusHandler = handler;
+    resultRoot.addEventListener("focusin", handler);
+    return true;
   }
 
   function setWorkspaceSearchActive(index) {
@@ -1574,15 +1659,7 @@
     searchActiveIndex = boundedIndex;
     const elements = currentSearchElements();
     if (!elements) return;
-    const $items = elements.$results.find("[data-erpw-sales-search-index]");
-    $items.removeClass("is-active").attr("aria-selected", "false");
-    const $active = $items.filter(`[data-erpw-sales-search-index="${boundedIndex}"]`);
-    $active.addClass("is-active").attr("aria-selected", "true");
-    const activeNode = $active.get(0);
-    if (activeNode) {
-      elements.$input.attr("aria-activedescendant", activeNode.id || "");
-      activeNode.scrollIntoView({ block: "nearest" });
-    }
+    applyManagedSearchActiveState(elements.$results.get(0), elements.$input.get(0), boundedIndex);
   }
 
   function chooseWorkspaceSearchResult(index) {
@@ -1593,8 +1670,46 @@
     const dispatched = dispatchManagedSearchTarget(
       activeSearchEnvelope, index, config, route, searchRequestToken, searchNormalizedQuery, executeTarget
     );
-    if (dispatched && searchDialog) searchDialog.hide();
+    if (dispatched && searchDialog) {
+      searchRestoreFocusOnClose = false;
+      searchDialog.hide();
+    }
     return dispatched;
+  }
+
+  function managedSearchResultsMarkup(config, results, activeIndex) {
+    const groupedResults = [];
+    (Array.isArray(results) ? results : []).forEach((item, index) => {
+      const groupLabel = item.group_label || procurementSearchLabel(item, config, "group");
+      const groupKey = String(item.group_key || groupLabel || item.doctype || "Record");
+      let group = groupedResults.find((entry) => entry.key === groupKey);
+      if (!group) {
+        group = { key: groupKey, label: groupLabel || groupKey, items: [] };
+        groupedResults.push(group);
+      }
+      group.items.push(Object.assign({}, item, { _index: index }));
+    });
+    return groupedResults.map((group) => `
+      <div class="erpw-sales-console-search-group">
+        <div class="erpw-sales-console-search-group-label">${escapeHtml(group.label)}</div>
+        ${group.items.map((item) => `
+          <button
+            type="button"
+            class="erpw-sales-console-search-result${item._index === activeIndex ? " is-active" : ""}"
+            data-erpw-sales-search-index="${item._index}"
+            id="erpw-sales-console-search-option-${item._index}"
+            role="option"
+            aria-selected="${item._index === activeIndex ? "true" : "false"}"
+          >
+            <span class="erpw-sales-console-search-result-badge">${escapeHtml(item.badge_label || item.result_label || procurementSearchLabel(item, config, "badge") || item.doctype || "Record")}</span>
+            <span class="erpw-sales-console-search-result-copy">
+              <span class="erpw-sales-console-search-result-title">${escapeHtml(item.label || item.name || "Unnamed record")}</span>
+              <span class="erpw-sales-console-search-result-meta">${escapeHtml(item.meta || "")}</span>
+            </span>
+          </button>
+        `).join("")}
+      </div>
+    `).join("");
   }
 
   function renderWorkspaceSearchResults(envelope) {
@@ -1611,48 +1726,20 @@
 
     if (!searchResults.length) {
       elements.$status.text((payload && payload.message) || `No ${config.title} records match this search yet.`).removeAttr("hidden");
+      applyManagedSearchActiveState(elements.$results.get(0), elements.$input.get(0), -1);
       elements.$results.empty().attr("hidden", true);
-      elements.$input.attr("aria-expanded", "false").removeAttr("aria-activedescendant");
+      elements.$input.attr("aria-expanded", "false");
       return;
     }
 
     elements.$status.text((payload && payload.message) || `${searchResults.length} result(s) found.`).removeAttr("hidden");
     elements.$input.attr("aria-expanded", "true");
 
-    const groups = [];
-    searchResults.forEach((item, index) => {
-      const groupLabel = item.group_label || procurementSearchLabel(item, config, "group");
-      const groupKey = String(item.group_key || groupLabel || item.doctype || "Record");
-      let group = groups.find((entry) => entry.key === groupKey);
-      if (!group) {
-        group = { key: groupKey, label: groupLabel || groupKey, items: [] };
-        groups.push(group);
-      }
-      group.items.push(Object.assign({}, item, { _index: index }));
-    });
-
-    elements.$results.html(groups.map((group) => `
-      <div class="erpw-sales-console-search-group">
-        <div class="erpw-sales-console-search-group-label">${escapeHtml(group.label)}</div>
-        ${group.items.map((item) => `
-          <button
-            type="button"
-            class="erpw-sales-console-search-result${item._index === searchActiveIndex ? " is-active" : ""}"
-            data-erpw-sales-search-index="${item._index}"
-            id="erpw-sales-console-search-option-${item._index}"
-            role="option"
-            aria-selected="${item._index === searchActiveIndex ? "true" : "false"}"
-          >
-            <span class="erpw-sales-console-search-result-badge">${escapeHtml(item.badge_label || item.result_label || procurementSearchLabel(item, config, "badge") || item.doctype || "Record")}</span>
-            <span class="erpw-sales-console-search-result-copy">
-              <span class="erpw-sales-console-search-result-title">${escapeHtml(item.label || item.name || "Unnamed record")}</span>
-              <span class="erpw-sales-console-search-result-meta">${escapeHtml(item.meta || "")}</span>
-            </span>
-          </button>
-        `).join("")}
-      </div>
-    `).join("")).removeAttr("hidden");
-    elements.$input.attr("aria-activedescendant", `erpw-sales-console-search-option-${searchActiveIndex}`);
+    elements.$results.html(
+      managedSearchResultsMarkup(config, searchResults, searchActiveIndex)
+    ).removeAttr("hidden");
+    applyManagedSearchActiveState(elements.$results.get(0), elements.$input.get(0), searchActiveIndex);
+    bindManagedSearchResultFocus(elements.$results.get(0), setWorkspaceSearchActive);
 
     elements.$results.find("[data-erpw-sales-search-index]").on("mouseenter", function () {
       setWorkspaceSearchActive(Number(this.getAttribute("data-erpw-sales-search-index")));
@@ -1721,15 +1808,12 @@
     }, 160);
   }
 
-  function bindWorkspaceSearchDialog(dialog) {
-    if (!dialog || !dialog.fields_dict || !dialog.fields_dict.search_html) return;
-    const config = workspaceConfig(getRoute());
+  function managedSearchShellMarkup(config) {
     const placeholder = (config.search && config.search.placeholder)
       || (config.workspaceId === "procurement"
         ? "Search suppliers, purchase requests, RFQs, quotations, or purchase orders"
         : "Search customers, items, quotations, or sales orders");
-    const $root = dialog.fields_dict.search_html.$wrapper;
-    $root.html(`
+    return `
       <div class="erpw-sales-console-search-shell">
         <div class="erpw-sales-console-search-bar">
           <span class="erpw-sales-console-search-bar-icon" aria-hidden="true">${iconMarkup("search")}</span>
@@ -1747,7 +1831,14 @@
           />
           <span class="erpw-sales-console-sidebar-utility-shortcut">${escapeHtml(shortcutLabel())}</span>
         </div>
-        <div class="erpw-sales-console-search-status" data-erpw-sales-search-status hidden></div>
+        <div
+          class="erpw-sales-console-search-status"
+          data-erpw-sales-search-status
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          hidden
+        ></div>
         <div
           class="erpw-sales-console-search-results"
           data-erpw-sales-search-results
@@ -1757,7 +1848,60 @@
           hidden
         ></div>
       </div>
-    `);
+    `;
+  }
+
+  function managedDialogFocusableNodes(dialogRoot) {
+    if (!dialogRoot || typeof dialogRoot.querySelectorAll !== "function") return [];
+    return Array.from(dialogRoot.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter((node) => {
+      if (node.hidden || node.getAttribute("aria-hidden") === "true") return false;
+      if (typeof node.getClientRects === "function" && node.getClientRects().length === 0) return false;
+      return true;
+    });
+  }
+
+  function containManagedDialogFocus(event, dialogRoot, activeElement) {
+    if (!event || event.key !== "Tab") return false;
+    const focusable = managedDialogFocusableNodes(dialogRoot);
+    if (!focusable.length) return false;
+    const current = activeElement || document.activeElement;
+    const currentIndex = focusable.indexOf(current);
+    const target = event.shiftKey
+      ? (currentIndex <= 0 ? focusable[focusable.length - 1] : null)
+      : (currentIndex < 0 || currentIndex === focusable.length - 1 ? focusable[0] : null);
+    if (!target) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    target.focus();
+    return true;
+  }
+
+  function restoreWorkspaceSearchFocus() {
+    const target = searchRestoreFocusOnClose ? searchReturnFocus : null;
+    searchReturnFocus = null;
+    searchRestoreFocusOnClose = false;
+    if (!target || target === document.body || !document.contains(target) || typeof target.focus !== "function") return false;
+    window.setTimeout(() => {
+      if (document.contains(target)) target.focus();
+    }, 0);
+    return true;
+  }
+
+  function bindWorkspaceSearchDialog(dialog) {
+    if (!dialog || !dialog.fields_dict || !dialog.fields_dict.search_html) return;
+    const config = workspaceConfig(getRoute());
+    const $root = dialog.fields_dict.search_html.$wrapper;
+    $root.html(managedSearchShellMarkup(config));
+    const dialogRoot = dialog.$wrapper && typeof dialog.$wrapper.get === "function"
+      ? dialog.$wrapper.get(0)
+      : null;
+    if (dialog.$wrapper && typeof dialog.$wrapper.off === "function") {
+      dialog.$wrapper.off("keydown.erpWorkspaceSearchFocus").on("keydown.erpWorkspaceSearchFocus", (event) => {
+        containManagedDialogFocus(event, dialogRoot);
+      });
+    }
 
     const $input = $root.find("[data-erpw-sales-search-input]");
     $input.on("input", function () {
@@ -1811,6 +1955,7 @@
     bindWorkspaceSearchDialog(searchDialog);
     searchDialog.$wrapper.on("hidden.bs.modal", () => {
       resetWorkspaceSearch();
+      restoreWorkspaceSearchFocus();
     });
     return searchDialog;
   }
@@ -1819,6 +1964,8 @@
     const route = getRoute();
     const config = workspaceConfig(route);
     if (!isManagedRoute(route) || !isWorkspaceSearchEnabled(config)) return;
+    searchReturnFocus = document.activeElement;
+    searchRestoreFocusOnClose = true;
     const dialog = ensureWorkspaceSearchDialog();
     dialog.show();
     const elements = currentSearchElements();
@@ -1846,12 +1993,21 @@
     if (camel && snake && camel !== snake) return "";
     return camel || snake;
   }
-  function sidebarItemsValid(items, workspace) {
-    return Array.isArray(items) && items.every((item) => {
+  function sidebarItemsValid(items, workspace, seenKeys) {
+    if (!Array.isArray(items)) return false;
+    const itemKeys = seenKeys instanceof Set ? seenKeys : new Set();
+    const registeredKeys = new Set(
+      Array.isArray(workspace && workspace.fallbackItems)
+        ? workspace.fallbackItems.map((item) => item && item.key).filter(Boolean)
+        : []
+    );
+    return items.every((item) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return false;
       if (Object.keys(item).some((key) => !["key", "label", "icon", "target"].includes(key))) return false;
-      return typeof item.key === "string"
-        && typeof item.label === "string"
+      if (typeof item.key !== "string" || !item.key || item.key !== item.key.trim()
+        || !registeredKeys.has(item.key) || itemKeys.has(item.key)) return false;
+      itemKeys.add(item.key);
+      return typeof item.label === "string"
         && typeof item.icon === "string"
         && sidebarTargetAllowed(workspace, item.target);
     });
@@ -1860,11 +2016,12 @@
 
   function sidebarSectionsValid(sidebar, workspace) {
     if (!sidebar || typeof sidebar !== "object" || Array.isArray(sidebar) || !Array.isArray(sidebar.sections)) return false;
+    const sectionItemKeys = new Set();
     return sidebar.sections.every((section) => {
       if (!section || typeof section !== "object" || Array.isArray(section)) return false;
       if (Object.keys(section).some((key) => !["key", "label", "items"].includes(key))) return false;
       if (typeof section.key !== "string" || typeof section.label !== "string" || !Array.isArray(section.items)) return false;
-      return sidebarItemsValid(section.items, workspace);
+      return sidebarItemsValid(section.items, workspace, sectionItemKeys);
     });
   }
 
@@ -2033,6 +2190,7 @@
         const indexKey = String(currentIndex);
         itemIndex.set(indexKey, item);
         const activeClass = item.key === activeKey ? " is-active" : "";
+        const activeState = item.key === activeKey ? ' aria-current="page"' : "";
         const itemLabel = item.label || workspaceTitle;
         return `
           <div class="erpw-sales-console-sidebar-item">
@@ -2042,6 +2200,7 @@
                 class="item-anchor erpw-sales-console-sidebar-link${activeClass}"
                 data-erpw-sidebar-index="${escapeHtml(indexKey)}"
                 aria-label="${escapeHtml(itemLabel)}"
+                ${activeState}
                 title="${escapeHtml(itemLabel)}"
               >
                 <span class="erpw-sales-console-sidebar-icon" aria-hidden="true">${sidebarItemIconMarkup(item)}</span>
@@ -2220,14 +2379,9 @@
   }
 
   function handleCurrentRouteChange() {
-    resetSearchTimer();
-    const generation = searchGenerationCoordinator.invalidate();
-    searchRequestToken = generation.requestToken;
-    searchNormalizedQuery = generation.normalizedQuery;
-    searchResults = [];
-    activeSearchEnvelope = null;
-    searchActiveIndex = -1;
+    resetWorkspaceSearch();
     if (searchDialog && typeof searchDialog.hide === "function") {
+      searchRestoreFocusOnClose = false;
       searchDialog.hide();
     }
     const route = getRoute();
@@ -2271,11 +2425,22 @@
       managedSearchEnvelopeCurrent,
       dispatchManagedSearchTarget,
       createWorkspaceContextCoordinator,
+      MANAGED_DETAIL_ROUTE_ACTIVE_KEYS,
+      managedDetailRouteActiveKey,
+      applyManagedSearchActiveState,
+      bindManagedSearchResultFocus,
+      managedDialogFocusableNodes,
+      containManagedDialogFocus,
+      managedSearchResultsMarkup,
+      managedSearchShellMarkup,
       handleSidebarRouteChange,
       sidebarPayloadMatchesWorkspace,
       financeSidebarCopyValid,
       isManagedRoute,
+      resolveActiveKey,
       fallbackContext,
+      ensureStyles,
+      renderSidebar,
       sidebarTargetAllowed,
       synchronizeSidebarRoute,
       setManagedSidebarHeader,

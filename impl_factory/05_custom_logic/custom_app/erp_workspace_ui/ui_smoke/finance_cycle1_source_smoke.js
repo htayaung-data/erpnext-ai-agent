@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const appRoot = path.resolve(__dirname, "..");
+const appRoot = path.resolve(process.env.ERPW_APP_ROOT || path.join(__dirname, ".."));
 const financePath = path.join(appRoot, "erp_workspace_ui/erp_workspace_ui/page/finance_control_desk/finance_control_desk.js");
 const sidebarPath = path.join(appRoot, "erp_workspace_ui/public/js/runtime/console/workspace_console_sidebar.js");
 const browserRegistryPath = path.join(appRoot, "erp_workspace_ui/public/js/runtime/console/workspace_registry.js");
@@ -28,22 +28,41 @@ function deferred() {
 }
 
 async function financeRequestLifecycle() {
+  let preDispatchCalls = 0;
+  const preDispatchCoordinator = finance.createOverviewRequestCoordinator(() => {
+    preDispatchCalls += 1;
+    return Promise.resolve({ state: "must-not-dispatch" });
+  });
+  const preDispatchDeparture = preDispatchCoordinator.load();
+  preDispatchCoordinator.invalidate();
+  const preDispatchResult = await preDispatchDeparture;
+  assert.strictEqual(preDispatchCalls, 0, "same-turn invalidation must stop an obsolete Finance RPC before dispatch");
+  assert.strictEqual(preDispatchResult.stale, true);
+
   const pending = [];
   const rendered = [];
   const errors = [];
+  const settled = [];
   const coordinator = finance.createOverviewRequestCoordinator(() => {
     const request = deferred();
     pending.push(request);
     return request.promise;
   });
 
-  const initial = coordinator.load({ onPayload: (payload) => rendered.push(payload.state) });
+  const initial = coordinator.load({
+    onPayload: (payload) => rendered.push(payload.state),
+    onSettled: () => settled.push("initial"),
+  });
   const duplicate = coordinator.load({ onPayload: () => rendered.push("duplicate") });
   assert.strictEqual(initial, duplicate, "equivalent concurrent Finance loads must deduplicate");
   await Promise.resolve();
   assert.strictEqual(pending.length, 1);
 
-  const refresh = coordinator.load({ force: true, onPayload: (payload) => rendered.push(payload.state) });
+  const refresh = coordinator.load({
+    force: true,
+    onPayload: (payload) => rendered.push(payload.state),
+    onSettled: () => settled.push("refresh"),
+  });
   await Promise.resolve();
   assert.strictEqual(pending.length, 2);
   pending[1].resolve({ state: "unavailable" });
@@ -52,6 +71,7 @@ async function financeRequestLifecycle() {
   const initialResult = await initial;
   assert.strictEqual(initialResult.stale, true, "older ready response must become non-authoritative");
   assert.deepStrictEqual(rendered, ["unavailable"]);
+  assert.deepStrictEqual(settled, ["refresh"], "only the authoritative request may announce or restore focus");
 
   const oldUnavailable = coordinator.load({ force: true, onError: () => errors.push("old") });
   await Promise.resolve();
@@ -109,21 +129,21 @@ async function financeRequestLifecycle() {
   assert(rendered.includes("ready-after-return"));
 }
 
-async function normalPageInitialization() {
+async function financeFinancialDomAuthority() {
   const originalDocument = global.document;
-  const originalWindow = global.window;
-  const originalFrappe = global.frappe;
-  const calls = [];
-  let hideHandler = null;
-  const target = {
-    id: "finance-main",
-    innerHTML: "",
-    setAttribute() {},
-    querySelector() { return null; },
+  const attributes = {};
+  const renderHost = {
+    innerHTML: "Current: 7; overdue: 3; 125000.00 MMK",
+    setAttribute(name, value) { attributes[name] = value; },
   };
-  const pageWrapper = {
+  const liveStatus = { textContent: "125000.00 MMK stale announcement" };
+  let target = null;
+  const presentationShell = {
+    get parentElement() { return target; },
     querySelector(selector) {
-      return selector === ".layout-main-section" ? target : null;
+      if (selector === "[data-finance-render-host]") return renderHost;
+      if (selector === "[data-finance-live-status]") return liveStatus;
+      return null;
     },
   };
   global.document = {
@@ -132,27 +152,436 @@ async function normalPageInitialization() {
     getElementById() { return { id: "finance-control-desk-shell-style" }; },
     createElement() { return {}; },
   };
-  global.window = {
-    jQuery(node) {
-      assert.strictEqual(node, pageWrapper);
-      return {
-        off() { return this; },
-        on(_event, handler) { hideHandler = handler; return this; },
-      };
+  const pending = [];
+  target = {
+    innerHTML: "",
+    __financeControlDeskOverviewPayload: { manager: "stale-financial-posture" },
+    setAttribute(name, value) { attributes[name] = value; },
+    querySelector(selector) {
+      if (selector === "[data-finance-presentation-shell]") return presentationShell;
+      if (selector === "[data-finance-render-host]") return renderHost;
+      if (selector === "[data-finance-live-status]") return liveStatus;
+      return null;
     },
+  };
+  target.__financeControlDeskRequestCoordinator = finance.createOverviewRequestCoordinator(() => {
+    const request = deferred();
+    pending.push(request);
+    return request.promise;
+  });
+
+  const first = finance.loadOverviewContext(target, { force: true, userInitiated: true });
+  assert.strictEqual(pending.length, 0, "stale Finance DOM must clear before RPC dispatch begins");
+  assert.strictEqual(target.__financeControlDeskOverviewPayload, null, "Refresh must invalidate cached Finance posture synchronously");
+  assert(!renderHost.innerHTML.includes("125000.00 MMK"), "Refresh must remove stale MMK values synchronously");
+  assert(!renderHost.innerHTML.includes("Current: 7"), "Refresh must remove stale counts synchronously");
+  assert.strictEqual(liveStatus.textContent, "", "Refresh must clear stale assistive-technology announcements synchronously");
+  assert(renderHost.innerHTML.includes('data-finance-cycle1-overview="loading"'), "pending Finance must use a neutral loading state");
+  await Promise.resolve();
+  assert.strictEqual(pending.length, 1);
+  assert.strictEqual(attributes["aria-busy"], "true");
+
+  const second = finance.loadOverviewContext(target, { force: true, userInitiated: true });
+  await Promise.resolve();
+  pending[1].reject(new Error("new authoritative transport failure"));
+  await second;
+  assert(renderHost.innerHTML.includes("Controlled unavailable state"), "authoritative failure must remain controlled");
+  assert(!renderHost.innerHTML.includes("125000.00 MMK"));
+  assert.strictEqual(target.__financeControlDeskOverviewPayload, null);
+
+  pending[0].resolve({ state: { kind: "ready" }, financial: "stale-late-success" });
+  const staleFirst = await first;
+  assert.strictEqual(staleFirst.stale, true);
+  assert(!renderHost.innerHTML.includes("stale-late-success"), "stale success must not restore removed Finance data");
+  assert.strictEqual(target.__financeControlDeskOverviewPayload, null);
+
+  renderHost.innerHTML = "Overdue: 9; 99000.00 MMK";
+  liveStatus.textContent = "99000.00 MMK stale announcement";
+  target.__financeControlDeskOverviewPayload = { manager: "stale-before-hide" };
+  finance.invalidateTarget(target);
+  assert.strictEqual(target.__financeControlDeskOverviewPayload, null);
+  assert(!renderHost.innerHTML.includes("99000.00 MMK"), "route invalidation must clear retained financial markup");
+  assert(!renderHost.innerHTML.includes("Overdue: 9"));
+  assert.strictEqual(liveStatus.textContent, "");
+  assert(renderHost.innerHTML.includes('data-finance-cycle1-overview="loading"'));
+  assert.strictEqual(attributes["aria-busy"], "false");
+
+  global.document = originalDocument;
+}
+
+async function financeAccessibilityPresentation() {
+  const mutations = [];
+  let liveText = "";
+  const liveStatus = {};
+  Object.defineProperty(liveStatus, "textContent", {
+    get() { return liveText; },
+    set(value) { liveText = String(value); mutations.push(liveText); },
+  });
+  const focusCalls = [];
+  const listeners = new Set();
+  const focusDocument = {
+    activeElement: null,
+    addEventListener(type, handler) { if (type === "focusin") listeners.add(handler); },
+    removeEventListener(type, handler) { if (type === "focusin") listeners.delete(handler); },
+  };
+  const refresh = {
+    disabled: true,
+    ownerDocument: focusDocument,
+    focus(options) { focusCalls.push(options || null); focusDocument.activeElement = this; },
+  };
+  focusDocument.activeElement = refresh;
+  const attributes = {};
+  const target = {
+    setAttribute(name, value) { attributes[name] = value; },
+    querySelector(selector) {
+      if (selector === "[data-finance-refresh]") return refresh;
+      if (selector === "[data-finance-live-status]") return liveStatus;
+      return null;
+    },
+  };
+
+  const refreshIntent = finance.createFinanceRefreshFocusIntent(target, refresh, { document: focusDocument });
+  finance.completeFinanceRequest(target, {
+    refreshFocusIntent: refreshIntent,
+    statusMessage: finance.completionAnnouncement({ state: { kind: "ready" } }, "payload", true),
+  });
+  await Promise.resolve();
+  assert.strictEqual(attributes["aria-busy"], "false");
+  assert.strictEqual(refresh.disabled, false);
+  assert.strictEqual(focusCalls.length, 1, "authoritative Refresh completion must restore logical focus once");
+  assert.deepStrictEqual(focusCalls[0], { preventScroll: true });
+  assert.strictEqual(liveStatus.textContent, "Finance overview refreshed.");
+  assert.strictEqual(listeners.size, 0, "settled Refresh intent must release its focus listener");
+
+  assert.strictEqual(
+    finance.completionAnnouncement({ state: { kind: "unavailable" } }, "payload", true),
+    "Finance overview refreshed. Current posture is unavailable."
+  );
+  assert.strictEqual(
+    finance.completionAnnouncement(null, "error", true),
+    "Finance overview could not be refreshed. No financial posture was shown."
+  );
+  assert.strictEqual(
+    finance.completionAnnouncement({ state: { kind: "ready" } }, "payload", false),
+    "Finance overview loaded.",
+    "initial load must not claim that the user refreshed the page"
+  );
+  assert.strictEqual(
+    finance.visiblePostureValue({ key: "receivables_posture", state: "unavailable", value: "No counts" }),
+    "Unavailable"
+  );
+  assert.strictEqual(
+    finance.visiblePostureValue({ key: "payables_posture", state: "ready", value: "Aggregate counts only" }),
+    "Aggregate counts only"
+  );
+
+  mutations.length = 0;
+  liveStatus.textContent = "previous";
+  finance.announceFinanceStatus(target, "source_permission_denied");
+  await Promise.resolve();
+  assert.strictEqual(liveStatus.textContent, "Finance overview updated.", "raw reason codes must not be announced");
+  assert.deepStrictEqual(mutations.slice(-2), ["", "Finance overview updated."]);
+
+  mutations.length = 0;
+  finance.announceFinanceStatus(target, "Finance overview refreshed.");
+  await Promise.resolve();
+  finance.announceFinanceStatus(target, "Finance overview refreshed.");
+  await Promise.resolve();
+  assert.deepStrictEqual(
+    mutations,
+    ["", "Finance overview refreshed.", "", "Finance overview refreshed."],
+    "identical authoritative outcomes must each clear and repopulate the persistent polite status"
+  );
+
+  const movedFocusCalls = [];
+  const movedListeners = new Set();
+  const movedDocument = {
+    activeElement: null,
+    addEventListener(type, handler) { if (type === "focusin") movedListeners.add(handler); },
+    removeEventListener(type, handler) { if (type === "focusin") movedListeners.delete(handler); },
+  };
+  const movedRefresh = {
+    disabled: true,
+    ownerDocument: movedDocument,
+    focus() { movedFocusCalls.push("refresh"); },
+  };
+  movedDocument.activeElement = movedRefresh;
+  const movedTarget = {
+    setAttribute() {},
+    querySelector(selector) {
+      if (selector === "[data-finance-refresh]") return movedRefresh;
+      if (selector === "[data-finance-live-status]") return { textContent: "" };
+      return null;
+    },
+  };
+  const movedIntent = finance.createFinanceRefreshFocusIntent(movedTarget, movedRefresh, { document: movedDocument });
+  const sidebarControl = { id: "persistent-sidebar-control" };
+  movedDocument.activeElement = sidebarControl;
+  movedListeners.forEach((handler) => handler({ target: sidebarControl }));
+  finance.completeFinanceRequest(movedTarget, {
+    refreshFocusIntent: movedIntent,
+    statusMessage: "Finance overview refreshed.",
+  });
+  await Promise.resolve();
+  assert.deepStrictEqual(movedFocusCalls, [], "Refresh must not steal focus after the user moves elsewhere");
+  assert.strictEqual(movedListeners.size, 0);
+
+  movedDocument.activeElement = movedRefresh;
+  const departedIntent = finance.createFinanceRefreshFocusIntent(movedTarget, movedRefresh, { document: movedDocument });
+  departedIntent.invalidate();
+  assert.strictEqual(departedIntent.shouldRestore(), false, "route departure must cancel Refresh focus authority");
+  assert.strictEqual(movedListeners.size, 0);
+
+  const presentationNodes = {};
+  const presentationTarget = {
+    _innerHTML: "",
+    set innerHTML(value) {
+      this._innerHTML = value;
+      if (value.includes('data-finance-presentation-shell="1"')) {
+        presentationNodes.presentationShell = presentationNodes.presentationShell || {
+          parentElement: presentationTarget,
+          querySelector(selector) {
+            if (selector === "[data-finance-render-host]") return presentationNodes.renderHost || null;
+            if (selector === "[data-finance-live-status]") return presentationNodes.liveStatus || null;
+            return null;
+          },
+        };
+        presentationNodes.renderHost = presentationNodes.renderHost || {
+          innerHTML: "",
+          parentElement: presentationNodes.presentationShell,
+          setAttribute() {},
+        };
+        presentationNodes.liveStatus = presentationNodes.liveStatus || {
+          textContent: "",
+          parentElement: presentationNodes.presentationShell,
+          offsetParent: presentationNodes.presentationShell,
+        };
+      }
+    },
+    get innerHTML() { return this._innerHTML; },
+    querySelector(selector) {
+      if (selector === "[data-finance-presentation-shell]") return presentationNodes.presentationShell || null;
+      return null;
+    },
+  };
+  finance.setHtml(presentationTarget, "first Finance state");
+  const persistentShell = presentationNodes.presentationShell;
+  const persistentStatus = presentationNodes.liveStatus;
+  finance.setHtml(presentationTarget, "second Finance state");
+  assert.strictEqual(presentationNodes.presentationShell, persistentShell, "Finance presentation-shell identity must survive rerender");
+  assert.strictEqual(presentationNodes.liveStatus, persistentStatus, "Finance live-region identity must survive rerender");
+  assert.strictEqual(presentationNodes.presentationShell.parentElement, presentationTarget, "Finance presentation shell must be owned by the Page body");
+  assert.strictEqual(presentationNodes.liveStatus.offsetParent, presentationNodes.presentationShell, "Finance live region must use the owned presentation shell as its positioning context");
+  assert.strictEqual(presentationNodes.renderHost.innerHTML, "second Finance state");
+}
+
+async function normalPageInitialization() {
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalFrappe = global.frappe;
+  const calls = [];
+  const eventHandlers = new Map();
+  let pageCreations = 0;
+  let pendingRequest = null;
+  const target = {
+    id: "finance-main",
+    nodeType: 1,
+    innerHTML: "",
+    classList: { contains(value) { return value === "layout-main-section"; } },
+    setAttribute() {},
+    querySelector() { return null; },
+  };
+  const pageWrapper = {
+    page: null,
+    contains(node) { return node === target; },
+    querySelector() { return null; },
+  };
+  global.document = {
+    body: {},
+    head: { appendChild() {} },
+    getElementById() { return { id: "finance-control-desk-shell-style" }; },
+    createElement() { return {}; },
+  };
+  const jquery = (node) => {
+    assert.strictEqual(node, pageWrapper);
+    return {
+      off(eventName) { eventHandlers.delete(eventName); return this; },
+      on(eventName, handler) { eventHandlers.set(eventName, handler); return this; },
+      trigger(eventName) {
+        for (const [registeredName, handler] of eventHandlers.entries()) {
+          if (registeredName === eventName || registeredName.startsWith(`${eventName}.`)) handler.call(node);
+        }
+        return this;
+      },
+    };
+  };
+  global.window = {
+    jQuery: jquery,
+    $: jquery,
   };
   global.frappe = {
+    ui: {
+      make_app_page(options) {
+        assert.strictEqual(options.parent, pageWrapper);
+        assert.strictEqual(options.single_column, true);
+        pageCreations += 1;
+        pageWrapper.page = { parent: pageWrapper, body: { 0: target, jquery: "fixture" } };
+        return pageWrapper.page;
+      },
+    },
     call(options) {
       calls.push(options.method);
-      options.error(new Error("controlled source smoke failure"));
+      pendingRequest = options;
+      return { fail() { return this; } };
     },
   };
-  await finance.render(pageWrapper);
+  const initialLoad = finance.render(pageWrapper);
+  const immediateShow = finance.render(pageWrapper);
+  await Promise.resolve();
+  assert.strictEqual(pageCreations, 1, "initial load and immediate show must create one owned Frappe Page");
+  assert.strictEqual(finance.resolveTarget(pageWrapper), target, "Finance must resolve the owned wrapper.page.body");
   assert.strictEqual(calls.length, 1, "normal initialization must call Finance context exactly once");
-  assert.strictEqual(typeof hideHandler, "function", "normal initialization must bind the supported wrapper hide event");
-  assert(target.innerHTML.includes("temporarily unavailable"), "initialization failure must render a controlled nonblank state");
-  hideHandler();
+  assert(eventHandlers.has("hide.financeControlDesk"), "normal initialization must bind the real wrapper hide event");
+  jquery(pageWrapper).trigger("hide");
+  pendingRequest.callback({ message: { state: { kind: "ready" } } });
+  await Promise.all([initialLoad, immediateShow]);
   assert.strictEqual(target.__financeControlDeskOverviewPayload, null);
+
+  const returnLoad = finance.render(pageWrapper);
+  await Promise.resolve();
+  assert.strictEqual(pageCreations, 1, "return must reuse the same owned Frappe Page");
+  assert.strictEqual(calls.length, 2, "return must load a fresh authoritative Finance context");
+  pendingRequest.error(new Error("controlled source smoke failure"));
+  await returnLoad;
+  assert(target.innerHTML.includes("temporarily unavailable"), "return failure must render a controlled nonblank state");
+  global.document = originalDocument;
+  global.window = originalWindow;
+  global.frappe = originalFrappe;
+}
+
+async function replacedPageBodyAuthority() {
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalFrappe = global.frappe;
+  const requests = [];
+  const handlers = new Map();
+  const makeBody = (id) => ({
+    id,
+    nodeType: 1,
+    innerHTML: "",
+    classList: { contains(value) { return value === "layout-main-section"; } },
+    setAttribute() {},
+    querySelector() { return null; },
+  });
+  const firstBody = makeBody("finance-body-one");
+  const secondBody = makeBody("finance-body-two");
+  let currentBody = firstBody;
+  const pageWrapper = {
+    page: null,
+    contains(node) { return node === currentBody; },
+    querySelector() { return null; },
+  };
+  pageWrapper.page = { parent: pageWrapper, body: { 0: firstBody, jquery: "fixture" } };
+  const jquery = () => ({
+    off(eventName) { handlers.delete(eventName); return this; },
+    on(eventName, handler) { handlers.set(eventName, handler); return this; },
+  });
+  global.document = {
+    body: {},
+    head: { appendChild() {} },
+    getElementById() { return { id: "finance-control-desk-shell-style" }; },
+    createElement() { return {}; },
+  };
+  global.window = { jQuery: jquery, $: jquery };
+  global.frappe = {
+    ui: { make_app_page() { throw new Error("replacement must reuse the supplied Frappe Page"); } },
+    call(options) {
+      requests.push(options);
+      return { fail() { return this; } };
+    },
+  };
+
+  const oldLoad = finance.render(pageWrapper);
+  await Promise.resolve();
+  assert.strictEqual(requests.length, 1);
+  firstBody.innerHTML = "Current: 8; 88000.00 MMK";
+  firstBody.__financeControlDeskOverviewPayload = { manager: "stale-replaced-body" };
+
+  currentBody = secondBody;
+  pageWrapper.page.body = { 0: secondBody, jquery: "fixture" };
+  const replacementLoad = finance.render(pageWrapper);
+  assert.strictEqual(firstBody.__financeControlDeskOverviewPayload, null, "replacement must revoke the old body cache synchronously");
+  assert(!firstBody.innerHTML.includes("88000.00 MMK"), "replacement must clear old body financial markup synchronously");
+  await Promise.resolve();
+  assert.strictEqual(requests.length, 2);
+
+  requests[0].callback({ message: { state: { kind: "ready" }, financial: "late-replaced-body" } });
+  const oldResult = await oldLoad;
+  assert.strictEqual(oldResult.stale, true, "the replaced body request token must become stale");
+  assert(!firstBody.innerHTML.includes("late-replaced-body"));
+  assert.strictEqual(firstBody.__financeControlDeskOverviewPayload, null);
+
+  requests[1].error(new Error("controlled replacement-body failure"));
+  await replacementLoad;
+  assert(secondBody.innerHTML.includes("temporarily unavailable"));
+
+  global.document = originalDocument;
+  global.window = originalWindow;
+  global.frappe = originalFrappe;
+}
+
+async function strictPageOwnershipFailures() {
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalFrappe = global.frappe;
+  let calls = 0;
+  let pageCreations = 0;
+  const unrelatedBody = {
+    nodeType: 1,
+    innerHTML: "other-workspace",
+    classList: { contains(value) { return value === "layout-main-section"; } },
+  };
+  const globalWrapper = {
+    page: { parent: null, body: { 0: unrelatedBody, jquery: "fixture" } },
+    contains(node) { return node === unrelatedBody; },
+    querySelector() { return unrelatedBody; },
+  };
+  globalWrapper.page.parent = globalWrapper;
+  const candidateBody = {
+    nodeType: 1,
+    innerHTML: "candidate-workspace",
+    classList: { contains(value) { return value === "layout-main-section"; } },
+  };
+  const candidateWrapper = {
+    page: null,
+    contains(node) { return node === candidateBody; },
+    querySelector() { return candidateBody; },
+  };
+  global.document = { body: {}, getElementById() { return null; } };
+  global.window = {};
+  global.frappe = {
+    container: { page: globalWrapper },
+    call() { calls += 1; throw new Error("ownership failure must stop before RPC"); },
+  };
+
+  await finance.render(null);
+  await finance.render(candidateWrapper);
+  candidateWrapper.page = { parent: candidateWrapper, body: null };
+  global.frappe.ui = { make_app_page() { pageCreations += 1; } };
+  await finance.render(candidateWrapper);
+  candidateWrapper.page = { parent: globalWrapper, body: { 0: candidateBody, jquery: "fixture" } };
+  await finance.render(candidateWrapper);
+
+  assert.strictEqual(calls, 0, "missing ownership must not call the Finance overview RPC");
+  assert.strictEqual(pageCreations, 0, "an invalid existing Page must not be replaced implicitly");
+  assert.strictEqual(unrelatedBody.innerHTML, "other-workspace", "global Page fallback must not alter another workspace");
+  assert.strictEqual(candidateBody.innerHTML, "candidate-workspace", "descendant fallback must not alter an unowned container");
+  assert.strictEqual(candidateBody.__financeControlDeskInitialized, undefined);
+  assert.strictEqual(candidateBody.__financeControlDeskOverviewPayload, undefined);
+  assert.strictEqual(candidateBody.__financeControlDeskRequestCoordinator, undefined);
+  assert.strictEqual(candidateBody.__financeRefreshFocusIntent, undefined);
+  assert.strictEqual(candidateBody.__financeLiveStatusGeneration, undefined);
+
   global.document = originalDocument;
   global.window = originalWindow;
   global.frappe = originalFrappe;
@@ -428,6 +857,103 @@ function managedSearchIsolation() {
   assert(!sidebar.managedSearchTargetAllowed(warehouseConfig, {
     kind: "worklist", queue_key: "inbound_receiving", filters: { keyword: "PO-0001" },
   }), "Warehouse search must not dispatch generic worklist targets");
+
+  const createOption = (index) => {
+    const attributes = new Map([
+      ["data-erpw-sales-search-index", String(index)],
+      ["aria-selected", index === 0 ? "true" : "false"],
+    ]);
+    const classes = new Set(index === 0 ? ["is-active"] : []);
+    const option = {
+      id: `erpw-sales-console-search-option-${index}`,
+      classList: {
+        add(value) { classes.add(value); },
+        remove(value) { classes.delete(value); },
+        contains(value) { return classes.has(value); },
+      },
+      getAttribute(name) { return attributes.has(name) ? attributes.get(name) : null; },
+      setAttribute(name, value) { attributes.set(name, String(value)); },
+      closest(selector) { return selector === "[data-erpw-sales-search-index]" ? option : null; },
+      scrollIntoView() {},
+    };
+    return option;
+  };
+  const options = [createOption(0), createOption(1), createOption(2)];
+  const inputAttributes = new Map([["aria-activedescendant", options[0].id]]);
+  const input = {
+    setAttribute(name, value) { inputAttributes.set(name, String(value)); },
+    removeAttribute(name) { inputAttributes.delete(name); },
+    getAttribute(name) { return inputAttributes.has(name) ? inputAttributes.get(name) : null; },
+  };
+  let focusHandler = null;
+  const resultRoot = {
+    querySelectorAll() { return options; },
+    addEventListener(type, handler) { if (type === "focusin") focusHandler = handler; },
+    removeEventListener() {},
+    contains(option) { return options.includes(option); },
+  };
+  let activeIndex = 0;
+  assert(sidebar.bindManagedSearchResultFocus(resultRoot, (index) => {
+    activeIndex = index;
+    sidebar.applyManagedSearchActiveState(resultRoot, input, index);
+  }));
+  focusHandler({ target: options[2] });
+  assert.strictEqual(activeIndex, 2, "direct governed-option focus must synchronize the active index");
+  assert.strictEqual(options.filter((option) => option.getAttribute("aria-selected") === "true").length, 1);
+  assert.strictEqual(options[2].getAttribute("aria-selected"), "true");
+  assert.strictEqual(input.getAttribute("aria-activedescendant"), options[2].id);
+  assert.strictEqual(sidebar.applyManagedSearchActiveState(resultRoot, input, -1), -1);
+  assert.strictEqual(options.filter((option) => option.getAttribute("aria-selected") === "true").length, 0);
+  assert.strictEqual(input.getAttribute("aria-activedescendant"), null, "query/route invalidation must clear active descendant state");
+
+  let focusedNode = null;
+  const dialogFocusables = ["first", "middle", "last"].map((name) => ({
+    name,
+    hidden: false,
+    getAttribute() { return null; },
+    getClientRects() { return [{}]; },
+    focus() { focusedNode = this; },
+  }));
+  const dialogRoot = { querySelectorAll() { return dialogFocusables; } };
+  const forwardEvent = { key: "Tab", shiftKey: false, preventDefault() {}, stopPropagation() {} };
+  assert(sidebar.containManagedDialogFocus(forwardEvent, dialogRoot, dialogFocusables[2]));
+  assert.strictEqual(focusedNode, dialogFocusables[0], "Tab from the final managed-dialog control must wrap to the first control");
+  const backwardEvent = { key: "Tab", shiftKey: true, preventDefault() {}, stopPropagation() {} };
+  assert(sidebar.containManagedDialogFocus(backwardEvent, dialogRoot, dialogFocusables[0]));
+  assert.strictEqual(focusedNode, dialogFocusables[2], "Shift+Tab from the first managed-dialog control must wrap to the final control");
+}
+
+function managedDetailRouteActiveStates() {
+  const expected = {
+    procurement: {
+      poFollowUp: "purchase_order_directory",
+      supplierDetail: "supplier_directory",
+      itemDetail: "buying_item_directory",
+      purchaseRequestReview: "purchase_request_directory",
+      purchaseRequestForm: "purchase_request_directory",
+      rfqForm: "rfq_directory",
+      rfqReview: "rfq_directory",
+      supplierQuotationForm: "supplier_quotation_directory",
+      supplierQuotationReview: "supplier_quotation_directory",
+      purchaseOrderForm: "purchase_order_directory",
+    },
+    warehouse: {
+      receiving: "inbound_receiving",
+      picking: "outbound_picking",
+      stockException: "stock_exceptions",
+      stockPosture: "stock_exceptions",
+      movement: "movement_visibility",
+    },
+  };
+  Object.entries(expected).forEach(([workspaceId, routeMap]) => {
+    const workspace = browserWorkspaceRegistry.get(workspaceId);
+    Object.entries(routeMap).forEach(([routeName, activeKey]) => {
+      const routeKey = workspace.routes[routeName];
+      assert(routeKey, `${workspaceId}.${routeName} must exist in the browser registry`);
+      assert.strictEqual(sidebar.resolveActiveKey([routeKey, "governed-review-context"]), activeKey);
+      assert(workspace.fallbackItems.some((item) => item.key === activeKey), `${routeKey} owner must exist in fallback navigation`);
+    });
+  });
 }
 
 function salesInquiryIsolation() {
@@ -629,8 +1155,22 @@ function sourceContracts() {
   const pageMetadata = JSON.parse(fs.readFileSync(path.join(appRoot, "erp_workspace_ui/erp_workspace_ui/page/finance_control_desk/finance_control_desk.json"), "utf8"));
   assert(financeSource.includes('data-finance-cycle1-overview="ready"'));
   assert(financeSource.includes("validateFinanceOverviewPayload(payload)"));
-  assert(financeSource.indexOf("validateFinanceOverviewPayload(payload)") < financeSource.indexOf("target.__financeControlDeskOverviewPayload = payload;"));
+  assert(financeSource.indexOf("validateFinanceOverviewPayload(payload)") < financeSource.indexOf("setHtml(target, renderPayload(payload));"));
+  assert(!financeSource.includes("target.__financeControlDeskOverviewPayload = payload;"), "validated raw Finance payloads must not be cached on DOM nodes");
   assert(financeSource.includes("@media (max-width: 860px)"), "Finance layout must retain narrow-screen behavior");
+  assert(financeSource.includes('aria-live="polite"'));
+  assert(sidebarSource.includes("box-shadow: inset 0 0 0 3px #2563eb;"), "all managed workspaces must share a contained visible keyboard focus ring");
+  assert(sidebarSource.includes(':is(a, button, [role="button"], .collapse-sidebar-link):focus-visible'));
+  assert(sidebarSource.includes(".erpw-sales-console-sidebar-header:focus-visible"));
+  assert(sidebarSource.includes(".erpw-sales-console-sidebar-utility:focus-visible"));
+  assert(sidebarSource.includes(".erpw-sales-console-sidebar-link:focus-visible"));
+  assert(sidebarSource.includes(".erpw-sales-console-search-result:focus-visible"));
+  assert(sidebarSource.includes("inset 0 0 0 3px #2563eb"), "governed search focus must remain inside its overflow container");
+  assert(sidebarSource.includes(".erpw-sales-console-search-bar:has(.erpw-sales-console-search-input:focus-visible)"));
+  assert(sidebarSource.includes('role="status"'));
+  assert(sidebarSource.includes('aria-live="polite"'));
+  assert(sidebarSource.includes('aria-atomic="true"'));
+  assert(sidebarSource.includes("aria-current=\"page\""), "active managed sidebar item must expose current-page semantics");
   assert(sidebarSource.includes("if (!contextPayload) return false;"), "invalidated sidebar responses must not render fallback");
   assert(sidebarSource.includes("currentConfig.workspaceId !== config.workspaceId"));
   assert(sidebarSource.includes("JSON.stringify(currentRoute || []) !== routeSignature"));
@@ -683,6 +1223,10 @@ function sourceContracts() {
   assert(procurementReportSource.includes("const allowedRoutes = new Set"));
   assert(!financeSource.includes("pageDef.on_page_hide = hide"), "unsupported Frappe on_page_hide callback must not be used");
   assert(financeSource.includes('off("hide.financeControlDesk").on("hide.financeControlDesk", handler)'));
+  assert(financeSource.includes("createFinanceRefreshFocusIntent"));
+  assert(financeSource.includes("event.target !== refresh"), "user focus movement must cancel Refresh restoration authority");
+  assert(financeSource.includes("target.__financeLiveStatusGeneration !== generation"));
+  assert(financeSource.includes("currentStatus.textContent = safeMessage"));
   ["sales", "procurement", "warehouse", "finance"].forEach((workspaceId) => {
     const serverPayload = validSidebarPayload(workspaceId);
     assert(sidebar.sidebarPayloadMatchesWorkspace(serverPayload, workspaceId), `${workspaceId} server payload must satisfy the shared versioned contract`);
@@ -723,6 +1267,22 @@ function sourceContracts() {
   const paddedRoute = validSidebarPayload("finance");
   paddedRoute.sidebar.sections[0].items[0].target.route = ` ${paddedRoute.sidebar.sections[0].items[0].target.route} `;
   assert(!sidebar.sidebarPayloadMatchesWorkspace(paddedRoute, "finance"));
+  const duplicateTopLevelKey = validSidebarPayload("procurement");
+  duplicateTopLevelKey.sidebar.items[1].key = duplicateTopLevelKey.sidebar.items[0].key;
+  assert(!sidebar.sidebarPayloadMatchesWorkspace(duplicateTopLevelKey, "procurement"), "duplicate top-level sidebar keys must fail the shared payload contract");
+  const duplicateSectionKey = validSidebarPayload("warehouse");
+  duplicateSectionKey.sidebar.sections[0].items[1].key = duplicateSectionKey.sidebar.sections[0].items[0].key;
+  assert(!sidebar.sidebarPayloadMatchesWorkspace(duplicateSectionKey, "warehouse"), "duplicate section sidebar keys must fail the shared payload contract");
+  const duplicateAcrossSections = validSidebarPayload("procurement");
+  duplicateAcrossSections.sidebar.sections.push({
+    key: "secondary",
+    label: "Secondary",
+    items: [{ ...duplicateAcrossSections.sidebar.sections[0].items[0], target: { ...duplicateAcrossSections.sidebar.sections[0].items[0].target } }],
+  });
+  assert(!sidebar.sidebarPayloadMatchesWorkspace(duplicateAcrossSections, "procurement"), "duplicate keys across sections must fail the shared payload contract");
+  const unregisteredItemKey = validSidebarPayload("procurement");
+  unregisteredItemKey.sidebar.items[0].key = "unregistered_workspace_item";
+  assert(!sidebar.sidebarPayloadMatchesWorkspace(unregisteredItemKey, "procurement"), "unregistered sidebar keys must fail the shared payload contract");
   const salesPageSource = fs.readFileSync(salesPagePath, "utf8");
   assert(salesPageSource.includes("const primed = sidebarRuntime.primePayload(payload);"));
   assert(salesPageSource.includes("if (primed && typeof sidebarRuntime.syncSidebarNow"));
@@ -759,10 +1319,15 @@ function sourceContracts() {
 
 (async () => {
   await financeRequestLifecycle();
+  await financeFinancialDomAuthority();
+  await financeAccessibilityPresentation();
   await normalPageInitialization();
+  await replacedPageBodyAuthority();
+  await strictPageOwnershipFailures();
   await overviewTransportSettlement();
   await sidebarWorkspaceIsolation();
   managedSearchIsolation();
+  managedDetailRouteActiveStates();
   salesInquiryIsolation();
   procurementQuickFindIsolation();
   salesGuideIsolation();

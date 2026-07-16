@@ -69,6 +69,11 @@ _ALLOWED_POLICY_KEYS = {
     "role_category",
     "source_permission_checked",
     "source_permission_verified",
+    "future_activity_source",
+    "future_activity_source_permission_checked",
+    "future_activity_source_permission_verified",
+    "future_activity_gate_required",
+    "future_payment_ledger_activity_supported",
     "source_read_policy_ready",
     "runtime_count_enabled",
     "manager_only",
@@ -184,12 +189,22 @@ def _matches_filter(record, item):
     raise AssertionError(f"Unexpected filter: {item!r}")
 
 
-def _counting_getter(calls, records=None):
+def _counting_getter(calls, records=None, future_activity_records=None):
     source_records = list(_RECORDS if records is None else records)
+    future_records = list(future_activity_records or [])
 
     def getter(doctype, **kwargs):
         calls.append((doctype, kwargs))
         filters = kwargs.get("filters") or []
+        if doctype == service.PAYABLES_FUTURE_ACTIVITY_SOURCE:
+            count = sum(
+                1
+                for record in future_records
+                if all(_matches_filter(record, item) for item in filters)
+            )
+            return [{"count": count}]
+        if doctype != service.PAYABLES_COUNT_SOURCE:
+            raise AssertionError(f"Unexpected Payables source: {doctype!r}")
         child_join = any(len(item) == 4 and item[0] == "Payment Schedule" for item in filters)
         count = sum(
             int(record.get("_payment_schedule_count", 1)) if child_join else 1
@@ -230,6 +245,9 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertTrue(all(value is False for value in payload["no_effect"].values()))
         self.assertEqual(payload["policy"]["identifiers_enabled"], False)
         self.assertEqual(payload["policy"]["monetary_values_enabled"], False)
+        self.assertEqual(payload["policy"]["future_activity_source"], "Payment Ledger Entry")
+        self.assertEqual(payload["policy"]["future_activity_gate_required"], True)
+        self.assertEqual(payload["policy"]["future_payment_ledger_activity_supported"], False)
         self.assertEqual(payload["policy"]["native_navigation_enabled"], False)
         self.assertEqual(payload["policy"]["external_output_enabled"], False)
         self.assertEqual(payload["policy"]["execution_enabled"], False)
@@ -269,8 +287,11 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertEqual(payload["policy"]["accounts_user_counts_enabled"], False)
         self.assertEqual(payload["policy"]["runtime_count_enabled"], True)
         self.assertEqual(payload["policy"]["reason"], "payables_count_posture_ready")
-        self.assertEqual(permission_calls, [("Purchase Invoice", {"ptype": "read", "user": "finance.lead@meet.com"})])
-        self.assertEqual(len(calls), 15)
+        self.assertEqual(permission_calls, [
+            ("Purchase Invoice", {"ptype": "read", "user": "finance.lead@meet.com"}),
+            ("Payment Ledger Entry", {"ptype": "read", "user": "finance.lead@meet.com"}),
+        ])
+        self.assertEqual(len(calls), 16)
 
     def test_invalid_supplied_as_of_values_fail_closed_before_source_reads(self):
         invalid_values = (
@@ -310,7 +331,9 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         )
 
         self.assertEqual(service.PAYABLES_COUNT_QUERY_FIELD, {"COUNT": "name", "as": "count"})
-        for doctype, kwargs in calls:
+        purchase_calls = [(doctype, kwargs) for doctype, kwargs in calls if doctype == "Purchase Invoice"]
+        future_calls = [(doctype, kwargs) for doctype, kwargs in calls if doctype == "Payment Ledger Entry"]
+        for doctype, kwargs in purchase_calls:
             self.assertEqual(doctype, "Purchase Invoice")
             self.assertEqual(kwargs["fields"], [service.PAYABLES_COUNT_QUERY_FIELD])
             self.assertEqual(kwargs["limit_page_length"], 1)
@@ -319,13 +342,23 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
             filters = kwargs["filters"]
             self.assertIn(["company", "=", _COMPANY_SCOPE["name"]], filters)
             self.assertIn(["docstatus", "=", 1], filters)
-        self.assertNotIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], calls[0][1]["filters"])
-        self.assertIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], calls[1][1]["filters"])
-        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parent", "is", "set"], calls[2][1]["filters"])
-        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parenttype", "=", "Purchase Invoice"], calls[2][1]["filters"])
-        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parentfield", "=", "payment_schedule"], calls[2][1]["filters"])
-        self.assertEqual(calls[2][1]["fields"], [{"COUNT": "name", "as": "count"}])
-        bucket_filters = [kwargs["filters"][-1] for _doctype, kwargs in calls[-5:]]
+        self.assertEqual(len(future_calls), 1)
+        future_filters = future_calls[0][1]["filters"]
+        self.assertEqual(future_calls[0][1]["fields"], [service.PAYABLES_COUNT_QUERY_FIELD])
+        self.assertEqual(future_calls[0][1]["limit_page_length"], 1)
+        self.assertNotIn("ignore_permissions", future_calls[0][1])
+        self.assertEqual(future_filters, [
+            ["company", "=", _COMPANY_SCOPE["name"]],
+            ["party_type", "=", "Supplier"],
+            ["delinked", "=", 0],
+            ["posting_date", ">", "2026-07-09"],
+        ])
+        self.assertNotIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], purchase_calls[0][1]["filters"])
+        self.assertIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], purchase_calls[1][1]["filters"])
+        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parent", "is", "set"], purchase_calls[2][1]["filters"])
+        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parenttype", "=", "Purchase Invoice"], purchase_calls[2][1]["filters"])
+        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parentfield", "=", "payment_schedule"], purchase_calls[2][1]["filters"])
+        bucket_filters = [kwargs["filters"][-1] for _doctype, kwargs in purchase_calls[-5:]]
         self.assertEqual(bucket_filters, [
             ["due_date", ">=", "2026-07-09"],
             ["due_date", "between", ["2026-06-09", "2026-07-08"]],
@@ -333,7 +366,7 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
             ["due_date", "between", ["2026-04-10", "2026-05-09"]],
             ["due_date", "<=", "2026-04-09"],
         ])
-        for _doctype, kwargs in calls[-5:]:
+        for _doctype, kwargs in purchase_calls[-5:]:
             filters = kwargs["filters"]
             self.assertIn(["outstanding_amount", ">", 0], filters)
             self.assertIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], filters)
@@ -550,6 +583,194 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
                 self.assertEqual(payload["bucket_counts"], {})
                 self.assertIsNone(payload["company_scope"])
 
+    def test_future_payment_ledger_activity_suppresses_all_ap_counts(self):
+        future_activity = [{
+            "company": _COMPANY_SCOPE["name"],
+            "account_type": "Payable",
+            "party_type": "Supplier",
+            "delinked": 0,
+            "posting_date": date(2026, 7, 10),
+        }]
+        calls = []
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter(calls, future_activity_records=future_activity),
+        )
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["policy"]["reason"], "future_payment_ledger_activity_not_supported")
+        self.assertEqual(payload["bucket_counts"], {})
+        self.assertIsNone(payload["company_scope"])
+        self.assertEqual(sum(doctype == "Payment Ledger Entry" for doctype, _kwargs in calls), 1)
+        self.assertFalse(any(
+            kwargs["filters"][-1][0] == "due_date" and kwargs["filters"][-1][1] in {">=", "between", "<="}
+            for doctype, kwargs in calls
+            if doctype == "Purchase Invoice"
+        ))
+
+    def test_future_supplier_activity_cannot_evade_gate_through_account_type(self):
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], future_activity_records=[{
+                "company": _COMPANY_SCOPE["name"],
+                "account_type": "Unexpected",
+                "party_type": "Supplier",
+                "delinked": 0,
+                "posting_date": date(2026, 7, 10),
+            }]),
+        )
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["policy"]["reason"], "future_payment_ledger_activity_not_supported")
+        self.assertEqual(payload["bucket_counts"], {})
+        self.assertIsNone(payload["company_scope"])
+
+    def test_future_activity_in_another_company_does_not_affect_selected_company(self):
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], future_activity_records=[{
+                "company": "Other Company",
+                "account_type": "Payable",
+                "party_type": "Supplier",
+                "delinked": 0,
+                "posting_date": date(2026, 7, 10),
+            }]),
+        )
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "ready")
+
+    def test_future_activity_permission_denial_fails_before_any_source_adapter(self):
+        permission_calls = []
+
+        def checker(doctype, **kwargs):
+            permission_calls.append((doctype, kwargs))
+            return doctype == "Purchase Invoice"
+
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=checker,
+            list_getter=_raising_getter,
+        )
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["policy"]["reason"], "future_activity_source_permission_denied")
+        self.assertEqual(payload["bucket_counts"], {})
+        self.assertEqual(permission_calls, [
+            ("Purchase Invoice", {"ptype": "read", "user": "finance.lead@meet.com"}),
+            ("Payment Ledger Entry", {"ptype": "read", "user": "finance.lead@meet.com"}),
+        ])
+
+    def test_future_activity_probe_permission_error_malformed_or_ambiguous_output_fails_closed(self):
+        cases = (
+            ("permission_error", service.frappe.PermissionError("denied"), "permission_preserving_payables_future_activity_unavailable"),
+            ("none", None, service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+            ("false", False, service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+            ("zero", 0, service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+            ("empty_string", "", service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+            ("mapping", {"count": 0}, service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+            ("tuple", ({"count": 0},), service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+            ("unexpected_alias", [{"total": 0}], service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+            ("ambiguous_multiple_rows", [{"count": 0}, {"count": 0}], service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+            ("negative", [{"count": -1}], service.PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON),
+        )
+        for label, response, expected_reason in cases:
+            with self.subTest(label=label):
+                calls = []
+                purchase_getter = _counting_getter(calls)
+
+                def getter(doctype, **kwargs):
+                    if doctype == "Payment Ledger Entry":
+                        calls.append((doctype, kwargs))
+                        if isinstance(response, Exception):
+                            raise response
+                        return response
+                    return purchase_getter(doctype, **kwargs)
+
+                payload = service.build_payables_count_posture(
+                    context=_context(),
+                    resolver=_resolver(),
+                    as_of_date="2026-07-09",
+                    permission_checker=_permission_checker(True),
+                    list_getter=getter,
+                )
+
+                self.assert_safe_payables_response(payload)
+                self.assertEqual(payload["state"], "unavailable")
+                self.assertEqual(payload["policy"]["reason"], expected_reason)
+                self.assertEqual(payload["bucket_counts"], {})
+                self.assertIsNone(payload["company_scope"])
+                self.assertNotIn("grand_total", payload)
+
+    def test_future_activity_read_failure_discards_only_new_frappe_messages(self):
+        calls = []
+        purchase_getter = _counting_getter(calls)
+        prior_local = getattr(service.frappe, "local", None)
+        service.frappe.local = types.SimpleNamespace(message_log=["existing-message"])
+
+        def getter(doctype, **kwargs):
+            if doctype == "Payment Ledger Entry":
+                calls.append((doctype, kwargs))
+                service.frappe.local.message_log.append("permission-denied-message")
+                raise service.frappe.PermissionError("denied")
+            return purchase_getter(doctype, **kwargs)
+
+        try:
+            payload = service.build_payables_count_posture(
+                context=_context(),
+                resolver=_resolver(),
+                as_of_date="2026-07-09",
+                permission_checker=_permission_checker(True),
+                list_getter=getter,
+            )
+        finally:
+            message_log = list(service.frappe.local.message_log)
+            if prior_local is None:
+                delattr(service.frappe, "local")
+            else:
+                service.frappe.local = prior_local
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["bucket_counts"], {})
+        self.assertEqual(message_log, ["existing-message"])
+
+    def test_future_activity_gate_response_contains_no_identity_amount_or_date_fields(self):
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], future_activity_records=[{
+                "company": _COMPANY_SCOPE["name"],
+                "account_type": "Payable",
+                "party_type": "Supplier",
+                "delinked": 0,
+                "posting_date": date(2026, 7, 10),
+                "party": "SUPPLIER-SECRET",
+                "voucher_no": "PINV-SECRET",
+                "name": "PLE-SECRET",
+                "amount": "999.00",
+            }]),
+        )
+        serialized = repr(payload).lower()
+        for forbidden in ("supplier-secret", "pinv-secret", "ple-secret", "999.00", "2026-07-10"):
+            self.assertNotIn(forbidden, serialized)
+
     def test_permission_denied_or_error_returns_unavailable_without_adapter(self):
         for checker in (_permission_checker(False), lambda *args, **kwargs: (_ for _ in ()).throw(service.frappe.PermissionError("denied"))):
             payload = service.build_payables_count_posture(
@@ -687,6 +908,7 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertIn('getattr(frappe, "has_permission", None)', source)
         self.assertIn('PAYABLES_COUNT_SOURCE = "Purchase Invoice"', source)
         self.assertIn('PAYABLES_SCHEDULE_CHILD_SOURCE = "Payment Schedule"', source)
+        self.assertIn('PAYABLES_FUTURE_ACTIVITY_SOURCE = "Payment Ledger Entry"', source)
         self.assertIn('PAYABLES_COUNT_QUERY_FIELD = {"COUNT": "name", "as": "count"}', source)
 
     def test_frontend_guard_contains_ap_specific_forbidden_keys(self):
