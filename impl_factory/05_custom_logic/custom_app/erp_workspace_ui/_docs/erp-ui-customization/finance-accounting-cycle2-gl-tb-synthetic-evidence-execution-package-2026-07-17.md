@@ -4,7 +4,9 @@
 
 **Authority:** Main Control v2, planning only
 
-**Decision:** synthetic_evidence_execution_package_ready_for_owner_decision
+**Decision:** synthetic_evidence_execution_package_reconciled_with_runtime_design
+
+**Runtime-design status:** accepted for planning; source authoring and execution remain unapproved
 
 **Published evidence baseline:** 45f564a5fe3e87e2262f5c32987d0707b0b5f271
 
@@ -14,13 +16,13 @@
 
 ## 1. Purpose and bounded decision
 
-This is the canonical planning package for one future disposable synthetic proof of the Finance GL / Trial Balance source posture. It freezes the evidence boundary, environment contract, single harness candidate, accounting and authority fixtures, primary-snapshot proof, workload-cap derivation, evidence formats, review gates, teardown, and exact future command classes.
+This is the canonical planning package for one future disposable synthetic proof of the Finance GL / Trial Balance source posture. It freezes the evidence boundary, environment contract, sole accounting-proof harness, source-controlled host controller boundary, accounting and authority fixtures, primary-snapshot proof, workload-cap derivation, evidence formats, review gates, teardown, and exact future command classes.
 
 The sole candidate is **gl_reconstructed**: a custom, aggregate-only, read-only reconstruction from authoritative raw GL Entry and complete Account-chart state.
 
 This package does not:
 
-- authorize creation of the harness;
+- authorize creation or modification of the harness or controller;
 - authorize a site, database, cache, container, volume, fixture, test, query, benchmark, or teardown;
 - approve native General Ledger, native Trial Balance, Query Report passthrough, ACB/cache mode, diagnostic dual mode, or silent fallback;
 - create a Finance HTTP endpoint or inspect the deferred global CORS target;
@@ -42,14 +44,26 @@ This package is subordinate to, and preserves, the later accepted project truth 
 7. [C2B2-C2B6 Installed-Source Semantic Proof and Stop Receipt](finance-accounting-cycle2-c2b2-c2b6-installed-source-semantic-proof-2026-07-17.md);
 8. [Targeted C2B Gap-Closure Plan](finance-accounting-cycle2-targeted-c2b-gap-closure-plan-2026-07-17.md);
 9. [C2BG1 Targeted Gap Source Fingerprint Receipt](finance-accounting-cycle2-c2bg1-targeted-gap-source-fingerprint-receipt-2026-07-17.md);
-10. [C2BG2-C2BG5 Static Semantic Read and Stop Receipt](finance-accounting-cycle2-c2bg2-c2bg5-static-semantic-read-stop-receipt-2026-07-17.md).
+10. [C2BG2-C2BG5 Static Semantic Read and Stop Receipt](finance-accounting-cycle2-c2bg2-c2bg5-static-semantic-read-stop-receipt-2026-07-17.md);
+11. [GL / Trial Balance Runtime Evidence Design Amendment](finance-accounting-cycle2-gl-tb-runtime-evidence-design-amendment-2026-07-18.md).
 
 The Owner has already decided:
 
 - the cancellation-freeze High is carried as a reporting-only deferral;
 - gl_reconstructed is the only synthetic-proof candidate;
 - HTTP exposure and the global CORS target are deferred to a separate fingerprint/read gate;
-- only this planning package is authorized now.
+- deterministic workload-unit boundaries replace exact millisecond minus-one/exact/plus-one timing assertions;
+- a future source-controlled host controller owns the watchdog, one-shot runners, evidence promotion, recovery and teardown;
+- the initial-connection fixture may pause only the exact disposable synthetic database;
+- every workload-point envelope receives one complete disposable stack;
+- cold state means a fresh runner/cgroup, reset Redis, reset MariaDB process/buffer state and sealed identical fixtures, while host page-cache coldness remains unproven;
+- VM-level isolation is deferred unless later evidence demonstrates that the accepted cold-state definition is insufficient;
+- authoritative warm evidence uses a fresh runner after controlled priming; same-process warmth is diagnostic only;
+- cgroup v2 `memory.current`, `memory.peak` and `memory.events.local` are the authoritative per-variant memory sources;
+- killed or incomplete subruns are discard-only and cannot promote harness evidence;
+- atomic point promotion, the corrected evidence-manifest graph and exact-ID recovery teardown are accepted;
+- the numeric-derivation method is accepted for design only, with no numeric value approved;
+- planning of a later controller-and-harness source-authoring gate is approved, but code authoring and synthetic execution are not.
 
 Later accepted documents supersede older phase labels. No historical phase is reopened unless current evidence contradicts accepted closure.
 
@@ -81,10 +95,12 @@ No synthetic execution may be authorized until all of these are resolved in one 
 2. exact Redis image repository digest and image ID;
 3. exact Docker Compose version and engine version;
 4. exact materialized compose.yaml SHA-256;
-5. exact committed source HEAD and harness SHA-256;
-6. exact environment owner, run ID, host, run root, resource ceiling, and setup timeout;
+5. exact committed source HEAD plus accepted harness and host-controller blob identities and SHA-256 values;
+6. exact environment owner, run ID, point IDs, host, run root, cgroup-v2 capability, resource ceilings, setup/request/finalization/package/teardown ceilings, and memory-sampling interval;
 7. exact in-memory secret-injection mechanism;
-8. Owner-approved workload budgets from which numeric caps may later be derived.
+8. Owner-approved workload and resource budgets from which numeric caps and independent ceilings may later be proposed;
+9. exact workload plan and materialized controller argument-vector manifest;
+10. read-only compatibility proof for the pinned Frappe test-command and JUnit behavior.
 
 Tag-only images, image pulls during the run, builds, mutable base images, or unreviewed placeholder expansion stop the package.
 
@@ -97,12 +113,12 @@ Tag-only images, image pulls during the run, builds, mutable base images, or unr
 | Accounting equations and literal expectations | Accounting reviewer; reviewed once before execution |
 | Permission, identity and error canaries | Security reviewer; reviewed once before execution |
 | Primary, snapshot, reconnect and workload evidence | Database/runtime reviewer; reviewed once before execution |
-| Future harness source file | One implementation/test owner under a separate Owner gate |
+| Future harness and host-controller source files | One implementation/test owner under a separate Owner gate; the harness alone owns accounting and permission assertions |
 | Sales, Procurement and Warehouse | Protected, no touch |
 | Finance Cycle 1 runtime and behavior | Protected, no touch |
 | Shared UI, routing, registries and governance manifests | Protected, no touch |
 | AI Assistant and Finance-to-AI | No access and no accounting authority |
-| Authoritative source repository | Read-only during execution except the separately approved committed harness already present at its frozen hash |
+| Authoritative source repository | Read-only during execution; the separately approved committed harness and controller must already be present at frozen hashes |
 | Live deployment tree and live environment | Prohibited |
 
 The future synthetic site installs only Frappe, ERPNext, and erp_workspace_ui from the pinned application image. HRMS, frappe_assistant_core, and ai_assistant_ui remain build-present but are not installed on the disposable site. This avoids email, notification, integration, CORS, AI, and unrelated accounting-hook activation.
@@ -114,24 +130,26 @@ That minimal app set is deliberate containment, not production-app parity. It ca
 ### 5.1 Exact identity rules
 
 - RUN_ID is one Owner-recorded, lowercase hexadecimal path component matching exactly twelve characters.
-- Compose project: c2bg5_<RUN_ID>.
-- Site: test_finance_gl_tb_<RUN_ID>.local.
-- Database: test_finance_gl_tb_<RUN_ID>.
+- POINT_ID is one exact, manifest-enumerated, contained path component from the later approved workload plan.
+- Each workload-point envelope has its own Compose project: c2bg5_<RUN_ID>_<POINT_ID>.
+- Each point site is test_finance_gl_tb_<RUN_ID>_<POINT_ID>.local.
+- Each point database is test_finance_gl_tb_<RUN_ID>_<POINT_ID>.
 - Run root: /tmp/erpai-finance-gl-tb-c2bg5/<RUN_ID>.
-- All resources carry label com.erpai.finance.c2bg5.run=<RUN_ID>.
-- Reuse of a RUN_ID, site, database, container, network, or volume is prohibited.
+- All resources carry both com.erpai.finance.c2bg5.run=<RUN_ID> and com.erpai.finance.c2bg5.point=<POINT_ID>.
+- Reuse of a RUN_ID/POINT_ID pair, point site, point database, container, network, or volume is prohibited.
+- Point envelopes execute sequentially, and exact absence must be proven before the next point starts.
 
 The twelve-character RUN_ID rule is a resource-name containment rule, not a financial or workload cap.
 
 ### 5.2 Required topology
 
-The materialized compose file may define exactly:
+For each workload-point envelope, the same hash-frozen materialized Compose file may define exactly:
 
 - one MariaDB service named db-primary;
 - one Redis service named redis-cache;
 - one Redis service named redis-queue;
 - one Redis service named redis-socketio;
-- one non-web application service named test-runner;
+- one non-web application service template named test-runner, used only to create exact one-shot runner containers;
 - one internal bridge network with internal: true;
 - new named volumes for MariaDB data, sites, logs, and evidence;
 - temporary, non-persistent Redis storage.
@@ -152,9 +170,9 @@ Docker documents that an internal Compose network is externally isolated. That t
 
 ### 5.3 Site initialization controls
 
-Before the proof module runs:
+Within each new point stack, before any measured runner starts:
 
-- create the site from zero using the new MariaDB primary;
+- create the point site from zero using the new point MariaDB primary;
 - set the global database and Redis service names to the disposable services only;
 - create the Frappe-only site, apply the test/scheduler/email/developer controls, and then install ERPNext;
 - set allow_tests true, pause_scheduler true, mute_emails true, and developer_mode false;
@@ -162,20 +180,29 @@ Before the proof module runs:
 - verify the exact site app set is frappe, erpnext, erp_workspace_ui;
 - verify no CORS setting, integration credential, email account, webhook, queued job, or background worker is active and no email, notification, scheduler, or integration action is executed;
 - copy no configuration from any other site.
+- deterministically seed and seal the point fixture;
+- recreate MariaDB over the same sealed point volume with buffer-pool dump/load disabled;
+- recreate all point Redis services/namespaces and verify only sanitized zero key counts;
+- create a fresh one-shot runner/cgroup for each measured cold, warm and concurrent variant;
+- preserve the sealed fixture while a controlled primer produces the warm Redis/database-buffer state;
+- classify the host page-cache state as unproven.
 
 If app installation attempts email, notification, external network, integration, background work, or an unapproved app dependency, initialization stops and the environment is torn down.
 
 ### 5.4 Deterministic teardown
 
-The same environment owner must:
+The accepted source-controlled host controller, invoked by the same environment owner, must:
 
-1. capture and verify all sanitized evidence hashes;
-2. stop and remove only the exact Compose project;
-3. remove its exact named volumes and internal network;
-4. verify no resource with the run label remains;
-5. remove in-memory secrets from the execution session;
-6. retain only the allowlisted sanitized evidence and non-secret execution manifest;
-7. produce the teardown receipt.
+1. promote only normally completed, atomically sealed point evidence;
+2. discard every harness artifact from a killed or incomplete subrun and retain only its generic controller record;
+3. unpause the exact point database if the connection-stall fixture paused it;
+4. stop and remove only the exact point Compose project;
+5. remove its exact named volumes and internal network;
+6. verify absence by exact manifest identity, project, run label and point label;
+7. use exact-ID fallback removal only for verified remnants and stop with `teardown_unverified` if identity or absence is uncertain;
+8. remove in-memory secrets from the execution session;
+9. retain only the allowlisted sanitized evidence and non-secret execution manifest;
+10. produce the teardown receipt and final evidence-manifest root.
 
 No system prune, wildcard removal, unrelated-container action, source cleanup, live cleanup, or four-exclusion cleanup is permitted.
 
@@ -183,60 +210,97 @@ No system prune, wildcard removal, unrelated-container action, source cleanup, l
 
 ### 6.1 Repository authoring allowlist
 
-The only future source/test-code candidate is:
+The exact later source/test-code candidates are:
 
-impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/test_finance_gl_trial_balance_source_proof.py
+1. impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/test_finance_gl_trial_balance_source_proof.py
+2. impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/finance_gl_trial_balance_evidence_controller.py
 
-No runtime module, fixture helper, second test, endpoint, page, JavaScript, registry, route, hook, manifest, Shared UI, AI Assistant, or ERPNext/Frappe source file may be created or edited.
+The harness remains the sole accounting, permission, snapshot, workload and leakage proof candidate. The controller may own only host-side watchdog deadlines, one-shot runner lifecycle, exact point-scoped database pause/unpause, causal timeout classification, cgroup telemetry collection, atomic evidence promotion, exact-ID recovery and teardown. It may not import application runtime code or implement accounting logic.
 
-Harness authoring, review, staging, commit, and push are separate gates. Synthetic execution requires the harness to be committed and its exact source HEAD and SHA-256 accepted first.
+No runtime module, fixture helper outside the sole harness, second accounting test, endpoint, page, JavaScript, registry, route, hook, manifest, Shared UI, AI Assistant, or ERPNext/Frappe source file may be created or edited.
 
-### 6.2 Ephemeral control-file allowlist
+Planning this two-file gate is accepted, but code authoring is not authorized. Authoring, bounded review, staging, commit and push are separate Owner gates. Synthetic execution requires both files to be committed and their exact source HEAD, blob identities and SHA-256 values accepted first.
 
-Only these non-repository control files may exist beneath the run root:
+### 6.2 Disposable control and evidence allowlist
+
+Only these top-level non-repository inputs/state files may exist beneath the run root:
 
 1. compose.yaml;
 2. execution-manifest.json;
-3. evidence/provenance.json;
-4. evidence/topology.json;
-5. evidence/site-apps.json;
-6. evidence/fixture-manifest.json;
-7. evidence/accounting-results.jsonl;
-8. evidence/permission-results.jsonl;
-9. evidence/snapshot-results.jsonl;
-10. evidence/workload-results.jsonl;
-11. evidence/leakage-results.jsonl;
-12. evidence/expected-actual-diff.jsonl;
-13. evidence/mutation-sentinel.json;
-14. evidence/junit.xml;
-15. evidence/evidence-manifest.sha256;
-16. evidence/review-disposition.json;
-17. evidence/teardown-receipt.json.
+3. workload-plan.json;
+4. control/controller-state.json.
 
-There is no helper script, Dockerfile, SQL dump, copied config, fixture JSON, shell script, Python helper, log archive, screenshot, HTTP capture, or exported report in the allowlist. Literal fixtures and literal expected results live inside the single harness and are separately reviewed.
+Only these point-resolved transient paths may exist and they must not be retained:
 
-Secret values are injected from the future approved execution controller environment. No .env file, secret file, credential artifact, or secret-bearing evidence is allowed.
+1. control/<SUBRUN_ID>/ready.json;
+2. staging/<SUBRUN_ID>/ containing only exact expected harness basenames;
+3. bounded controller-owned stdout/stderr scan files, destroyed after scanning.
+
+The retained top-level evidence allowlist is:
+
+1. evidence/controller-receipt.json;
+2. evidence/controller-events.jsonl;
+3. evidence/watchdog-results.jsonl;
+4. evidence/isolation-results.jsonl;
+5. evidence/memory-results.jsonl;
+6. evidence/point-index.json;
+7. evidence/review-disposition.json;
+8. evidence/proof-evidence-manifest.sha256;
+9. evidence/teardown-receipt.json;
+10. evidence/final-evidence-manifest.sha256.
+
+For each exact manifest-enumerated <POINT_ID>, retained point evidence is limited to:
+
+1. evidence/points/<POINT_ID>/provenance.json;
+2. evidence/points/<POINT_ID>/topology.json;
+3. evidence/points/<POINT_ID>/site-apps.json;
+4. evidence/points/<POINT_ID>/fixture-manifest.json;
+5. evidence/points/<POINT_ID>/accounting-results.jsonl;
+6. evidence/points/<POINT_ID>/permission-results.jsonl;
+7. evidence/points/<POINT_ID>/snapshot-results.jsonl;
+8. evidence/points/<POINT_ID>/workload-results.jsonl;
+9. evidence/points/<POINT_ID>/leakage-results.jsonl;
+10. evidence/points/<POINT_ID>/expected-actual-diff.jsonl;
+11. evidence/points/<POINT_ID>/mutation-sentinel.json;
+12. evidence/points/<POINT_ID>/junit.xml;
+13. evidence/points/<POINT_ID>/point-complete.json.
+
+There is no execution-time helper script, Dockerfile, SQL dump, copied config, fixture JSON, shell script, log archive, screenshot, HTTP capture or exported report in the run-root allowlist. The source-controlled host controller runs from its frozen repository path. Literal fixtures and literal expected results remain inside the sole harness and are separately reviewed.
+
+Secret values are injected from the future approved in-memory controller channel. No `.env` file, secret file, credential artifact or secret-bearing evidence is allowed.
 
 ## 7. Exact future command allowlist
 
 ### 7.1 Placeholder freeze
 
-The commands below are templates, not authorization. Before execution, Main Control must replace every angle-bracket placeholder once in execution-manifest.json and publish the expanded commands and hashes for Owner approval.
+The commands below are templates, not authorization. Before execution, Main Control must replace every angle-bracket placeholder once in the execution manifest and materialized argument-vector manifest, then publish the expanded commands and hashes for Owner approval. No shell interpolation or free-form suffix is allowed.
 
 | Placeholder | Frozen rule |
 | --- | --- |
 | <RUN_ID> | Exact twelve-character lowercase hexadecimal run ID |
 | <RUN_ROOT> | /tmp/erpai-finance-gl-tb-c2bg5/<RUN_ID> |
-| <PROJECT> | c2bg5_<RUN_ID> |
-| <SITE> | test_finance_gl_tb_<RUN_ID>.local |
-| <DB_NAME> | test_finance_gl_tb_<RUN_ID> |
+| <POINT_ID> | Exact manifest-enumerated point identifier from the approved workload plan |
+| <SUBRUN_ID> | Exact manifest-enumerated cold, warm, concurrent or causal-fault subrun identifier |
+| <PROJECT> | c2bg5_<RUN_ID>_<POINT_ID> |
+| <SITE> | test_finance_gl_tb_<RUN_ID>_<POINT_ID>.local |
+| <DB_NAME> | test_finance_gl_tb_<RUN_ID>_<POINT_ID> |
 | <BACKEND_IMAGE> | ghcr.io/htayaung-data/erpnext-factory@sha256:4c8b6fb188d81f5a355008730a1122658af88799ec759029c2dbd297dfc8e257 |
 | <MARIADB_IMAGE> | Owner-approved immutable repository digest; unresolved now |
 | <REDIS_IMAGE> | Owner-approved immutable repository digest; unresolved now |
-| <SETUP_TIMEOUT_SECONDS> | Owner-approved environment setup ceiling; unresolved now |
 | <SOURCE_ROOT> | /home/deploy/erp-projects/erpai_project1_erpnext_ui_design |
 | <HARNESS_REL> | impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/test_finance_gl_trial_balance_source_proof.py |
-| <TEST_CONTAINER> | c2bg5_<RUN_ID>_test_runner |
+| <CONTROLLER_REL> | impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/finance_gl_trial_balance_evidence_controller.py |
+| <POINT_CONTAINER> | Exact manifest-resolved one-shot runner name for <SUBRUN_ID> |
+| <SETUP_CEILING> | Owner-approved value and unit; unresolved now |
+| <POINT_REQUEST_CEILING> | Owner-approved value and unit; unresolved now |
+| <EVIDENCE_FINALIZATION_CEILING> | Owner-approved value and unit; unresolved now |
+| <POINT_TOTAL_CEILING> | Owner-approved value and unit; unresolved now |
+| <PACKAGE_TOTAL_CEILING> | Owner-approved value and unit; unresolved now |
+| <TERM_TO_KILL_GRACE> | Owner-approved value and unit; unresolved now |
+| <NORMAL_TEARDOWN_CEILING> | Owner-approved value and unit; unresolved now |
+| <RECOVERY_TEARDOWN_CEILING> | Owner-approved value and unit; unresolved now |
+| <DOCKER_CLIENT_CEILING> | Owner-approved value and unit; unresolved now |
+| <MEMORY_SAMPLE_INTERVAL> | Owner-approved value and unit; unresolved now |
 
 The frozen Docker Compose prefix is:
 
@@ -244,90 +308,84 @@ The frozen Docker Compose prefix is:
 docker compose --project-name <PROJECT> --file <RUN_ROOT>/compose.yaml
 ~~~
 
-Every occurrence of COMPOSE below means that exact prefix. It is a documentation macro only; no shell alias, arbitrary suffix, additional file, profile, environment file, or override is permitted.
+Every occurrence of POINT_COMPOSE below means that exact prefix. It is a documentation macro only; no shell alias, arbitrary suffix, additional file, profile, environment file or override is permitted.
 
-### 7.2 Preflight commands
-
-~~~text
-sha256sum <SOURCE_ROOT>/<HARNESS_REL>
-sha256sum <RUN_ROOT>/compose.yaml <RUN_ROOT>/execution-manifest.json
-docker image inspect --format '{{json .Id}} {{json .RepoDigests}}' <BACKEND_IMAGE>
-docker image inspect --format '{{json .Id}} {{json .RepoDigests}}' <MARIADB_IMAGE>
-docker image inspect --format '{{json .Id}} {{json .RepoDigests}}' <REDIS_IMAGE>
-COMPOSE config --quiet
-COMPOSE config --images
-docker container ls --all --filter label=com.erpai.finance.c2bg5.run=<RUN_ID>
-docker network ls --filter label=com.erpai.finance.c2bg5.run=<RUN_ID>
-docker volume ls --filter label=com.erpai.finance.c2bg5.run=<RUN_ID>
-~~~
-
-Allowed outputs are restricted to the approved image IDs/repository digests, file hashes, and quiet validation result. Unfiltered container inspection, environment output, configuration output, history, logs, or secret display is prohibited.
-
-Preflight stops if:
-
-- any image is absent locally;
-- any pull or build would be required;
-- a hash differs;
-- Compose resolves a tag, build, port, external network, bind mount, extra service, extra volume, or extra app;
-- any of the three preflight label-filtered resource checks returns a container, network, or volume.
-
-### 7.3 Create isolated resources
+### 7.2 Sole Owner-facing controller entrypoints
 
 ~~~text
-COMPOSE up --detach --pull never --wait --wait-timeout <SETUP_TIMEOUT_SECONDS> db-primary redis-cache redis-queue redis-socketio test-runner
-COMPOSE ps --all
-docker network inspect <PROJECT>_internal
-docker volume inspect <PROJECT>_db_data <PROJECT>_sites <PROJECT>_logs <PROJECT>_evidence
-docker container inspect --format '{{json .Name}} {{json .Image}} {{json .HostConfig.NetworkMode}} {{json .HostConfig.RestartPolicy.Name}} {{json .HostConfig.Privileged}} {{json .HostConfig.CapAdd}} {{json .HostConfig.Binds}} {{json .NetworkSettings.Ports}} {{json .Mounts}} {{json .Config.Labels}}' c2bg5_<RUN_ID>_db_primary c2bg5_<RUN_ID>_redis_cache c2bg5_<RUN_ID>_redis_queue c2bg5_<RUN_ID>_redis_socketio <TEST_CONTAINER>
+/usr/bin/python3 -I <SOURCE_ROOT>/<CONTROLLER_REL> preflight --manifest <RUN_ROOT>/execution-manifest.json
+/usr/bin/python3 -I <SOURCE_ROOT>/<CONTROLLER_REL> execute --manifest <RUN_ROOT>/execution-manifest.json
+/usr/bin/python3 -I <SOURCE_ROOT>/<CONTROLLER_REL> recover-teardown --manifest <RUN_ROOT>/execution-manifest.json
 ~~~
 
-The sanitized container format may output only container name, exact image ID, network name, published-port map, mount type/source/target, restart policy, privilege flag, capability additions, and labels. It must not output environment variables, commands containing secrets, host paths outside the run resources, or container logs.
+`execute` owns point execution, finalization and run synthesis. `recover-teardown` may inspect and remove only exact verified disposable resources and cannot create or resume proof work. These entrypoints are planning templates until the controller is authored, reviewed, committed, hash-frozen and separately authorized.
+
+Preflight must stop if any image is absent, any pull/build would be required, any source or manifest hash differs, cgroup v2 attribution is unavailable, Compose resolves an unapproved resource, the pinned Frappe test command is incompatible, a protected exclusion drifts, or an exact-label resource check finds a pre-existing run/point resource.
+
+### 7.3 Controller child-command classes
+
+The controller may launch only materialized argument vectors in these classes:
+
+~~~text
+git -C <SOURCE_ROOT> rev-parse --show-toplevel
+git -C <SOURCE_ROOT> rev-parse HEAD
+git -C <SOURCE_ROOT> rev-parse @{upstream}
+git -C <SOURCE_ROOT> rev-list --left-right --count HEAD...@{upstream}
+git -C <SOURCE_ROOT> diff --cached --name-only
+sha256sum <EXACT_ALLOWED_SOURCE_OR_RUN_ROOT_FILE> [...]
+docker version --format <FIXED_SANITIZED_FORMAT>
+docker image inspect --format <FIXED_SANITIZED_FORMAT> <EXACT_DIGEST>
+POINT_COMPOSE config --quiet
+POINT_COMPOSE config --images
+POINT_COMPOSE up --detach --pull never --wait --wait-timeout <SETUP_CEILING> <EXACT_SETUP_SERVICES>
+POINT_COMPOSE run --rm --no-deps <EXACT_SETUP_SERVICE> <EXACT_SETUP_ARGV>
+POINT_COMPOSE stop --timeout <TERM_TO_KILL_GRACE> <EXACT_DB_OR_REDIS_SERVICE>
+POINT_COMPOSE rm --force --stop <EXACT_DB_OR_REDIS_SERVICE>
+POINT_COMPOSE up --detach --force-recreate --no-deps --pull never <EXACT_DB_OR_REDIS_SERVICE>
+POINT_COMPOSE run --detach --no-deps --pull never --name <POINT_CONTAINER> --label <EXACT_RUN_LABEL> --label <EXACT_POINT_LABEL> test-runner <EXACT_HARNESS_ARGV>
+docker container wait <POINT_CONTAINER>
+docker container inspect --format <FIXED_SANITIZED_FORMAT> <POINT_CONTAINER>
+docker container stop --timeout <TERM_TO_KILL_GRACE> <POINT_CONTAINER>
+docker container kill --signal KILL <POINT_CONTAINER>
+docker container pause <EXACT_DB_CONTAINER>
+docker container unpause <EXACT_DB_CONTAINER>
+docker container cp <POINT_CONTAINER>:<EXACT_SEALED_EVIDENCE_PATH> <EXACT_CONTROLLER_STAGING_PATH>
+docker container rm --force --volumes <POINT_CONTAINER>
+POINT_COMPOSE exec --no-TTY <EXACT_REDIS_SERVICE> redis-cli --raw DBSIZE
+POINT_COMPOSE down --volumes --remove-orphans --timeout <NORMAL_TEARDOWN_CEILING>
+docker container ls --all --filter <EXACT_RUN_OR_POINT_LABEL_FILTER> --format <FIXED_ID_FORMAT>
+docker network ls --filter <EXACT_RUN_OR_POINT_LABEL_FILTER> --format <FIXED_ID_FORMAT>
+docker volume ls --filter <EXACT_RUN_OR_POINT_LABEL_FILTER> --format <FIXED_ID_FORMAT>
+docker container rm --force --volumes <EXACT_VERIFIED_CONTAINER_ID> [...]
+docker network rm <EXACT_VERIFIED_NETWORK_ID> [...]
+docker volume rm <EXACT_VERIFIED_VOLUME_ID> [...]
+~~~
+
+Every controller child receives its own `<DOCKER_CLIENT_CEILING>`. Sanitized inspection may expose only approved image, resource identity, lifecycle, OOM, mount-type, network, privilege and label fields; it may not expose environment, command, secret, SQL, log, identity or financial content. The materialized argument vectors—not these templates—must be hash-frozen and approved before execution.
 
 ### 7.4 Initialize the new site
 
-The test-runner container receives SYNTH_DB_ROOT_PASSWORD and SYNTH_ADMIN_PASSWORD only from the future approved in-memory secret channel. The only approved fixed shell payload is the new-site command below; an interactive or general shell is prohibited.
+The accepted site semantics remain: configure only the point MariaDB/Redis services, create the new disposable site, set `allow_tests=true`, `pause_scheduler=true`, `mute_emails=true`, and `developer_mode=false`, install ERPNext and erp_workspace_ui, and verify the exact three-app site set. The source-controlled controller must express these as fixed, reviewed setup argument vectors under `POINT_COMPOSE run --rm --no-deps`; it may not use a persistent runner or general shell.
 
-~~~text
-COMPOSE exec --no-TTY test-runner bench set-config -g db_host db-primary
-COMPOSE exec --no-TTY test-runner bench set-config -g redis_cache redis://redis-cache:6379
-COMPOSE exec --no-TTY test-runner bench set-config -g redis_queue redis://redis-queue:6379
-COMPOSE exec --no-TTY test-runner bench set-config -g redis_socketio redis://redis-socketio:6379
-COMPOSE exec --no-TTY test-runner bash -lc 'bench new-site "<SITE>" --db-type mariadb --db-name "<DB_NAME>" --db-host db-primary --db-port 3306 --db-root-username root --db-root-password "$SYNTH_DB_ROOT_PASSWORD" --admin-password "$SYNTH_ADMIN_PASSWORD" --no-mariadb-socket'
-COMPOSE exec --no-TTY test-runner bench --site <SITE> set-config allow_tests true --parse
-COMPOSE exec --no-TTY test-runner bench --site <SITE> set-config pause_scheduler true --parse
-COMPOSE exec --no-TTY test-runner bench --site <SITE> set-config mute_emails true --parse
-COMPOSE exec --no-TTY test-runner bench --site <SITE> set-config developer_mode false --parse
-COMPOSE exec --no-TTY test-runner bench --site <SITE> install-app erpnext
-COMPOSE exec --no-TTY test-runner bench --site <SITE> install-app erp_workspace_ui
-COMPOSE exec --no-TTY test-runner bench --site <SITE> list-apps
-~~~
+The exact secret-safe new-site argument vector remains blocked until the separate in-memory secret-channel design is approved. No secret may appear in a materialized command, process list, file, environment inspection or retained evidence. This reconciliation does not silently resolve that prerequisite.
 
-No migrate of an existing site, restore, backup, reinstall, get-app, pull, build, scheduler, worker, console, SQL console, bench execute, HTTP server, or metadata operation is allowlisted.
+No migrate of an existing site, restore, backup, reinstall, get-app, pull, build, scheduler, worker, console, SQL console, bench execute, HTTP server or metadata operation is allowlisted.
 
-### 7.5 Copy and run the sole harness
+### 7.5 Create, monitor and finalize one-shot harness runners
 
-~~~text
-docker cp <SOURCE_ROOT>/<HARNESS_REL> <TEST_CONTAINER>:/home/frappe/frappe-bench/apps/erp_workspace_ui/erp_workspace_ui/tests/test_finance_gl_trial_balance_source_proof.py
-COMPOSE exec --no-TTY test-runner sha256sum /home/frappe/frappe-bench/apps/erp_workspace_ui/erp_workspace_ui/tests/test_finance_gl_trial_balance_source_proof.py
-COMPOSE exec --no-TTY test-runner bench --site <SITE> run-tests --module erp_workspace_ui.tests.test_finance_gl_trial_balance_source_proof --skip-test-records --skip-before-tests --junit-xml-output=/evidence/junit.xml
-docker cp <TEST_CONTAINER>:/evidence/. <RUN_ROOT>/evidence/
-bash -lc 'cd "<RUN_ROOT>/evidence" && sha256sum --check evidence-manifest.sha256'
-~~~
+For every cold, warm, concurrent or causal-fault subrun, the controller must create a newly named one-shot runner container/cgroup from the immutable application image, verify the committed harness hash inside it, start the exact approved harness mode, wait on the exact container, apply the independent request/finalization/point ceilings, collect cgroup-v2 evidence, and copy only a normally exited and validated sealed evidence directory.
 
-The test command is the only proof execution entry. No pytest discovery, app-wide tests, native report command, browser, HTTP client, RPC, WSGI request, worker, scheduler, queue, email, notification, export, print, download, or accounting document action is allowlisted.
+The initial-connect fixture may pause and unpause only the exact point-scoped `db-primary` container after the `pre_connect_ready` marker. Statement timeout requires MariaDB error `1969` and the approved counter transition without a watchdog event. Request, connection and finalization watchdog outcomes require the expected marker, controller deadline, exact-container termination, no OOM, no database-timeout signal and no terminal point seal. Ambiguous signals stop the point.
+
+Before the harness argument vector can be frozen, a read-only compatibility gate must fingerprint the pinned Frappe `bench run-tests` implementation and prove that the selected test-record and JUnit arguments neither skip the run nor lose JUnit output. No current package command is execution authority.
+
+No pytest discovery, app-wide tests, native report command, browser, HTTP client, RPC, WSGI request, worker, scheduler, queue, email, notification, export, print, download or accounting document action is allowlisted.
 
 ### 7.6 Teardown and absence proof
 
-~~~text
-COMPOSE down --volumes --remove-orphans
-docker container ls --all --filter label=com.erpai.finance.c2bg5.run=<RUN_ID>
-docker network ls --filter label=com.erpai.finance.c2bg5.run=<RUN_ID>
-docker volume ls --filter label=com.erpai.finance.c2bg5.run=<RUN_ID>
-~~~
+The controller always enters teardown in `finally`. It first uses exact-project Compose down, then verifies containers, networks and volumes against the manifest identities plus exact run/point labels. A verified remnant may be removed only by exact ID in dependency order. An uncertain identity, unavailable Docker daemon or failed absence scan produces `teardown_unverified`; it never broadens cleanup authority.
 
-All three labeled-resource checks must return no resource. Evidence is retained only under <RUN_ROOT>/evidence. Removing the run root or retained evidence is not part of this command allowlist.
-
-Any command not listed above requires an allowlist amendment and new Owner approval. Placeholder resolution cannot add arguments, services, mounts, paths, commands, or files.
+Evidence is retained only under `<RUN_ROOT>/evidence`. Removing the run root or retained evidence is not part of this command allowlist. Any command not listed above requires an allowlist amendment and new Owner approval. Placeholder resolution cannot add arguments, services, mounts, paths, commands or files.
 
 ## 8. Single internal proof harness contract
 
@@ -341,6 +399,10 @@ The future harness:
 - does not call native General Ledger, native Trial Balance, Query Report, Report View, ACB or Process Period Closing Voucher as candidate sources and does not call posting, cancellation, close/reopen, bank, payment, tax, email, notification, or AI paths;
 - may write only deterministic fixture state to the disposable database and evidence to /evidence after the future execution gate explicitly permits those synthetic-only writes;
 - must prove zero access to live/source configuration and zero write to the source repository.
+
+The accepted later harness-authoring scope is limited to fixed-schema `pre_connect_ready`, request-block and finalization-block markers; deterministic connection/request/finalization fault modes; fixture prepare/measure separation; state-isolation receipts; point-local staging; a terminal `point-complete.json` seal; and cgroup evidence hooks. Those changes may not alter the accepted accounting equations, authority matrix, company scope, payload boundary or no-execution posture.
+
+The source-controlled host controller may validate and promote the harness output but may not implement, duplicate or reinterpret any accounting, permission, snapshot, workload or leakage assertion.
 
 The internal proof adapter is experimental evidence logic, not production architecture. Passing it authorizes no runtime extraction or reuse.
 
@@ -647,7 +709,7 @@ Before execution, the Owner must approve measurable service budgets for:
 
 - request latency;
 - database statement duration;
-- process memory;
+- per-variant cgroup-v2 memory current, peak and event budgets;
 - examined database rows;
 - internal chart accounts;
 - internal GL rows;
@@ -663,12 +725,14 @@ The harness then benchmarks monotonically increasing synthetic envelopes for:
 - eligible and poison GL row counts;
 - Finance Book cohort distribution;
 - zero-dimension chart shapes;
-- cold and warm application/cache state;
+- accepted cold state: fresh runner/cgroup, reset Redis, reset MariaDB process/buffer and sealed fixture;
+- authoritative warm state: fresh runner after controlled priming against unchanged warmed Redis/DB state;
+- optional same-process warm diagnostics that cannot derive caps;
 - single-reader and approved concurrent-reader load;
 - serialization size;
 - failure injection and reconnect.
 
-It captures query plans, statement count, examined rows, wall time, process memory, complete output rows, UTF-8 bytes, connection IDs, and invariant status.
+It captures query plans, statement count, examined rows, observed wall time, complete output rows, UTF-8 bytes, connection IDs, invariant status, and per-variant cgroup-v2 `memory.current`, `memory.peak` and `memory.events.local` in bytes. The fresh cgroup's absolute peak is authoritative; sampled current values corroborate it. Process-lifetime RSS and `tracemalloc` cannot select or close a memory cap.
 
 The GL query plan must aggregate by authorized Account keys without loading voucher, party, remarks, owner, contact, bank, tax, payroll, or other identity rows into Python. MAX_OUTPUT_ROWS counts only aggregate objects allowed by the frozen candidate schema; it never permits Account, voucher, or party rows.
 
@@ -678,31 +742,41 @@ The values to derive and version are:
 - MAX_PERIOD_DAYS;
 - MAX_OUTPUT_ROWS;
 - MAX_RESPONSE_BYTES;
-- STATEMENT_TIMEOUT_MS;
-- REQUEST_TIMEOUT_MS;
+- STATEMENT_TIMEOUT_CEILING;
+- REQUEST_TIMEOUT_CEILING;
 - MAX_RETRIES;
 - MAX_ACTIVE_DIMENSIONS = 0.
 
-For every numeric limit:
+For every deterministic workload-unit cap:
 
 1. select only an observed passing point that satisfies every approved budget in cold, warm and concurrent evidence;
 2. keep it strictly within the first observed failing or unstable point;
 3. apply no extrapolation, interpolation, inherited default, field-name guess, or unapproved safety margin;
 4. record the raw evidence and exact derivation;
-5. require a separate Owner acceptance of the derived values before runtime design.
+5. require a separate Owner acceptance of every derived value before it becomes execution or runtime authority.
 
-Mandatory boundary cases:
+Mandatory deterministic workload-boundary cases:
 
-- limit-minus-one, exact limit, and limit-plus-one;
+- limit-minus-one, exact limit, and limit-plus-one for accounts, period days, eligible rows, aggregate output objects, canonical UTF-8 bytes, active dimensions and any approved retry cap;
 - cap enforcement before ledger aggregation where applicable;
 - limit-plus-one returns scope_exceeded and never truncates;
-- statement and request timeout cases discard the connection and return no partial output;
 - response byte count uses complete serialized UTF-8 bytes, not characters;
 - response-size plus one returns response_too_large and never streams or truncates;
 - failure after every query, roll-up, invariant and serialization stage returns zero figures;
 - zero active dimensions passes; any positive active-dimension count is unsupported.
 
-The evidence run derives limits. It does not approve them for runtime use.
+Time is not an exact ±1 millisecond workload boundary. Its independent causal evidence must prove:
+
+- the configured statement/request ceiling and unit are frozen and read back exactly;
+- an ordinary under-ceiling control completes without either timeout owner firing, with no proximity claim;
+- a deterministic server overrun produces MariaDB error `1969` and the approved status-counter transition while the external watchdog does not fire;
+- deterministic non-returning connection, request and finalization barriers are terminated by the host controller at the applicable ceiling;
+- every timeout discards the connection, commits no candidate bytes and promotes no harness artifact;
+- observed timing is evidence only; no tolerance band, exact kill-latency or maximum-lateness claim is allowed.
+
+Host page-cache coldness is not part of cap derivation and remains unproven. VM/new-block-volume isolation remains deferred unless later evidence demonstrates that the accepted container cold-state definition is insufficient. If exact cgroup-v2 attribution is unavailable, the memory point stops without fallback.
+
+The derivation methodology is accepted for design only. The future evidence run may propose values; it does not approve them for execution or runtime use.
 
 ## 14. Identity, error and log containment
 
@@ -733,6 +807,9 @@ Expected canary matches are zero in:
 - JUnit failure text;
 - expected/actual diffs;
 - workload and snapshot artifacts;
+- controller, watchdog, isolation and memory artifacts;
+- proof and final evidence manifests;
+- bounded transient stdout/stderr before mandatory discard;
 - teardown receipt.
 
 The public-candidate success envelope contains context classification, aggregate opening/period/closing debit and credit totals, exact balance indicators, source mode and integrity status only. It contains no account row, account name/number, party, voucher, source record, user, role list, permission detail, action, report route, or export target.
@@ -750,6 +827,8 @@ The generic failure envelope is exactly:
 All authority denials are byte-equivalent after correlation-ID normalization. Errors reveal no failed stage, role, company, account, field, permission, SQL, stack, count, amount, or source path.
 
 Synthetic logs may contain only a fixed event identifier, fixture ID, normalized result class, duration class, and opaque correlation ID. Raw SQL, bind values, user/company/account identity, exception traceback, request argument, secret, and financial amount are prohibited.
+
+No artifact owned by a killed, timed-out, OOM, unsealed or otherwise incomplete runner may be promoted or retained as proof. The controller may retain only its fixed-schema generic outcome containing approved enums, hashes, counts and monotonic timing fields.
 
 ## 15. Evidence contract
 
@@ -802,19 +881,28 @@ The sentinel proves:
 
 ### 15.4 Evidence manifest and closure
 
-The evidence manifest covers every retained artifact except itself, then its SHA-256 is recorded in teardown-receipt.json.
+The accepted non-circular dependency graph is:
+
+1. `proof-evidence-manifest.sha256` covers every accepted point, harness and controller proof artifact except itself;
+2. `teardown-receipt.json` references the proof-manifest hash and records exact post-run absence evidence;
+3. `final-evidence-manifest.sha256` covers the proof manifest, teardown receipt and every retained artifact except itself;
+4. Main Control reports the final-manifest root SHA-256 out of band in the closure receipt.
+
+Each point is promoted by same-filesystem atomic directory rename only after normal runner exit, exact allowlist/hash/canonical-format/canary validation and a valid terminal `point-complete.json` seal. A timeout, kill, OOM, `.partial` file, unexpected file, symlink, hardlink, noncanonical document, canary match, hash mismatch or missing seal discards the entire point staging volume and retains no harness evidence.
 
 Synthetic evidence is ready for the later one-pass closure review only when:
 
 - application, MariaDB and Redis images match approved digests;
-- source HEAD, harness, compose and execution-manifest hashes match;
+- source HEAD, harness, controller, compose, workload-plan and execution-manifest hashes match;
 - topology and site app set match exactly;
-- every accounting, permission, snapshot, reconnect, workload, limit, timeout, leakage and mutation-sentinel case passes;
+- every accounting, permission, snapshot, reconnect, workload, discrete-limit, causal-timeout, isolation, cgroup-memory, leakage and mutation-sentinel case passes;
 - every expected/actual comparison is exact;
 - primary-only and one-connection snapshot proof passes;
-- no partial or identity-bearing output exists;
+- no partial, killed-run, incomplete-run or identity-bearing output exists;
 - benchmark evidence derives every required numeric cap without invention;
-- teardown leaves zero labeled container, network or volume;
+- every accepted point has a valid terminal seal and atomic promotion receipt;
+- host page-cache coldness is recorded as unproven and no VM-level claim is made;
+- teardown leaves zero exact-ID/manifest/label-matched container, network or volume;
 - all retained artifacts hash cleanly;
 - no in-scope Blocker or High remains after one bounded accounting, security, database/runtime and release review;
 - Main Control performs one synthesis and returns either targeted_c2b_gap_closure_pass or stopped_for_targeted_c2b_gap.
@@ -829,20 +917,23 @@ One planning review pass was performed.
 | --- | --- | --- | --- |
 | Accounting | Raw-GL equations, exact minor-unit balance, complete hierarchy, fiscal/cancellation canaries, literal expected results | Alternate/default-selection Finance Book branches were narrowed to the already accepted company-default plus blank/NULL cohort; fixed USD precision was not frozen | ACB/cache, native reports, close/reopen, cancellation control and execution |
 | Security | Denial-first authority matrix, complete-chart unavailability, Custom DocPerm/User Permission/mask/share/Custom Role cases, generic errors and canaries | Account rows and account identifiers in a public-candidate response were rejected because the accepted Cycle 2 posture keeps them deferred | Runtime roles, multi-company, dimensions, HTTP and Finance-to-AI |
-| Database/runtime | Internal network, one primary, consistent read-only snapshot, connection-ID pinning, reconnect discard, cap derivation and exact teardown | Extra helper scripts, multiple harness files, optional HTTP/web services, cache-mode and PCV/ACB runtime fixtures were rejected | Immutable MariaDB/Redis digests, resource budgets and materialized compose hash |
-| Release/governance | One environment owner, no live/source mounts, exact file/command gates, separate authoring/execution/review approvals | Any source/live parity or authenticated acceptance claim from synthetic evidence was rejected | Full active-app regression, Shared UI, protected gates and live acceptance |
+| Database/runtime | Internal network, one primary, consistent read-only snapshot, connection-ID pinning, reconnect discard, discrete cap derivation, one source-controlled host controller, one-shot runners, accepted cold/warm state, cgroup-v2 evidence and exact-ID teardown | Second accounting harnesses, runtime helpers, shell timeout, socket sidecars, optional HTTP/web services, cache-mode and PCV/ACB runtime fixtures were rejected | Immutable MariaDB/Redis digests, numeric budgets, cgroup capability and materialized controller/Compose hashes |
+| Release/governance | One environment owner, no live/source mounts, exact file/command gates, atomic point promotion, discard-only incomplete runs, corrected manifest graph, and separate authoring/execution/review approvals | Any source/live parity, host-page-cache coldness, VM-isolation or authenticated acceptance claim from this synthetic design was rejected or deferred | VM/new-volume isolation if later required, full active-app regression, Shared UI, protected gates and live acceptance |
 
-No second general counterpart-review loop is authorized. Future review is limited to the frozen execution artifacts and then the frozen evidence, each under its own Owner gate.
+The 2026-07-18 runtime amendment's bounded database/runtime, security/leakage and release/teardown synthesis is accepted and incorporated without reopening accounting or permission review. No second general counterpart-review loop is authorized. Future review is limited to the exact controller/harness authoring changes, then the frozen execution artifacts and evidence, each under its own Owner gate.
 
 ## 17. Findings by severity
 
 ### Blocker before synthetic execution
 
 1. Immutable MariaDB and Redis image digests and image IDs are not yet supplied.
-2. The single harness does not yet exist as an approved committed file with a frozen SHA-256.
-3. The materialized compose file and execution manifest do not yet exist at approved hashes.
+2. The current harness candidate exists at SHA-256 `c8d0bb0556f9abb04e1be69c1d67a7f92c4ed37a64d8270d84339ad590e9cea5` but remains uncommitted and unapproved for execution.
+3. The accepted source-controlled host controller has not been authored, reviewed, committed or hash-frozen.
+4. The materialized Compose file, workload plan, execution manifest and controller argument-vector manifest do not yet exist at approved hashes.
+5. The future host's cgroup-v2 attribution and Frappe test-command compatibility are not proven.
+6. No numeric workload, statement, request, memory, retry, concurrency, sampling, setup, finalization or teardown value is approved.
 
-These are execution prerequisites, not a gap in this planning architecture.
+The external-watchdog, timing-boundary, cold/warm, point-memory, atomic-promotion and manifest-graph gaps are resolved in planning only. These remain source-authoring and execution prerequisites, not authority to implement or run the design.
 
 ### Existing Blocker to be tested
 
@@ -851,7 +942,7 @@ These are execution prerequisites, not a gap in this planning architecture.
 ### High
 
 - Effective complete-chart authority remains runtime-state dependent and must pass every denial fixture.
-- Finance-specific caps and no-partial timeout behavior do not exist; budgets and synthetic derivation are mandatory.
+- Finance-specific caps and causal no-partial timeout behavior do not exist as executed evidence; accepted budgets and synthetic derivation remain mandatory.
 - The cancellation freeze-call mismatch remains a reporting-only deferral and blocks every cancellation, freeze-control, close/reopen, audit, certification, mutation and execution claim.
 - The global Assistant CORS before-request target remains unread. No Finance HTTP endpoint may be proposed before its separate fingerprint/read gate.
 - The minimal synthetic app set does not prove full production active-app interaction. Runtime/release parity remains separately gated.
@@ -863,7 +954,7 @@ These are execution prerequisites, not a gap in this planning architecture.
 - Company-default Finance Book plus blank/NULL equality requires synthetic proof.
 - Fiscal ambiguity, malformed hierarchy and reconnect behavior require deterministic negative evidence.
 
-No new evidence-backed planning Blocker or High contradicts the package. The decision remains synthetic_evidence_execution_package_ready_for_owner_decision.
+No new evidence-backed accounting or permission Blocker/High contradicts the reconciled package. The runtime design is accepted for planning, while every listed execution blocker remains open.
 
 ## 18. Stop conditions
 
@@ -880,28 +971,36 @@ Stop before or during the affected future gate if:
 - dates clamp, hierarchy repairs itself, rows silently disappear, or imbalance is tolerated;
 - reconnect continues from prior intermediate values;
 - a cap, timeout or response-size failure returns partial/truncated output;
+- a timeout has missing, dual, contradictory or otherwise ambiguous causal signals;
+- cgroup v2 peak/event evidence is unavailable, unattributable or silently substituted;
+- a point reuses a prior process/cgroup/stack, Redis is not reset for cold state, MariaDB buffer state is not reset as declared, or fixture hashes differ;
+- any host page-cache coldness or VM-isolation claim is made from the accepted container design;
+- a killed, timed-out, OOM, unsealed, partial or unexpected harness artifact is promoted or retained as proof;
+- exact point-resource identity is uncertain or teardown absence cannot be proven;
 - a canary or forbidden key appears;
 - any live or protected workspace is touched;
 - an in-scope Blocker or High remains after the one bounded evidence review.
 
 Teardown still runs for the exact synthetic resources after a stopped case. Stopping does not broaden cleanup authority.
 
-## 19. Exact Owner decisions required before synthetic execution
+## 19. Accepted runtime-design decisions and remaining Owner gates
 
-The Owner must separately and explicitly decide all of the following:
+The Owner has accepted for planning the deterministic workload/time separation, source-controlled host controller, exact synthetic-database pause fixture, complete stack per point envelope, documented cold state with host page cache unproven, VM deferral, fresh-runner warm evidence, cgroup-v2 memory authority, discard-only incomplete runs, atomic promotion, corrected manifest graph, exact-ID recovery teardown, and later numeric-derivation method. Planning the next controller-and-harness authoring gate is accepted; beginning it is not authorized by this document.
 
-1. approve or reject authoring the one harness file and its exact source-code allowlist;
-2. after authoring, accept its independent review, committed source HEAD and SHA-256;
+Before synthetic execution, the Owner must still separately and explicitly:
+
+1. authorize authoring only the exact harness and controller paths in section 6.1;
+2. after authoring, accept their bounded review, committed source HEAD, blob identities and SHA-256 values;
 3. approve immutable MariaDB and Redis repository digests and image IDs;
 4. approve the exact minimal synthetic site app set and accept that it provides no full active-app runtime-parity claim;
-5. name the sole environment owner and approve the host, RUN_ID, run root, resource ceilings, setup timeout and in-memory secret channel;
-6. approve the materialized compose.yaml and execution-manifest.json hashes;
+5. name the sole environment owner and approve the host, RUN_ID, point/workload plan, run root, cgroup-v2 capability, every numeric ceiling/budget/interval and the in-memory secret channel;
+6. approve the materialized `compose.yaml`, workload plan, execution manifest and complete controller argument-vector hashes;
 7. approve the exact accounting equations, literal fixtures, company/base-currency precision input, company-default Finance Book cohort, zero-dimension posture and aggregate-only schema;
 8. approve the synthetic Accounts Manager/company authority fixture policy and every denial/canary case;
-9. approve the service budgets and cap-derivation method, while accepting that numeric caps will be decided only from later evidence;
+9. approve every derived numeric value; acceptance of the derivation method alone supplies no value;
 10. approve disposable fixture-only writes and writer commits in the new synthetic database, with no ERPNext accounting document action;
-11. approve the fully expanded command allowlist, evidence-retention allowlist and deterministic teardown;
-12. issue the explicit gate finance_cycle2_gl_tb_targeted_gap_synthetic_execution_authorized.
+11. approve the fully expanded command allowlist, evidence-retention allowlist and exact-ID teardown/recovery materialization;
+12. issue the explicit gate `finance_cycle2_gl_tb_targeted_gap_synthetic_execution_authorized`.
 
 After execution, a separate Owner gate is still required for one frozen-evidence closure review. No C2B7 or runtime proposal follows automatically.
 
@@ -909,12 +1008,13 @@ The deferred CORS fingerprint/read gate is not required for this internal-only p
 
 ## 20. Current documentation scope and no-execution receipt
 
-After publication commit 45f564a5fe3e87e2262f5c32987d0707b0b5f271, this planning outcome changes only:
+The original package was published in commit `45f564a5fe3e87e2262f5c32987d0707b0b5f271`. This 2026-07-18 documentation reconciliation changes only:
 
 1. impl_factory/05_custom_logic/custom_app/erp_workspace_ui/_docs/erp-ui-customization/finance-accounting-cycle2-gl-tb-synthetic-evidence-execution-package-2026-07-17.md
-2. impl_factory/05_custom_logic/custom_app/erp_workspace_ui/_docs/erp-ui-customization/README.md
+2. impl_factory/05_custom_logic/custom_app/erp_workspace_ui/_docs/erp-ui-customization/finance-accounting-cycle2-gl-tb-runtime-evidence-design-amendment-2026-07-18.md
+3. impl_factory/05_custom_logic/custom_app/erp_workspace_ui/_docs/erp-ui-customization/README.md
 
-These two files are not authorized for staging, commit, or push by this package.
+These three files are not authorized for staging, commit or push by this reconciliation task.
 
 The four unrelated exclusions remain protected and outside scope:
 
@@ -923,7 +1023,7 @@ The four unrelated exclusions remain protected and outside scope:
 - impl_factory/05_custom_logic/custom_app/erp_workspace_ui/ui_smoke/sales_final_acceptance_audit.js
 - impl_factory/05_custom_logic/custom_app/erp_workspace_ui/a.out
 
-No synthetic execution, harness implementation, runtime change, HTTP endpoint, CORS inspection, live access, live alignment, restart, cache clear, metadata operation, migration, permission change, protected gate, Finance-to-AI access, or accounting execution occurred while producing this package.
+No controller authoring, harness modification, test, benchmark, synthetic infrastructure, synthetic execution, runtime change, HTTP endpoint, CORS inspection, live access, live alignment, restart, cache clear, metadata operation, migration, permission change, protected gate, Finance-to-AI access or accounting execution occurred while reconciling this package.
 
 ## 21. Authoritative product references
 
@@ -935,7 +1035,13 @@ No synthetic execution, harness implementation, runtime change, HTTP endpoint, C
 - [MariaDB SET TRANSACTION](https://mariadb.com/docs/server/reference/sql-statements/transactions/set-transaction)
 - [MariaDB SHOW REPLICA STATUS](https://mariadb.com/docs/server/reference/sql-statements/administrative-sql-statements/show/show-replica-status)
 - [MariaDB Read-Only Replicas](https://mariadb.com/docs/server/ha-and-performance/standard-replication/read-only-replicas)
+- [MariaDB statement timeout behavior](https://mariadb.com/docs/server/ha-and-performance/optimization-and-tuning/query-optimizations/aborting-statements)
 - [Docker Compose Networks](https://docs.docker.com/reference/compose-file/networks/)
 - [Docker Compose Services and pull_policy](https://docs.docker.com/reference/compose-file/services/)
+- [Docker Compose run](https://docs.docker.com/reference/cli/docker/compose/run/)
+- [Docker container wait](https://docs.docker.com/reference/cli/docker/container/wait/)
+- [Docker container stop](https://docs.docker.com/reference/cli/docker/container/stop/)
+- [Docker Compose down](https://docs.docker.com/reference/cli/docker/compose/down/)
+- [Linux cgroup v2 memory controller](https://docs.kernel.org/admin-guide/cgroup-v2.html)
 
 Installed pinned-version behavior and accepted synthetic evidence remain authoritative over general documentation.
