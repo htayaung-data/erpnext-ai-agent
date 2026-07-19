@@ -10,25 +10,31 @@ Published baseline: `47b3dfb9194534adf0613b092b3f867b3f17f4f1`
 
 Correction baseline: `548e74775e8c6bffd48db2e469dd08453f4c111c`
 
+Commit-fixture correction baseline: `3a1cd16702897e4ea10d03bf73b7cbf1d52a1b05`
+
 Authority: Main Control v2; local read-only provenance, sealed synthetic proof and planning only
 
-Decision: `positive_tree_fixture_contract_reconciled_for_owner_review`
+Decision: `commit_fixture_contract_reconciled_for_owner_review`
 
 Prior parser-provenance decision preserved: `python_parser_contract_ready_for_owner_review`
+
+Prior positive-tree correction decision preserved: `positive_tree_fixture_contract_reconciled_for_owner_review`
 
 ## 1. Outcome and controlling effect
 
 The Owner-selected `/usr/bin/python3` candidate resolves to one stable CPython 3.10.12 executable. The exact isolated invocation is supported, the complete proposed parser/validator import closure is confined to built-in modules and the accepted Python 3.10 standard-library/lib-dynload trees, and sealed synthetic mechanisms proved deterministic commit projection, historical pre-Q tree projection and fail-closed rejection behavior.
 
-The canonical contract now corrects the positive-tree fixture contradiction found after controller authoring: the former two-entry body cannot complete the frozen Q1-Q8 coverage rule and is therefore a controlled missing-Q rejection, not a successful public-parser canary. A new byte-exact, Q-complete positive fixture and reordered equivalent are frozen below without importing or executing the controller. The Python parser contract remains ready for Owner review; this correction is not an authored-controller test, an HTTP acquisition receipt or E2-B1 execution approval.
+The canonical contract preserves the completed positive-tree correction and now resolves the later commit-fixture documentation Blocker. Two new Owner-authorized, byte-exact synthetic commit inputs are frozen below; they are new canonical fixtures, not recovered historical bodies. They contain identical semantic values and differ only in JSON object-member ordering. Their fixed 116-byte projection independently retains the accepted commit hash without importing or executing the controller.
+
+The Python parser contract remains ready for Owner review. This correction is not an authored-controller test, an HTTP acquisition receipt or E2-B1 execution approval.
 
 The current Owner decision supersedes the earlier jq-only parser posture. It does not install jq, authorize a package, introduce an external dependency or create a fifth source candidate.
 
 Readiness remains separated:
 
-- parser contract: corrected and ready for Owner review;
+- parser contract: commit and tree fixture truth corrected and ready for Owner review;
 - controller-owned parser source: present at the later accepted source-authoring baseline and read-only in this gate;
-- single-harness fixture authoring: not resumed here; eligible only after publication of this correction and separate Owner authority;
+- single-harness fixture authoring: not resumed here; eligible only after publication of this commit-fixture correction and separate Owner authority;
 - E2-B1 network acquisition: unapproved;
 - E3-B1: independently eligible but unapproved; and
 - corrected E1: blocked by the separate disposable Docker endpoint requirement.
@@ -216,15 +222,103 @@ The later accepted unknown-field policy supersedes the earlier strict unknown-me
 - missing, changed-type or semantically conflicting required fields remain rejected; and
 - additive unretained object members may then be ignored and never enter projection bytes.
 
-## 10. Positive semantic results and corrected positive-tree contract
+## 10. Positive semantic results and corrected commit/tree contracts
 
-### 10.1 Preserved commit result
+### 10.1 Owner-authorized exact commit fixture contract
 
-Two equivalent commit bodies with different member ordering, permitted nulls and additive unretained members produced identical compact UTF-8 projection bytes with no trailing newline. This accepted commit fixture and hash are unchanged:
+The earlier mechanism evidence preserved the commit projection hash but did not retain either raw commit body. The two bodies below are newly Owner-authorized synthetic canonical fixtures. They are not claimed to recover or reproduce the historical raw inputs. Both use the existing controller schema, the prescribed public commit SHA, otherwise fixed synthetic values, `example.invalid` URLs, an empty permitted parent array and the simplest complete verification combination.
+
+#### 10.1.1 Exact raw commit input A
+
+The following single JSON line is exactly 620 UTF-8 bytes, has no byte-order mark and has no terminal newline. The surrounding Markdown fence and its line endings are not input bytes.
+
+```json
+{"sha":"197f92bee02d8e836f529f37625be69b83e7acbd","node_id":"synthetic-node","url":"https://example.invalid/commit","html_url":"https://example.invalid/commit-view","author":{"date":"2026-01-01T00:00:00Z","name":"Synthetic User","email":"synthetic@example.invalid"},"committer":{"date":"2026-01-01T00:00:00Z","name":"Synthetic User","email":"synthetic@example.invalid"},"message":"Synthetic commit fixture","tree":{"url":"https://example.invalid/tree","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"parents":[],"verification":{"verified":false,"reason":"unsigned","signature":null,"payload":null,"verified_at":null}}
+```
 
 ```text
+input A byte count: 620
+input A terminal newline: absent
+input A SHA-256: 2614932f825e98c3254f5ec4a80fcf18ed2227b97b29b6f7b450419142c5b4a3
+```
+
+#### 10.1.2 Exact reordered-equivalent commit input B
+
+The following single JSON line is also exactly 620 UTF-8 bytes, has no byte-order mark and has no terminal newline. It reverses top-level member order and reorders members inside `author`, `committer`, `tree` and `verification`; it changes no semantic value.
+
+```json
+{"verification":{"verified_at":null,"payload":null,"signature":null,"reason":"unsigned","verified":false},"parents":[],"tree":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","url":"https://example.invalid/tree"},"message":"Synthetic commit fixture","committer":{"email":"synthetic@example.invalid","name":"Synthetic User","date":"2026-01-01T00:00:00Z"},"author":{"email":"synthetic@example.invalid","name":"Synthetic User","date":"2026-01-01T00:00:00Z"},"html_url":"https://example.invalid/commit-view","url":"https://example.invalid/commit","node_id":"synthetic-node","sha":"197f92bee02d8e836f529f37625be69b83e7acbd"}
+```
+
+```text
+input B byte count: 620
+input B terminal newline: absent
+input B SHA-256: 4c633f286358f68cb049b2bc4cd88cd1be55de6c9bd0020c959bf15b7653998a
+```
+
+#### 10.1.3 Exact semantic equivalence
+
+| Field | Input A value | Input B value |
+| --- | --- | --- |
+| `sha` | `197f92bee02d8e836f529f37625be69b83e7acbd` | identical |
+| `node_id` | `synthetic-node` | identical |
+| `url` | `https://example.invalid/commit` | identical |
+| `html_url` | `https://example.invalid/commit-view` | identical |
+| `author.date` | `2026-01-01T00:00:00Z` | identical |
+| `author.name` | `Synthetic User` | identical |
+| `author.email` | `synthetic@example.invalid` | identical |
+| `committer.date` | `2026-01-01T00:00:00Z` | identical |
+| `committer.name` | `Synthetic User` | identical |
+| `committer.email` | `synthetic@example.invalid` | identical |
+| `message` | `Synthetic commit fixture` | identical |
+| `tree.url` | `https://example.invalid/tree` | identical |
+| `tree.sha` | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | identical |
+| `parents` | empty array | identical |
+| `verification.verified` | `false` | identical |
+| `verification.reason` | `unsigned` | identical |
+| `verification.signature` | `null` | identical |
+| `verification.payload` | `null` | identical |
+| `verification.verified_at` | `null` | identical |
+
+Neither body contains an additive member. Their only byte-level difference is accepted object-member ordering; the required reordered-equivalence assertion is that both return the exact mapping in Section 10.1.5.
+
+#### 10.1.4 Exact commit projection and deterministic hash
+
+For either raw input, the expected projection is exactly the following single line:
+
+```json
+{"commit_sha":"197f92bee02d8e836f529f37625be69b83e7acbd","root_tree_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+```
+
+```text
+projection byte count: 116
+projection byte-order mark: absent
+projection terminal newline: absent
 commit projection SHA-256: 82465c3e106dfe3d0e75ea3cbfdc18dfe682f5fabb44bc86c4cce259979e2fe9
 ```
+
+The two raw bodies and the projection literal were supplied separately through raw stdin to the already accepted `/usr/bin/sha256sum --binary`. Neither the controller nor another parser/projection implementation was imported or executed. Pre-use and post-use identity observations were identical:
+
+```text
+path: /usr/bin/sha256sum
+stat: 64513|1822|81ed|755|0|0|51624|1707363999|1719848457
+SHA-256: 7645c8e76d75515ccb75c9086bdcf0d4071f2985f380f249253ead7d7c6810b3
+implementation: GNU coreutils 8.32
+```
+
+#### 10.1.5 Exact expected successful commit mapping
+
+Successful parsing of either commit input is expected to return only:
+
+```text
+mode: "commit"
+commit_sha: "197f92bee02d8e836f529f37625be69b83e7acbd"
+root_tree_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+projection_bytes: b'{"commit_sha":"197f92bee02d8e836f529f37625be69b83e7acbd","root_tree_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+projection_sha256: "82465c3e106dfe3d0e75ea3cbfdc18dfe682f5fabb44bc86c4cce259979e2fe9"
+```
+
+The controller validates but intentionally omits from the projection and returned mapping: `node_id`; top-level `url` and `html_url`; every `author` and `committer` field; `message`; `tree.url`; all parent values; every verification field; and any permitted additive member. Only top-level `sha` and `tree.sha` are retained as `commit_sha` and `root_tree_sha`. This correction does not change that projection boundary, the unknown-field policy or parser behavior.
 
 ### 10.2 Historical pre-Q tree projection, not a success canary
 
@@ -483,7 +577,7 @@ This parser contract does not change:
 
 None of these values creates acquisition authority.
 
-Candidate prefix/suffix/Q1-Q8 classification, category order, aggregate rejection counts and rejected-tuple hashing remain frozen by the wire contract. This correction freezes one Q-complete positive input, its byte-exact expected result and one missing-Q negative input, but does not execute the authored controller. Those fixtures remain mandatory later single-harness source-review cases and cannot be claimed behaviorally closed by this receipt.
+Candidate prefix/suffix/Q1-Q8 classification, category order, aggregate rejection counts and rejected-tuple hashing remain frozen by the wire contract. The accepted positive-tree correction freezes one Q-complete positive input, its byte-exact expected result and one missing-Q negative input, but does not execute the authored controller. Those fixtures remain mandatory later single-harness source-review cases and cannot be claimed behaviorally closed by this receipt.
 
 ## 13. Exact future controller function and error boundary
 
@@ -576,9 +670,9 @@ GitHub/API traffic, E2-B1 acquisition, Docker access, infrastructure, package in
 | --- | --- | --- |
 | Python executable/runtime provenance | closed for this observation | fresh pre/use/post required later |
 | standard-library parser import provenance | closed for bound closure | later source import delta must match; dynamic provider residual remains |
-| parser mechanism/contract | corrected and ready for Owner review | Q-complete positive and missing-Q fixtures are frozen; execution, RFC3339 edges and internal-failure behavior remain authoring-review requirements |
+| parser mechanism/contract | commit and tree fixture contracts reconciled for Owner review | exact commit A/B and exact Q-complete tree A/B are frozen; execution, RFC3339 edges and internal-failure behavior remain authoring-review requirements |
 | controller-owned parser source | present and unchanged | controller SHA-256 bound; no execution implied |
-| single-harness positive/negative fixture authoring | stopped pending this correction's publication | later gate must use the corrected `45de...` positive hash and missing-Q rejection |
+| single-harness positive/negative fixture authoring | stopped pending this correction's publication | later gate must use commit `82465...`, tree `45de...` and the missing-Q rejection |
 | E2-B1 network acquisition | unapproved | completed source/fixture review, response-size decision and separate network gate still required |
 | E3-B1 | independently eligible, unapproved | separate Owner gate |
 | corrected E1 | blocked | separately approved disposable isolated Docker endpoint required |
@@ -589,7 +683,7 @@ The parser contract does not combine E1, E2-B1 and E3-B1 into one gate.
 
 ### 17.1 Blocker
 
-The later single-harness fixture review found one concrete Blocker in this document: the former two-entry tree body had no Q1-Q8 matches yet was labelled as a positive success canary. This correction resolves that documentation/fixture contradiction without weakening the controller's mandatory missing-category rejection. No remaining positive-tree fixture Blocker was found.
+The later single-harness fixture review found a concrete canonical-document Blocker: the commit projection hash was frozen, but the exact raw commit bodies were absent and could not be recovered uniquely because validated fields are intentionally omitted from projection. This correction resolves that gap with two newly Owner-authorized exact fixtures and expressly makes no historical-recovery claim. The earlier positive-tree correction remains intact. No remaining commit/tree fixture-documentation Blocker was found.
 
 E2-B1 network execution remains blocked by incomplete single-harness fixture review and its separate acquisition prerequisites; this correction is not converted into execution or acquisition approval.
 
@@ -609,7 +703,7 @@ No new parser-security or accounting High was found.
 ### 17.4 Medium
 
 - `-B` prevents writes but permits bound existing `.pyc` reads; future drift in either source or eligible cache invalidates the import binding.
-- The mechanism proof did not exhaust RFC 3339 edge behavior. This correction freezes Q1-Q8 expected inputs/results but does not execute them; both areas remain mandatory source-review fixtures.
+- The mechanism proof did not exhaust RFC 3339 edge behavior. The accepted positive-tree correction freezes Q1-Q8 expected inputs/results but does not execute them; both areas remain mandatory source-review fixtures.
 - The inline wrapper mapped all failures to controlled exit `65`; the separate internal failure `70` remains unproved until the single-harness source review.
 - One quoting-corrupted probe and one permission-review timeout produced no accepted evidence; all retained results came from fresh bounded runs.
 
@@ -619,10 +713,17 @@ Rejected: jq installation; automatic parser fallback; external package/library; 
 
 ## 18. Bounded review and Main Control synthesis
 
-For this correction gate, one bounded contract/accounting-preservation, parser/security-leakage, deterministic-byte/hash and release-containment review was followed by this Main Control synthesis. No alternatives study or general parser/architecture review loop was opened.
+For this commit-fixture correction, one bounded contract/accounting-preservation, parser/security/synthetic-data, deterministic-byte/hash and release-containment review was followed by this Main Control synthesis. Review was limited to the new commit fixtures; no completed controller or tree-fixture review was reopened.
 
 Accepted reviewer findings:
 
+- inputs A and B contain the same complete required commit values and no additive fields; only accepted object-member ordering differs;
+- the empty `parents` array is the simplest valid array because the frozen controller iterates parents without imposing a nonempty requirement;
+- `verified=false`, `reason=unsigned`, and null `signature`, `payload` and `verified_at` are the simplest complete accepted verification combination;
+- all non-prescribed identity-bearing fields are fixed synthetic values; the sole upstream-derived value is the explicitly Owner-prescribed public commit SHA, and no operational or live identity is present;
+- the exact 620-byte inputs hash to `2614932f825e98c3254f5ec4a80fcf18ed2227b97b29b6f7b450419142c5b4a3` and `4c633f286358f68cb049b2bc4cd88cd1be55de6c9bd0020c959bf15b7653998a`;
+- the exact 116-byte newline-free projection independently hashes to the preserved `82465c3e106dfe3d0e75ea3cbfdc18dfe682f5fabb44bc86c4cce259979e2fe9` under unchanged pre/post `sha256sum` identity;
+- the new fixtures are canonical Owner-authorized bodies, not reconstructed historical inputs, and they change no parser, schema, identity or projection boundary;
 - all eight synthetic paths use accepted regular-blob prefixes/suffixes and cover exactly one intended Q category each; Q4 contains both `sql_kill` and `kill`, but both belong only to Q4;
 - the former two-entry body cannot cover Q1-Q8 and must stop before projection return; its `b70e...` hash is historical pre-Q evidence only;
 - the two 1,853-byte reordered positive inputs bind the same retained identities, while the explicit 1,215-byte newline-free projection hashes to `45de585a728d5244dd9d6b783f1a4e8ddb84680eed5c141082c012e5b00646b6` under the unchanged accepted `sha256sum` identity;
@@ -646,7 +747,7 @@ Accepted containment and deferrals:
 
 Rejected: treating the inline mechanism proof as source implementation; host/application imports; package/fallback/parser CLI; re-parsing raw or projected bytes outside the private boundary; invented response limits; or any accounting, runtime, Docker or acquisition inference.
 
-Main Control accepts `positive_tree_fixture_contract_reconciled_for_owner_review`: the prior positive-tree contradiction is corrected with one-to-one Q1-Q8 coverage, deterministic expected bytes and controlled missing-Q disposition. The underlying `python_parser_contract_ready_for_owner_review` provenance decision remains intact; parser execution, acquisition and all other lanes remain unapproved.
+Main Control accepts `commit_fixture_contract_reconciled_for_owner_review`: the new exact commit inputs close the canonical-fixture prerequisite while preserving the commit projection, the completed positive-tree correction and the underlying `python_parser_contract_ready_for_owner_review` provenance decision. Parser execution, acquisition and all other lanes remain unapproved.
 
 ## 19. Continuity and roadmap checkpoint
 
@@ -655,7 +756,7 @@ Main Control accepts `positive_tree_fixture_contract_reconciled_for_owner_review
 | jq | conclusively absent from the prior frozen path; no installation |
 | parser candidate | isolated `/usr/bin/python3` plus bound standard-library closure only |
 | controller owner | existing `finance_gl_trial_balance_evidence_controller.py` path |
-| next sequence | publish this corrected contract, then separately resume the single-harness fixture-authoring gate |
+| next sequence | publish this commit-fixture correction, then separately resume the single-harness fixture-authoring gate |
 | E1 | blocked on disposable isolated Docker endpoint |
 | E2-B1 | network acquisition unapproved |
 | E3-B1 | independently eligible but unapproved |
@@ -665,7 +766,7 @@ Main Control accepts `positive_tree_fixture_contract_reconciled_for_owner_review
 
 After writing, Main Control validates:
 
-- branch, HEAD/upstream `548e74775e8c6bffd48db2e469dd08453f4c111c` and `0/0`;
+- branch, HEAD/upstream `3a1cd16702897e4ea10d03bf73b7cbf1d52a1b05` and `0/0`;
 - empty index before and after;
 - candidate scope exactly this document and README plus the unchanged controller, harness and four protected exclusions;
 - `git diff --check HEAD`, changed-document whitespace, balanced fences and local references;
@@ -684,8 +785,8 @@ This gate does not authorize staging, commit or push.
 
 ## 21. Final control statement
 
-**Decision:** `positive_tree_fixture_contract_reconciled_for_owner_review`
+**Decision:** `commit_fixture_contract_reconciled_for_owner_review`
 
-The canonical parser contract now contains one exact Q-complete positive tree fixture, one reordered equivalent, one byte-exact expected projection and one mandatory missing-Q rejection. The prior Python provenance and controller source remain unchanged. Publication of this documentation correction and a separate Owner decision are required before resuming the single-harness fixture-authoring gate. E2-B1 network acquisition, parser execution, E3-B1, E1, runtime and accounting work remain unapproved.
+The canonical parser contract now contains two exact Owner-authorized reordered commit fixtures, their exact 116-byte projection, the preserved exact Q-complete tree fixtures and one mandatory missing-Q rejection. The prior Python provenance, controller source and harness remain unchanged. Publication of this documentation correction and a separate Owner decision are required before resuming the single-harness fixture-authoring gate. E2-B1 network acquisition, parser execution, E3-B1, E1, runtime and accounting work remain unapproved.
 
 No source authoring, package installation, network acquisition, Docker contact, infrastructure, project-code test, Bench, SQL, synthetic Finance execution, live access, staging, commit, push, migration, permission change, protected gate or accounting action occurred.
