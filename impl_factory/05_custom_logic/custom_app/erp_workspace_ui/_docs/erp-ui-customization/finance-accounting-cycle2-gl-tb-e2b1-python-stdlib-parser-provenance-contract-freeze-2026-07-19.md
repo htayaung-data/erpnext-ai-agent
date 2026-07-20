@@ -2,6 +2,8 @@
 
 Date: 2026-07-19
 
+Tree-hash and ambiguity-resolution date: 2026-07-20
+
 Repository: `/home/deploy/erp-projects/erpai_project1_erpnext_ui_design`
 
 Branch: `feature/erpnext-ui-design`
@@ -12,9 +14,13 @@ Correction baseline: `548e74775e8c6bffd48db2e469dd08453f4c111c`
 
 Commit-fixture correction baseline: `3a1cd16702897e4ea10d03bf73b7cbf1d52a1b05`
 
-Authority: Main Control v2; local read-only provenance, sealed synthetic proof and planning only
+Tree-hash and ambiguity-resolution baseline: `136ff79b68c2c4a85b848049842605975dfd5c79`
 
-Decision: `commit_fixture_contract_reconciled_for_owner_review`
+Authority: Main Control v2; bounded documentation and controller source correction with static review only
+
+Decision: `tree_hash_and_ambiguity_resolution_ready_for_owner_review`
+
+Prior commit-fixture decision preserved: `commit_fixture_contract_reconciled_for_owner_review`
 
 Prior parser-provenance decision preserved: `python_parser_contract_ready_for_owner_review`
 
@@ -26,15 +32,17 @@ The Owner-selected `/usr/bin/python3` candidate resolves to one stable CPython 3
 
 The canonical contract preserves the completed positive-tree correction and now resolves the later commit-fixture documentation Blocker. Two new Owner-authorized, byte-exact synthetic commit inputs are frozen below; they are new canonical fixtures, not recovered historical bodies. They contain identical semantic values and differ only in JSON object-member ordering. Their fixed 116-byte projection independently retains the accepted commit hash without importing or executing the controller.
 
-The Python parser contract remains ready for Owner review. This correction is not an authored-controller test, an HTTP acquisition receipt or E2-B1 execution approval.
+The bounded 2026-07-20 prerequisite resolution independently derives and records the missing raw hashes for both unchanged 1,853-byte tree inputs. It also applies the smallest controller-only ambiguity correction: a path matching more than one Q category now reaches the existing controlled `_e2b1_reject()` boundary before prefix, suffix or regular-blob classification. No token, category, projection, exception, acquisition or execution contract changes.
+
+The Python parser contract and bounded prerequisite resolution are ready for Owner review. This correction is not an authored-controller test, an HTTP acquisition receipt or E2-B1 execution approval.
 
 The current Owner decision supersedes the earlier jq-only parser posture. It does not install jq, authorize a package, introduce an external dependency or create a fifth source candidate.
 
 Readiness remains separated:
 
 - parser contract: commit and tree fixture truth corrected and ready for Owner review;
-- controller-owned parser source: present at the later accepted source-authoring baseline and read-only in this gate;
-- single-harness fixture authoring: not resumed here; eligible only after publication of this commit-fixture correction and separate Owner authority;
+- controller-owned parser source: the single cross-category rejection correction is authored and statically reviewed but remains unexecuted and unpublished;
+- single-harness fixture authoring: not resumed here; eligible only after separate publication decisions for the documentation and controller groups and renewed Owner authority;
 - E2-B1 network acquisition: unapproved;
 - E3-B1: independently eligible but unapproved; and
 - corrected E1: blocked by the separate disposable Docker endpoint requirement.
@@ -80,9 +88,9 @@ The canonical four-file runtime boundary remains:
 3. `impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/finance_gl_trial_balance_runner.Dockerfile`
 4. `impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/finance_gl_trial_balance_site_initializer.py`
 
-Only the controller owns E2-B1 parsing, validation, projection, hashing, generic errors and sanitized result handoff. The later accepted parser-only authoring gate used that controller path alone. This correction does not modify it; the harness, Dockerfile and initializer remain outside the controller authoring boundary.
+Only the controller owns E2-B1 parsing, validation, projection, hashing, generic errors and sanitized result handoff. The later accepted parser-only authoring gate used that controller path alone. This bounded resolution modifies only its existing `_e2b1_classify_candidates(...)` ambiguity branch; the harness, Dockerfile and initializer remain outside the controller authoring boundary.
 
-At the original provenance gate, no accepted document had fixed an internal E2-B1 parser function or literal parser-error protocol. Section 13 froze those planning contracts; the later accepted source-authoring gate implemented the controller boundary, and this correction changes neither source nor protocol.
+At the original provenance gate, no accepted document had fixed an internal E2-B1 parser function or literal parser-error protocol. Section 13 froze those planning contracts; the later accepted source-authoring gate implemented the controller boundary, and this resolution preserves that protocol while enforcing its existing controlled ambiguity rejection requirement.
 
 ## 4. Exact future invocation posture
 
@@ -338,6 +346,13 @@ The exact raw input is the single JSON line below, encoded as 1,853 UTF-8 bytes 
 {"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","url":"https://example.invalid/git/trees/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tree":[{"path":"storage/innobase/synthetic_innodb_trx_probe.cc","mode":"100644","type":"blob","sha":"5555555555555555555555555555555555555555","url":"https://example.invalid/git/objects/5555555555555555555555555555555555555555"},{"path":"sql/synthetic_sql_kill_probe.cc","mode":"100644","type":"blob","sha":"4444444444444444444444444444444444444444","url":"https://example.invalid/git/objects/4444444444444444444444444444444444444444"},{"path":"sql/synthetic_replica_probe.cc","mode":"100644","type":"blob","sha":"7777777777777777777777777777777777777777","url":"https://example.invalid/git/objects/7777777777777777777777777777777777777777"},{"path":"sql/synthetic_processlist_probe.cc","mode":"100644","type":"blob","sha":"3333333333333333333333333333333333333333","url":"https://example.invalid/git/objects/3333333333333333333333333333333333333333"},{"path":"sql/synthetic_max_statement_time_probe.cc","mode":"100644","type":"blob","sha":"8888888888888888888888888888888888888888","url":"https://example.invalid/git/objects/8888888888888888888888888888888888888888"},{"path":"sql/synthetic_consistent_snapshot_probe.cc","mode":"100644","type":"blob","sha":"6666666666666666666666666666666666666666","url":"https://example.invalid/git/objects/6666666666666666666666666666666666666666"},{"path":"sql/synthetic_column_priv_probe.cc","mode":"100644","type":"blob","sha":"2222222222222222222222222222222222222222","url":"https://example.invalid/git/objects/2222222222222222222222222222222222222222"},{"path":"sql/synthetic_auth_probe.cc","mode":"100644","type":"blob","sha":"1111111111111111111111111111111111111111","url":"https://example.invalid/git/objects/1111111111111111111111111111111111111111"}],"truncated":false}
 ```
 
+```text
+tree input A byte count: 1853
+tree input A byte-order mark: absent
+tree input A terminal newline: absent
+tree input A raw SHA-256: 778cfc6deaeb5129e16a17d444f0b3e305841bd6d22a5a09389d9fe9fe495522
+```
+
 Every selected path is synthetic, accepted `100644/blob`, under an accepted prefix, has an accepted suffix, and matches exactly one intended category:
 
 | Category | Exact path | Matching token(s) within the sole category |
@@ -358,6 +373,15 @@ This equivalent input is also exactly 1,853 UTF-8 bytes with no byte-order mark 
 ```json
 {"truncated":false,"tree":[{"url":"https://example.invalid/git/objects/1111111111111111111111111111111111111111","sha":"1111111111111111111111111111111111111111","type":"blob","mode":"100644","path":"sql/synthetic_auth_probe.cc"},{"url":"https://example.invalid/git/objects/2222222222222222222222222222222222222222","sha":"2222222222222222222222222222222222222222","type":"blob","mode":"100644","path":"sql/synthetic_column_priv_probe.cc"},{"url":"https://example.invalid/git/objects/6666666666666666666666666666666666666666","sha":"6666666666666666666666666666666666666666","type":"blob","mode":"100644","path":"sql/synthetic_consistent_snapshot_probe.cc"},{"url":"https://example.invalid/git/objects/8888888888888888888888888888888888888888","sha":"8888888888888888888888888888888888888888","type":"blob","mode":"100644","path":"sql/synthetic_max_statement_time_probe.cc"},{"url":"https://example.invalid/git/objects/3333333333333333333333333333333333333333","sha":"3333333333333333333333333333333333333333","type":"blob","mode":"100644","path":"sql/synthetic_processlist_probe.cc"},{"url":"https://example.invalid/git/objects/7777777777777777777777777777777777777777","sha":"7777777777777777777777777777777777777777","type":"blob","mode":"100644","path":"sql/synthetic_replica_probe.cc"},{"url":"https://example.invalid/git/objects/4444444444444444444444444444444444444444","sha":"4444444444444444444444444444444444444444","type":"blob","mode":"100644","path":"sql/synthetic_sql_kill_probe.cc"},{"url":"https://example.invalid/git/objects/5555555555555555555555555555555555555555","sha":"5555555555555555555555555555555555555555","type":"blob","mode":"100644","path":"storage/innobase/synthetic_innodb_trx_probe.cc"}],"url":"https://example.invalid/git/trees/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 ```
+
+```text
+tree input B byte count: 1853
+tree input B byte-order mark: absent
+tree input B terminal newline: absent
+tree input B raw SHA-256: 578549ea05c4e4dbdd8f583be4e21b0af5483c828474048fd01bb659feda334f
+```
+
+Both raw hashes reproduced on two independent reads of their committed JSON lines. Before and after use, `/usr/bin/sha256sum --binary` retained stat `64513|1822|81ed|755|0|0|51624|1707363999|1719848457`, executable SHA-256 `7645c8e76d75515ccb75c9086bdcf0d4071f2985f380f249253ead7d7c6810b3`, and GNU coreutils version `8.32`.
 
 ### 10.5 Exact canonical projection and deterministic hash
 
@@ -557,6 +581,8 @@ The ASCII-lowercased path must contain at least one token below. Categories are 
 
 Strong-token entries rejected only by prefix, suffix or regular-blob eligibility are counted in fixed order `prefix_rejected`, `suffix_rejected`, `nonregular_blob_rejected`; their identities are never returned. The controlled rejected-tuple hash is SHA-256 over one compact newline-free JSON array of arrays `[reason,path,mode,type,object_sha]`, sorted by that reason order then unsigned UTF-8 bytes of path, mode, type and object SHA. This newly completes the internal hashing boundary without exposing rejected identities. Ambiguous paths stop the entire parse and produce no candidate/rejection result.
 
+The controller now enforces that frozen rule immediately after category matching: zero matches continue, more than one match calls `_e2b1_reject()`, and only exactly one category can reach eligibility classification. Consequently `sql/synthetic_grant_probe.cc` and `sql/synthetic_auth_column_priv_probe.cc` both reach controlled rejection because each matches Q1 and Q2.
+
 ### 12.5 Preserved external wire policy
 
 This parser contract does not change:
@@ -640,7 +666,7 @@ No GitHub, ERPNext, MariaDB or operational content is permitted in these fixture
 
 ## 15. Preserved implementation and execution boundaries
 
-### 15.1 Historical controller source-authoring allowlist and current read-only boundary
+### 15.1 Historical controller source-authoring allowlist and current bounded correction
 
 Exactly one path:
 
@@ -648,7 +674,7 @@ Exactly one path:
 impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/finance_gl_trial_balance_evidence_controller.py
 ```
 
-The later accepted source-authoring gate populated this existing controller candidate. In this correction gate it is read-only at SHA-256 `99fc6a408ae28ae2c9a1d484ab44d8670803af50600bf2e22b0da458fe1ff9eb`; the harness is also read-only at SHA-256 `c8d0bb0556f9abb04e1be69c1d67a7f92c4ed37a64d8270d84339ad590e9cea5`. No controller, harness, Dockerfile, initializer, application runtime, package metadata or fifth parser file may change.
+The later accepted source-authoring gate populated this existing controller candidate. This bounded resolution changes it only from starting SHA-256 `99fc6a408ae28ae2c9a1d484ab44d8670803af50600bf2e22b0da458fe1ff9eb` to resulting SHA-256 `69e67523d893b38b6559c75152f5802f6e5acf19642fd95d82cc2631d5a485b3` by inserting the existing `_e2b1_reject()` boundary for `len(categories) > 1`. The harness remains read-only at SHA-256 `c8d0bb0556f9abb04e1be69c1d67a7f92c4ed37a64d8270d84339ad590e9cea5`. No other controller logic, harness, Dockerfile, initializer, application runtime, package metadata or fifth parser file may change.
 
 ### 15.2 Permitted imports
 
@@ -656,7 +682,7 @@ Only built-in modules and the bound standard-library closure for `json`, `re`, `
 
 ### 15.3 Execution allowlists
 
-The execution allowlist for this correction gate is empty. The controller and harness may be inspected only for exact contract preservation and hashes; neither may be imported or executed.
+The execution allowlist for this correction gate is empty. The controller may receive only the ambiguity correction in Section 15.1, and the harness may be inspected only for exact preservation; neither may be imported or executed.
 
 A later execution gate may propose only the exact clean isolated interpreter prefix in Section 4, the exact controller literal, and separately accepted sealed synthetic fixture categories in Section 14. No parser-specific public endpoint, parser CLI, fifth-file runner or acquired body is allowed. The existing controller's `preflight`/`execute` ownership remains; parser mode is internal. No authored-controller execution argv or command-manifest approval is created here; both remain subject to a later explicit Owner gate.
 
@@ -670,9 +696,9 @@ GitHub/API traffic, E2-B1 acquisition, Docker access, infrastructure, package in
 | --- | --- | --- |
 | Python executable/runtime provenance | closed for this observation | fresh pre/use/post required later |
 | standard-library parser import provenance | closed for bound closure | later source import delta must match; dynamic provider residual remains |
-| parser mechanism/contract | commit and tree fixture contracts reconciled for Owner review | exact commit A/B and exact Q-complete tree A/B are frozen; execution, RFC3339 edges and internal-failure behavior remain authoring-review requirements |
-| controller-owned parser source | present and unchanged | controller SHA-256 bound; no execution implied |
-| single-harness positive/negative fixture authoring | stopped pending this correction's publication | later gate must use commit `82465...`, tree `45de...` and the missing-Q rejection |
+| parser mechanism/contract | raw commit/tree fixtures and projections reconciled for Owner review | exact commit A/B and Q-complete tree A/B bodies, raw hashes and projections are frozen; execution, RFC3339 edges and internal-failure behavior remain authoring-review requirements |
+| controller-owned parser source | ambiguity correction ready for Owner review | exact single-branch source diff and resulting SHA-256 bound; no execution implied |
+| single-harness positive/negative fixture authoring | eligible only after separate documentation/controller publication decisions and renewed Owner authority | later gate must use commit `82465...`, tree A/B raw hashes, tree `45de...` and the missing-Q rejection |
 | E2-B1 network acquisition | unapproved | completed source/fixture review, response-size decision and separate network gate still required |
 | E3-B1 | independently eligible, unapproved | separate Owner gate |
 | corrected E1 | blocked | separately approved disposable isolated Docker endpoint required |
@@ -683,7 +709,9 @@ The parser contract does not combine E1, E2-B1 and E3-B1 into one gate.
 
 ### 17.1 Blocker
 
-The later single-harness fixture review found a concrete canonical-document Blocker: the commit projection hash was frozen, but the exact raw commit bodies were absent and could not be recovered uniquely because validated fields are intentionally omitted from projection. This correction resolves that gap with two newly Owner-authorized exact fixtures and expressly makes no historical-recovery claim. The earlier positive-tree correction remains intact. No remaining commit/tree fixture-documentation Blocker was found.
+The later single-harness fixture review first found a concrete canonical-document Blocker: the commit projection hash was frozen, but the exact raw commit bodies were absent and could not be recovered uniquely because validated fields are intentionally omitted from projection. The commit-fixture correction resolved that gap with two newly Owner-authorized exact fixtures and expressly made no historical-recovery claim.
+
+The subsequent canonical completeness preflight found that both exact 1,853-byte tree bodies and their projection were present but their raw hashes were not recorded. This resolution derives each hash twice from the unchanged committed JSON line under the unchanged accepted `sha256sum` identity and records the results in Sections 10.3 and 10.4. No remaining commit/tree fixture-documentation Blocker was found.
 
 E2-B1 network execution remains blocked by incomplete single-harness fixture review and its separate acquisition prerequisites; this correction is not converted into execution or acquisition approval.
 
@@ -691,7 +719,7 @@ E2-B1 network execution remains blocked by incomplete single-harness fixture rev
 
 - Pre/use/post path, stat and SHA-256 equality cannot exclude transient replace-and-restore between observations. The prior Owner-accepted non-atomic identity High remains; no drift was observed and no stronger guarantee is claimed.
 
-No new parser-security or accounting High was found.
+The canonical fixture preflight also found a concrete source-proof integrity High: `_e2b1_classify_candidates(...)` accepted an otherwise eligible path matching more than one Q category even though the contract requires whole-parse rejection. The smallest controller correction now calls `_e2b1_reject()` when `len(categories) > 1`; it changes no category, token, candidate, rejection-count, hash, projection or exception contract. No other parser-security or accounting High was found.
 
 ### 17.3 Deferred prerequisites and limitations
 
@@ -713,7 +741,18 @@ Rejected: jq installation; automatic parser fallback; external package/library; 
 
 ## 18. Bounded review and Main Control synthesis
 
-For this commit-fixture correction, one bounded contract/accounting-preservation, parser/security/synthetic-data, deterministic-byte/hash and release-containment review was followed by this Main Control synthesis. Review was limited to the new commit fixtures; no completed controller or tree-fixture review was reopened.
+For the 2026-07-20 prerequisite resolution, one bounded deterministic byte/hash, parser-security/ambiguity-control, accounting/source-proof preservation and release-containment review was followed by this Main Control synthesis. Review was limited to the two missing raw hashes and the single ambiguity branch; no general parser architecture or completed controller review was reopened.
+
+Current resolution findings accepted:
+
+- tree input A remains exactly 1,853 bytes, has no BOM or terminal newline, and independently reproduces raw SHA-256 `778cfc6deaeb5129e16a17d444f0b3e305841bd6d22a5a09389d9fe9fe495522`;
+- tree input B remains exactly 1,853 bytes, has no BOM or terminal newline, and independently reproduces raw SHA-256 `578549ea05c4e4dbdd8f583be4e21b0af5483c828474048fd01bb659feda334f`;
+- hashing-tool pre/post stat, executable hash and version remain exactly equal to the accepted identity;
+- both tree bodies, their ordering relation, the 1,215-byte `45de585a...` projection, commit fixtures, Q1-Q8 mapping and missing-Q rejection remain byte-for-byte unchanged;
+- the controller source change is exactly the `len(categories) > 1` controlled-rejection branch, so both required Q1/Q2 ambiguity examples structurally reach `_e2b1_reject()` before eligibility classification; and
+- the harness and four unrelated exclusions remain unchanged and unstaged, while execution and acquisition allowlists remain empty.
+
+The prior commit-fixture review findings remain preserved below as historical context.
 
 Accepted reviewer findings:
 
@@ -747,7 +786,7 @@ Accepted containment and deferrals:
 
 Rejected: treating the inline mechanism proof as source implementation; host/application imports; package/fallback/parser CLI; re-parsing raw or projected bytes outside the private boundary; invented response limits; or any accounting, runtime, Docker or acquisition inference.
 
-Main Control accepts `commit_fixture_contract_reconciled_for_owner_review`: the new exact commit inputs close the canonical-fixture prerequisite while preserving the commit projection, the completed positive-tree correction and the underlying `python_parser_contract_ready_for_owner_review` provenance decision. Parser execution, acquisition and all other lanes remain unapproved.
+Main Control accepts `tree_hash_and_ambiguity_resolution_ready_for_owner_review`: the exact raw tree hashes close the remaining canonical-fixture documentation prerequisite, and the bounded controller correction enforces the already frozen ambiguity rule. Separate documentation and controller publication approvals remain required. Parser execution, acquisition and all other lanes remain unapproved.
 
 ## 19. Continuity and roadmap checkpoint
 
@@ -756,23 +795,23 @@ Main Control accepts `commit_fixture_contract_reconciled_for_owner_review`: the 
 | jq | conclusively absent from the prior frozen path; no installation |
 | parser candidate | isolated `/usr/bin/python3` plus bound standard-library closure only |
 | controller owner | existing `finance_gl_trial_balance_evidence_controller.py` path |
-| next sequence | publish this commit-fixture correction, then separately resume the single-harness fixture-authoring gate |
+| next sequence | separately publish the documentation and controller groups, then seek renewed Owner authority to resume the single-harness fixture-authoring gate |
 | E1 | blocked on disposable isolated Docker endpoint |
 | E2-B1 | network acquisition unapproved |
 | E3-B1 | independently eligible but unapproved |
 | roadmap checkpoint | unchanged: completion or controlled failure of E2-B2 plus E3-B final static synthesis |
 
-## 20. Validation and future documentation staging allowlist
+## 20. Validation and separate future staging allowlists
 
 After writing, Main Control validates:
 
-- branch, HEAD/upstream `3a1cd16702897e4ea10d03bf73b7cbf1d52a1b05` and `0/0`;
+- branch, starting HEAD/upstream `136ff79b68c2c4a85b848049842605975dfd5c79` and `0/0`;
 - empty index before and after;
-- candidate scope exactly this document and README plus the unchanged controller, harness and four protected exclusions;
+- candidate scope exactly this document, README and controller plus the unchanged harness and four protected exclusions;
 - `git diff --check HEAD`, changed-document whitespace, balanced fences and local references;
 - exactly one README entry;
-- unchanged protected hashes and statuses;
-- controller and harness retain their accepted hashes, while the runner Dockerfile and initializer remain absent;
+- unchanged harness/exclusion hashes and statuses;
+- controller starting/resulting hashes match Section 15.1, while the runner Dockerfile and initializer remain absent;
 - no numeric response/Finance workload limit was invented; and
 - no E1, E2-B1, E3-B1, E2-B2, E3-B, E4, runtime or live authority was introduced.
 
@@ -781,12 +820,16 @@ The exact future documentation staging allowlist, if separately authorized, is:
 1. `impl_factory/05_custom_logic/custom_app/erp_workspace_ui/_docs/erp-ui-customization/finance-accounting-cycle2-gl-tb-e2b1-python-stdlib-parser-provenance-contract-freeze-2026-07-19.md`
 2. `impl_factory/05_custom_logic/custom_app/erp_workspace_ui/_docs/erp-ui-customization/README.md`
 
+The exact future controller-source staging allowlist, if separately authorized, is:
+
+1. `impl_factory/05_custom_logic/custom_app/erp_workspace_ui/erp_workspace_ui/tests/finance_gl_trial_balance_evidence_controller.py`
+
 This gate does not authorize staging, commit or push.
 
 ## 21. Final control statement
 
-**Decision:** `commit_fixture_contract_reconciled_for_owner_review`
+**Decision:** `tree_hash_and_ambiguity_resolution_ready_for_owner_review`
 
-The canonical parser contract now contains two exact Owner-authorized reordered commit fixtures, their exact 116-byte projection, the preserved exact Q-complete tree fixtures and one mandatory missing-Q rejection. The prior Python provenance, controller source and harness remain unchanged. Publication of this documentation correction and a separate Owner decision are required before resuming the single-harness fixture-authoring gate. E2-B1 network acquisition, parser execution, E3-B1, E1, runtime and accounting work remain unapproved.
+The canonical parser contract now contains two exact Owner-authorized reordered commit fixtures, both raw tree hashes, the unchanged commit/tree projections, the preserved Q-complete tree fixtures and one mandatory missing-Q rejection. The bounded controller correction now rejects cross-category ambiguity through the existing controlled boundary; the harness remains unchanged. Separate publication decisions for the documentation and controller groups, followed by renewed Owner authority, are required before resuming the single-harness fixture-authoring gate. E2-B1 network acquisition, parser execution, E3-B1, E1, runtime and accounting work remain unapproved.
 
-No source authoring, package installation, network acquisition, Docker contact, infrastructure, project-code test, Bench, SQL, synthetic Finance execution, live access, staging, commit, push, migration, permission change, protected gate or accounting action occurred.
+No parser import or execution, package installation, network acquisition, Docker contact, infrastructure, project-code test, Bench, SQL, synthetic Finance execution, live access, staging, commit, push, migration, permission change, protected gate or accounting action occurred.
