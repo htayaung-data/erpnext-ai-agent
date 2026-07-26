@@ -1,0 +1,190 @@
+services:
+  db-primary:
+    image: "${GL_TB_MARIADB_IMAGE:?immutable MariaDB image digest required}"
+    container_name: "${GL_TB_PROJECT:?project required}_db_primary"
+    pull_policy: never
+    restart: "no"
+    environment:
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db-root-password
+      MARIADB_ROOT_HOST: "%"
+    secrets:
+      - source: db-root-password
+        target: db-root-password
+    networks:
+      - internal
+    volumes:
+      - type: volume
+        source: db
+        target: /var/lib/mysql
+        read_only: false
+        volume:
+          nocopy: true
+    labels:
+      com.erpai.finance.gl_tb_rtcompat.run: "${GL_TB_RUN_ID:?run id required}"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: "${GL_TB_HEALTH_INTERVAL_SECONDS:?health interval required}s"
+      timeout: "${GL_TB_HEALTH_TIMEOUT_SECONDS:?health timeout required}s"
+      retries: "${GL_TB_HEALTH_RETRIES:?health retries required}"
+    logging:
+      driver: none
+
+  redis-cache:
+    image: "${GL_TB_REDIS_IMAGE:?immutable Redis image digest required}"
+    container_name: "${GL_TB_PROJECT:?project required}_redis_cache"
+    pull_policy: never
+    restart: "no"
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --protected-mode
+      - "yes"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+    networks:
+      - internal
+    volumes:
+      - type: volume
+        source: redis
+        target: /data
+        read_only: false
+        volume:
+          nocopy: true
+    labels:
+      com.erpai.finance.gl_tb_rtcompat.run: "${GL_TB_RUN_ID:?run id required}"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: "${GL_TB_HEALTH_INTERVAL_SECONDS:?health interval required}s"
+      timeout: "${GL_TB_HEALTH_TIMEOUT_SECONDS:?health timeout required}s"
+      retries: "${GL_TB_HEALTH_RETRIES:?health retries required}"
+    logging:
+      driver: none
+
+  site-init:
+    image: "${GL_TB_RUNNER_IMAGE:?immutable runner image digest required}"
+    pull_policy: never
+    restart: "no"
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+    entrypoint:
+      - /opt/erpai/finance_gl_trial_balance_runtime_compatibility_site_initializer.py
+    command:
+      - initialize
+      - --manifest
+      - /run/secrets/site-init-manifest.json
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+    depends_on:
+      db-primary:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - type: volume
+        source: sites
+        target: /home/frappe/frappe-bench/sites
+        read_only: false
+        volume:
+          nocopy: false
+    secrets:
+      - source: db-root-password
+        target: db-root-password
+      - source: site-admin-password
+        target: site-admin-password
+      - source: site-db-password
+        target: site-db-password
+      - source: site-init-manifest
+        target: site-init-manifest.json
+    labels:
+      com.erpai.finance.gl_tb_rtcompat.run: "${GL_TB_RUN_ID:?run id required}"
+    logging:
+      driver: none
+
+  runtime-probe:
+    image: "${GL_TB_RUNNER_IMAGE:?immutable runner image digest required}"
+    pull_policy: never
+    restart: "no"
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+      - /evidence:rw,noexec,nosuid,nodev
+    depends_on:
+      db-primary:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - type: volume
+        source: sites
+        target: /home/frappe/frappe-bench/sites
+        read_only: true
+        volume:
+          nocopy: false
+    secrets:
+      - source: connection-commitment-key
+        target: connection-commitment-key
+      - source: execution-manifest
+        target: execution-manifest.json
+      - source: runtime-policy
+        target: runtime-policy.json
+    labels:
+      com.erpai.finance.gl_tb_rtcompat.run: "${GL_TB_RUN_ID:?run id required}"
+    logging:
+      driver: none
+
+networks:
+  internal:
+    name: "${GL_TB_PROJECT:?project required}_internal"
+    internal: true
+    attachable: false
+    labels:
+      com.erpai.finance.gl_tb_rtcompat.run: "${GL_TB_RUN_ID:?run id required}"
+
+volumes:
+  db:
+    name: "${GL_TB_PROJECT:?project required}_db"
+    labels:
+      com.erpai.finance.gl_tb_rtcompat.run: "${GL_TB_RUN_ID:?run id required}"
+  sites:
+    name: "${GL_TB_PROJECT:?project required}_sites"
+    labels:
+      com.erpai.finance.gl_tb_rtcompat.run: "${GL_TB_RUN_ID:?run id required}"
+  redis:
+    name: "${GL_TB_PROJECT:?project required}_redis"
+    labels:
+      com.erpai.finance.gl_tb_rtcompat.run: "${GL_TB_RUN_ID:?run id required}"
+
+secrets:
+  db-root-password:
+    file: "${GL_TB_DB_ROOT_SECRET_FILE:?root secret file required}"
+  site-admin-password:
+    file: "${GL_TB_SITE_ADMIN_SECRET_FILE:?site-admin secret file required}"
+  site-db-password:
+    file: "${GL_TB_SITE_DB_SECRET_FILE:?site database secret file required}"
+  connection-commitment-key:
+    file: "${GL_TB_CONNECTION_KEY_FILE:?commitment key file required}"
+  site-init-manifest:
+    file: "${GL_TB_SITE_INIT_MANIFEST_FILE:?site initializer manifest required}"
+  execution-manifest:
+    file: "${GL_TB_EXECUTION_MANIFEST_FILE:?execution manifest required}"
+  runtime-policy:
+    file: "${GL_TB_RUNTIME_POLICY_FILE:?runtime policy file required}"
