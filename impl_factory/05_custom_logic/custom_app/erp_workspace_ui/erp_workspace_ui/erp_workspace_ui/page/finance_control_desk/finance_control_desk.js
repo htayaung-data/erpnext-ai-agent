@@ -4,6 +4,37 @@
   const PAGE_KEY = "finance-control-desk";
   const OVERVIEW_CONTEXT_METHOD = "erp_workspace_ui.finance_accounting.service.get_finance_control_desk_overview_context";
   const OVERVIEW_CONTEXT_TIMEOUT_MS = 30000;
+  const GL_TRIAL_BALANCE_METHOD = "erp_workspace_ui.finance_accounting.gl_trial_balance_http.get_gl_trial_balance";
+  const GL_TRIAL_BALANCE_TIMEOUT_MS = 30000;
+  const GL_TRIAL_BALANCE_SCHEMA_VERSION = "finance-gl-trial-balance.internal.v1";
+  const GL_TRIAL_BALANCE_TOP_LEVEL_KEYS = Object.freeze([
+    "boundary", "lines", "schema_version", "scope", "state", "totals",
+  ]);
+  const GL_TRIAL_BALANCE_SCOPE_KEYS = Object.freeze([
+    "active_dimensions", "base_currency", "company", "currency_precision",
+    "default_finance_book", "finance_book_scope", "fiscal_year",
+    "fiscal_year_end", "fiscal_year_start", "from_date", "to_date",
+  ]);
+  const GL_TRIAL_BALANCE_LINE_KEYS = Object.freeze([
+    "account_id", "amounts", "depth", "is_group", "parent_account_id", "root_type",
+  ]);
+  const GL_TRIAL_BALANCE_AMOUNT_KEYS = Object.freeze([
+    "closing_credit", "closing_debit", "movement_credit", "movement_debit",
+    "opening_credit", "opening_debit",
+  ]);
+  const GL_TRIAL_BALANCE_DISPLAY_AMOUNT_KEYS = Object.freeze([
+    "opening_debit", "opening_credit", "movement_debit", "movement_credit",
+    "closing_debit", "closing_credit",
+  ]);
+  const GL_TRIAL_BALANCE_ROOT_TYPES = Object.freeze([
+    "Asset", "Liability", "Equity", "Income", "Expense",
+  ]);
+  const GL_TRIAL_BALANCE_FINANCE_BOOK_SCOPE = Object.freeze([
+    "company_default", "blank_unbooked", "null_unbooked",
+  ]);
+  const GL_TRIAL_BALANCE_PRIVILEGED_ROLES = Object.freeze([
+    "System Manager", "Administrator", "Bypass Finance Scope",
+  ]);
 
   function ensureStyle() {
     if (document.getElementById("finance-control-desk-shell-style")) return;
@@ -258,6 +289,246 @@
         white-space: nowrap;
         border: 0;
       }
+      .finance-gltb-workspace {
+        overflow: hidden;
+        border: 1px solid rgba(15, 118, 110, 0.24);
+        border-radius: 16px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbfb 100%);
+        box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+      }
+      .finance-gltb-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 20px 22px 18px;
+        border-bottom: 1px solid #e5eceb;
+        background: linear-gradient(135deg, #f0fdfa 0%, #f8fafc 68%);
+      }
+      .finance-gltb-kicker {
+        margin: 0 0 5px;
+        color: #0f766e;
+        font-size: 10.5px;
+        line-height: 1.3;
+        font-weight: 800;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .finance-gltb-title {
+        margin: 0;
+        color: #172033;
+        font-size: 20px;
+        line-height: 1.25;
+        font-weight: 780;
+      }
+      .finance-gltb-copy {
+        max-width: 720px;
+        margin: 7px 0 0;
+        color: #526072;
+        font-size: 12.5px;
+        line-height: 1.55;
+      }
+      .finance-gltb-readonly-badge {
+        flex: 0 0 auto;
+        min-height: 28px;
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid #99f6e4;
+        border-radius: 999px;
+        padding: 0 11px;
+        background: #ecfdf5;
+        color: #0f766e;
+        font-size: 10.5px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .finance-gltb-form {
+        display: grid;
+        grid-template-columns: minmax(180px, 1.2fr) repeat(3, minmax(145px, 1fr)) auto;
+        gap: 12px;
+        align-items: end;
+        padding: 18px 22px;
+        border-bottom: 1px solid #e5eceb;
+        background: #ffffff;
+      }
+      .finance-gltb-field {
+        min-width: 0;
+        display: grid;
+        gap: 6px;
+      }
+      .finance-gltb-field-label {
+        color: #526072;
+        font-size: 10.5px;
+        line-height: 1.3;
+        font-weight: 800;
+        letter-spacing: 0.055em;
+        text-transform: uppercase;
+      }
+      .finance-gltb-context,
+      .finance-gltb-input {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 38px;
+        border: 1px solid #cbd5e1;
+        border-radius: 9px;
+        padding: 8px 10px;
+        background: #ffffff;
+        color: #172033;
+        font: inherit;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .finance-gltb-context {
+        display: flex;
+        align-items: center;
+        background: #f8fafc;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .finance-gltb-input:focus-visible,
+      .finance-gltb-submit:focus-visible {
+        outline: 2px solid #14b8a6;
+        outline-offset: 2px;
+      }
+      .finance-gltb-submit {
+        min-height: 38px;
+        border: 0;
+        border-radius: 9px;
+        padding: 0 16px;
+        background: #0f766e;
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+      }
+      .finance-gltb-submit:disabled {
+        cursor: wait;
+        opacity: 0.62;
+      }
+      .finance-gltb-state {
+        min-width: 0;
+        padding: 20px 22px 22px;
+      }
+      .finance-gltb-state-card {
+        border: 1px dashed #cbd5e1;
+        border-radius: 12px;
+        padding: 17px 18px;
+        background: #f8fafc;
+      }
+      .finance-gltb-state-card.is-ready {
+        border-style: solid;
+        border-color: #a7f3d0;
+        background: #f0fdf4;
+      }
+      .finance-gltb-state-card.is-denied,
+      .finance-gltb-state-card.is-unavailable,
+      .finance-gltb-state-card.is-error {
+        border-style: solid;
+        border-color: #fed7aa;
+        background: #fff7ed;
+      }
+      .finance-gltb-state-title {
+        margin: 0;
+        color: #202b3d;
+        font-size: 13px;
+        line-height: 1.4;
+        font-weight: 780;
+      }
+      .finance-gltb-state-detail {
+        margin: 5px 0 0;
+        color: #5d6878;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      .finance-gltb-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .finance-gltb-summary-card {
+        min-width: 0;
+        border: 1px solid #dce5e4;
+        border-radius: 11px;
+        padding: 12px;
+        background: #ffffff;
+      }
+      .finance-gltb-summary-label {
+        display: block;
+        margin-bottom: 7px;
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .finance-gltb-summary-value {
+        display: block;
+        color: #172033;
+        font-size: 12px;
+        line-height: 1.45;
+        font-weight: 760;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+      }
+      .finance-gltb-table-wrap {
+        max-width: 100%;
+        overflow-x: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 11px;
+        background: #ffffff;
+      }
+      .finance-gltb-table {
+        width: 100%;
+        min-width: 860px;
+        border-collapse: collapse;
+        color: #334155;
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+      }
+      .finance-gltb-table th,
+      .finance-gltb-table td {
+        border-bottom: 1px solid #edf2f7;
+        padding: 10px 11px;
+        text-align: right;
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+      .finance-gltb-table th:first-child,
+      .finance-gltb-table td:first-child {
+        text-align: left;
+      }
+      .finance-gltb-table thead th {
+        background: #f8fafc;
+        color: #526072;
+        font-size: 9.5px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .finance-gltb-table tbody tr:last-child td {
+        border-bottom: 0;
+      }
+      .finance-gltb-account {
+        display: inline-block;
+        padding-left: calc(var(--finance-gltb-depth, 0) * 14px);
+        font-weight: 650;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .finance-gltb-account.is-group {
+        color: #0f766e;
+        font-weight: 800;
+      }
+      .finance-gltb-table tfoot th,
+      .finance-gltb-table tfoot td {
+        border-top: 2px solid #cbd5e1;
+        border-bottom: 0;
+        background: #f8fafc;
+        color: #172033;
+        font-weight: 800;
+      }
       @media (max-width: 860px) {
         .finance-control-grid {
           grid-template-columns: 1fr;
@@ -267,6 +538,23 @@
         }
         .finance-control-actions {
           justify-content: flex-start;
+        }
+        .finance-gltb-heading {
+          display: grid;
+        }
+        .finance-gltb-readonly-badge {
+          justify-self: start;
+        }
+        .finance-gltb-form {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .finance-gltb-summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 420px) {
+        .finance-gltb-summary-grid {
+          grid-template-columns: minmax(0, 1fr);
         }
       }
     `;
@@ -1416,6 +1704,291 @@
     return true;
   }
 
+  function isStrictGLTBText(value) {
+    if (typeof value !== "string" || !value || value !== value.trim()) return false;
+    for (let index = 0; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      if (code < 32 || code === 127) return false;
+    }
+    return true;
+  }
+
+  function isSafeGLTBText(value) {
+    if (!isStrictGLTBText(value)) return false;
+    const lowered = value.toLowerCase();
+    const appRoute = ["", "app", ""].join("/");
+    const reportUnderscore = ["query", "report"].join("_");
+    const reportHyphen = ["query", "report"].join("-");
+    return !lowered.includes("http://")
+      && !lowered.includes("https://")
+      && !lowered.includes("javascript:")
+      && !lowered.includes(appRoute)
+      && !lowered.includes("/desk/")
+      && !lowered.includes(reportUnderscore)
+      && !lowered.includes(reportHyphen);
+  }
+
+  function isCanonicalGLTBAmount(value, precision) {
+    if (typeof value !== "string" || !Number.isInteger(precision) || precision < 0) return false;
+    const parts = value.split(".");
+    if (precision === 0) {
+      if (parts.length !== 1) return false;
+    } else if (parts.length !== 2 || parts[1].length !== precision) {
+      return false;
+    }
+    const whole = parts[0];
+    if (!whole || (whole.length > 1 && whole[0] === "0")) return false;
+    if (![...whole].every((character) => character >= "0" && character <= "9")) return false;
+    return precision === 0 || [...parts[1]].every(
+      (character) => character >= "0" && character <= "9"
+    );
+  }
+
+  function validateGLTBAmounts(value, precision) {
+    return hasExactKeys(value, GL_TRIAL_BALANCE_AMOUNT_KEYS)
+      && GL_TRIAL_BALANCE_AMOUNT_KEYS.every(
+        (key) => isCanonicalGLTBAmount(value[key], precision)
+      );
+  }
+
+  function isGLTBAmountsBalanced(amounts) {
+    return amounts.opening_debit === amounts.opening_credit
+      && amounts.movement_debit === amounts.movement_credit
+      && amounts.closing_debit === amounts.closing_credit;
+  }
+
+  function hasGLTBPresentationRole(roleSource) {
+    const roles = Array.isArray(roleSource)
+      ? roleSource
+      : (
+        typeof frappe !== "undefined" && Array.isArray(frappe.user_roles)
+          ? frappe.user_roles
+          : []
+      );
+    if (!roles.every((role) => isStrictGLTBText(role))) return false;
+    if (new Set(roles).size !== roles.length) return false;
+    return roles.includes("Accounts Manager")
+      && !roles.some((role) => GL_TRIAL_BALANCE_PRIVILEGED_ROLES.includes(role));
+  }
+
+  function validateGLTBQuery(query) {
+    return hasExactKeys(query, ["company", "fiscal_year", "from_date", "to_date"])
+      && isSafeGLTBText(query.company)
+      && isSafeGLTBText(query.fiscal_year)
+      && isValidCalendarDate(query.from_date)
+      && isValidCalendarDate(query.to_date)
+      && query.from_date <= query.to_date;
+  }
+
+  function validateGLTBBoundary(value) {
+    const expected = {
+      accounting_execution_enabled: false,
+      cancellation_control_claimed: false,
+      mutation_enabled: false,
+      party_identifiers_returned: false,
+      period_close_control_claimed: false,
+      read_only: true,
+      source_gl_entries_returned: false,
+      voucher_identifiers_returned: false,
+    };
+    return hasExactKeys(value, Object.keys(expected))
+      && Object.keys(expected).every(
+        (key) => typeof value[key] === "boolean" && value[key] === expected[key]
+      );
+  }
+
+  function validateGLTBScope(value, query) {
+    if (!hasExactKeys(value, GL_TRIAL_BALANCE_SCOPE_KEYS)) return false;
+    if (value.company !== query.company
+      || value.fiscal_year !== query.fiscal_year
+      || value.from_date !== query.from_date
+      || value.to_date !== query.to_date) return false;
+    if (!isSafeGLTBText(value.company)
+      || !isSafeGLTBText(value.fiscal_year)
+      || !isSafeGLTBText(value.base_currency)
+      || !isSafeGLTBText(value.default_finance_book)) return false;
+    if (!Number.isInteger(value.currency_precision) || value.currency_precision < 0) return false;
+    if (!Number.isInteger(value.active_dimensions) || value.active_dimensions !== 0) return false;
+    if (!isValidCalendarDate(value.fiscal_year_start)
+      || !isValidCalendarDate(value.fiscal_year_end)
+      || value.fiscal_year_start > value.from_date
+      || value.from_date > value.to_date
+      || value.to_date > value.fiscal_year_end) return false;
+    return Array.isArray(value.finance_book_scope)
+      && value.finance_book_scope.length === GL_TRIAL_BALANCE_FINANCE_BOOK_SCOPE.length
+      && value.finance_book_scope.every(
+        (item, index) => item === GL_TRIAL_BALANCE_FINANCE_BOOK_SCOPE[index]
+      );
+  }
+
+  function validateGLTBPayload(payload, query) {
+    if (!validateGLTBQuery(query)
+      || !hasExactKeys(payload, GL_TRIAL_BALANCE_TOP_LEVEL_KEYS)
+      || payload.schema_version !== GL_TRIAL_BALANCE_SCHEMA_VERSION
+      || payload.state !== "ready"
+      || !validateGLTBBoundary(payload.boundary)
+      || !validateGLTBScope(payload.scope, query)) return false;
+    if (!Array.isArray(payload.lines) || payload.lines.length === 0) return false;
+    const precision = payload.scope.currency_precision;
+    const prior = new Map();
+    const parentIds = new Set();
+    for (const line of payload.lines) {
+      if (!hasExactKeys(line, GL_TRIAL_BALANCE_LINE_KEYS)
+        || !isSafeGLTBText(line.account_id)
+        || prior.has(line.account_id)
+        || !Number.isInteger(line.depth)
+        || line.depth < 0
+        || typeof line.is_group !== "boolean"
+        || !GL_TRIAL_BALANCE_ROOT_TYPES.includes(line.root_type)
+        || !validateGLTBAmounts(line.amounts, precision)) return false;
+      if (line.parent_account_id === null) {
+        if (line.depth !== 0) return false;
+      } else {
+        if (!isSafeGLTBText(line.parent_account_id)) return false;
+        const parent = prior.get(line.parent_account_id);
+        if (!parent
+          || line.depth !== parent.depth + 1
+          || line.root_type !== parent.root_type) return false;
+        parentIds.add(line.parent_account_id);
+      }
+      prior.set(line.account_id, line);
+    }
+    for (const line of payload.lines) {
+      if (line.is_group !== parentIds.has(line.account_id)) return false;
+    }
+    return hasExactKeys(payload.totals, ["gross", "presentation"])
+      && validateGLTBAmounts(payload.totals.gross, precision)
+      && validateGLTBAmounts(payload.totals.presentation, precision)
+      && isGLTBAmountsBalanced(payload.totals.gross)
+      && isGLTBAmountsBalanced(payload.totals.presentation);
+  }
+
+  function exactGLTBBalanceStatus(payload) {
+    const balanced = isGLTBAmountsBalanced(payload.totals.gross)
+      && isGLTBAmountsBalanced(payload.totals.presentation);
+    return Object.freeze({
+      balanced,
+      label: balanced ? "Exactly balanced" : "Not balanced",
+    });
+  }
+
+  function renderGLTBState(kind, payload) {
+    const copy = {
+      empty: [
+        "Choose an accounting period",
+        "Enter the fiscal year and date range to load the authenticated read-only trial balance.",
+      ],
+      loading: [
+        "Loading trial balance",
+        "Finance is validating the scoped read. No partial accounting result is shown.",
+      ],
+      denied: [
+        "GL / Trial Balance access denied",
+        "This role or company scope is not authorized. No accounting data was shown.",
+      ],
+      unavailable: [
+        "GL / Trial Balance unavailable",
+        "The read could not be completed safely. No partial accounting data was shown.",
+      ],
+      error: [
+        "GL / Trial Balance could not be shown",
+        "Check the accounting period and try again. No partial accounting data was shown.",
+      ],
+    };
+    if (kind === "ready" && payload) return renderGLTBReady(payload);
+    const state = Object.prototype.hasOwnProperty.call(copy, kind) ? kind : "unavailable";
+    return '<div class="finance-gltb-state-card is-' + state
+      + '" data-finance-gltb-state="' + state + '">'
+      + '<h3 class="finance-gltb-state-title">' + escapeHtml(copy[state][0]) + '</h3>'
+      + '<p class="finance-gltb-state-detail">' + escapeHtml(copy[state][1]) + '</p>'
+      + '</div>';
+  }
+
+  function renderGLTBSummaryCard(label, value) {
+    return '<div class="finance-gltb-summary-card">'
+      + '<span class="finance-gltb-summary-label">' + escapeHtml(label) + '</span>'
+      + '<span class="finance-gltb-summary-value">' + escapeHtml(value) + '</span>'
+      + '</div>';
+  }
+
+  function renderGLTBAmountCells(amounts) {
+    return GL_TRIAL_BALANCE_DISPLAY_AMOUNT_KEYS.map(
+      (key) => '<td>' + escapeHtml(amounts[key]) + '</td>'
+    ).join("");
+  }
+
+  function renderGLTBReady(payload) {
+    const scope = payload.scope;
+    const status = exactGLTBBalanceStatus(payload);
+    const rows = payload.lines.map((line) => (
+      '<tr>'
+      + '<th scope="row"><span class="finance-gltb-account'
+      + (line.is_group ? ' is-group' : '')
+      + '" style="--finance-gltb-depth:' + String(line.depth) + '">'
+      + escapeHtml(line.account_id) + '</span></th>'
+      + renderGLTBAmountCells(line.amounts)
+      + '</tr>'
+    )).join("");
+    const totals = payload.totals.presentation;
+    const period = scope.from_date + " to " + scope.to_date;
+    const financeBook = scope.default_finance_book + " | "
+      + scope.finance_book_scope.join(" | ");
+    return '<div data-finance-gltb-state="ready">'
+      + '<div class="finance-gltb-summary-grid">'
+      + renderGLTBSummaryCard("Accounting period", period)
+      + renderGLTBSummaryCard("Base currency", scope.base_currency)
+      + renderGLTBSummaryCard("Finance Book cohort", financeBook)
+      + renderGLTBSummaryCard("Exact balance", status.label)
+      + '</div>'
+      + '<div class="finance-gltb-table-wrap" tabindex="0" aria-label="GL and Trial Balance account hierarchy">'
+      + '<table class="finance-gltb-table">'
+      + '<caption class="finance-control-live-status">Authenticated read-only GL and Trial Balance</caption>'
+      + '<thead><tr>'
+      + '<th scope="col">Account hierarchy</th>'
+      + '<th scope="col">Opening debit</th><th scope="col">Opening credit</th>'
+      + '<th scope="col">Movement debit</th><th scope="col">Movement credit</th>'
+      + '<th scope="col">Closing debit</th><th scope="col">Closing credit</th>'
+      + '</tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '<tfoot><tr><th scope="row">Presentation totals</th>'
+      + renderGLTBAmountCells(totals)
+      + '</tr></tfoot>'
+      + '</table></div></div>';
+  }
+
+  function renderGLTBWorkspace(company, initialState, roleSource) {
+    const scopedCompany = isSafeGLTBText(company) ? company : "";
+    const presentationAllowed = Boolean(scopedCompany) && hasGLTBPresentationRole(roleSource);
+    const state = presentationAllowed ? (initialState || "empty") : "denied";
+    const form = presentationAllowed
+      ? '<form class="finance-gltb-form" data-finance-gltb-form="1"'
+        + ' data-finance-gltb-company="' + escapeHtml(scopedCompany) + '">'
+        + '<div class="finance-gltb-field"><span class="finance-gltb-field-label">Company</span>'
+        + '<output class="finance-gltb-context">' + escapeHtml(scopedCompany) + '</output></div>'
+        + '<label class="finance-gltb-field"><span class="finance-gltb-field-label">Fiscal year</span>'
+        + '<input class="finance-gltb-input" name="fiscal_year" type="text" required autocomplete="off"></label>'
+        + '<label class="finance-gltb-field"><span class="finance-gltb-field-label">From date</span>'
+        + '<input class="finance-gltb-input" name="from_date" type="date" required></label>'
+        + '<label class="finance-gltb-field"><span class="finance-gltb-field-label">To date</span>'
+        + '<input class="finance-gltb-input" name="to_date" type="date" required></label>'
+        + '<button class="finance-gltb-submit" type="submit" data-finance-gltb-submit="1">'
+        + 'Load trial balance</button></form>'
+      : "";
+    return '<section class="finance-gltb-workspace" data-finance-gltb-workspace="1"'
+      + ' aria-labelledby="finance-gltb-title">'
+      + '<div class="finance-gltb-heading"><div>'
+      + '<p class="finance-gltb-kicker">Finance Cycle 2 | GL / Trial Balance</p>'
+      + '<h2 class="finance-gltb-title" id="finance-gltb-title">General Ledger foundation</h2>'
+      + '<p class="finance-gltb-copy">Permissioned account hierarchy and exact opening, movement,'
+      + ' and closing posture. No vouchers, parties, native reports, exports, or accounting actions.</p>'
+      + '</div><span class="finance-gltb-readonly-badge">Read-only</span></div>'
+      + form
+      + '<div class="finance-gltb-state" data-finance-gltb-state-host="1">'
+      + renderGLTBState(state)
+      + '</div><p class="finance-control-live-status" data-finance-gltb-live-status="1"'
+      + ' role="status" aria-live="polite" aria-atomic="true"></p></section>';
+  }
+
   function hasFinancialRows(payload) {
     return hasForbiddenFinancePayloadShape(payload);
   }
@@ -1514,6 +2087,8 @@
           `}
         </section>
 
+        ${renderGLTBWorkspace(payload.company_scope.company, "empty")}
+
         <section class="finance-control-panel" aria-label="Accounting overview posture">
           <h2 class="finance-control-panel-title">Overview posture</h2>
           <div class="finance-control-list">
@@ -1582,6 +2157,7 @@
           businessSafeText(payload.state.detail, "This shell is limited to approved accounting, audit, or system roles."),
           "Restricted"
         )}
+        ${renderGLTBWorkspace("", "denied")}
         <section class="finance-control-panel finance-control-boundary" aria-label="Finance access restricted">
           <h2 class="finance-control-panel-title">${escapeHtml(businessSafeText(payload.state.title, "Finance Control Desk is restricted"))}</h2>
           <p class="finance-control-panel-copy">The Finance overview is not shown for this role. No row-level financial data, metrics, reports, exports, or execution routes are returned or shown.</p>
@@ -1696,6 +2272,234 @@
     });
   }
 
+  function safeGLTBErrorStatus(error) {
+    const candidates = error
+      ? [error.status, error.statusCode, error.httpStatus]
+      : [];
+    for (const candidate of candidates) {
+      if (Number.isInteger(candidate) && candidate >= 0) return candidate;
+    }
+    return 0;
+  }
+
+  function createGLTrialBalanceRequest(callApi, query, options) {
+    if (typeof callApi !== "function" || !validateGLTBQuery(query)) {
+      return Promise.reject(Object.freeze({ status: 0 }));
+    }
+    const opts = options || {};
+    const timeoutMs = Number.isFinite(opts.timeoutMs) && opts.timeoutMs > 0
+      ? opts.timeoutMs
+      : GL_TRIAL_BALANCE_TIMEOUT_MS;
+    const scheduleTimeout = opts.scheduleTimeout || setTimeout;
+    const cancelTimeout = opts.cancelTimeout || clearTimeout;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer = null;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) cancelTimeout(timer);
+        callback(value);
+      };
+      const resolveOnce = (response) => finish(
+        resolve,
+        response && Object.prototype.hasOwnProperty.call(response, "message")
+          ? response.message
+          : null
+      );
+      const rejectOnce = (error) => finish(
+        reject,
+        Object.freeze({ status: safeGLTBErrorStatus(error) })
+      );
+      timer = scheduleTimeout(
+        () => rejectOnce({ status: 0 }),
+        timeoutMs
+      );
+      let request;
+      try {
+        request = callApi({
+          method: GL_TRIAL_BALANCE_METHOD,
+          type: "POST",
+          args: {
+            company: query.company,
+            fiscal_year: query.fiscal_year,
+            from_date: query.from_date,
+            to_date: query.to_date,
+          },
+          callback: resolveOnce,
+          error: rejectOnce,
+        });
+      } catch (error) {
+        rejectOnce(error);
+        return;
+      }
+      if (request && typeof request.fail === "function") {
+        request.fail(rejectOnce);
+      } else if (request && typeof request.catch === "function") {
+        request.catch(rejectOnce);
+      }
+    });
+  }
+
+  function callGLTrialBalance(query) {
+    if (!frappe || typeof frappe.call !== "function") {
+      return Promise.reject(Object.freeze({ status: 0 }));
+    }
+    const browser = typeof window !== "undefined" ? window : globalThis;
+    return createGLTrialBalanceRequest(
+      (request) => frappe.call(request),
+      query,
+      {
+        scheduleTimeout: typeof browser.setTimeout === "function"
+          ? browser.setTimeout.bind(browser)
+          : setTimeout,
+        cancelTimeout: typeof browser.clearTimeout === "function"
+          ? browser.clearTimeout.bind(browser)
+          : clearTimeout,
+      }
+    );
+  }
+
+  function createGLTBRequestCoordinator(callContext) {
+    let requestSerial = 0;
+
+    function invalidate() {
+      requestSerial += 1;
+    }
+
+    function load(query, options) {
+      const opts = options || {};
+      const token = ++requestSerial;
+      const request = Promise.resolve().then(() => (
+        token === requestSerial ? callContext(query) : null
+      ));
+      return request.then((payload) => {
+        if (token !== requestSerial) return { stale: true, payload: null };
+        if (typeof opts.onPayload === "function") opts.onPayload(payload);
+        return { stale: false, payload };
+      }).catch((error) => {
+        if (token !== requestSerial) return { stale: true, error: null };
+        if (typeof opts.onError === "function") opts.onError(error);
+        return { stale: false, error: null };
+      }).finally(() => {
+        if (token === requestSerial && typeof opts.onSettled === "function") {
+          opts.onSettled();
+        }
+      });
+    }
+
+    return Object.freeze({ invalidate, load });
+  }
+
+  function readGLTBQuery(form) {
+    if (!form || !form.elements) return null;
+    const fiscalYear = form.elements.fiscal_year;
+    const fromDate = form.elements.from_date;
+    const toDate = form.elements.to_date;
+    const query = {
+      company: String(form.getAttribute("data-finance-gltb-company") || ""),
+      fiscal_year: String((fiscalYear && fiscalYear.value) || ""),
+      from_date: String((fromDate && fromDate.value) || ""),
+      to_date: String((toDate && toDate.value) || ""),
+    };
+    return validateGLTBQuery(query) ? query : null;
+  }
+
+  function sameGLTBQuery(left, right) {
+    return Boolean(left && right
+      && left.company === right.company
+      && left.fiscal_year === right.fiscal_year
+      && left.from_date === right.from_date
+      && left.to_date === right.to_date);
+  }
+
+  function gltbCoordinatorFor(target) {
+    if (!target.__financeGLTBRequestCoordinator) {
+      target.__financeGLTBRequestCoordinator = createGLTBRequestCoordinator(callGLTrialBalance);
+    }
+    return target.__financeGLTBRequestCoordinator;
+  }
+
+  function setGLTBState(target, kind, payload) {
+    if (!target) return false;
+    const host = target.querySelector("[data-finance-gltb-state-host]");
+    if (!host) return false;
+    host.innerHTML = renderGLTBState(kind, payload);
+    host.setAttribute("aria-busy", kind === "loading" ? "true" : "false");
+    const form = target.querySelector("[data-finance-gltb-form]");
+    const submit = form && form.querySelector("[data-finance-gltb-submit]");
+    if (submit) submit.disabled = kind === "loading";
+    const live = target.querySelector("[data-finance-gltb-live-status]");
+    if (live) {
+      const announcements = {
+        empty: "GL and Trial Balance period cleared.",
+        loading: "Loading GL and Trial Balance.",
+        ready: "GL and Trial Balance loaded.",
+        denied: "GL and Trial Balance access denied.",
+        unavailable: "GL and Trial Balance unavailable.",
+        error: "GL and Trial Balance could not be shown.",
+      };
+      live.textContent = announcements[kind] || announcements.unavailable;
+    }
+    return true;
+  }
+
+  function invalidateGLTBResults(target, nextState) {
+    if (!target) return;
+    if (target.__financeGLTBRequestCoordinator) {
+      target.__financeGLTBRequestCoordinator.invalidate();
+    }
+    setGLTBState(target, nextState || "empty");
+  }
+
+  function hasCurrentGLTBAuthority(target, query) {
+    if (!hasCurrentFinanceTargetAuthority(target)) return false;
+    const form = target.querySelector("[data-finance-gltb-form]");
+    return sameGLTBQuery(readGLTBQuery(form), query);
+  }
+
+  function bindGLTrialBalance(target) {
+    if (!target) return false;
+    const form = target.querySelector("[data-finance-gltb-form]");
+    if (!form || form.__financeGLTBBound) return false;
+    form.__financeGLTBBound = true;
+    form.addEventListener("input", () => {
+      invalidateGLTBResults(target, "empty");
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const query = readGLTBQuery(form);
+      if (!query || !hasCurrentFinanceTargetAuthority(target)) {
+        invalidateGLTBResults(target, "error");
+        return;
+      }
+      setGLTBState(target, "loading");
+      gltbCoordinatorFor(target).load(query, {
+        onPayload(payload) {
+          if (!hasCurrentGLTBAuthority(target, query)) return;
+          if (!validateGLTBPayload(payload, query)) {
+            setGLTBState(target, "error");
+            return;
+          }
+          setGLTBState(target, "ready", payload);
+        },
+        onError(error) {
+          if (!hasCurrentGLTBAuthority(target, query)) return;
+          const status = safeGLTBErrorStatus(error);
+          setGLTBState(target, status === 401 || status === 403 ? "denied" : "unavailable");
+        },
+        onSettled() {
+          if (!hasCurrentGLTBAuthority(target, query)) return;
+          const host = target.querySelector("[data-finance-gltb-state-host]");
+          if (host) host.setAttribute("aria-busy", "false");
+          const submit = form.querySelector("[data-finance-gltb-submit]");
+          if (submit) submit.disabled = false;
+        },
+      });
+    });
+    return true;
+  }
+
   function callOverviewContext() {
     if (!frappe || typeof frappe.call !== "function") {
       return Promise.reject(new Error("Frappe call API unavailable"));
@@ -1793,6 +2597,7 @@
       </div>`;
     }
     bindRefresh(target);
+    bindGLTrialBalance(target);
   }
 
   function scheduleFinanceAnnouncement(callback, scheduler) {
@@ -1947,6 +2752,7 @@
       target.__financeRefreshFocusIntent = null;
     }
     target.__financeControlDeskOverviewPayload = null;
+    invalidateGLTBResults(target, "empty");
     invalidateFinanceAnnouncement(target, true);
     setHtml(target, renderLoading());
     setRequestBusy(target, true);
@@ -2029,6 +2835,7 @@
       target.__financeControlDeskRequestCoordinator.invalidate();
     }
     invalidateFinanceAnnouncement(target, true);
+    invalidateGLTBResults(target, "empty");
     target.__financeControlDeskOverviewPayload = null;
     setHtml(target, renderLoading());
     setRequestBusy(target, false);
@@ -2053,6 +2860,20 @@
       normalizePayload,
       validateFinanceOverviewPayload,
       createOverviewContextRequest,
+      isCanonicalGLTBAmount,
+      validateGLTBAmounts,
+      validateGLTBQuery,
+      validateGLTBPayload,
+      hasGLTBPresentationRole,
+      exactGLTBBalanceStatus,
+      renderGLTBState,
+      renderGLTBReady,
+      renderGLTBWorkspace,
+      createGLTrialBalanceRequest,
+      createGLTBRequestCoordinator,
+      readGLTBQuery,
+      invalidateGLTBResults,
+      bindGLTrialBalance,
       createOverviewRequestCoordinator,
       createFinanceRefreshFocusIntent,
       invalidateFinanceAnnouncement,
