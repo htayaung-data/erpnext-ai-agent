@@ -47,9 +47,13 @@ _SUPPORTED_DRIVERS: Final = {
     ),
 }
 
+# MariaDB's @@tx_isolation and @@tx_read_only expose default/session state,
+# not authoritative state for the transaction currently in progress.  The
+# owned snapshot is therefore proved by successful execution of the two exact
+# statements below, followed by continuous active-transaction and connection
+# identity checks until the terminal rollback.
 _PREFLIGHT_SQL: Final = (
-    "SELECT VERSION(), CONNECTION_ID(), @@in_transaction, "
-    "@@tx_isolation, @@tx_read_only"
+    "SELECT VERSION(), CONNECTION_ID(), @@in_transaction"
 )
 _SET_ISOLATION_SQL: Final = (
     "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
@@ -334,7 +338,7 @@ class FrappeGLTrialBalanceRuntime:
         if selected_driver is None or selected_driver != self._policy.expected_driver:
             _raise_unavailable()
         preflight = self._raw_one(raw, _PREFLIGHT_SQL)
-        if len(preflight) != 5:
+        if len(preflight) != 3:
             _raise_unavailable()
         server_version = _text(preflight[0])
         connection_id = preflight[1]
@@ -344,8 +348,6 @@ class FrappeGLTrialBalanceRuntime:
             or type(connection_id) is not int
             or connection_id <= 0
             or _db_flag(in_transaction) != 0
-            or not _text(preflight[3])
-            or _db_flag(preflight[4]) not in (0, 1)
         ):
             _raise_unavailable()
         return selected_driver, connection_id
@@ -353,13 +355,11 @@ class FrappeGLTrialBalanceRuntime:
     def _state(self, context: _SnapshotContext) -> None:
         state = self._raw_one(context.raw_connection, _STATE_SQL)
         if (
-            len(state) != 5
+            len(state) != 3
             or state[0] != self._policy.expected_server_version
             or type(state[1]) is not int
             or state[1] != context.connection_id
             or _db_flag(state[2]) != 1
-            or state[3] != "REPEATABLE-READ"
-            or _db_flag(state[4]) != 1
         ):
             _raise_unavailable()
 
@@ -464,6 +464,11 @@ class FrappeGLTrialBalanceRuntime:
             # treat a cursor-close failure as proof that no mutation occurred.
             mutation_attempted = True
             self._raw_execute(raw, _SET_ISOLATION_SQL)
+            # The SET applies to the next transaction; the immediately
+            # following START constructs that same transaction as read-only
+            # with a consistent snapshot.  _state then proves that it remains
+            # active on the same wrapper, raw connection, and server session.
+            # No session-default variable is treated as current-state proof.
             self._raw_execute(raw, _START_SNAPSHOT_SQL)
             self._generation += 1
             context = _SnapshotContext(
@@ -498,7 +503,7 @@ class FrappeGLTrialBalanceRuntime:
                 if connection_id is not None:
                     state = self._raw_one(raw, _STATE_SQL)
                     if (
-                        len(state) != 5
+                        len(state) != 3
                         or state[0] != self._policy.expected_server_version
                         or state[1] != connection_id
                         or _db_flag(state[2]) != 0
@@ -1048,7 +1053,7 @@ class FrappeGLTrialBalanceRuntime:
             self._validate_binding(context, final_wrapper, final_raw)
             state = self._raw_one(context.raw_connection, _STATE_SQL)
             if (
-                len(state) != 5
+                len(state) != 3
                 or state[0] != self._policy.expected_server_version
                 or state[1] != context.connection_id
                 or _db_flag(state[2]) != 0

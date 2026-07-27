@@ -57,8 +57,6 @@ class _RawBase:
         self.server = SERVER
         self.connection_id = CONNECTION_ID
         self.active: object = False
-        self.read_only: object = False
-        self.isolation: object = "REPEATABLE-READ"
         self.closed = False
         self.fail_statement: str | None = None
         self.fail_execute: tuple[str | None, int] = (None, 0)
@@ -97,20 +95,14 @@ class _RawBase:
                     int(self.active)
                     if type(self.active) is bool
                     else self.active,
-                    self.isolation,
-                    int(self.read_only)
-                    if type(self.read_only) is bool
-                    else self.read_only,
                 )
         elif statement == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ":
             row = None
         elif statement == "START TRANSACTION READ ONLY, WITH CONSISTENT SNAPSHOT":
             self.active = True
-            self.read_only = True
             row = None
         elif statement == "ROLLBACK AND NO CHAIN":
             self.active = False
-            self.read_only = False
             row = None
         elif "FROM `tabAccount`" in statement:
             row = (self.account_count,)
@@ -129,7 +121,6 @@ class _RawBase:
     def close(self) -> None:
         self.closed = True
         self.active = False
-        self.read_only = False
 
 
 def _driver_types(driver: str) -> tuple[type, type]:
@@ -312,11 +303,7 @@ class FrappeRuntimeTests(unittest.TestCase):
                 snapshot = _begin(runtime)
                 self.assertEqual(snapshot.transaction_isolation, "REPEATABLE READ")
                 runtime.close_read_snapshot(snapshot)
-                statements = [item[0] for item in frappe.raw.statements]
-                probe = (
-                    "SELECT VERSION(), CONNECTION_ID(), @@in_transaction, "
-                    "@@tx_isolation, @@tx_read_only"
-                )
+                probe = "SELECT VERSION(), CONNECTION_ID(), @@in_transaction"
                 self.assertEqual(
                     frappe.raw.statements,
                     [
@@ -337,7 +324,6 @@ class FrappeRuntimeTests(unittest.TestCase):
                     ],
                 )
                 self.assertFalse(frappe.raw.active)
-                self.assertFalse(frappe.raw.read_only)
                 self.assertFalse(frappe.raw.closed)
 
     def test_unknown_driver_and_environment_mismatches_fail_closed(self) -> None:
@@ -359,7 +345,6 @@ class FrappeRuntimeTests(unittest.TestCase):
                     frappe.raw.server = "wrong"
                 if mutation == "preexisting":
                     frappe.raw.active = True
-                    frappe.raw.read_only = True
                 self.assertUnavailable(lambda: _begin(runtime))
 
     def test_transaction_statement_failures_discard_and_close(self) -> None:
@@ -371,8 +356,7 @@ class FrappeRuntimeTests(unittest.TestCase):
                 runtime, frappe, _ = _runtime()
                 frappe.raw.fail_statement = statement
                 self.assertUnavailable(lambda: _begin(runtime))
-                if statement.startswith("START"):
-                    self.assertTrue(frappe.raw.closed)
+                self.assertTrue(frappe.raw.closed)
 
     def test_roles_user_permissions_and_all_nine_permission_calls(self) -> None:
         runtime, frappe, _ = _runtime()
@@ -575,17 +559,15 @@ class FrappeRuntimeTests(unittest.TestCase):
         self.assertFalse(hasattr(module, "runtime"))
 
 
-    def test_session_and_transaction_state_drift_close_exceptionally(self) -> None:
-        for mutation in ("session", "isolation", "read-only"):
+    def test_session_and_transaction_continuity_drift_close_exceptionally(self) -> None:
+        for mutation in ("session", "transaction"):
             with self.subTest(mutation=mutation):
                 runtime, frappe, _ = _runtime()
                 snapshot = _begin(runtime)
                 if mutation == "session":
                     frappe.local.session["user"] = "other@example.test"
-                elif mutation == "isolation":
-                    frappe.raw.isolation = "READ-COMMITTED"
                 else:
-                    frappe.raw.read_only = 0
+                    frappe.raw.active = False
                 self.assertUnavailable(
                     lambda: runtime.final_snapshot_evidence(snapshot)
                 )
@@ -597,7 +579,6 @@ class FrappeRuntimeTests(unittest.TestCase):
             "wrapper-class",
             "raw-class",
             "close-transaction",
-            "close-read-only",
         ):
             with self.subTest(mutation=mutation):
                 runtime, frappe, _ = _runtime()
@@ -613,10 +594,8 @@ class FrappeRuntimeTests(unittest.TestCase):
                     type(frappe.local.db).__module__ = "unapproved.wrapper"
                 elif mutation == "raw-class":
                     type(frappe.raw).__module__ = "unapproved.raw"
-                elif mutation == "close-transaction":
-                    frappe.raw.active = False
                 else:
-                    frappe.raw.read_only = False
+                    frappe.raw.active = False
                 self.assertUnavailable(
                     lambda: runtime.close_read_snapshot(snapshot)
                 )
@@ -625,10 +604,7 @@ class FrappeRuntimeTests(unittest.TestCase):
     def test_strict_db_permission_and_user_permission_flags(self) -> None:
         runtime, frappe, _ = _runtime()
         frappe.raw.active = 0
-        frappe.raw.read_only = False
-        frappe.raw.state_override = (
-            SERVER, CONNECTION_ID, False, "REPEATABLE-READ", 0
-        )
+        frappe.raw.state_override = (SERVER, CONNECTION_ID, False)
         self.assertUnavailable(lambda: _begin(runtime))
         self.assertTrue(frappe.raw.closed)
 
@@ -658,7 +634,7 @@ class FrappeRuntimeTests(unittest.TestCase):
         )
 
     def test_cursor_close_failures_are_discarded_and_physically_closed(self) -> None:
-        probe = "SELECT VERSION(), CONNECTION_ID(), @@in_transaction, @@tx_isolation, @@tx_read_only"
+        probe = "SELECT VERSION(), CONNECTION_ID(), @@in_transaction"
         account_sql = "SELECT COUNT(DISTINCT `name`) FROM `tabAccount` WHERE `company` = %(company)s"
         cases = (
             (probe, 1, "begin"),
@@ -704,8 +680,8 @@ class FrappeRuntimeTests(unittest.TestCase):
 
         for malformed in (
             (SERVER, CONNECTION_ID),
-            (SERVER, CONNECTION_ID, 0, "REPEATABLE-READ", 0, "extra"),
-            (SERVER, "731", 0, "REPEATABLE-READ", 0),
+            (SERVER, CONNECTION_ID, 0, "extra"),
+            (SERVER, "731", 0),
         ):
             with self.subTest(malformed=malformed):
                 runtime, frappe, _ = _runtime()
@@ -1000,10 +976,7 @@ class FrappeRuntimeTests(unittest.TestCase):
         )
 
     def test_occurrence_specific_probe_failures_close_without_leakage(self) -> None:
-        probe = (
-            "SELECT VERSION(), CONNECTION_ID(), @@in_transaction, "
-            "@@tx_isolation, @@tx_read_only"
-        )
+        probe = "SELECT VERSION(), CONNECTION_ID(), @@in_transaction"
         set_isolation = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
         start = "START TRANSACTION READ ONLY, WITH CONSISTENT SNAPSHOT"
         rollback = "ROLLBACK AND NO CHAIN"
@@ -1052,29 +1025,47 @@ class FrappeRuntimeTests(unittest.TestCase):
                 )
                 self.assertTrue(frappe.raw.closed)
                 self.assertFalse(frappe.raw.active)
-                self.assertFalse(frappe.raw.read_only)
 
-    def test_malformed_preflight_isolation_is_generic_and_closed(self) -> None:
-        for isolation in (None, "", " REPEATABLE-READ", "REPEATABLE-READ ", "READ\x00COMMITTED"):
-            with self.subTest(isolation=isolation):
+    def test_snapshot_construction_and_current_state_contract(self) -> None:
+        module = __import__(
+            "erp_workspace_ui.finance_accounting.gl_trial_balance_frappe_runtime",
+            fromlist=["FrappeGLTrialBalanceRuntime"],
+        )
+        probe = "SELECT VERSION(), CONNECTION_ID(), @@in_transaction"
+        set_isolation = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
+        start_snapshot = (
+            "START TRANSACTION READ ONLY, WITH CONSISTENT SNAPSHOT"
+        )
+        self.assertEqual(module._PREFLIGHT_SQL, probe)
+        self.assertEqual(module._STATE_SQL, probe)
+        self.assertEqual(module._SET_ISOLATION_SQL, set_isolation)
+        self.assertEqual(module._START_SNAPSHOT_SQL, start_snapshot)
+        self.assertNotIn("@@tx_isolation", probe)
+        self.assertNotIn("@@tx_read_only", probe)
+        self.assertNotIn("READ WRITE", start_snapshot)
+        self.assertNotIn("READ COMMITTED", set_isolation)
+
+        for label, conflicting_state in (
+            ("missing", (SERVER, CONNECTION_ID)),
+            ("malformed", (SERVER, CONNECTION_ID, "1")),
+            ("inactive", (SERVER, CONNECTION_ID, 0)),
+            ("wrong-server", ("wrong", CONNECTION_ID, 1)),
+        ):
+            with self.subTest(label=label):
                 runtime, frappe, _ = _runtime()
-                probe = (
-                    "SELECT VERSION(), CONNECTION_ID(), @@in_transaction, "
-                    "@@tx_isolation, @@tx_read_only"
-                )
-                frappe.raw.state_overrides[1] = (
-                    SERVER,
-                    CONNECTION_ID,
-                    0,
-                    isolation,
-                    0,
-                )
+                frappe.raw.state_overrides[2] = conflicting_state
                 self.assertUnavailable(lambda: _begin(runtime))
-                self.assertEqual(frappe.raw.statements, [(probe, None)])
-                self.assertEqual(frappe.raw.statement_counts, {probe: 1})
+                statements = [item[0] for item in frappe.raw.statements]
+                self.assertEqual(
+                    statements[:4],
+                    [probe, set_isolation, start_snapshot, probe],
+                )
+                self.assertEqual(
+                    statements[-2:],
+                    ["ROLLBACK AND NO CHAIN", probe],
+                )
                 self.assertTrue(frappe.raw.closed)
                 self.assertFalse(frappe.raw.active)
-                self.assertFalse(frappe.raw.read_only)
 
 
 
