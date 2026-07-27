@@ -41,8 +41,8 @@ __all__ = [
 
 
 _GENERIC_FAILURE: Final = "runtime_compatibility_unavailable"
-_EXECUTION_SCHEMA: Final = "erpai.gl_tb.runtime_compat.execution.v2"
-_ARTIFACT_SCHEMA: Final = "erpai.gl_tb.runtime_compat.artifact_provenance.v2"
+_EXECUTION_SCHEMA: Final = "erpai.gl_tb.runtime_compat.execution.v3"
+_ARTIFACT_SCHEMA: Final = "erpai.gl_tb.runtime_compat.artifact_provenance.v3"
 _TEARDOWN_SCHEMA: Final = "erpai.gl_tb.runtime_compat.teardown.v1"
 _DISCARD_SCHEMA: Final = "erpai.gl_tb.runtime_compat.discard.v1"
 _BUILD_MANIFEST_SCHEMA: Final = "erpai.gl_tb.runtime_compat.build_context.v1"
@@ -54,8 +54,12 @@ _SECRET_ROOT_PARENT: Final = PurePosixPath(
     "/dev/shm/erpai-finance-gl-tb-runtime-compat"
 )
 _ROOTLESSKIT_RUNTIME_PARENT: Final = PurePosixPath("/run/user")
-_CONTENT_MANIFEST_SCHEMA: Final = "erpai.gl_tb.runtime_compat.runner_content.v1"
+_SOURCE_CONTENT_SCHEMA: Final = "erpai.gl_tb.runtime_compat.source_content.v1"
+_MATERIALIZATION_ATTESTATION_SCHEMA: Final = (
+    "erpai.gl_tb.runtime_compat.materialization_attestation.v1"
+)
 _FINAL_FILESYSTEM_SCHEMA: Final = "erpai.gl_tb.runtime_compat.final_filesystem.v1"
+_CONTENT_ARCHIVE_HARD_MAX_BYTES: Final = 134217728
 _BASE_IMAGE_REFERENCE: Final = (
     "docker.io/frappe/erpnext@sha256:"
     "63e3db0e981a6e34e250635fa6f1d52cb96e10f66e6f34393c80b6fe4329c2d0"
@@ -192,7 +196,7 @@ _ENGINE_INFO_FORMAT: Final = (
 )
 _IMAGE_FORMAT: Final = (
     "{{.Id}}\\t{{json .RepoDigests}}\\t{{.Os}}\\t{{.Architecture}}\\t"
-    "{{json .Config.Volumes}}"
+    "{{json .Config.Volumes}}\\t{{json .Config}}"
 )
 _CONTAINER_FORMAT: Final = (
     "{{.Id}}\\t{{.Image}}\\t{{.Name}}\\t{{.State.Status}}\\t"
@@ -330,6 +334,19 @@ def _sha256(value: object) -> str:
     return _text(value, pattern=_SHA256_RE)
 
 
+def _concrete_sha256(value: object) -> str:
+    digest = _sha256(value)
+    if len(set(digest)) == 1:
+        _reject()
+    return digest
+
+
+def _image_id(value: object) -> str:
+    identity = _text(value, pattern=_IMAGE_ID_RE)
+    _concrete_sha256(identity.removeprefix("sha256:"))
+    return identity
+
+
 def _positive_int(value: object) -> int:
     if type(value) is not int or value <= 0:
         _reject()
@@ -373,7 +390,7 @@ def _inventory_entries(
         entries.append({
             "path": path,
             "type": kind,
-            "sha256": _sha256(entry["sha256"]),
+            "sha256": _concrete_sha256(entry["sha256"]),
             "size_bytes": size,
             "uid": _nonnegative_int(entry["uid"]),
             "gid": _nonnegative_int(entry["gid"]),
@@ -396,12 +413,37 @@ def _rootlesskit_runtime_dir(run_id: str, uid: int) -> str:
 
 
 def _expected_final_filesystem_document(
-    content: Mapping[str, object],
+    source_content: Mapping[str, object],
 ) -> dict[str, object]:
+    python = dict(source_content["python"])
+    context = {
+        str(entry["path"]): entry
+        for entry in source_content["build_context"]["entries"]
+    }
+    entries: list[dict[str, object]] = [{
+        "path": python["path"],
+        "type": "regular",
+        "sha256": python["executable_sha256"],
+        "size_bytes": python["size_bytes"],
+        "uid": python["uid"],
+        "gid": python["gid"],
+        "mode": python["mode"],
+    }]
+    for context_path, final_path in _CONTEXT_TO_FINAL.items():
+        source = context[context_path]
+        entries.append({
+            "path": final_path,
+            "type": source["type"],
+            "sha256": source["sha256"],
+            "size_bytes": source["size_bytes"],
+            "uid": 1000,
+            "gid": 1000,
+            "mode": _FINAL_MODES[final_path],
+        })
     return {
         "schema": _FINAL_FILESYSTEM_SCHEMA,
-        "python": dict(content["python"]),
-        "entries": [dict(entry) for entry in content["final_filesystem"]["entries"]],
+        "python": python,
+        "entries": entries,
     }
 
 
@@ -445,6 +487,7 @@ def _immutable_image(value: object) -> str:
         or _SAFE_TEXT_RE.fullmatch(repository) is None
     ):
         _reject()
+    _concrete_sha256(digest)
     return image
 
 
@@ -512,7 +555,7 @@ class ControllerManifest:
     repository: Mapping[str, str]
     artifacts: Mapping[str, str]
     docker: Mapping[str, str]
-    content_manifest: Mapping[str, object]
+    source_content: Mapping[str, object]
     compose: Mapping[str, object]
     site: Mapping[str, object]
     secrets: Mapping[str, object]
@@ -559,7 +602,7 @@ _TOP_KEYS: Final = (
     "repository",
     "artifacts",
     "docker",
-    "content_manifest",
+    "source_content",
     "compose",
     "site",
     "secrets",
@@ -582,7 +625,7 @@ _REPOSITORY_KEYS: Final = (
     "runtime_sha256",
     "frappe_tree_sha256",
     "erpnext_tree_sha256",
-    "content_manifest_sha256",
+    "source_content_sha256",
 )
 _ARTIFACT_KEYS: Final = (
     "base_image",
@@ -671,10 +714,9 @@ _EVIDENCE_KEYS: Final = (
 
 
 
-_CONTENT_KEYS: Final = (
+_SOURCE_CONTENT_KEYS: Final = (
     "schema", "source_repository_revision", "base", "frontend", "sources",
-    "python", "build_context", "gl_tb", "final_image", "final_filesystem",
-    "independent_verification_sha256",
+    "python", "build_context", "gl_tb",
 )
 _BASE_KEYS: Final = ("reference", "image_id")
 _FRONTEND_KEYS: Final = (
@@ -700,31 +742,44 @@ _GL_TB_KEYS: Final = (
 _FINAL_IMAGE_KEYS: Final = (
     "image_id", "repository_digest", "os", "platform", "architecture",
 )
+_IMAGE_CONFIGURATION_KEYS: Final = (
+    "base_config_sha256", "config_sha256", "user", "working_directory",
+    "entrypoint", "cmd", "environment_sha256", "volume_destinations",
+)
+_VERIFICATION_CONTAINMENT_KEYS: Final = (
+    "network_mode", "privileged", "read_only_rootfs", "user", "cap_drop",
+    "security_options", "tmpfs_destinations", "container_started",
+    "verification_container_retired",
+)
+_MATERIALIZATION_KEYS: Final = (
+    "schema", "source_content_sha256", "final_image", "python",
+    "final_filesystem", "image_configuration", "verification_containment",
+)
 
 
-def _validate_content_manifest(
+def _validate_source_content(
     value: object,
     repository: Mapping[str, object],
     artifacts: Mapping[str, object],
     docker: Mapping[str, object],
 ) -> dict[str, object]:
-    content = _closed_object(value, _CONTENT_KEYS)
+    source_content = _closed_object(value, _SOURCE_CONTENT_KEYS)
     if (
-        content["schema"] != _CONTENT_MANIFEST_SCHEMA
-        or content["source_repository_revision"] != repository["revision"]
+        source_content["schema"] != _SOURCE_CONTENT_SCHEMA
+        or source_content["source_repository_revision"] != repository["revision"]
     ):
         _reject()
 
-    base = _closed_object(content["base"], _BASE_KEYS)
+    base = _closed_object(source_content["base"], _BASE_KEYS)
     if (
         base["reference"] != _BASE_IMAGE_REFERENCE
         or base["reference"] != artifacts["base_image"]
         or base["image_id"] != artifacts["base_image_id"]
     ):
         _reject()
-    _text(base["image_id"], pattern=_IMAGE_ID_RE)
+    _image_id(base["image_id"])
 
-    frontend = _closed_object(content["frontend"], _FRONTEND_KEYS)
+    frontend = _closed_object(source_content["frontend"], _FRONTEND_KEYS)
     if (
         frontend["policy"] != "engine_builtin"
         or frontend["dockerfile_sha256"] != repository["dockerfile_sha256"]
@@ -735,10 +790,10 @@ def _validate_content_manifest(
         != docker["frontend_capabilities_sha256"]
     ):
         _reject()
-    _sha256(frontend["dockerfile_sha256"])
-    _sha256(frontend["frontend_capabilities_sha256"])
+    _concrete_sha256(frontend["dockerfile_sha256"])
+    _concrete_sha256(frontend["frontend_capabilities_sha256"])
 
-    sources = _closed_object(content["sources"], _SOURCES_KEYS)
+    sources = _closed_object(source_content["sources"], _SOURCES_KEYS)
     frappe = _closed_object(sources["frappe"], _SOURCE_KEYS)
     erpnext = _closed_object(sources["erpnext"], _SOURCE_KEYS)
     if (
@@ -748,17 +803,17 @@ def _validate_content_manifest(
         or erpnext["tree_sha256"] != repository["erpnext_tree_sha256"]
     ):
         _reject()
-    _sha256(frappe["tree_sha256"])
-    _sha256(erpnext["tree_sha256"])
+    _concrete_sha256(frappe["tree_sha256"])
+    _concrete_sha256(erpnext["tree_sha256"])
 
-    python = _closed_object(content["python"], _PYTHON_KEYS)
+    python = _closed_object(source_content["python"], _PYTHON_KEYS)
     if python["path"] != _RUNNER_PYTHON:
         _reject()
     _text(python["version"], pattern=_PYTHON_VERSION_RE)
     normalized_python = {
         "path": _RUNNER_PYTHON,
         "version": str(python["version"]),
-        "executable_sha256": _sha256(python["executable_sha256"]),
+        "executable_sha256": _concrete_sha256(python["executable_sha256"]),
         "size_bytes": _positive_int(python["size_bytes"]),
         "uid": _nonnegative_int(python["uid"]),
         "gid": _nonnegative_int(python["gid"]),
@@ -771,7 +826,7 @@ def _validate_content_manifest(
     ):
         _reject()
 
-    build_context = _closed_object(content["build_context"], _INVENTORY_KEYS)
+    build_context = _closed_object(source_content["build_context"], _INVENTORY_KEYS)
     context_entries = _inventory_entries(build_context["entries"], _CONTEXT_MEMBERS)
     if build_context["manifest_sha256"] != _inventory_sha256(context_entries):
         _reject()
@@ -795,7 +850,7 @@ def _validate_content_manifest(
         "frappe_revision": str(build_manifest_raw["frappe_revision"]),
         "erpnext_revision": str(build_manifest_raw["erpnext_revision"]),
         "entries": list(build_manifest_entries),
-        "entries_sha256": _sha256(build_manifest_raw["entries_sha256"]),
+        "entries_sha256": _concrete_sha256(build_manifest_raw["entries_sha256"]),
     }
     if (
         build_manifest_raw["schema"] != _BUILD_MANIFEST_SCHEMA
@@ -819,38 +874,9 @@ def _validate_content_manifest(
     ):
         _reject()
 
-    final_filesystem = _closed_object(
-        content["final_filesystem"], _FINAL_INVENTORY_KEYS
-    )
-    final_entries = _inventory_entries(final_filesystem["entries"], _FINAL_MEMBERS)
-    if final_filesystem["manifest_sha256"] != _inventory_sha256(final_entries):
-        _reject()
-    python_entry = final_entries[0]
-    if any(
-        python_entry[key] != normalized_python[source]
-        for key, source in (
-            ("path", "path"), ("sha256", "executable_sha256"),
-            ("size_bytes", "size_bytes"), ("uid", "uid"), ("gid", "gid"),
-            ("mode", "mode"),
-        )
-    ):
-        _reject()
-
     context_by_path = {entry["path"]: entry for entry in context_entries}
-    final_by_path = {entry["path"]: entry for entry in final_entries}
-    for context_path, final_path in _CONTEXT_TO_FINAL.items():
-        source = context_by_path[context_path]
-        target = final_by_path[final_path]
-        if any(target[key] != source[key] for key in ("type", "sha256", "size_bytes")):
-            _reject()
-        if (
-            target["uid"] != 1000
-            or target["gid"] != 1000
-            or target["mode"] != _FINAL_MODES[final_path]
-        ):
-            _reject()
 
-    gl_tb = _closed_object(content["gl_tb"], _GL_TB_KEYS)
+    gl_tb = _closed_object(source_content["gl_tb"], _GL_TB_KEYS)
     gl_paths = {
         "package_initializer_sha256": "erp_workspace_ui/erp_workspace_ui/__init__.py",
         "finance_initializer_sha256": "erp_workspace_ui/erp_workspace_ui/finance_accounting/__init__.py",
@@ -871,7 +897,7 @@ def _validate_content_manifest(
         "initializer_sha256": "initializer_sha256",
     }
     for key, path in gl_paths.items():
-        value = _sha256(gl_tb[key])
+        value = _concrete_sha256(gl_tb[key])
         if value != context_by_path[path]["sha256"]:
             _reject()
         repository_key = repository_gl_keys.get(key)
@@ -880,21 +906,9 @@ def _validate_content_manifest(
     if gl_tb["build_manifest_sha256"] != build_manifest_entry["sha256"]:
         _reject()
 
-    final_image = _closed_object(content["final_image"], _FINAL_IMAGE_KEYS)
-    if (
-        final_image["image_id"] != artifacts["runner_image_id"]
-        or final_image["repository_digest"] != artifacts["runner_image"]
-        or final_image["os"] != docker["os"]
-        or final_image["architecture"] != docker["architecture"]
-        or final_image["platform"] != f"{docker['os']}/{docker['architecture']}"
-    ):
-        _reject()
-    _text(final_image["image_id"], pattern=_IMAGE_ID_RE)
-    _immutable_image(final_image["repository_digest"])
-
     normalized = {
-        "schema": _CONTENT_MANIFEST_SCHEMA,
-        "source_repository_revision": str(content["source_repository_revision"]),
+        "schema": _SOURCE_CONTENT_SCHEMA,
+        "source_repository_revision": str(source_content["source_repository_revision"]),
         "base": dict(base),
         "frontend": dict(frontend),
         "sources": {"frappe": dict(frappe), "erpnext": dict(erpnext)},
@@ -905,21 +919,8 @@ def _validate_content_manifest(
             "build_manifest": normalized_build_manifest,
         },
         "gl_tb": dict(gl_tb),
-        "final_image": dict(final_image),
-        "final_filesystem": {
-            "entries": list(final_entries),
-            "manifest_sha256": str(final_filesystem["manifest_sha256"]),
-        },
-        "independent_verification_sha256": _sha256(
-            content["independent_verification_sha256"]
-        ),
     }
-    expected_verification = _expected_final_filesystem_document(normalized)
-    if normalized["independent_verification_sha256"] != hashlib.sha256(
-        canonical_json_bytes(expected_verification)
-    ).hexdigest():
-        _reject()
-    if repository["content_manifest_sha256"] != hashlib.sha256(
+    if repository["source_content_sha256"] != hashlib.sha256(
         canonical_json_bytes(normalized)
     ).hexdigest():
         _reject()
@@ -939,7 +940,7 @@ def validate_final_filesystem_observation(
     normalized_python = {
         "path": _text(python["path"]),
         "version": _text(python["version"]),
-        "executable_sha256": _sha256(python["executable_sha256"]),
+        "executable_sha256": _concrete_sha256(python["executable_sha256"]),
         "size_bytes": _positive_int(python["size_bytes"]),
         "uid": _nonnegative_int(python["uid"]),
         "gid": _nonnegative_int(python["gid"]),
@@ -951,13 +952,10 @@ def validate_final_filesystem_observation(
         "python": normalized_python,
         "entries": list(entries),
     }
-    expected = _expected_final_filesystem_document(manifest.content_manifest)
-    if (
-        normalized != expected
-        or hashlib.sha256(canonical_json_bytes(normalized)).hexdigest()
-        != manifest.content_manifest["independent_verification_sha256"]
-    ):
+    expected = _expected_final_filesystem_document(manifest.source_content)
+    if normalized != expected:
         _reject()
+    normalized["manifest_sha256"] = _inventory_sha256(entries)
     return normalized
 
 
@@ -977,7 +975,7 @@ def parse_and_validate_manifest(body: bytes) -> ControllerManifest:
     repository = _closed_object(document["repository"], _REPOSITORY_KEYS)
     _text(repository["revision"], pattern=_GIT_SHA_RE)
     for key in _REPOSITORY_KEYS[1:]:
-        _sha256(repository[key])
+        _concrete_sha256(repository[key])
 
     artifacts = _closed_object(document["artifacts"], _ARTIFACT_KEYS)
     if artifacts["base_image"] != _BASE_IMAGE_REFERENCE:
@@ -987,7 +985,14 @@ def parse_and_validate_manifest(body: bytes) -> ControllerManifest:
     for key in (
         "base_image_id", "runner_image_id", "mariadb_image_id", "redis_image_id"
     ):
-        _text(artifacts[key], pattern=_IMAGE_ID_RE)
+        _image_id(artifacts[key])
+    source_digest = str(repository["source_content_sha256"])
+    runner_digests = {
+        str(artifacts["runner_image_id"]).removeprefix("sha256:"),
+        str(artifacts["runner_image"]).rsplit("@sha256:", 1)[-1],
+    }
+    if source_digest in runner_digests:
+        _reject()
 
     docker = _closed_object(document["docker"], _DOCKER_KEYS)
     executable = _strict_absolute_path(docker["executable"])
@@ -1001,8 +1006,8 @@ def parse_and_validate_manifest(body: bytes) -> ControllerManifest:
         "daemon_id", "daemon_name",
     ):
         _text(docker[key], pattern=_SAFE_TEXT_RE)
-    _sha256(docker["frontend_capabilities_sha256"])
-    _sha256(docker["security_options_sha256"])
+    _concrete_sha256(docker["frontend_capabilities_sha256"])
+    _concrete_sha256(docker["security_options_sha256"])
     if (
         docker["daemon_lifecycle_owner"]
         != "external_materialization_controller"
@@ -1032,8 +1037,8 @@ def parse_and_validate_manifest(body: bytes) -> ControllerManifest:
     if docker["os"] != "linux" or docker["architecture"] != "amd64":
         _reject()
 
-    content_manifest = _validate_content_manifest(
-        document["content_manifest"], repository, artifacts, docker
+    source_content = _validate_source_content(
+        document["source_content"], repository, artifacts, docker
     )
 
     project = f"gl_tb_rtcompat_{run_id}"
@@ -1126,7 +1131,7 @@ def parse_and_validate_manifest(body: bytes) -> ControllerManifest:
         repository={key: str(repository[key]) for key in _REPOSITORY_KEYS},
         artifacts={key: str(artifacts[key]) for key in _ARTIFACT_KEYS},
         docker={key: str(docker[key]) for key in _DOCKER_KEYS},
-        content_manifest=content_manifest,
+        source_content=source_content,
         compose=dict(compose),
         site=dict(site),
         secrets=dict(secrets),
@@ -1209,174 +1214,339 @@ def _preflight_plan(manifest: ControllerManifest) -> tuple[CommandSpec, ...]:
 
 
 
-_RUNNER_CONTENT_VERIFY_SOURCE: Final = r"""
-import hashlib,json,os,stat,sys
-EMPTY=hashlib.sha256(b'').hexdigest()
-def cj(value):
-    return (json.dumps(value,allow_nan=False,ensure_ascii=False,separators=(',',':'),sort_keys=True)+'\n').encode()
-def open_path(path,want_dir):
-    parts=path.split('/')[1:]
-    if not parts or any(not p or p in ('.','..') for p in parts): raise ValueError()
-    fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
-    try:
-        for part in parts[:-1]:
-            nxt=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC|os.O_NOFOLLOW,dir_fd=fd)
-            os.close(fd); fd=nxt
-        flags=os.O_RDONLY|os.O_CLOEXEC|os.O_NOFOLLOW|(os.O_DIRECTORY if want_dir else 0)
-        leaf=os.open(parts[-1],flags,dir_fd=fd)
-    finally:
-        os.close(fd)
-    return leaf
-def regular(path):
-    fd=open_path(path,False)
-    try:
-        st=os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1: raise ValueError()
-        h=hashlib.sha256(); size=0
-        while True:
-            block=os.read(fd,1048576)
-            if not block: break
-            size+=len(block); h.update(block)
-        if size != st.st_size: raise ValueError()
-        return {'path':path,'type':'regular','sha256':h.hexdigest(),'size_bytes':size,'uid':st.st_uid,'gid':st.st_gid,'mode':format(stat.S_IMODE(st.st_mode),'04o')}
-    finally: os.close(fd)
-def tree(path):
-    root=open_path(path,True); records=[]; total=0
-    try:
-        root_st=os.fstat(root)
-        def walk(fd,prefix):
-            nonlocal total
-            names=sorted((e.name for e in os.scandir(fd)),key=lambda n:n.encode('utf-8','strict'))
-            if len({name.casefold() for name in names}) != len(names): raise ValueError()
-            for name in names:
-                if '/' in name or name in ('.','..'): raise ValueError()
-                rel=name if not prefix else prefix+'/'+name
-                st=os.stat(name,dir_fd=fd,follow_symlinks=False)
-                mode=format(stat.S_IMODE(st.st_mode),'04o')
-                if stat.S_ISDIR(st.st_mode):
-                    child=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC|os.O_NOFOLLOW,dir_fd=fd)
-                    if st.st_uid != 1000 or st.st_gid != 1000 or mode != '0555': raise ValueError()
-                    records.append({'path':rel,'type':'directory','sha256':EMPTY,'size_bytes':0})
-                    try: walk(child,rel)
-                    finally: os.close(child)
-                elif stat.S_ISREG(st.st_mode) and st.st_nlink == 1:
-                    child=os.open(name,os.O_RDONLY|os.O_CLOEXEC|os.O_NOFOLLOW,dir_fd=fd)
-                    try:
-                        h=hashlib.sha256(); size=0
-                        while True:
-                            block=os.read(child,1048576)
-                            if not block: break
-                            size+=len(block); h.update(block)
-                        if size != st.st_size: raise ValueError()
-                    finally: os.close(child)
-                    if st.st_uid != 1000 or st.st_gid != 1000 or mode != '0444': raise ValueError()
-                    total+=size
-                    records.append({'path':rel,'type':'regular','sha256':h.hexdigest(),'size_bytes':size})
-                else: raise ValueError()
-        walk(root,'')
-        return {'path':path,'type':'tree','sha256':hashlib.sha256(cj(records)).hexdigest(),'size_bytes':total,'uid':root_st.st_uid,'gid':root_st.st_gid,'mode':format(stat.S_IMODE(root_st.st_mode),'04o')}
-    finally: os.close(root)
-def scope(path,expected):
-    root=open_path(path,True); records=[]
-    try:
-        root_st=os.fstat(root)
-        if root_st.st_uid != 1000 or root_st.st_gid != 1000 or format(stat.S_IMODE(root_st.st_mode),'04o') != '0555': raise ValueError()
-        def walk(fd,prefix):
-            names=sorted((e.name for e in os.scandir(fd)),key=lambda n:n.encode('utf-8','strict'))
-            if len({name.casefold() for name in names}) != len(names): raise ValueError()
-            for name in names:
-                if '/' in name or name in ('.','..'): raise ValueError()
-                rel=name if not prefix else prefix+'/'+name
-                st=os.stat(name,dir_fd=fd,follow_symlinks=False)
-                if stat.S_ISDIR(st.st_mode):
-                    if st.st_uid != 1000 or st.st_gid != 1000 or format(stat.S_IMODE(st.st_mode),'04o') != '0555': raise ValueError()
-                    records.append({'path':rel,'type':'directory'})
-                    child=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC|os.O_NOFOLLOW,dir_fd=fd)
-                    try: walk(child,rel)
-                    finally: os.close(child)
-                elif stat.S_ISREG(st.st_mode) and st.st_nlink == 1:
-                    records.append({'path':rel,'type':'regular'})
-                else: raise ValueError()
-        walk(root,'')
-    finally: os.close(root)
-    if records != expected: raise ValueError()
-def top_scope(path,expected):
-    root=open_path(path,True); records=[]
-    try:
-        names=sorted((e.name for e in os.scandir(root)),key=lambda n:n.encode('utf-8','strict'))
-        if len({name.casefold() for name in names}) != len(names): raise ValueError()
-        for name in names:
-            if '/' in name or name in ('.','..'): raise ValueError()
-            st=os.stat(name,dir_fd=root,follow_symlinks=False)
-            if stat.S_ISDIR(st.st_mode): kind='directory'
-            elif stat.S_ISREG(st.st_mode) and st.st_nlink == 1: kind='regular'
-            else: raise ValueError()
-            records.append({'path':name,'type':kind})
-    finally: os.close(root)
-    if records != expected: raise ValueError()
-def main():
-    request=json.loads(sys.argv[1])
-    if type(request) is not dict or set(request) != {'entries','scopes','top_scopes'}: raise ValueError()
-    if type(request['entries']) is not list or type(request['scopes']) is not list or type(request['top_scopes']) is not list: raise ValueError()
-    entries=[]; seen=set()
-    for item in request['entries']:
-        if type(item) is not dict or set(item) != {'path','type'} or item['path'] in seen: raise ValueError()
-        seen.add(item['path'])
-        if item['type'] not in ('regular','tree'): raise ValueError()
-        entries.append(tree(item['path']) if item['type']=='tree' else regular(item['path']))
-    scope_seen=set()
-    for item in request['scopes']:
-        if type(item) is not dict or set(item) != {'path','members'} or item['path'] in scope_seen: raise ValueError()
-        scope_seen.add(item['path'])
-        if type(item['members']) is not list: raise ValueError()
-        scope(item['path'],item['members'])
-    for item in request['top_scopes']:
-        if type(item) is not dict or set(item) != {'path','members'} or item['path'] in scope_seen: raise ValueError()
-        scope_seen.add(item['path'])
-        if type(item['members']) is not list: raise ValueError()
-        top_scope(item['path'],item['members'])
-    py=regular(sys.executable)
-    if sys.executable != '/usr/local/bin/python3.14': raise ValueError()
-    python={'path':py['path'],'version':'.'.join(map(str,sys.version_info[:3])),'executable_sha256':py['sha256'],'size_bytes':py['size_bytes'],'uid':py['uid'],'gid':py['gid'],'mode':py['mode']}
-    sys.stdout.buffer.write(cj({'schema':'erpai.gl_tb.runtime_compat.final_filesystem.v1','python':python,'entries':entries}))
-try: main()
-except BaseException:
-    sys.stderr.write('runtime_compatibility_unavailable\n')
-    raise SystemExit(70) from None
-""".strip()
+_CONTENT_ARCHIVE_ROOTS: Final = {
+    "apps": (
+        "/home/frappe/frappe-bench/apps",
+        "/home/frappe/frappe-bench/apps",
+    ),
+    "erpai": ("/opt/erpai", "/opt/erpai"),
+    "python": (_RUNNER_PYTHON, _RUNNER_PYTHON),
+}
 
 
-def _content_verifier_request() -> str:
-    return canonical_json_bytes({
-        "entries": [
-            {"path": path, "type": kind} for path, kind in _FINAL_MEMBERS
-        ],
-        "scopes": [
-            {
-                "path": path,
-                "members": [
-                    {"path": member, "type": kind} for member, kind in members
-                ],
-            }
-            for path, members in _FINAL_SCOPES
-        ],
-        "top_scopes": [
-            {
-                "path": path,
-                "members": [
-                    {"path": member, "type": kind} for member, kind in members
-                ],
-            }
-            for path, members in _FINAL_TOP_SCOPES
-        ],
-    }).decode("utf-8").rstrip("\n")
+def _content_archive_limit(
+    manifest: ControllerManifest,
+    archive_name: str,
+) -> int:
+    if archive_name not in _CONTENT_ARCHIVE_ROOTS:
+        _reject()
+    expected = _expected_final_filesystem_document(manifest.source_content)
+    if archive_name == "apps":
+        selected = [
+            entry for entry in expected["entries"]
+            if str(entry["path"]).startswith(
+                "/home/frappe/frappe-bench/apps/"
+            )
+        ]
+    elif archive_name == "erpai":
+        selected = [
+            entry for entry in expected["entries"]
+            if str(entry["path"]).startswith("/opt/erpai/")
+        ]
+    else:
+        selected = [
+            entry for entry in expected["entries"]
+            if entry["path"] == _RUNNER_PYTHON
+        ]
+    if not selected:
+        _reject()
+    source_bytes = sum(_nonnegative_int(entry["size_bytes"]) for entry in selected)
+    derived = source_bytes * 4 + manifest.limits["evidence_max_bytes"]
+    return min(
+        _CONTENT_ARCHIVE_HARD_MAX_BYTES,
+        max(manifest.limits["stdout_max_bytes"], derived),
+    )
+
+
+def _archive_member_name(value: str) -> tuple[str, ...]:
+    if (
+        not value
+        or value.startswith("/")
+        or "\\" in value
+        or "\x00" in value
+    ):
+        _reject()
+    stripped = value[:-1] if value.endswith("/") else value
+    parts = stripped.split("/")
+    if (
+        not stripped
+        or any(not part or part in (".", "..") for part in parts)
+    ):
+        _reject()
+    return tuple(parts)
+
+
+def _parse_content_archive(
+    manifest: ControllerManifest,
+    archive_name: str,
+    body: bytes,
+) -> dict[str, dict[str, object]]:
+    root_path, absolute_root = _CONTENT_ARCHIVE_ROOTS.get(
+        archive_name, (None, None)
+    )
+    if (
+        root_path is None
+        or len(body) == 0
+        or len(body) > _content_archive_limit(manifest, archive_name)
+    ):
+        _reject()
+    expected_root = PurePosixPath(str(root_path)).name
+    records: dict[str, dict[str, object]] = {}
+    folded: set[str] = set()
+    try:
+        with tarfile.open(fileobj=io.BytesIO(body), mode="r:") as archive:
+            for member in archive:
+                parts = _archive_member_name(member.name)
+                if parts[0] != expected_root:
+                    _reject()
+                if (
+                    member.issym()
+                    or member.islnk()
+                    or member.ischr()
+                    or member.isblk()
+                    or member.isfifo()
+                    or not (member.isdir() or member.isreg())
+                    or member.linkname
+                    or getattr(member, "sparse", None)
+                    or set(member.pax_headers).difference(("path",))
+                    or (
+                        "path" in member.pax_headers
+                        and member.pax_headers["path"].rstrip("/")
+                        != member.name.rstrip("/")
+                    )
+                ):
+                    _reject()
+                relative = PurePosixPath(*parts[1:])
+                canonical = (
+                    PurePosixPath(str(absolute_root)) / relative
+                    if parts[1:]
+                    else PurePosixPath(str(absolute_root))
+                )
+                canonical_text = str(canonical)
+                if (
+                    canonical_text in records
+                    or canonical_text.casefold() in folded
+                    or type(member.uid) is not int
+                    or member.uid < 0
+                    or type(member.gid) is not int
+                    or member.gid < 0
+                    or type(member.mode) is not int
+                    or member.mode < 0
+                    or member.mode > 0o7777
+                ):
+                    _reject()
+                folded.add(canonical_text.casefold())
+                if member.isdir():
+                    if member.size not in (0,):
+                        _reject()
+                    record = {
+                        "path": canonical_text,
+                        "type": "directory",
+                        "sha256": hashlib.sha256(b"").hexdigest(),
+                        "size_bytes": 0,
+                        "uid": member.uid,
+                        "gid": member.gid,
+                        "mode": format(member.mode, "04o"),
+                    }
+                else:
+                    if member.size < 0:
+                        _reject()
+                    stream = archive.extractfile(member)
+                    if stream is None:
+                        _reject()
+                    payload = stream.read(member.size + 1)
+                    if len(payload) != member.size:
+                        _reject()
+                    record = {
+                        "path": canonical_text,
+                        "type": "regular",
+                        "sha256": hashlib.sha256(payload).hexdigest(),
+                        "size_bytes": member.size,
+                        "uid": member.uid,
+                        "gid": member.gid,
+                        "mode": format(member.mode, "04o"),
+                    }
+                records[canonical_text] = record
+    except ControllerRejected:
+        raise
+    except (tarfile.TarError, OSError, ValueError, UnicodeError):
+        raise ControllerRejected() from None
+    root_record = records.get(str(absolute_root))
+    expected_root_type = "regular" if archive_name == "python" else "directory"
+    if root_record is None or root_record["type"] != expected_root_type:
+        _reject()
+    return records
+
+
+def _scope_records(
+    records: Mapping[str, Mapping[str, object]],
+    root: str,
+    *,
+    recursive: bool,
+) -> list[dict[str, str]]:
+    prefix = root + "/"
+    result: list[dict[str, str]] = []
+    for path, record in records.items():
+        if not path.startswith(prefix):
+            continue
+        relative = path[len(prefix):]
+        if not recursive and "/" in relative:
+            continue
+        result.append({"path": relative, "type": str(record["type"])})
+    result.sort(key=lambda item: item["path"].encode("utf-8", "strict"))
+    return result
+
+
+def _tree_record(
+    records: Mapping[str, Mapping[str, object]],
+    root: str,
+) -> dict[str, object]:
+    root_record = records.get(root)
+    if (
+        root_record is None
+        or root_record["type"] != "directory"
+        or root_record["uid"] != 1000
+        or root_record["gid"] != 1000
+        or root_record["mode"] != "0555"
+    ):
+        _reject()
+    prefix = root + "/"
+    descendants: list[dict[str, object]] = []
+    total = 0
+    for path, record in records.items():
+        if not path.startswith(prefix):
+            continue
+        relative = path[len(prefix):]
+        if record["type"] == "directory":
+            if (
+                record["uid"] != 1000
+                or record["gid"] != 1000
+                or record["mode"] != "0555"
+            ):
+                _reject()
+            descendants.append({
+                "path": relative,
+                "type": "directory",
+                "sha256": hashlib.sha256(b"").hexdigest(),
+                "size_bytes": 0,
+            })
+        elif record["type"] == "regular":
+            if (
+                record["uid"] != 1000
+                or record["gid"] != 1000
+                or record["mode"] != "0444"
+            ):
+                _reject()
+            size = _nonnegative_int(record["size_bytes"])
+            total += size
+            descendants.append({
+                "path": relative,
+                "type": "regular",
+                "sha256": _concrete_sha256(record["sha256"]),
+                "size_bytes": size,
+            })
+        else:
+            _reject()
+    descendants.sort(key=lambda item: item["path"].encode("utf-8", "strict"))
+    return {
+        "path": root,
+        "type": "tree",
+        "sha256": hashlib.sha256(
+            canonical_json_bytes(descendants)
+        ).hexdigest(),
+        "size_bytes": total,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": "0555",
+    }
+
+
+def _final_filesystem_from_archives(
+    manifest: ControllerManifest,
+    archives: Mapping[str, Mapping[str, Mapping[str, object]]],
+) -> dict[str, object]:
+    if set(archives) != set(_CONTENT_ARCHIVE_ROOTS):
+        _reject()
+    records: dict[str, Mapping[str, object]] = {}
+    folded: set[str] = set()
+    for archive_name in sorted(archives):
+        for path, record in archives[archive_name].items():
+            if path in records or path.casefold() in folded:
+                _reject()
+            records[path] = record
+            folded.add(path.casefold())
+
+    for root, expected in _FINAL_TOP_SCOPES:
+        actual = _scope_records(records, root, recursive=False)
+        expected_records = [
+            {"path": path, "type": kind} for path, kind in expected
+        ]
+        if actual != expected_records:
+            _reject()
+        root_record = records.get(root)
+        if root_record is None or root_record["type"] != "directory":
+            _reject()
+
+    for root, expected in _FINAL_SCOPES:
+        actual = _scope_records(records, root, recursive=True)
+        expected_records = [
+            {"path": path, "type": kind} for path, kind in expected
+        ]
+        if actual != expected_records:
+            _reject()
+        root_record = records.get(root)
+        if (
+            root_record is None
+            or root_record["type"] != "directory"
+            or root_record["uid"] != 1000
+            or root_record["gid"] != 1000
+            or root_record["mode"] != "0555"
+        ):
+            _reject()
+
+    entries: list[dict[str, object]] = []
+    for path, kind in _FINAL_MEMBERS:
+        if kind == "tree":
+            entries.append(_tree_record(records, path))
+            continue
+        record = records.get(path)
+        if record is None or record["type"] != "regular":
+            _reject()
+        entries.append({
+            "path": path,
+            "type": "regular",
+            "sha256": _concrete_sha256(record["sha256"]),
+            "size_bytes": _nonnegative_int(record["size_bytes"]),
+            "uid": _nonnegative_int(record["uid"]),
+            "gid": _nonnegative_int(record["gid"]),
+            "mode": _mode(record["mode"]),
+        })
+    expected_python = dict(manifest.source_content["python"])
+    python_record = entries[0]
+    python = {
+        "path": python_record["path"],
+        "version": expected_python["version"],
+        "executable_sha256": python_record["sha256"],
+        "size_bytes": python_record["size_bytes"],
+        "uid": python_record["uid"],
+        "gid": python_record["gid"],
+        "mode": python_record["mode"],
+    }
+    document = {
+        "schema": _FINAL_FILESYSTEM_SCHEMA,
+        "python": python,
+        "entries": entries,
+    }
+    return validate_final_filesystem_observation(
+        manifest, canonical_json_bytes(document)
+    )
 
 
 def _content_verification_plan(manifest: ControllerManifest) -> tuple[CommandSpec, ...]:
     container = f"{manifest.project}_content_verifier"
-    request = _content_verifier_request()
-    run = manifest.docker_prefix + (
-        "container", "run", "--name", container,
+    placeholder = "__INSPECTED_CONTENT_ID__"
+    create = manifest.docker_prefix + (
+        "container", "create", "--name", container,
         "--label", manifest.run_label,
         "--label", f"com.docker.compose.project={manifest.project}",
         "--label", "com.docker.compose.service=content-verifier",
@@ -1386,25 +1556,52 @@ def _content_verification_plan(manifest: ControllerManifest) -> tuple[CommandSpe
         "--tmpfs",
         "/home/frappe/frappe-bench/sites:"
         "rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=1000,gid=1000",
-        "--entrypoint", _RUNNER_PYTHON,
+        "--entrypoint", "/bin/false",
         manifest.artifacts["runner_image_id"],
-        "-I", "-B", "-c", _RUNNER_CONTENT_VERIFY_SOURCE, request,
     )
-    return (
-        _spec(manifest, "content-verify-wait", run),
+    plans: list[CommandSpec] = [
+        _spec(manifest, "content-verify-create", create),
         _spec(
             manifest, "content-verify-container",
             manifest.docker_prefix + (
-                "container", "inspect", "--format", _CONTAINER_FORMAT, container,
+                "container", "inspect", "--format", _CONTAINER_FORMAT,
+                placeholder,
             ),
         ),
-        _spec(
-            manifest, "content-verify-retire",
-            manifest.docker_prefix + (
-                "container", "rm", "--force", "__INSPECTED_CONTENT_ID__",
-            ), teardown=True,
+    ]
+    copy_sources = {
+        "apps": "/home/frappe/frappe-bench/apps",
+        "erpai": "/opt/erpai",
+        "python": _RUNNER_PYTHON,
+    }
+    for name in ("apps", "erpai", "python"):
+        plans.append(CommandSpec(
+            name=f"content-copy-{name}",
+            argv=manifest.docker_prefix + (
+                "container", "cp", "--archive",
+                f"{placeholder}:{copy_sources[name]}", "-",
+            ),
+            timeout_seconds=manifest.limits["command_timeout_seconds"],
+            stdout_max_bytes=_content_archive_limit(manifest, name),
+            stderr_max_bytes=manifest.limits["stderr_max_bytes"],
+        ))
+    plans.append(_spec(
+        manifest, "content-verify-retire",
+        manifest.docker_prefix + (
+            "container", "rm", "--force", placeholder,
         ),
-    )
+        teardown=True,
+    ))
+    return tuple(plans)
+
+
+def _validate_content_create_result(result: _CommandResult) -> str:
+    if result.returncode != 0 or result.timed_out or result.stderr:
+        _reject()
+    lines = _parse_fixed_lines(result.stdout)
+    if len(lines) != 1 or _SHA256_RE.fullmatch(lines[0]) is None:
+        _reject()
+    return lines[0]
 
 
 def _strict_json_string_list(value: str) -> tuple[str, ...]:
@@ -1420,8 +1617,9 @@ def _strict_json_string_list(value: str) -> tuple[str, ...]:
 
 def _validate_content_container(
     manifest: ControllerManifest,
+    expected_id: str,
     result: _CommandResult,
-) -> str:
+) -> tuple[str, dict[str, object]]:
     if result.returncode != 0 or result.timed_out or result.stderr:
         _reject()
     lines = _parse_fixed_lines(result.stdout)
@@ -1429,16 +1627,13 @@ def _validate_content_container(
         _reject()
     fields = lines[0].split("\t")
     expected_name = f"{manifest.project}_content_verifier"
-    expected_cmd = (
-        "-I", "-B", "-c", _RUNNER_CONTENT_VERIFY_SOURCE,
-        _content_verifier_request(),
-    )
     if (
         len(fields) != 19
+        or fields[0] != expected_id
         or _SHA256_RE.fullmatch(fields[0]) is None
         or fields[1] != manifest.artifacts["runner_image_id"]
         or fields[2] != f"/{expected_name}"
-        or fields[3:7] != ["exited", "false", "0", "false"]
+        or fields[3:7] != ["created", "false", "0", "false"]
         or fields[7] != "none"
         or fields[8] != "false"
         or fields[9] != "1000:1000"
@@ -1446,8 +1641,8 @@ def _validate_content_container(
         or _strict_json_string_list(fields[11]) != ("ALL",)
         or _strict_json_string_list(fields[12])
         != ("no-new-privileges:true",)
-        or _strict_json_string_list(fields[13]) != (_RUNNER_PYTHON,)
-        or _strict_json_string_list(fields[14]) != expected_cmd
+        or _strict_json_string_list(fields[13]) != ("/bin/false",)
+        or _strict_json_string_list(fields[14]) != ()
         or fields[15]
         != "tmpfs=/home/frappe/frappe-bench/sites,"
         or fields[16] != manifest.run_id
@@ -1455,7 +1650,17 @@ def _validate_content_container(
         or fields[18] != "content-verifier"
     ):
         _reject()
-    return fields[0]
+    return fields[0], {
+        "network_mode": "none",
+        "privileged": False,
+        "read_only_rootfs": True,
+        "user": "1000:1000",
+        "cap_drop": ["ALL"],
+        "security_options": ["no-new-privileges:true"],
+        "tmpfs_destinations": ["/home/frappe/frappe-bench/sites"],
+        "container_started": False,
+        "verification_container_retired": False,
+    }
 
 
 def _probe_args(manifest: ControllerManifest, case_id: str) -> tuple[str, ...]:
@@ -2085,7 +2290,106 @@ def _validate_resolved_compose(
             _reject()
 
 
-def _validate_preflight_result(manifest: ControllerManifest, spec: CommandSpec, result: _CommandResult) -> None:
+def _image_environment(value: object) -> dict[str, str]:
+    if (
+        type(value) is not list
+        or any(type(item) is not str or "=" not in item for item in value)
+    ):
+        _reject()
+    result: dict[str, str] = {}
+    for item in value:
+        name, content = item.split("=", 1)
+        if not name or name in result:
+            _reject()
+        result[name] = content
+    return result
+
+
+def _runner_environment_overrides(
+    manifest: ControllerManifest,
+) -> dict[str, str]:
+    content = manifest.source_content
+    return {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": (
+            "/home/frappe/frappe-bench/apps/frappe:"
+            "/home/frappe/frappe-bench/apps/erpnext:"
+            "/home/frappe/frappe-bench/apps/erp_workspace_ui"
+        ),
+        "ERPAI_FRONTEND_POLICY": "engine_builtin",
+        "ERPAI_SOURCE_REPOSITORY_REVISION": manifest.repository["revision"],
+        "ERPAI_FRAPPE_REVISION": content["sources"]["frappe"]["revision"],
+        "ERPAI_ERPNEXT_REVISION": content["sources"]["erpnext"]["revision"],
+        "ERPAI_BUILD_CONTEXT_MANIFEST_SHA256": (
+            content["build_context"]["manifest_sha256"]
+        ),
+        "ERPAI_BUILD_MANIFEST_SHA256": content["gl_tb"][
+            "build_manifest_sha256"
+        ],
+        "ERPAI_SOURCE_CONTENT_SHA256": manifest.repository[
+            "source_content_sha256"
+        ],
+        "ERPAI_DOCKERFILE_SHA256": content["frontend"]["dockerfile_sha256"],
+        "ERPAI_FRAPPE_TREE_SHA256": content["sources"]["frappe"][
+            "tree_sha256"
+        ],
+        "ERPAI_ERPNEXT_TREE_SHA256": content["sources"]["erpnext"][
+            "tree_sha256"
+        ],
+        "ERPAI_PACKAGE_INITIALIZER_SHA256": content["gl_tb"][
+            "package_initializer_sha256"
+        ],
+        "ERPAI_FINANCE_INITIALIZER_SHA256": content["gl_tb"][
+            "finance_initializer_sha256"
+        ],
+        "ERPAI_CORE_SHA256": content["gl_tb"]["core_sha256"],
+        "ERPAI_ADAPTER_SHA256": content["gl_tb"]["adapter_sha256"],
+        "ERPAI_RUNTIME_SHA256": content["gl_tb"]["runtime_sha256"],
+        "ERPAI_PROBE_SHA256": content["gl_tb"]["probe_sha256"],
+        "ERPAI_INITIALIZER_SHA256": content["gl_tb"]["initializer_sha256"],
+        "ERPAI_RUNNER_PYTHON_VERSION": content["python"]["version"],
+        "ERPAI_RUNNER_PYTHON_SHA256": content["python"][
+            "executable_sha256"
+        ],
+    }
+
+
+def _normalized_image_config(
+    config: Mapping[str, object],
+    environment: Mapping[str, str],
+) -> dict[str, object]:
+    normalized = dict(config)
+    normalized["Env"] = [
+        f"{name}={environment[name]}" for name in sorted(environment)
+    ]
+    return normalized
+
+
+def _image_config(
+    value: object,
+    volume_document: object,
+) -> tuple[dict[str, object], dict[str, str]]:
+    if type(value) is not dict or any(type(key) is not str for key in value):
+        _reject()
+    config = dict(value)
+    required = {
+        "User", "WorkingDir", "Entrypoint", "Cmd", "Env", "Volumes",
+    }
+    if not required.issubset(config) or config["Volumes"] != volume_document:
+        _reject()
+    environment = _image_environment(config["Env"])
+    return config, environment
+
+
+def _validate_preflight_result(
+    manifest: ControllerManifest,
+    spec: CommandSpec,
+    result: _CommandResult,
+    *,
+    base_configuration: Mapping[str, object] | None = None,
+) -> dict[str, object] | None:
     if result.returncode != 0 or result.timed_out or result.stderr:
         _reject()
     if spec.name == "compose-config-json":
@@ -2131,7 +2435,10 @@ def _validate_preflight_result(manifest: ControllerManifest, spec: CommandSpec, 
         if len(lines) != 1:
             _reject()
         fields = lines[0].split("\t")
-        volume_document = _decode_json(fields[4].encode("utf-8")) if len(fields) == 5 else False
+        volume_document = (
+            _decode_json(fields[4].encode("utf-8"))
+            if len(fields) == 6 else False
+        )
         if volume_document is None:
             volume_destinations: frozenset[str] = frozenset()
         elif type(volume_document) is dict and all(
@@ -2142,7 +2449,7 @@ def _validate_preflight_result(manifest: ControllerManifest, spec: CommandSpec, 
         else:
             _reject()
         if (
-            len(fields) != 5
+            len(fields) != 6
             or fields[0] != manifest.artifacts[id_key]
             or _strict_json_string_list(fields[1])
             != (manifest.artifacts[key],)
@@ -2153,6 +2460,88 @@ def _validate_preflight_result(manifest: ControllerManifest, spec: CommandSpec, 
             )
         ):
             _reject()
+        if key == "base_image":
+            config_value = _decode_json(fields[5].encode("utf-8"))
+            config, environment = _image_config(
+                config_value, volume_document
+            )
+            return {
+                "configuration": config,
+                "configuration_sha256": hashlib.sha256(
+                    canonical_json_bytes(
+                        _normalized_image_config(config, environment)
+                    )
+                ).hexdigest(),
+            }
+        if key == "runner_image":
+            if base_configuration is None:
+                _reject()
+            base_config, base_environment = _image_config(
+                dict(base_configuration),
+                base_configuration.get("Volumes"),
+            )
+            config_value = _decode_json(fields[5].encode("utf-8"))
+            config, environment = _image_config(
+                config_value, volume_document
+            )
+            expected_environment = dict(base_environment)
+            expected_environment.update(
+                _runner_environment_overrides(manifest)
+            )
+            expected_config = dict(base_config)
+            expected_config.update({
+                "User": "1000:1000",
+                "WorkingDir": "/opt/erpai",
+                "Entrypoint": [
+                    "/opt/erpai/"
+                    "finance_gl_trial_balance_runtime_compatibility_probe.py"
+                ],
+                "Cmd": [],
+                "Env": config["Env"],
+            })
+            actual_without_environment = dict(config)
+            actual_without_environment.pop("Env")
+            expected_without_environment = dict(expected_config)
+            expected_without_environment.pop("Env")
+            if (
+                environment != expected_environment
+                or actual_without_environment != expected_without_environment
+            ):
+                _reject()
+            normalized_base = _normalized_image_config(
+                base_config, base_environment
+            )
+            normalized_config = _normalized_image_config(
+                config, environment
+            )
+            return {
+                "final_image": {
+                    "image_id": fields[0],
+                    "repository_digest": manifest.artifacts["runner_image"],
+                    "os": fields[2],
+                    "platform": f"{fields[2]}/{fields[3]}",
+                    "architecture": fields[3],
+                },
+                "image_configuration": {
+                    "base_config_sha256": hashlib.sha256(
+                        canonical_json_bytes(normalized_base)
+                    ).hexdigest(),
+                    "config_sha256": hashlib.sha256(
+                        canonical_json_bytes(normalized_config)
+                    ).hexdigest(),
+                    "user": str(config["User"]),
+                    "working_directory": str(config["WorkingDir"]),
+                    "entrypoint": list(config["Entrypoint"]),
+                    "cmd": list(config["Cmd"]),
+                    "environment_sha256": hashlib.sha256(
+                        canonical_json_bytes(
+                            [f"{name}={environment[name]}"
+                             for name in sorted(environment)]
+                        )
+                    ).hexdigest(),
+                    "volume_destinations": sorted(volume_destinations),
+                },
+            }
     elif spec.name == "compose-images":
         expected = tuple(
             sorted(
@@ -2165,11 +2554,150 @@ def _validate_preflight_result(manifest: ControllerManifest, spec: CommandSpec, 
         )
         if tuple(sorted(set(lines))) != expected:
             _reject()
+    return None
+
+
+def _validate_materialization_attestation(
+    manifest: ControllerManifest,
+    value: object,
+) -> dict[str, object]:
+    attestation = _closed_object(value, _MATERIALIZATION_KEYS)
+    if (
+        attestation["schema"] != _MATERIALIZATION_ATTESTATION_SCHEMA
+        or attestation["source_content_sha256"]
+        != manifest.repository["source_content_sha256"]
+    ):
+        _reject()
+    source_digest = _concrete_sha256(attestation["source_content_sha256"])
+    final_image = _closed_object(attestation["final_image"], _FINAL_IMAGE_KEYS)
+    expected_image = {
+        "image_id": manifest.artifacts["runner_image_id"],
+        "repository_digest": manifest.artifacts["runner_image"],
+        "os": manifest.docker["os"],
+        "platform": f"{manifest.docker['os']}/{manifest.docker['architecture']}",
+        "architecture": manifest.docker["architecture"],
+    }
+    if final_image != expected_image:
+        _reject()
+    image_id_digest = _image_id(final_image["image_id"]).removeprefix("sha256:")
+    repository_digest = _immutable_image(
+        final_image["repository_digest"]
+    ).rsplit("@sha256:", 1)[-1]
+    if source_digest in (image_id_digest, repository_digest):
+        _reject()
+
+    expected_filesystem = _expected_final_filesystem_document(
+        manifest.source_content
+    )
+    python = _closed_object(attestation["python"], _PYTHON_KEYS)
+    if python != expected_filesystem["python"]:
+        _reject()
+    filesystem = _closed_object(
+        attestation["final_filesystem"], _FINAL_INVENTORY_KEYS
+    )
+    entries = _inventory_entries(filesystem["entries"], _FINAL_MEMBERS)
+    normalized_filesystem = {
+        "entries": list(entries),
+        "manifest_sha256": _concrete_sha256(filesystem["manifest_sha256"]),
+    }
+    if (
+        normalized_filesystem["entries"] != expected_filesystem["entries"]
+        or normalized_filesystem["manifest_sha256"] != _inventory_sha256(entries)
+    ):
+        _reject()
+
+    configuration = _closed_object(
+        attestation["image_configuration"], _IMAGE_CONFIGURATION_KEYS
+    )
+    entrypoint = _exact_sequence(
+        configuration["entrypoint"],
+        (
+            "/opt/erpai/"
+            "finance_gl_trial_balance_runtime_compatibility_probe.py",
+        ),
+    )
+    command = configuration["cmd"]
+    if type(command) is not list or any(type(item) is not str for item in command):
+        _reject()
+    volumes = _exact_sequence(
+        configuration["volume_destinations"],
+        ("/home/frappe/frappe-bench/sites",),
+    )
+    normalized_configuration = {
+        "base_config_sha256": _concrete_sha256(
+            configuration["base_config_sha256"]
+        ),
+        "config_sha256": _concrete_sha256(configuration["config_sha256"]),
+        "user": _text(configuration["user"]),
+        "working_directory": _text(configuration["working_directory"]),
+        "entrypoint": list(entrypoint),
+        "cmd": list(command),
+        "environment_sha256": _concrete_sha256(
+            configuration["environment_sha256"]
+        ),
+        "volume_destinations": list(volumes),
+    }
+    if (
+        normalized_configuration["user"] != "1000:1000"
+        or normalized_configuration["working_directory"] != "/opt/erpai"
+    ):
+        _reject()
+
+    containment = _closed_object(
+        attestation["verification_containment"],
+        _VERIFICATION_CONTAINMENT_KEYS,
+    )
+    expected_containment = {
+        "network_mode": "none",
+        "privileged": False,
+        "read_only_rootfs": True,
+        "user": "1000:1000",
+        "cap_drop": ["ALL"],
+        "security_options": ["no-new-privileges:true"],
+        "tmpfs_destinations": ["/home/frappe/frappe-bench/sites"],
+        "container_started": False,
+        "verification_container_retired": True,
+    }
+    if containment != expected_containment:
+        _reject()
+    return {
+        "schema": _MATERIALIZATION_ATTESTATION_SCHEMA,
+        "source_content_sha256": source_digest,
+        "final_image": dict(final_image),
+        "python": dict(python),
+        "final_filesystem": normalized_filesystem,
+        "image_configuration": normalized_configuration,
+        "verification_containment": expected_containment,
+    }
+
+
+def _build_materialization_attestation(
+    manifest: ControllerManifest,
+    runner_observation: Mapping[str, object],
+    filesystem_observation: Mapping[str, object],
+    containment_observation: Mapping[str, object],
+) -> dict[str, object]:
+    filesystem_entries = filesystem_observation["entries"]
+    value = {
+        "schema": _MATERIALIZATION_ATTESTATION_SCHEMA,
+        "source_content_sha256": manifest.repository["source_content_sha256"],
+        "final_image": dict(runner_observation["final_image"]),
+        "python": dict(filesystem_observation["python"]),
+        "final_filesystem": {
+            "entries": [dict(entry) for entry in filesystem_entries],
+            "manifest_sha256": filesystem_observation["manifest_sha256"],
+        },
+        "image_configuration": dict(
+            runner_observation["image_configuration"]
+        ),
+        "verification_containment": dict(containment_observation),
+    }
+    return _validate_materialization_attestation(manifest, value)
 
 
 def _artifact_provenance(
     manifest: ControllerManifest,
-    content_verification: Mapping[str, object],
+    materialization_attestation: Mapping[str, object],
 ) -> dict[str, object]:
     return {
         "schema": _ARTIFACT_SCHEMA,
@@ -2206,12 +2734,15 @@ def _artifact_provenance(
                 else "external_delegation_prerequisite_bound"
             ),
         },
-        "runner_content": {
-            "manifest_sha256": manifest.repository["content_manifest_sha256"],
-            "manifest": dict(manifest.content_manifest),
-            "independent_final_filesystem": dict(content_verification),
+        "source_content": {
+            "sha256": manifest.repository["source_content_sha256"],
+            "contract": dict(manifest.source_content),
         },
-        "result": "runtime_preflight_and_runner_content_verified",
+        "materialization_attestation": dict(materialization_attestation),
+        "materialization_attestation_sha256": hashlib.sha256(
+            canonical_json_bytes(materialization_attestation)
+        ).hexdigest(),
+        "result": "runtime_preflight_and_materialization_verified",
     }
 
 
@@ -2467,7 +2998,7 @@ def _teardown_receipt(manifest: ControllerManifest, success: bool) -> dict[str, 
     }
 
 
-def _preflight(manifest: ControllerManifest) -> None:
+def _preflight(manifest: ControllerManifest) -> dict[str, object]:
     _validate_host_inputs(manifest)
     if manifest.policy is not None and (
         manifest.policy["artifact_manifest_sha256"]
@@ -2475,9 +3006,36 @@ def _preflight(manifest: ControllerManifest) -> None:
     ):
         _reject()
     environment = _execution_environment(manifest)
+    base_configuration: dict[str, object] | None = None
+    runner_observation: dict[str, object] | None = None
     for spec in _preflight_plan(manifest):
         result = _run_subprocess(spec, environment)
-        _validate_preflight_result(manifest, spec, result)
+        observed = _validate_preflight_result(
+            manifest,
+            spec,
+            result,
+            base_configuration=base_configuration,
+        )
+        if spec.name == "inspect-base_image":
+            if (
+                observed is None
+                or base_configuration is not None
+                or set(observed) != {
+                    "configuration", "configuration_sha256",
+                }
+            ):
+                _reject()
+            base_configuration = dict(observed["configuration"])
+            _concrete_sha256(observed["configuration_sha256"])
+        elif spec.name == "inspect-runner_image":
+            if observed is None or runner_observation is not None:
+                _reject()
+            runner_observation = observed
+        elif observed is not None:
+            _reject()
+    if base_configuration is None or runner_observation is None:
+        _reject()
+    return runner_observation
 
 
 def _expected_container_services(manifest: ControllerManifest) -> dict[str, str]:
@@ -2653,7 +3211,16 @@ _OBSERVATION_RESULT_KEYS: Final = (
     "driver_distribution",
     "driver_version",
     "server_version",
-    "transaction_state",
+    "initial_transaction_inactive",
+    "isolation_repeatable_read",
+    "transaction_read_only",
+    "consistent_snapshot_started",
+    "transaction_active",
+    "wrapper_stable",
+    "raw_connection_stable",
+    "server_connection_stable",
+    "rollback_no_chain_succeeded",
+    "final_transaction_inactive",
     "connection_id_commitment",
     "primary_route",
     "replica_denied",
@@ -2705,7 +3272,7 @@ def _validate_probe_record(
         record = _closed_object(value, _OBSERVATION_RESULT_KEYS)
         if (
             case_id != "environment_observation"
-            or record["schema"] != "erpai.gl_tb.runtime_compat.observation.v1"
+            or record["schema"] != "erpai.gl_tb.runtime_compat.observation.v2"
             or record["mode"] != "observe"
             or record["run_id"] != manifest.run_id
             or record["result"] != "pass"
@@ -2747,10 +3314,21 @@ def _validate_probe_record(
             record["driver_version"],
         ) != expected_identity:
             _reject()
+        for key in (
+            "initial_transaction_inactive",
+            "isolation_repeatable_read",
+            "transaction_read_only",
+            "consistent_snapshot_started",
+            "transaction_active",
+            "wrapper_stable",
+            "raw_connection_stable",
+            "server_connection_stable",
+            "rollback_no_chain_succeeded",
+            "final_transaction_inactive",
+        ):
+            if record[key] is not True:
+                _reject()
         _sha256(record["connection_id_commitment"])
-        _safe_state(record["transaction_state"])
-        if record["transaction_state"]["active"] != 0:
-            _reject()
         return record
 
     record = _closed_object(value, _VALIDATION_RESULT_KEYS)
@@ -2935,7 +3513,7 @@ def _artifact_binding_sha256(manifest: ControllerManifest) -> str:
                 "os", "architecture",
             )
         },
-        "content_manifest": dict(manifest.content_manifest),
+        "source_content": dict(manifest.source_content),
     }
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
@@ -2966,7 +3544,7 @@ def _remove_failed_staging(manifest: ControllerManifest) -> bool:
 
 def _promote_evidence(
     manifest: ControllerManifest,
-    content_verification: Mapping[str, object],
+    materialization_attestation: Mapping[str, object],
     probe_records: Sequence[dict[str, object]],
     process_records: Sequence[dict[str, object]],
 ) -> None:
@@ -2986,7 +3564,7 @@ def _promote_evidence(
     except OSError:
         raise _ControllerInternal() from None
 
-    artifact = canonical_json_bytes(_artifact_provenance(manifest, content_verification))
+    artifact = canonical_json_bytes(_artifact_provenance(manifest, materialization_attestation))
     teardown = canonical_json_bytes(_teardown_receipt(manifest, True))
     if manifest.phase == "observe":
         observation = canonical_json_bytes(
@@ -3043,13 +3621,13 @@ def _promote_evidence(
 
 def _promote_or_discard(
     manifest: ControllerManifest,
-    content_verification: Mapping[str, object],
+    materialization_attestation: Mapping[str, object],
     probe_records: Sequence[dict[str, object]],
     process_records: Sequence[dict[str, object]],
 ) -> None:
     try:
         _promote_evidence(
-            manifest, content_verification, probe_records, process_records
+            manifest, materialization_attestation, probe_records, process_records
         )
     except BaseException:
         staging_removed = _remove_failed_staging(manifest)
@@ -3068,26 +3646,37 @@ def _promote_or_discard(
 
 
 def _execute_phase(manifest: ControllerManifest) -> None:
-    """Execute one closed point; incomplete content or teardown is discard-only."""
+    """Execute one closed point; incomplete materialization is discard-only."""
 
-    _preflight(manifest)
+    runner_observation = _preflight(manifest)
     environment = _execution_environment(manifest)
     phase_ok = True
-    content_stdout: bytes | None = None
     content_id: str | None = None
-    content_verification: dict[str, object] | None = None
+    content_archives: dict[
+        str, dict[str, dict[str, object]]
+    ] = {}
+    filesystem_observation: dict[str, object] | None = None
+    containment_observation: dict[str, object] | None = None
     probe_records: list[dict[str, object]] = []
     process_records: list[dict[str, object]] = []
     probe_ids: dict[str, str] = {}
     for spec in _phase_plan(manifest):
         try:
             actual_spec = spec
-            if spec.name == "content-verify-retire":
+            if spec.name in (
+                "content-verify-container",
+                "content-copy-apps",
+                "content-copy-erpai",
+                "content-copy-python",
+                "content-verify-retire",
+            ):
                 if content_id is None:
                     _reject()
-                argv = list(spec.argv)
-                argv[-1] = content_id
-                actual_spec = replace(spec, argv=tuple(argv))
+                argv = tuple(
+                    item.replace("__INSPECTED_CONTENT_ID__", content_id)
+                    for item in spec.argv
+                )
+                actual_spec = replace(spec, argv=argv)
             elif spec.name.startswith(("copy-evidence-", "retire-probe-")):
                 prefix = (
                     "copy-evidence-"
@@ -3111,18 +3700,38 @@ def _execute_phase(manifest: ControllerManifest) -> None:
             process_records.append(_process_receipt(actual_spec, result))
             if result.returncode != 0 or result.timed_out:
                 _reject()
-            if spec.name == "content-verify-wait":
-                if result.stderr or not result.stdout:
-                    _reject()
-                content_stdout = result.stdout
+            if spec.name == "content-verify-create":
+                content_id = _validate_content_create_result(result)
             elif spec.name == "content-verify-container":
-                content_id = _validate_content_container(manifest, result)
-            elif spec.name == "content-verify-retire":
-                if result.stdout or result.stderr or content_stdout is None:
-                    _reject()
-                content_verification = validate_final_filesystem_observation(
-                    manifest, content_stdout
+                inspected_id, containment_observation = (
+                    _validate_content_container(
+                        manifest, content_id, result
+                    )
                 )
+                if inspected_id != content_id:
+                    _reject()
+            elif spec.name.startswith("content-copy-"):
+                if result.stderr:
+                    _reject()
+                archive_name = spec.name.removeprefix("content-copy-")
+                if archive_name in content_archives:
+                    _reject()
+                content_archives[archive_name] = _parse_content_archive(
+                    manifest, archive_name, result.stdout
+                )
+            elif spec.name == "content-verify-retire":
+                if (
+                    result.stderr
+                    or _parse_fixed_lines(result.stdout) != (content_id,)
+                    or containment_observation is None
+                ):
+                    _reject()
+                filesystem_observation = _final_filesystem_from_archives(
+                    manifest, content_archives
+                )
+                containment_observation[
+                    "verification_container_retired"
+                ] = True
             elif spec.name.startswith("inspect-probe-"):
                 case_id = spec.name.removeprefix("inspect-probe-")
                 probe_ids[case_id] = _validate_probe_container(
@@ -3141,7 +3750,10 @@ def _execute_phase(manifest: ControllerManifest) -> None:
                 if result.stdout or result.stderr:
                     _reject()
             elif spec.name == "site-initialize":
-                if result.stderr or _parse_fixed_lines(result.stdout) != ("initialized",):
+                if (
+                    result.stderr
+                    or _parse_fixed_lines(result.stdout) != ("initialized",)
+                ):
                     _reject()
         except (ControllerRejected, _ControllerInternal):
             phase_ok = False
@@ -3156,13 +3768,27 @@ def _execute_phase(manifest: ControllerManifest) -> None:
     if (
         not phase_ok
         or not teardown_ok
-        or content_verification is None
+        or filesystem_observation is None
+        or containment_observation is None
         or len(probe_records) != len(manifest.canaries)
     ):
         _write_discard(manifest, manifest.phase)
         _reject()
+    try:
+        materialization_attestation = _build_materialization_attestation(
+            manifest,
+            runner_observation,
+            filesystem_observation,
+            containment_observation,
+        )
+    except BaseException:
+        _write_discard(manifest, manifest.phase)
+        _reject()
     _promote_or_discard(
-        manifest, content_verification, probe_records, process_records
+        manifest,
+        materialization_attestation,
+        probe_records,
+        process_records,
     )
 
 

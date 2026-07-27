@@ -32,9 +32,9 @@ SECRET_ROOT = f"/dev/shm/erpai-finance-gl-tb-runtime-compat/{RUN_ID}"
 PROJECT = f"gl_tb_rtcompat_{RUN_ID}"
 RUN_LABEL = f"com.erpai.finance.gl_tb_rtcompat.run={RUN_ID}"
 REVISION = "e40201b2266604f7a85065d0be8525a59f0ab605"
-SHA_A = "a" * 64
-SHA_B = "b" * 64
-SHA_C = "c" * 64
+SHA_A = hashlib.sha256(b"route-b-fixture-a").hexdigest()
+SHA_B = hashlib.sha256(b"route-b-fixture-b").hexdigest()
+SHA_C = hashlib.sha256(b"route-b-fixture-c").hexdigest()
 IMAGE_A = f"registry.example/erpai/runner@sha256:{SHA_A}"
 IMAGE_B = f"registry.example/library/mariadb@sha256:{SHA_B}"
 IMAGE_C = f"registry.example/library/redis@sha256:{SHA_C}"
@@ -63,7 +63,7 @@ def _entry(
     }
 
 
-def _content_manifest() -> dict[str, object]:
+def _source_content() -> dict[str, object]:
     source_context = [
         _entry("frappe", "tree", SHA_A, size=101),
         _entry("erpnext", "tree", SHA_B, size=102),
@@ -94,27 +94,8 @@ def _content_manifest() -> dict[str, object]:
             build_manifest_sha, size=len(build_manifest_body),
         )
     ]
-    final_paths = [path for path, _kind in controller._FINAL_MEMBERS]
-    final = [
-        _entry(PYTHON_PATH, "regular", SHA_C, size=999, uid=0, gid=0, mode="0755")
-    ]
-    for source, final_path in zip(context, final_paths[1:], strict=True):
-        mode = (
-            "0555"
-            if source["type"] == "tree"
-            or ("compatibility_" in final_path and final_path.endswith(".py"))
-            else "0444"
-        )
-        final.append(_entry(
-            final_path, source["type"], source["sha256"],
-            size=source["size_bytes"], uid=1000, gid=1000, mode=mode,
-        ))
-    python = {
-        "path": PYTHON_PATH, "version": "3.14.2", "executable_sha256": SHA_C,
-        "size_bytes": 999, "uid": 0, "gid": 0, "mode": "0755",
-    }
-    document: dict[str, object] = {
-        "schema": "erpai.gl_tb.runtime_compat.runner_content.v1",
+    return {
+        "schema": "erpai.gl_tb.runtime_compat.source_content.v1",
         "source_repository_revision": REVISION,
         "base": {"reference": BASE_IMAGE, "image_id": f"sha256:{SHA_B}"},
         "frontend": {
@@ -127,7 +108,11 @@ def _content_manifest() -> dict[str, object]:
             "frappe": {"revision": FRAPPE_REVISION, "tree_sha256": SHA_A},
             "erpnext": {"revision": ERPNEXT_REVISION, "tree_sha256": SHA_B},
         },
-        "python": python,
+        "python": {
+            "path": PYTHON_PATH, "version": "3.14.2",
+            "executable_sha256": SHA_C, "size_bytes": 999,
+            "uid": 0, "gid": 0, "mode": "0755",
+        },
         "build_context": {
             "entries": context,
             "manifest_sha256": _fixture_hash(context),
@@ -143,23 +128,7 @@ def _content_manifest() -> dict[str, object]:
             "initializer_sha256": SHA_C,
             "build_manifest_sha256": build_manifest_sha,
         },
-        "final_image": {
-            "image_id": f"sha256:{SHA_A}", "repository_digest": IMAGE_A,
-            "os": "linux", "platform": "linux/amd64", "architecture": "amd64",
-        },
-        "final_filesystem": {
-            "entries": final, "manifest_sha256": _fixture_hash(final),
-        },
-        "independent_verification_sha256": "",
     }
-    observation = {
-        "schema": "erpai.gl_tb.runtime_compat.final_filesystem.v1",
-        "python": python,
-        "entries": final,
-    }
-    document["independent_verification_sha256"] = _fixture_hash(observation)
-    return document
-
 
 
 def _load_exact(path: Path, name: str) -> types.ModuleType:
@@ -213,7 +182,7 @@ def _manifest(phase: str = "observe") -> dict[str, object]:
         ]
     )
     document: dict[str, object] = {
-        "schema": "erpai.gl_tb.runtime_compat.execution.v2",
+        "schema": "erpai.gl_tb.runtime_compat.execution.v3",
         "phase": phase,
         "run_id": RUN_ID,
         "run_root": RUN_ROOT,
@@ -231,7 +200,7 @@ def _manifest(phase: str = "observe") -> dict[str, object]:
             "runtime_sha256": SHA_A,
             "frappe_tree_sha256": SHA_A,
             "erpnext_tree_sha256": SHA_B,
-            "content_manifest_sha256": _fixture_hash(_content_manifest()),
+            "source_content_sha256": _fixture_hash(_source_content()),
         },
         "artifacts": {
             "base_image": BASE_IMAGE,
@@ -271,7 +240,7 @@ def _manifest(phase: str = "observe") -> dict[str, object]:
             "os": "linux",
             "architecture": "amd64",
         },
-        "content_manifest": _content_manifest(),
+        "source_content": _source_content(),
         "compose": {
             "file": f"{RUN_ROOT}/compose.yaml",
             "project": PROJECT,
@@ -332,18 +301,159 @@ def _encoded(document: object, *, sort_keys: bool = False) -> bytes:
     return json.dumps(document, separators=(",", ":"), sort_keys=sort_keys).encode() + b"\n"
 
 
-def _refresh_content_hash(document: dict[str, object]) -> None:
-    document["repository"]["content_manifest_sha256"] = _fixture_hash(
-        document["content_manifest"]
+def _refresh_source_hash(document: dict[str, object]) -> None:
+    document["repository"]["source_content_sha256"] = _fixture_hash(
+        document["source_content"]
     )
 
 
 def _refresh_context_hash(document: dict[str, object]) -> None:
-    content = document["content_manifest"]
+    content = document["source_content"]
     content["build_context"]["manifest_sha256"] = _fixture_hash(
         content["build_context"]["entries"]
     )
-    _refresh_content_hash(document)
+    _refresh_source_hash(document)
+
+
+def _base_image_config() -> dict[str, object]:
+    return {
+        "User": "frappe",
+        "WorkingDir": "/home/frappe/frappe-bench",
+        "Entrypoint": ["/home/frappe/frappe-bench/env/bin/gunicorn"],
+        "Cmd": ["--bind=0.0.0.0:8000"],
+        "Env": [
+            "PATH=/usr/local/bin:/usr/bin",
+            "BASE_ONLY=pinned",
+        ],
+        "Volumes": {"/home/frappe/frappe-bench/sites": {}},
+        "Labels": {"org.opencontainers.image.title": "pinned-base"},
+        "ExposedPorts": {"8000/tcp": {}},
+    }
+
+
+def _runner_image_config(
+    manifest: controller.ControllerManifest,
+) -> dict[str, object]:
+    config = copy.deepcopy(_base_image_config())
+    environment = {
+        item.split("=", 1)[0]: item.split("=", 1)[1]
+        for item in config["Env"]
+    }
+    environment.update(controller._runner_environment_overrides(manifest))
+    config.update({
+        "User": "1000:1000",
+        "WorkingDir": "/opt/erpai",
+        "Entrypoint": [
+            "/opt/erpai/finance_gl_trial_balance_runtime_compatibility_probe.py"
+        ],
+        "Cmd": [],
+        "Env": [
+            f"{name}={environment[name]}" for name in sorted(environment)
+        ],
+    })
+    return config
+
+
+def _image_inspect(
+    manifest: controller.ControllerManifest,
+    key: str,
+    *,
+    config: dict[str, object] | None = None,
+) -> bytes:
+    volumes = {
+        "base_image": {"/home/frappe/frappe-bench/sites": {}},
+        "runner_image": {"/home/frappe/frappe-bench/sites": {}},
+        "mariadb_image": {"/var/lib/mysql": {}},
+        "redis_image": {"/data": {}},
+    }[key]
+    fields = (
+        manifest.artifacts[key.replace("_image", "_image_id")],
+        json.dumps([manifest.artifacts[key]], separators=(",", ":")),
+        "linux",
+        "amd64",
+        json.dumps(volumes, separators=(",", ":"), sort_keys=True),
+        json.dumps(
+            (
+                config
+                if config is not None
+                else (_base_image_config() if key == "base_image" else {})
+            ),
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+    )
+    return ("\t".join(fields) + "\n").encode()
+
+
+def _runner_observation(
+    manifest: controller.ControllerManifest,
+) -> dict[str, object]:
+    plans = controller._preflight_plan(manifest)
+    base_spec = next(
+        item for item in plans if item.name == "inspect-base_image"
+    )
+    base = controller._validate_preflight_result(
+        manifest,
+        base_spec,
+        controller._CommandResult(
+            0, _image_inspect(manifest, "base_image"), b"", False
+        ),
+    )
+    if base is None:
+        raise AssertionError("base configuration was not observed")
+    runner_spec = next(
+        item for item in plans if item.name == "inspect-runner_image"
+    )
+    observed = controller._validate_preflight_result(
+        manifest,
+        runner_spec,
+        controller._CommandResult(
+            0,
+            _image_inspect(
+                manifest,
+                "runner_image",
+                config=_runner_image_config(manifest),
+            ),
+            b"",
+            False,
+        ),
+        base_configuration=base["configuration"],
+    )
+    if observed is None:
+        raise AssertionError("runner materialization was not observed")
+    return observed
+
+
+def _filesystem_observation(
+    manifest: controller.ControllerManifest,
+) -> dict[str, object]:
+    expected = controller._expected_final_filesystem_document(
+        manifest.source_content
+    )
+    return controller.validate_final_filesystem_observation(
+        manifest, _encoded(expected)
+    )
+
+
+def _materialization_attestation(
+    manifest: controller.ControllerManifest,
+) -> dict[str, object]:
+    return controller._build_materialization_attestation(
+        manifest,
+        _runner_observation(manifest),
+        _filesystem_observation(manifest),
+        {
+            "network_mode": "none",
+            "privileged": False,
+            "read_only_rootfs": True,
+            "user": "1000:1000",
+            "cap_drop": ["ALL"],
+            "security_options": ["no-new-privileges:true"],
+            "tmpfs_destinations": ["/home/frappe/frappe-bench/sites"],
+            "container_started": False,
+            "verification_container_retired": True,
+        },
+    )
 
 
 def _content_container_inspect(
@@ -351,20 +461,14 @@ def _content_container_inspect(
 ) -> bytes:
     fields = [
         SHA_A,
-        f"sha256:{SHA_A}",
+        manifest.artifacts["runner_image_id"],
         f"/{PROJECT}_content_verifier",
-        "exited", "false", "0", "false", "none", "false",
+        "created", "false", "0", "false", "none", "false",
         "1000:1000", "true",
         json.dumps(["ALL"], separators=(",", ":")),
         json.dumps(["no-new-privileges:true"], separators=(",", ":")),
-        json.dumps([PYTHON_PATH], separators=(",", ":")),
-        json.dumps(
-            [
-                "-I", "-B", "-c", controller._RUNNER_CONTENT_VERIFY_SOURCE,
-                controller._content_verifier_request(),
-            ],
-            separators=(",", ":"),
-        ),
+        json.dumps(["/bin/false"], separators=(",", ":")),
+        json.dumps([], separators=(",", ":")),
         "tmpfs=/home/frappe/frappe-bench/sites,",
         RUN_ID, PROJECT, "content-verifier",
     ]
@@ -402,20 +506,6 @@ def _probe_container_inspect(
     for index, value in (replacements or {}).items():
         fields[index] = value
     return ("\t".join(fields) + "\n").encode()
-
-
-def _reseal_final_and_content(document: dict[str, object]) -> None:
-    content = document["content_manifest"]
-    content["final_filesystem"]["manifest_sha256"] = _fixture_hash(
-        content["final_filesystem"]["entries"]
-    )
-    content["independent_verification_sha256"] = _fixture_hash({
-        "schema": "erpai.gl_tb.runtime_compat.final_filesystem.v1",
-        "python": content["python"],
-        "entries": content["final_filesystem"]["entries"],
-    })
-    _refresh_context_hash(document)
-
 
 
 def _resolved_compose() -> dict[str, object]:
@@ -901,39 +991,150 @@ class PathAndCommandTests(unittest.TestCase):
 
 
 class ProbeBoundaryTests(unittest.TestCase):
+    _INITIAL = (
+        "10.11.18-MariaDB-disposable",
+        731,
+        0,
+        "REPEATABLE-READ",
+        0,
+    )
+    _ACTIVE = (
+        "10.11.18-MariaDB-disposable",
+        731,
+        1,
+        "REPEATABLE-READ",
+        1,
+    )
+    _FINAL = (
+        "10.11.18-MariaDB-disposable",
+        731,
+        0,
+        "REPEATABLE-READ",
+        0,
+    )
+
     class _Cursor:
-        def __init__(self, row: tuple[object, ...]) -> None:
-            self.row = row
+        def __init__(self, raw: object) -> None:
+            self.raw = raw
+            self.row: tuple[object, ...] | None = None
             self.calls = 0
             self.statement = None
             self.closed = False
 
         def execute(self, statement: str) -> None:
             self.statement = statement
+            self.raw.statements.append(statement)
+            ordinal = len(self.raw.statements)
+            if ordinal in self.raw.fail_at or statement in self.raw.fail_statements:
+                raise RuntimeError("LEAK COMPANY SQL CONNECTION 731")
+            if statement == probe._STATE_SQL:
+                if not self.raw.rows:
+                    raise RuntimeError("LEAK EMPTY STATE")
+                self.row = self.raw.rows.pop(0)
+            elif statement not in probe._TRANSACTION_CONTROL_SQL:
+                raise AssertionError("unexpected statement")
+            callback = self.raw.after_execute.get(ordinal)
+            if callback is not None:
+                callback()
 
         def fetchone(self) -> object:
             self.calls += 1
             return self.row if self.calls == 1 else None
 
         def close(self) -> None:
+            self.raw.cursor_close_calls += 1
             self.closed = True
+            if self.raw.cursor_close_calls in self.raw.fail_cursor_close_at:
+                raise RuntimeError("LEAK CURSOR CLOSE COMPANY SQL CONNECTION 731")
+
+    class _Raw:
+        def __init__(
+            self,
+            rows: tuple[tuple[object, ...], ...],
+            *,
+            fail_at: frozenset[int],
+            fail_statements: frozenset[str],
+            fail_cursor_close_at: frozenset[int],
+        ) -> None:
+            self.rows = list(rows)
+            self.fail_at = set(fail_at)
+            self.fail_statements = set(fail_statements)
+            self.fail_cursor_close_at = set(fail_cursor_close_at)
+            self.after_execute: dict[int, object] = {}
+            self.statements: list[str] = []
+            self.cursor_close_calls = 0
+            self.open = True
+            self.close_calls = 0
+
+        def cursor(self) -> object:
+            return ProbeBoundaryTests._Cursor(self)
+
+        def close(self) -> None:
+            self.close_calls += 1
+            self.open = False
 
     @staticmethod
-    def _frappe(row: tuple[object, ...] = ("10.11.18-MariaDB-disposable", 731, 0, "REPEATABLE-READ", 0)) -> tuple[object, object, object]:
-        cursor = ProbeBoundaryTests._Cursor(row)
-        raw_type = type("Connection", (), {"__module__": "pymysql.connections"})
-        raw = raw_type()
-        raw.cursor = lambda: cursor
-        raw.open = True
-        wrapper_type = type("MariaDBDatabase", (), {"__module__": "frappe.database.mariadb.database"})
+    def _frappe(
+        rows: tuple[tuple[object, ...], ...] | None = None,
+        *,
+        fail_at: frozenset[int] = frozenset(),
+        fail_statements: frozenset[str] = frozenset(),
+        fail_cursor_close_at: frozenset[int] = frozenset(),
+        driver: str = "pymysql",
+    ) -> tuple[object, object, object]:
+        wrapper_module, raw_module = {
+            "pymysql": (
+                "frappe.database.mariadb.database",
+                "pymysql.connections",
+            ),
+            "mysqlclient": (
+                "frappe.database.mariadb.mysqlclient",
+                "MySQLdb.connections",
+            ),
+        }[driver]
+        raw_type = type(
+            "Connection",
+            (ProbeBoundaryTests._Raw,),
+            {"__module__": raw_module},
+        )
+        raw = raw_type(
+            rows
+            if rows is not None
+            else (
+                ProbeBoundaryTests._INITIAL,
+                ProbeBoundaryTests._ACTIVE,
+                ProbeBoundaryTests._FINAL,
+            ),
+            fail_at=fail_at,
+            fail_statements=fail_statements,
+            fail_cursor_close_at=fail_cursor_close_at,
+        )
+        wrapper_type = type(
+            "MariaDBDatabase",
+            (),
+            {"__module__": wrapper_module},
+        )
         wrapper = wrapper_type()
         wrapper._conn = raw
         local = types.SimpleNamespace(db=wrapper, primary_db=None, replica_db=None, conf={}, session={"user": "Guest"})
         frappe = types.SimpleNamespace(local=local)
-        return frappe, raw, cursor
+        return frappe, raw, raw
+
+    def _assert_observation_rejected(self, frappe: object) -> None:
+        with (
+            mock.patch.object(probe, "_connect_site", return_value=frappe),
+            mock.patch.object(probe, "_destroy_site"),
+            mock.patch.object(probe.metadata, "version", return_value="1.1.2"),
+            mock.patch.object(probe, "_connection_commitment", return_value=SHA_A),
+        ):
+            with self.assertRaises(probe.ProbeRejected) as raised:
+                probe.observe(_manifest("observe"))
+        self.assertEqual(str(raised.exception), "")
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
 
     def test_observation_is_runtime_free_and_sanitized(self) -> None:
-        frappe, _raw, cursor = self._frappe()
+        frappe, raw, _script = self._frappe()
         manifest = _manifest("observe")
         with (
             mock.patch.object(probe, "_connect_site", return_value=frappe),
@@ -943,30 +1144,235 @@ class ProbeBoundaryTests(unittest.TestCase):
             mock.patch.object(probe, "_runtime_objects", side_effect=AssertionError("runtime forbidden")),
         ):
             result = probe.observe(manifest)
-        self.assertEqual(cursor.statement, probe._STATE_SQL)
+        self.assertEqual(
+            raw.statements,
+            [
+                probe._STATE_SQL,
+                probe._SET_ISOLATION_SQL,
+                probe._START_SNAPSHOT_SQL,
+                probe._STATE_SQL,
+                probe._ROLLBACK_SQL,
+                probe._STATE_SQL,
+            ],
+        )
         self.assertEqual(version.call_args.args, ("PyMySQL",))
         destroy.assert_called_once_with(frappe)
+        self.assertEqual(result["schema"], "erpai.gl_tb.runtime_compat.observation.v2")
         self.assertEqual(result["driver"], "pymysql")
         self.assertEqual(result["connection_id_commitment"], SHA_A)
+        self.assertEqual(set(result), set(controller._OBSERVATION_RESULT_KEYS))
+        for key in (
+            "initial_transaction_inactive",
+            "isolation_repeatable_read",
+            "transaction_read_only",
+            "consistent_snapshot_started",
+            "transaction_active",
+            "wrapper_stable",
+            "raw_connection_stable",
+            "server_connection_stable",
+            "rollback_no_chain_succeeded",
+            "final_transaction_inactive",
+            "primary_route",
+            "replica_denied",
+        ):
+            self.assertIs(result[key], True)
+        self.assertIs(result["partial_output"], False)
+        self.assertNotIn("transaction_state", result)
+        self.assertNotIn("connection_id", result)
         rendered = repr(result)
         self.assertNotIn("731", rendered)
         self.assertNotIn("Guest", rendered)
         self.assertNotIn("policy", rendered.lower())
+        source = PROBE_PATH.read_text(encoding="utf-8")
+        observation_boundary = source[
+            source.index("def _raw_one"):source.index("def _runtime_objects")
+        ]
+        for forbidden in (
+            "tabGL Entry",
+            "tabAccount",
+            "synthetic_company",
+            "get_list",
+            "gl_trial_balance_core",
+            "gl_trial_balance_adapter",
+        ):
+            self.assertNotIn(forbidden, observation_boundary)
 
-    def test_observation_denies_replica_and_active_transaction(self) -> None:
+    def test_mysqlclient_observation_uses_the_same_closed_lifecycle(self) -> None:
+        frappe, raw, _script = self._frappe(driver="mysqlclient")
+        with (
+            mock.patch.object(probe, "_connect_site", return_value=frappe),
+            mock.patch.object(probe, "_destroy_site") as destroy,
+            mock.patch.object(
+                probe.metadata, "version", return_value="2.2.7"
+            ) as version,
+            mock.patch.object(probe, "_connection_commitment", return_value=SHA_A),
+            mock.patch.object(
+                probe,
+                "_runtime_objects",
+                side_effect=AssertionError("runtime forbidden"),
+            ),
+        ):
+            result = probe.observe(_manifest("observe"))
+        self.assertEqual(
+            raw.statements,
+            [
+                probe._STATE_SQL,
+                probe._SET_ISOLATION_SQL,
+                probe._START_SNAPSHOT_SQL,
+                probe._STATE_SQL,
+                probe._ROLLBACK_SQL,
+                probe._STATE_SQL,
+            ],
+        )
+        self.assertEqual(version.call_args.args, ("mysqlclient",))
+        destroy.assert_called_once_with(frappe)
+        self.assertEqual(result["driver"], "mysqlclient")
+        self.assertEqual(result["driver_distribution"], "mysqlclient")
+        self.assertEqual(result["driver_version"], "2.2.7")
+        self.assertEqual(result["connection_id_commitment"], SHA_A)
+        self.assertNotIn("connection_id", result)
+
+    def test_observation_denies_replica_and_initial_active_transaction(self) -> None:
         for mutation in ("replica", "transaction"):
-            frappe, _raw, _cursor = self._frappe(
-                ("10.11.18-MariaDB-disposable", 731, 1 if mutation == "transaction" else 0, "REPEATABLE-READ", 0)
-            )
+            rows = (
+                (
+                    "10.11.18-MariaDB-disposable",
+                    731,
+                    1,
+                    "REPEATABLE-READ",
+                    0,
+                ),
+            ) if mutation == "transaction" else None
+            frappe, _raw, _script = self._frappe(rows)
             if mutation == "replica":
                 frappe.local.replica_db = object()
-            with (
-                mock.patch.object(probe, "_connect_site", return_value=frappe),
-                mock.patch.object(probe, "_destroy_site"),
-                mock.patch.object(probe.metadata, "version", return_value="1.1.2"),
-            ):
-                with self.subTest(mutation=mutation), self.assertRaises(probe.ProbeRejected):
-                    probe.observe(_manifest("observe"))
+            with self.subTest(mutation=mutation):
+                self._assert_observation_rejected(frappe)
+
+    def test_observation_rejects_each_transaction_statement_failure(self) -> None:
+        for statement in (
+            probe._SET_ISOLATION_SQL,
+            probe._START_SNAPSHOT_SQL,
+            probe._ROLLBACK_SQL,
+        ):
+            rows = (
+                self._INITIAL,
+                self._FINAL,
+            ) if statement != probe._ROLLBACK_SQL else (
+                self._INITIAL,
+                self._ACTIVE,
+            )
+            frappe, raw, _script = self._frappe(
+                rows,
+                fail_statements=frozenset((statement,)),
+            )
+            with self.subTest(statement=statement):
+                self._assert_observation_rejected(frappe)
+            self.assertIn(statement, raw.statements)
+            if statement == probe._ROLLBACK_SQL:
+                self.assertFalse(raw.open)
+                self.assertEqual(raw.close_calls, 1)
+
+    def test_observation_rejects_cursor_close_failure_and_discards(self) -> None:
+        for close_ordinal in range(1, 7):
+            frappe, raw, _script = self._frappe(
+                fail_cursor_close_at=frozenset((close_ordinal,))
+            )
+            with self.subTest(close_ordinal=close_ordinal):
+                self._assert_observation_rejected(frappe)
+            if close_ordinal == 1:
+                self.assertEqual(raw.close_calls, 0)
+            else:
+                self.assertFalse(raw.open)
+                self.assertEqual(raw.close_calls, 1)
+
+    def test_observation_rejects_binding_and_server_identity_drift(self) -> None:
+        for mutation in (
+            "wrapper-active",
+            "raw-active",
+            "wrapper-final",
+            "raw-final",
+            "server-active",
+            "server-final",
+        ):
+            rows = [self._INITIAL, self._ACTIVE, self._FINAL]
+            if mutation == "server-active":
+                rows[1] = (
+                    "10.11.18-MariaDB-disposable",
+                    732,
+                    1,
+                    "REPEATABLE-READ",
+                    1,
+                )
+            elif mutation == "server-final":
+                rows[2] = (
+                    "10.11.18-MariaDB-disposable",
+                    732,
+                    0,
+                    "REPEATABLE-READ",
+                    0,
+                )
+            frappe, raw, _script = self._frappe(tuple(rows))
+            if mutation.startswith("wrapper"):
+                ordinal = 3 if mutation.endswith("active") else 5
+                raw.after_execute[ordinal] = lambda: setattr(
+                    frappe.local, "db", types.SimpleNamespace(_conn=raw)
+                )
+            elif mutation.startswith("raw"):
+                ordinal = 3 if mutation.endswith("active") else 5
+                replacement = types.SimpleNamespace(open=True)
+                raw.after_execute[ordinal] = lambda: setattr(
+                    frappe.local.db, "_conn", replacement
+                )
+            with self.subTest(mutation=mutation):
+                self._assert_observation_rejected(frappe)
+
+    def test_observation_rejects_lost_or_final_active_transaction(self) -> None:
+        cases = {
+            "lost-active": (731, 0, "REPEATABLE-READ", 1),
+            "wrong-isolation": (731, 1, "READ-COMMITTED", 1),
+            "not-read-only": (731, 1, "REPEATABLE-READ", 0),
+        }
+        for name, (connection_id, active, isolation, read_only) in cases.items():
+            rows = (
+                self._INITIAL,
+                (
+                    "10.11.18-MariaDB-disposable",
+                    connection_id,
+                    active,
+                    isolation,
+                    read_only,
+                ),
+            )
+            frappe, _raw, _script = self._frappe(rows)
+            with self.subTest(name=name):
+                self._assert_observation_rejected(frappe)
+        final_active = (
+            self._INITIAL,
+            self._ACTIVE,
+            (
+                "10.11.18-MariaDB-disposable",
+                731,
+                1,
+                "REPEATABLE-READ",
+                1,
+            ),
+        )
+        frappe, _raw, _script = self._frappe(final_active)
+        self._assert_observation_rejected(frappe)
+
+    def test_observation_rejects_replica_ambiguity_at_each_checkpoint(self) -> None:
+        for checkpoint in ("initial", "active", "final"):
+            frappe, raw, _script = self._frappe()
+            if checkpoint == "initial":
+                frappe.local.replica_db = object()
+            else:
+                ordinal = 3 if checkpoint == "active" else 5
+                raw.after_execute[ordinal] = lambda: setattr(
+                    frappe.local, "replica_db", object()
+                )
+            with self.subTest(checkpoint=checkpoint):
+                self._assert_observation_rejected(frappe)
 
     def test_normal_validation_calls_only_begin_final_close(self) -> None:
         frappe, raw, _cursor = self._frappe()
@@ -1137,10 +1543,19 @@ class ProbeBoundaryTests(unittest.TestCase):
             with self.subTest(argv=argv), self.assertRaises(probe.ProbeRejected):
                 probe._parse_cli(argv)
         stderr = io.StringIO()
-        with mock.patch.object(probe, "_load_manifest", side_effect=RuntimeError("COMPANY SECRET SQL")), mock.patch.object(sys, "stderr", stderr):
+        with (
+            mock.patch.object(
+                probe,
+                "_load_manifest",
+                side_effect=RuntimeError("COMPANY SECRET SQL"),
+            ),
+            mock.patch.object(probe, "_atomic_output") as output,
+            mock.patch.object(sys, "stderr", stderr),
+        ):
             code = probe.main(valid_observe)
         self.assertEqual(code, 70)
         self.assertEqual(stderr.getvalue(), "runtime_compatibility_unavailable\n")
+        output.assert_not_called()
 
 
 class EvidenceAndTeardownTests(unittest.TestCase):
@@ -1237,7 +1652,7 @@ class EvidenceAndTeardownTests(unittest.TestCase):
             _encoded(_manifest("observe"))
         )
         record = {
-            "schema": "erpai.gl_tb.runtime_compat.observation.v1",
+            "schema": "erpai.gl_tb.runtime_compat.observation.v2",
             "mode": "observe",
             "run_id": RUN_ID,
             "result": "pass",
@@ -1250,11 +1665,16 @@ class EvidenceAndTeardownTests(unittest.TestCase):
             "driver_distribution": "PyMySQL",
             "driver_version": "1.1.2",
             "server_version": "10.11.18-MariaDB-disposable",
-            "transaction_state": {
-                "active": 0,
-                "isolation": "REPEATABLE-READ",
-                "read_only": 0,
-            },
+            "initial_transaction_inactive": True,
+            "isolation_repeatable_read": True,
+            "transaction_read_only": True,
+            "consistent_snapshot_started": True,
+            "transaction_active": True,
+            "wrapper_stable": True,
+            "raw_connection_stable": True,
+            "server_connection_stable": True,
+            "rollback_no_chain_succeeded": True,
+            "final_transaction_inactive": True,
             "connection_id_commitment": SHA_A,
             "primary_route": True,
             "replica_denied": True,
@@ -1275,12 +1695,35 @@ class EvidenceAndTeardownTests(unittest.TestCase):
             manifest, "environment_observation", archive(record)
         )
         self.assertEqual(accepted["driver"], "pymysql")
-        leaked = dict(record)
-        leaked["company"] = "LEAK"
-        with self.assertRaises(controller.ControllerRejected):
-            controller._probe_tar_record(
-                manifest, "environment_observation", archive(leaked)
-            )
+        for proof in (
+            "initial_transaction_inactive",
+            "isolation_repeatable_read",
+            "transaction_read_only",
+            "consistent_snapshot_started",
+            "transaction_active",
+            "wrapper_stable",
+            "raw_connection_stable",
+            "server_connection_stable",
+            "rollback_no_chain_succeeded",
+            "final_transaction_inactive",
+        ):
+            changed = dict(record)
+            changed[proof] = False
+            with self.subTest(proof=proof), self.assertRaises(
+                controller.ControllerRejected
+            ):
+                controller._probe_tar_record(
+                    manifest, "environment_observation", archive(changed)
+                )
+        for leaked_key in ("company", "connection_id"):
+            leaked = dict(record)
+            leaked[leaked_key] = "LEAK"
+            with self.subTest(leaked_key=leaked_key), self.assertRaises(
+                controller.ControllerRejected
+            ):
+                controller._probe_tar_record(
+                    manifest, "environment_observation", archive(leaked)
+                )
 
     def test_recovery_uses_observed_ids_and_rejects_unknown_inventory(self) -> None:
         manifest = controller.parse_and_validate_manifest(
@@ -1404,150 +1847,124 @@ class EvidenceAndTeardownTests(unittest.TestCase):
 
 
 class RouteBDerivativeRunnerManifestTests(unittest.TestCase):
-    def test_route_b_manifest_accepts_only_engine_builtin_and_injected_fingerprints(self) -> None:
+    def test_source_content_contract_is_prebuild_only_closed_and_hashed(self) -> None:
         accepted = controller.parse_and_validate_manifest(_encoded(_manifest()))
         self.assertEqual(
-            accepted.content_manifest["frontend"]["policy"], "engine_builtin"
+            accepted.source_content["schema"],
+            "erpai.gl_tb.runtime_compat.source_content.v1",
         )
-        mutations = (
-            ("policy", "dockerfile:1.7"),
-            ("engine_version", ""),
-            ("engine_api_version", ""),
-            ("buildkit_version", ""),
-            ("frontend_capabilities_sha256", "d" * 64),
+        self.assertEqual(
+            set(accepted.source_content),
+            {
+                "schema", "source_repository_revision", "base", "frontend",
+                "sources", "python", "build_context", "gl_tb",
+            },
         )
-        for key, value in mutations:
+        self.assertTrue(
+            {"final_image", "final_filesystem", "independent_verification_sha256"}
+            .isdisjoint(accepted.source_content)
+        )
+        self.assertEqual(
+            accepted.repository["source_content_sha256"],
+            _fixture_hash(accepted.source_content),
+        )
+
+    def test_source_content_rejects_postbuild_or_unknown_claims(self) -> None:
+        for key, value in (
+            ("final_image", {"image_id": f"sha256:{SHA_A}"}),
+            ("final_filesystem", {"entries": []}),
+            ("materialization_attestation", {}),
+            ("independent_verification_sha256", SHA_A),
+        ):
             changed = _manifest()
-            changed["content_manifest"]["frontend"][key] = value
-            _refresh_content_hash(changed)
+            changed["source_content"][key] = value
+            _refresh_source_hash(changed)
             with self.subTest(key=key), self.assertRaises(
                 controller.ControllerRejected
             ):
                 controller.parse_and_validate_manifest(_encoded(changed))
 
-    def test_route_b_manifest_pins_base_frappe_erpnext_python_and_platform(self) -> None:
-        mutations = (
-            (("base", "reference"), "docker.io/frappe/erpnext:latest"),
-            (("sources", "frappe", "revision"), "0" * 40),
-            (("sources", "erpnext", "revision"), "0" * 40),
-            (("python", "path"), "/usr/bin/python3.14"),
-            (("final_image", "platform"), "linux/arm64"),
-            (("final_image", "architecture"), "arm64"),
-        )
-        for path, value in mutations:
+    def test_source_content_rejects_placeholder_and_circular_identity(self) -> None:
+        repeated = _manifest()
+        repeated["repository"]["source_content_sha256"] = "a" * 64
+        with self.assertRaises(controller.ControllerRejected):
+            controller.parse_and_validate_manifest(_encoded(repeated))
+
+        for value in (
+            _manifest()["artifacts"]["runner_image_id"].removeprefix("sha256:"),
+            _manifest()["artifacts"]["runner_image"].rsplit("@sha256:", 1)[-1],
+        ):
             changed = _manifest()
-            target = changed["content_manifest"]
-            for component in path[:-1]:
-                target = target[component]
-            target[path[-1]] = value
-            _refresh_content_hash(changed)
-            with self.subTest(path=path), self.assertRaises(
+            changed["repository"]["source_content_sha256"] = value
+            with self.subTest(value=value), self.assertRaises(
                 controller.ControllerRejected
             ):
                 controller.parse_and_validate_manifest(_encoded(changed))
 
-    def test_route_b_context_membership_is_closed_ordered_and_complete(self) -> None:
-        manifest = controller.parse_and_validate_manifest(_encoded(_manifest()))
-        entries = manifest.content_manifest["build_context"]["entries"]
+    def test_source_content_pins_sources_python_and_build_context(self) -> None:
+        accepted = controller.parse_and_validate_manifest(_encoded(_manifest()))
+        entries = accepted.source_content["build_context"]["entries"]
         self.assertEqual(
             tuple((entry["path"], entry["type"]) for entry in entries),
             controller._CONTEXT_MEMBERS,
         )
         self.assertEqual(
-            manifest.content_manifest["build_context"]["manifest_sha256"],
+            accepted.source_content["build_context"]["manifest_sha256"],
             _fixture_hash(entries),
         )
+        mutations = (
+            (("base", "reference"), "docker.io/frappe/erpnext:latest"),
+            (("sources", "frappe", "revision"), "0" * 40),
+            (("sources", "erpnext", "revision"), "0" * 40),
+            (("python", "path"), "/usr/bin/python3.14"),
+        )
+        for path, value in mutations:
+            changed = _manifest()
+            target = changed["source_content"]
+            for component in path[:-1]:
+                target = target[component]
+            target[path[-1]] = value
+            _refresh_source_hash(changed)
+            with self.subTest(path=path), self.assertRaises(
+                controller.ControllerRejected
+            ):
+                controller.parse_and_validate_manifest(_encoded(changed))
 
-    def test_route_b_context_rejects_stale_unexpected_missing_duplicate_and_symlink(self) -> None:
-        changes = []
-        stale = _manifest()
-        stale["content_manifest"]["source_repository_revision"] = "0" * 40
-        changes.append(stale)
+    def test_source_content_rejects_context_drift_and_malformed_fields(self) -> None:
+        cases = []
         unexpected = _manifest()
-        unexpected["content_manifest"]["build_context"]["entries"][0]["path"] = "other"
-        changes.append(unexpected)
-        for required_index in (4, 5, 6, 9):
-            missing = _manifest()
-            missing["content_manifest"]["build_context"]["entries"].pop(required_index)
-            changes.append(missing)
+        unexpected["source_content"]["build_context"]["entries"][0]["path"] = "other"
+        cases.append(unexpected)
         duplicate = _manifest()
-        duplicate["content_manifest"]["build_context"]["entries"][1]["path"] = "frappe"
-        changes.append(duplicate)
+        duplicate["source_content"]["build_context"]["entries"][1]["path"] = "frappe"
+        cases.append(duplicate)
         symlink = _manifest()
-        symlink["content_manifest"]["build_context"]["entries"][0]["type"] = "symlink"
-        changes.append(symlink)
-        for index, changed in enumerate(changes):
+        symlink["source_content"]["build_context"]["entries"][0]["type"] = "symlink"
+        cases.append(symlink)
+        boolean = _manifest()
+        boolean["source_content"]["python"]["size_bytes"] = True
+        cases.append(boolean)
+        for index, changed in enumerate(cases):
             _refresh_context_hash(changed)
             with self.subTest(index=index), self.assertRaises(
                 controller.ControllerRejected
             ):
                 controller.parse_and_validate_manifest(_encoded(changed))
 
-    def test_route_b_context_rejects_hash_size_mode_uid_gid_drift(self) -> None:
-        for key, value in (
-            ("sha256", "d" * 64), ("size_bytes", 9999), ("mode", "0777"),
-            ("uid", 0), ("gid", 0),
-        ):
-            changed = _manifest()
-            content = changed["content_manifest"]
-            content["final_filesystem"]["entries"][5][key] = value
-            content["final_filesystem"]["manifest_sha256"] = _fixture_hash(
-                content["final_filesystem"]["entries"]
-            )
-            content["independent_verification_sha256"] = _fixture_hash({
-                "schema": "erpai.gl_tb.runtime_compat.final_filesystem.v1",
-                "python": content["python"],
-                "entries": content["final_filesystem"]["entries"],
-            })
-            changed["repository"]["content_manifest_sha256"] = _fixture_hash(content)
-            with self.subTest(key=key), self.assertRaises(
-                controller.ControllerRejected
-            ):
-                controller.parse_and_validate_manifest(_encoded(changed))
-
-    def test_route_b_materialization_manifest_rejects_malformed_unknown_and_bool_integer_fields(self) -> None:
-        unknown = _manifest()
-        unknown["content_manifest"]["frontend"]["extra"] = "x"
-        boolean = _manifest()
-        boolean["content_manifest"]["python"]["size_bytes"] = True
-        malformed = _encoded(_manifest()).replace(
-            b'"engine_builtin"', b'"engine_builtin",'
-        )
-        for value in (unknown, boolean):
-            _refresh_content_hash(value)
-            with self.assertRaises(controller.ControllerRejected):
-                controller.parse_and_validate_manifest(_encoded(value))
-        with self.assertRaises(controller.ControllerRejected):
-            controller.parse_and_validate_manifest(malformed)
-
-
 
 class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
-    def test_route_b_image_identity_repo_digest_platform_arch_and_python_bindings(self) -> None:
-        for section, key, value in (
-            ("final_image", "image_id", f"sha256:{SHA_B}"),
-            ("final_image", "repository_digest", IMAGE_B),
-            ("python", "version", "3.13.9"),
-            ("python", "executable_sha256", SHA_A),
-        ):
-            changed = _manifest()
-            changed["content_manifest"][section][key] = value
-            _refresh_content_hash(changed)
-            with self.subTest(section=section, key=key), self.assertRaises(
-                controller.ControllerRejected
-            ):
-                controller.parse_and_validate_manifest(_encoded(changed))
-
-    def test_route_b_final_filesystem_exactly_matches_declared_inventory(self) -> None:
+    def test_final_filesystem_is_derived_and_independently_observed(self) -> None:
         manifest = controller.parse_and_validate_manifest(_encoded(_manifest()))
         expected = controller._expected_final_filesystem_document(
-            manifest.content_manifest
+            manifest.source_content
         )
+        observed = controller.validate_final_filesystem_observation(
+            manifest, _encoded(expected)
+        )
+        self.assertEqual(observed["entries"], expected["entries"])
         self.assertEqual(
-            controller.validate_final_filesystem_observation(
-                manifest, _encoded(expected)
-            ),
-            expected,
+            observed["manifest_sha256"],
+            _fixture_hash(expected["entries"]),
         )
         for mutation in ("missing", "unexpected", "hash"):
             changed = copy.deepcopy(expected)
@@ -1556,7 +1973,9 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
             elif mutation == "unexpected":
                 changed["entries"].append(copy.deepcopy(changed["entries"][-1]))
             else:
-                changed["entries"][4]["sha256"] = "d" * 64
+                changed["entries"][4]["sha256"] = hashlib.sha256(
+                    b"unexpected materialization"
+                ).hexdigest()
             with self.subTest(mutation=mutation), self.assertRaises(
                 controller.ControllerRejected
             ):
@@ -1564,171 +1983,155 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
                     manifest, _encoded(changed)
                 )
 
-
-    def test_route_b_build_manifest_and_repository_hashes_are_independently_bound(self) -> None:
-        accepted = controller.parse_and_validate_manifest(_encoded(_manifest()))
-        build_context = accepted.content_manifest["build_context"]
-        build_manifest = build_context["build_manifest"]
-        body = _encoded(build_manifest, sort_keys=True)
-        self.assertEqual(
-            hashlib.sha256(body).hexdigest(),
-            accepted.content_manifest["gl_tb"]["build_manifest_sha256"],
-        )
-        self.assertEqual(
-            len(body),
-            build_context["entries"][-1]["size_bytes"],
-        )
-        for repository_key in (
-            "core_sha256", "probe_sha256", "initializer_sha256",
-            "frappe_tree_sha256", "erpnext_tree_sha256",
-        ):
-            changed = _manifest()
-            changed["repository"][repository_key] = "d" * 64
-            with self.subTest(repository_key=repository_key), self.assertRaises(
-                controller.ControllerRejected
-            ):
-                controller.parse_and_validate_manifest(_encoded(changed))
-
-        semantic_drift = _manifest()
-        content = semantic_drift["content_manifest"]
-        declared = content["build_context"]["build_manifest"]
-        declared["entries"][4]["sha256"] = "d" * 64
-        declared["entries_sha256"] = _fixture_hash(declared["entries"])
-        declared_body = _encoded(declared, sort_keys=True)
-        declared_sha = hashlib.sha256(declared_body).hexdigest()
-        context_manifest_entry = content["build_context"]["entries"][-1]
-        context_manifest_entry["sha256"] = declared_sha
-        context_manifest_entry["size_bytes"] = len(declared_body)
-        content["gl_tb"]["build_manifest_sha256"] = declared_sha
-        final_manifest_entry = content["final_filesystem"]["entries"][-1]
-        final_manifest_entry["sha256"] = declared_sha
-        final_manifest_entry["size_bytes"] = len(declared_body)
-        _reseal_final_and_content(semantic_drift)
-        with self.assertRaises(controller.ControllerRejected):
-            controller.parse_and_validate_manifest(_encoded(semantic_drift))
-
-    def test_route_b_preflight_binds_rootless_daemon_exact_digests_and_volumes(self) -> None:
+    def test_materialization_attestation_is_controller_owned_closed_and_bound(self) -> None:
         manifest = controller.parse_and_validate_manifest(_encoded(_manifest()))
-        engine = next(
-            spec for spec in controller._preflight_plan(manifest)
-            if spec.name == "engine-info"
-        )
-        engine_line = "\t".join((
-            manifest.docker["daemon_id"],
-            manifest.docker["daemon_name"],
-            manifest.docker["docker_root_dir"],
-            SECURITY_OPTIONS_JSON,
-            manifest.docker["cgroup_driver"],
-            manifest.docker["cgroup_version"],
-        )) + "\n"
-        controller._validate_preflight_result(
-            manifest, engine,
-            controller._CommandResult(0, engine_line.encode(), b"", False),
-        )
-        for key, volumes in (
-            ("base_image", {"/home/frappe/frappe-bench/sites": {}}),
-            ("runner_image", {"/home/frappe/frappe-bench/sites": {}}),
-            ("mariadb_image", {"/var/lib/mysql": {}}),
-            ("redis_image", {"/data": {}}),
-        ):
-            spec = next(
-                item for item in controller._preflight_plan(manifest)
-                if item.name == f"inspect-{key}"
-            )
-            body = "\t".join((
-                manifest.artifacts[key.replace("_image", "_image_id")],
-                json.dumps([manifest.artifacts[key]], separators=(",", ":")),
-                "linux", "amd64",
-                json.dumps(volumes, separators=(",", ":"), sort_keys=True),
-            )) + "\n"
-            controller._validate_preflight_result(
-                manifest, spec,
-                controller._CommandResult(0, body.encode(), b"", False),
-            )
-
-        runner_spec = next(
-            item for item in controller._preflight_plan(manifest)
-            if item.name == "inspect-runner_image"
-        )
-        bad_digest_fields = (
-            json.dumps([f"x{IMAGE_A}"], separators=(",", ":")),
-            json.dumps([f"{IMAGE_A}x"], separators=(",", ":")),
-            json.dumps([IMAGE_A, IMAGE_A], separators=(",", ":")),
-            "{",
-        )
-        for digest_field in bad_digest_fields:
-            body = "\t".join((
-                f"sha256:{SHA_A}", digest_field, "linux", "amd64", "null",
-            )) + "\n"
-            with self.subTest(digest_field=digest_field), self.assertRaises(
-                controller.ControllerRejected
-            ):
-                controller._validate_preflight_result(
-                    manifest, runner_spec,
-                    controller._CommandResult(0, body.encode(), b"", False),
-                )
-        unexpected_volume = "\t".join((
-            f"sha256:{SHA_A}",
-            json.dumps([IMAGE_A], separators=(",", ":")),
-            "linux", "amd64", '{"/host":{}}',
-        )) + "\n"
-        with self.assertRaises(controller.ControllerRejected):
-            controller._validate_preflight_result(
-                manifest, runner_spec,
-                controller._CommandResult(
-                    0, unexpected_volume.encode(), b"", False
-                ),
-            )
-
-    def test_route_b_content_verifier_is_image_id_pinned_and_fully_inspected(self) -> None:
-        manifest = controller.parse_and_validate_manifest(_encoded(_manifest()))
-        plan = controller._content_verification_plan(manifest)
-        run = plan[0]
-        self.assertIn(manifest.artifacts["runner_image_id"], run.argv)
-        self.assertNotIn(manifest.artifacts["runner_image"], run.argv)
-        self.assertIn("--tmpfs", run.argv)
-        request = json.loads(controller._content_verifier_request())
+        attestation = _materialization_attestation(manifest)
         self.assertEqual(
-            tuple(item["path"] for item in request["scopes"]),
-            tuple(path for path, _members in controller._FINAL_SCOPES),
+            set(attestation),
+            set(controller._MATERIALIZATION_KEYS),
         )
         self.assertEqual(
-            tuple(item["path"] for item in request["top_scopes"]),
-            tuple(path for path, _members in controller._FINAL_TOP_SCOPES),
+            attestation["source_content_sha256"],
+            manifest.repository["source_content_sha256"],
         )
         self.assertEqual(
-            tuple(
-                (member["path"], member["type"])
-                for member in request["top_scopes"][0]["members"]
+            attestation["final_image"]["repository_digest"],
+            manifest.artifacts["runner_image"],
+        )
+        self.assertTrue(
+            attestation["verification_containment"][
+                "verification_container_retired"
+            ]
+        )
+        for section, key, value in (
+            ("final_image", "image_id", f"sha256:{SHA_B}"),
+            (
+                "final_filesystem", "manifest_sha256",
+                manifest.repository["source_content_sha256"],
             ),
-            controller._FINAL_TOP_SCOPES[0][1],
-        )
-        self.assertIn("if records != expected", controller._RUNNER_CONTENT_VERIFY_SOURCE)
-        valid = controller._CommandResult(
-            0, _content_container_inspect(manifest), b"", False
+            ("verification_containment", "extra", True),
+        ):
+            changed = copy.deepcopy(attestation)
+            changed[section][key] = value
+            with self.subTest(section=section, key=key), self.assertRaises(
+                controller.ControllerRejected
+            ):
+                controller._validate_materialization_attestation(
+                    manifest, changed
+                )
+
+    def test_runner_inspection_binds_identity_configuration_and_source_hash(self) -> None:
+        manifest = controller.parse_and_validate_manifest(_encoded(_manifest()))
+        observed = _runner_observation(manifest)
+        self.assertEqual(
+            observed["final_image"]["image_id"],
+            manifest.artifacts["runner_image_id"],
         )
         self.assertEqual(
-            controller._validate_content_container(manifest, valid), SHA_A
+            observed["final_image"]["repository_digest"],
+            manifest.artifacts["runner_image"],
         )
-        for index, value in (
-            (9, "0:0"), (10, "false"), (11, "[]"),
-            (12, "[]"), (13, '["/bin/sh"]'), (14, "[]"),
-            (15, "volume=/home/frappe/frappe-bench/sites,"),
-        ):
+        self.assertEqual(
+            set(controller._runner_environment_overrides(manifest)),
+            {
+                "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE",
+                "PYTHONUNBUFFERED", "PYTHONPATH", "ERPAI_FRONTEND_POLICY",
+                "ERPAI_SOURCE_REPOSITORY_REVISION", "ERPAI_FRAPPE_REVISION",
+                "ERPAI_ERPNEXT_REVISION",
+                "ERPAI_BUILD_CONTEXT_MANIFEST_SHA256",
+                "ERPAI_BUILD_MANIFEST_SHA256", "ERPAI_SOURCE_CONTENT_SHA256",
+                "ERPAI_DOCKERFILE_SHA256", "ERPAI_FRAPPE_TREE_SHA256",
+                "ERPAI_ERPNEXT_TREE_SHA256",
+                "ERPAI_PACKAGE_INITIALIZER_SHA256",
+                "ERPAI_FINANCE_INITIALIZER_SHA256", "ERPAI_CORE_SHA256",
+                "ERPAI_ADAPTER_SHA256", "ERPAI_RUNTIME_SHA256",
+                "ERPAI_PROBE_SHA256", "ERPAI_INITIALIZER_SHA256",
+                "ERPAI_RUNNER_PYTHON_VERSION", "ERPAI_RUNNER_PYTHON_SHA256",
+            },
+        )
+        plans = controller._preflight_plan(manifest)
+        base_spec = next(
+            item for item in plans if item.name == "inspect-base_image"
+        )
+        base = controller._validate_preflight_result(
+            manifest,
+            base_spec,
+            controller._CommandResult(
+                0, _image_inspect(manifest, "base_image"), b"", False
+            ),
+        )
+        self.assertIsNotNone(base)
+        runner_spec = next(
+            item for item in plans if item.name == "inspect-runner_image"
+        )
+        mutations = []
+        wrong_source = _runner_image_config(manifest)
+        wrong_source["Env"] = [
+            item if not item.startswith("ERPAI_SOURCE_CONTENT_SHA256=")
+            else "ERPAI_SOURCE_CONTENT_SHA256=" + SHA_C
+            for item in wrong_source["Env"]
+        ]
+        mutations.append(wrong_source)
+        extra_environment = _runner_image_config(manifest)
+        extra_environment["Env"].append("UNAPPROVED=value")
+        mutations.append(extra_environment)
+        changed_label = _runner_image_config(manifest)
+        changed_label["Labels"] = {"unexpected": "drift"}
+        mutations.append(changed_label)
+        changed_command = _runner_image_config(manifest)
+        changed_command["Cmd"] = None
+        mutations.append(changed_command)
+        for index, config in enumerate(mutations):
             with self.subTest(index=index), self.assertRaises(
                 controller.ControllerRejected
             ):
-                controller._validate_content_container(
+                controller._validate_preflight_result(
                     manifest,
+                    runner_spec,
                     controller._CommandResult(
                         0,
-                        _content_container_inspect(
-                            manifest, {index: value}
+                        _image_inspect(
+                            manifest, "runner_image", config=config
                         ),
                         b"",
                         False,
                     ),
+                    base_configuration=base["configuration"],
                 )
+
+    def test_content_verifier_attests_containment_before_retirement(self) -> None:
+        manifest = controller.parse_and_validate_manifest(_encoded(_manifest()))
+        created = controller._validate_content_create_result(
+            controller._CommandResult(
+                0, (SHA_A + "\n").encode(), b"", False
+            )
+        )
+        identifier, containment = controller._validate_content_container(
+            manifest,
+            created,
+            controller._CommandResult(
+                0, _content_container_inspect(manifest), b"", False
+            ),
+        )
+        self.assertEqual(identifier, SHA_A)
+        self.assertEqual(containment["network_mode"], "none")
+        self.assertFalse(containment["container_started"])
+        self.assertFalse(containment["verification_container_retired"])
+        plan = controller._content_verification_plan(manifest)
+        names = [item.name for item in plan]
+        self.assertEqual(
+            names,
+            [
+                "content-verify-create", "content-verify-container",
+                "content-copy-apps", "content-copy-erpai",
+                "content-copy-python", "content-verify-retire",
+            ],
+        )
+        self.assertNotIn("run", plan[0].argv)
+        self.assertEqual(plan[0].argv[-2:], ("/bin/false", manifest.artifacts["runner_image_id"]))
+        for spec in plan:
+            self.assertNotIn("-c", spec.argv)
+            self.assertNotIn(controller._RUNNER_PYTHON, spec.argv)
 
     def test_route_b_rootlesskit_paths_are_short_deterministic_and_run_scoped(self) -> None:
         first = controller._rootlesskit_runtime_dir(RUN_ID, 1000)
@@ -1763,23 +2166,23 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
         with self.assertRaises(controller.ControllerRejected):
             controller.parse_and_validate_manifest(_encoded(invalid))
         observed_artifact = controller._artifact_provenance(
-            observed,
-            controller._expected_final_filesystem_document(
-                observed.content_manifest
-            ),
+            observed, _materialization_attestation(observed)
         )
         self.assertEqual(
             observed_artifact["cgroup_claim"]["status"],
             "compatibility_observation_only",
         )
+        self.assertEqual(
+            set(observed_artifact["source_content"]),
+            {"sha256", "contract"},
+        )
+        self.assertIn("materialization_attestation", observed_artifact)
+        self.assertNotIn("runner_content", observed_artifact)
         validated = controller.parse_and_validate_manifest(
             _encoded(_manifest("validate"))
         )
         validation_artifact = controller._artifact_provenance(
-            validated,
-            controller._expected_final_filesystem_document(
-                validated.content_manifest
-            ),
+            validated, _materialization_attestation(validated)
         )
         self.assertEqual(
             validation_artifact["cgroup_claim"]["status"],
@@ -1793,8 +2196,10 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
         manifest = controller.parse_and_validate_manifest(_encoded(_manifest()))
         leaked = {
             "schema": "erpai.gl_tb.runtime_compat.final_filesystem.v1",
-            "python": manifest.content_manifest["python"],
-            "entries": manifest.content_manifest["final_filesystem"]["entries"],
+            "python": manifest.source_content["python"],
+            "entries": controller._expected_final_filesystem_document(
+                manifest.source_content
+            )["entries"],
             "company": "LEAK",
         }
         with self.assertRaises(controller.ControllerRejected) as raised:
@@ -1805,19 +2210,30 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
         self.assertNotIn("LEAK", repr(raised.exception))
 
         plan = controller._content_verification_plan(manifest)
-        wait_ok = controller._CommandResult(0, b"{not-json}", b"", False)
+        create_ok = controller._CommandResult(
+            0, (SHA_A + "\n").encode(), b"", False
+        )
         inspect_ok = controller._CommandResult(
             0, _content_container_inspect(manifest), b"", False
         )
-        retire_ok = controller._CommandResult(0, b"", b"", False)
+        archive_ok = controller._CommandResult(0, b"archive", b"", False)
+        retire_ok = controller._CommandResult(
+            0, (SHA_A + "\n").encode(), b"", False
+        )
         failure_sets = (
             (controller._CommandResult(1, b"", b"LEAK", False),),
-            (wait_ok, controller._CommandResult(0, b"bad\n", b"", False)),
             (
-                wait_ok, inspect_ok,
+                create_ok,
+                controller._CommandResult(0, b"bad\n", b"", False),
+            ),
+            (
+                create_ok, inspect_ok,
                 controller._CommandResult(1, b"", b"LEAK", False),
             ),
-            (wait_ok, inspect_ok, retire_ok),
+            (
+                create_ok, inspect_ok, archive_ok, archive_ok, archive_ok,
+                controller._CommandResult(0, b"wrong\n", b"", False),
+            ),
         )
         for index, results in enumerate(failure_sets):
             with (
@@ -1826,6 +2242,10 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
                 mock.patch.object(controller, "_phase_plan", return_value=plan),
                 mock.patch.object(
                     controller, "_run_subprocess", side_effect=results
+                ),
+                mock.patch.object(
+                    controller, "_parse_content_archive",
+                    return_value={"/synthetic": {}},
                 ),
                 mock.patch.object(
                     controller, "_recover_teardown", return_value=True
@@ -1852,17 +2272,160 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
                 for spec in controller.build_child_command_plan(manifest, command)
             ]
             self.assertLess(
-                names.index("content-verify-wait"), names.index("stack-up")
+                names.index("content-verify-create"), names.index("stack-up")
             )
-            verifier = next(
-                spec for spec in controller._content_verification_plan(manifest)
-                if spec.name == "content-verify-wait"
+            content_plan = controller._content_verification_plan(manifest)
+            create = next(
+                spec for spec in content_plan
+                if spec.name == "content-verify-create"
             )
-            self.assertIn("--network", verifier.argv)
-            self.assertIn("none", verifier.argv)
-            self.assertIn("--read-only", verifier.argv)
-            self.assertIn("--cap-drop", verifier.argv)
-            self.assertNotIn("/usr/bin/python3.14", verifier.argv)
+            self.assertIn("--network", create.argv)
+            self.assertIn("none", create.argv)
+            self.assertIn("--read-only", create.argv)
+            self.assertIn("--cap-drop", create.argv)
+            self.assertNotIn("/usr/bin/python3.14", create.argv)
+            self.assertNotIn("run", create.argv)
+            for spec in content_plan:
+                self.assertTrue(
+                    spec.argv[:3] == manifest.docker_prefix
+                )
+                self.assertNotIn("-c", spec.argv)
+
+    def test_execute_phase_promotes_only_after_stopped_image_proof_and_teardown(
+        self,
+    ) -> None:
+        manifest = controller.parse_and_validate_manifest(
+            _encoded(_manifest("observe"))
+        )
+        plan = controller._phase_plan(manifest)
+        events: list[str] = []
+        observation = {
+            "schema": "erpai.gl_tb.runtime_compat.observation.v2",
+            "mode": "observe",
+            "run_id": RUN_ID,
+            "result": "pass",
+            "error": "",
+            "wrapper_module": "frappe.database.mariadb.database",
+            "wrapper_class": "MariaDBDatabase",
+            "raw_module": "pymysql.connections",
+            "raw_class": "Connection",
+            "driver": "pymysql",
+            "driver_distribution": "PyMySQL",
+            "driver_version": "1.1.2",
+            "server_version": "10.11.18-MariaDB-disposable",
+            "initial_transaction_inactive": True,
+            "isolation_repeatable_read": True,
+            "transaction_read_only": True,
+            "consistent_snapshot_started": True,
+            "transaction_active": True,
+            "wrapper_stable": True,
+            "raw_connection_stable": True,
+            "server_connection_stable": True,
+            "rollback_no_chain_succeeded": True,
+            "final_transaction_inactive": True,
+            "connection_id_commitment": SHA_A,
+            "primary_route": True,
+            "replica_denied": True,
+            "partial_output": False,
+        }
+        payload = controller.canonical_json_bytes(observation)
+        tar_output = io.BytesIO()
+        with tarfile.open(fileobj=tar_output, mode="w:") as archive:
+            member = tarfile.TarInfo("observation-result.json")
+            member.size = len(payload)
+            member.mode = 0o600
+            archive.addfile(member, io.BytesIO(payload))
+        probe_tar = tar_output.getvalue()
+
+        def run(spec: object, _environment: object) -> object:
+            events.append(spec.name)
+            if spec.name == "content-verify-create":
+                return controller._CommandResult(
+                    0, (SHA_A + "\n").encode(), b"", False
+                )
+            if spec.name == "content-verify-container":
+                self.assertEqual(spec.argv[-1], SHA_A)
+                return controller._CommandResult(
+                    0, _content_container_inspect(manifest), b"", False
+                )
+            if spec.name.startswith("content-copy-"):
+                self.assertTrue(spec.argv[-2].startswith(SHA_A + ":"))
+                return controller._CommandResult(0, b"archive", b"", False)
+            if spec.name == "content-verify-retire":
+                self.assertEqual(spec.argv[-1], SHA_A)
+                return controller._CommandResult(
+                    0, (SHA_A + "\n").encode(), b"", False
+                )
+            if spec.name == "site-initialize":
+                return controller._CommandResult(
+                    0, b"initialized\n", b"", False
+                )
+            if spec.name.startswith("inspect-probe-"):
+                return controller._CommandResult(
+                    0,
+                    _probe_container_inspect(
+                        manifest, "environment_observation",
+                        {0: SHA_C},
+                    ),
+                    b"",
+                    False,
+                )
+            if spec.name.startswith("copy-evidence-"):
+                self.assertTrue(spec.argv[-2].startswith(SHA_C + ":"))
+                return controller._CommandResult(0, probe_tar, b"", False)
+            return controller._CommandResult(0, b"", b"", False)
+
+        promoted: list[tuple[object, object, object, object]] = []
+        with (
+            mock.patch.object(
+                controller, "_preflight",
+                return_value=_runner_observation(manifest),
+            ),
+            mock.patch.object(controller, "_phase_plan", return_value=plan),
+            mock.patch.object(controller, "_run_subprocess", side_effect=run),
+            mock.patch.object(
+                controller, "_parse_content_archive",
+                side_effect=lambda _manifest, name, _body: {
+                    f"/{name}": {"type": "synthetic"}
+                },
+            ),
+            mock.patch.object(
+                controller, "_final_filesystem_from_archives",
+                return_value=_filesystem_observation(manifest),
+            ),
+            mock.patch.object(
+                controller, "_recover_teardown",
+                side_effect=lambda _manifest: events.append("teardown") or True,
+            ),
+            mock.patch.object(
+                controller, "_promote_or_discard",
+                side_effect=lambda *args: (
+                    events.append("promote"), promoted.append(args)
+                ),
+            ),
+            mock.patch.object(controller, "_write_discard") as discard,
+        ):
+            controller._execute_phase(manifest)
+        self.assertEqual(
+            events,
+            [item.name for item in plan] + ["teardown", "promote"],
+        )
+        discard.assert_not_called()
+        self.assertEqual(len(promoted), 1)
+        attestation = promoted[0][1]
+        self.assertEqual(
+            attestation["source_content_sha256"],
+            manifest.repository["source_content_sha256"],
+        )
+        self.assertFalse(
+            attestation["verification_containment"]["container_started"]
+        )
+        self.assertTrue(
+            attestation["verification_containment"][
+                "verification_container_retired"
+            ]
+        )
+
 
 
     def test_route_b_promotion_schema_hashes_and_atomic_directory_rename(self) -> None:
@@ -1874,9 +2437,7 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
                 with self.assertRaises(controller.ControllerRejected):
                     controller._promote_evidence(
                         manifest,
-                        controller._expected_final_filesystem_document(
-                            manifest.content_manifest
-                        ),
+                        _materialization_attestation(manifest),
                         [{"case_id": case_id} for case_id in manifest.canaries],
                         [{"name": "bounded-process"}],
                     )
@@ -1897,9 +2458,7 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
             ):
                 controller._promote_evidence(
                     manifest,
-                    controller._expected_final_filesystem_document(
-                        manifest.content_manifest
-                    ),
+                    _materialization_attestation(manifest),
                     [{"case_id": case_id} for case_id in manifest.canaries],
                     [{"name": "bounded-process"}],
                 )
@@ -1908,6 +2467,21 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
             mkdir.assert_called_once_with(staging, 0o700)
             replace.assert_called_once_with(staging, evidence)
             self.assertEqual(set(writes), set(controller._EVIDENCE_FILES))
+            artifact = json.loads(writes["artifact-provenance.json"])
+            self.assertEqual(
+                artifact["schema"],
+                "erpai.gl_tb.runtime_compat.artifact_provenance.v3",
+            )
+            self.assertEqual(
+                artifact["source_content"]["sha256"],
+                manifest.repository["source_content_sha256"],
+            )
+            self.assertEqual(
+                artifact["materialization_attestation"]["final_image"][
+                    "repository_digest"
+                ],
+                manifest.artifacts["runner_image"],
+            )
             observation = json.loads(writes["observation-result.json"])
             validation = json.loads(writes["validation-result.json"])
             if phase == "observe":
@@ -1982,143 +2556,72 @@ class RouteBDerivativeRunnerBoundaryTests(unittest.TestCase):
         mkdir.assert_not_called()
         open_file.assert_not_called()
 
-    @unittest.skipUnless(
-        os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 1000
-        and hasattr(os, "getegid") and os.getegid() == 1000,
-        "descriptor scanner fixture requires the disposable Linux UID/GID contract",
-    )
-    def test_route_b_embedded_verifier_scanner_semantics(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            regular_path = root / "literal.py"
-            regular_path.write_bytes(b"literal\n")
-            regular_path.chmod(0o444)
-            tree_root = root / "tree"
-            tree_root.mkdir(mode=0o755)
-            tree_file = tree_root / "A.py"
-            tree_file.write_bytes(b"alpha\n")
-            tree_file.chmod(0o444)
-            tree_root.chmod(0o555)
-            scope_root = root / "scope"
-            scope_root.mkdir(mode=0o755)
-            scope_child = scope_root / "child"
-            scope_child.mkdir(mode=0o755)
-            scope_file = scope_child / "value.py"
-            scope_file.write_bytes(b"value\n")
-            scope_file.chmod(0o444)
-            scope_child.chmod(0o555)
-            scope_root.chmod(0o555)
-            top_root = root / "top"
-            top_root.mkdir(mode=0o755)
-            for name in ("erp_workspace_ui", "erpnext", "frappe"):
-                child = top_root / name
-                child.mkdir(mode=0o555)
+    def test_route_b_host_owned_archive_scanner_semantics(self) -> None:
+        manifest = controller.parse_and_validate_manifest(_encoded(_manifest()))
 
-            request = {
-                "entries": [
-                    {"path": str(regular_path), "type": "regular"},
-                    {"path": str(tree_root), "type": "tree"},
-                ],
-                "scopes": [{
-                    "path": str(scope_root),
-                    "members": [
-                        {"path": "child", "type": "directory"},
-                        {"path": "child/value.py", "type": "regular"},
-                    ],
-                }],
-                "top_scopes": [{
-                    "path": str(top_root),
-                    "members": [
-                        {"path": "erp_workspace_ui", "type": "directory"},
-                        {"path": "erpnext", "type": "directory"},
-                        {"path": "frappe", "type": "directory"},
-                    ],
-                }],
-            }
-            source = controller._RUNNER_CONTENT_VERIFY_SOURCE
-            old = "if sys.executable != '/usr/local/bin/python3.14': raise ValueError()"
-            new = f"if sys.executable != {sys.executable!r}: raise ValueError()"
-            self.assertEqual(source.count(old), 1)
-            test_source = source.replace(old, new)
+        def archive(members: list[tuple[str, str, bytes]]) -> bytes:
+            output = io.BytesIO()
+            with tarfile.open(fileobj=output, mode="w:") as stream:
+                for name, kind, payload in members:
+                    member = tarfile.TarInfo(name)
+                    member.uid = 1000
+                    member.gid = 1000
+                    member.mode = 0o555 if kind == "directory" else 0o444
+                    if kind == "directory":
+                        member.type = tarfile.DIRTYPE
+                        member.size = 0
+                        stream.addfile(member)
+                    elif kind == "regular":
+                        member.size = len(payload)
+                        stream.addfile(member, io.BytesIO(payload))
+                    elif kind == "symlink":
+                        member.type = tarfile.SYMTYPE
+                        member.linkname = "target"
+                        stream.addfile(member)
+                    else:
+                        raise AssertionError(kind)
+            return output.getvalue()
 
-            def invoke(document: dict[str, object]) -> subprocess.CompletedProcess[bytes]:
-                return subprocess.run(
-                    [sys.executable, "-I", "-B", "-c", test_source,
-                     json.dumps(document, separators=(",", ":"))],
-                    check=False,
-                    capture_output=True,
-                    timeout=10,
+        valid = archive([
+            ("apps", "directory", b""),
+            ("apps/frappe", "directory", b""),
+            ("apps/frappe/A.py", "regular", b"alpha\n"),
+        ])
+        records = controller._parse_content_archive(
+            manifest, "apps", valid
+        )
+        self.assertEqual(
+            records[
+                "/home/frappe/frappe-bench/apps/frappe/A.py"
+            ]["sha256"],
+            hashlib.sha256(b"alpha\n").hexdigest(),
+        )
+        cases = (
+            archive([
+                ("apps", "directory", b""),
+                ("apps/link", "symlink", b""),
+            ]),
+            archive([
+                ("apps", "directory", b""),
+                ("apps/A.py", "regular", b"a"),
+                ("apps/a.py", "regular", b"b"),
+            ]),
+            archive([
+                ("other", "directory", b""),
+            ]),
+            archive([
+                ("apps", "directory", b""),
+                ("apps/../escape", "regular", b"x"),
+            ]),
+        )
+        for index, body in enumerate(cases):
+            with self.subTest(index=index), self.assertRaises(
+                controller.ControllerRejected
+            ):
+                controller._parse_content_archive(
+                    manifest, "apps", body
                 )
 
-            passed = invoke(request)
-            self.assertEqual(passed.returncode, 0, passed.stderr)
-            self.assertEqual(passed.stderr, b"")
-            result = json.loads(passed.stdout)
-            tree_record = result["entries"][1]
-            expected_records = [{
-                "path": "A.py", "type": "regular",
-                "sha256": hashlib.sha256(b"alpha\n").hexdigest(),
-                "size_bytes": 6,
-            }]
-            self.assertEqual(
-                tree_record["sha256"],
-                hashlib.sha256(_encoded(expected_records, sort_keys=True)).hexdigest(),
-            )
-
-            variants = []
-            missing = copy.deepcopy(request)
-            missing["entries"][0]["path"] = str(root / "missing")
-            variants.append(missing)
-            extra_top = top_root / "other"
-            variants.append(copy.deepcopy(request))
-            symlink = tree_root / "link"
-            variants.append(copy.deepcopy(request))
-            hardlink = tree_root / "hard"
-            variants.append(copy.deepcopy(request))
-            case_collision = tree_root / "a.py"
-            variants.append(copy.deepcopy(request))
-
-            # Recreate each filesystem mutation only for its invocation.
-            mutations = (
-                lambda: None,
-                lambda: (top_root / "other").mkdir(mode=0o555),
-                lambda: (tree_root / "link").symlink_to(tree_file),
-                lambda: os.link(tree_file, tree_root / "hard"),
-                lambda: ((tree_root / "a.py").write_bytes(b"case\n"),
-                         (tree_root / "a.py").chmod(0o444)),
-            )
-            cleanup_paths = (None, top_root / "other", tree_root / "link",
-                             tree_root / "hard", tree_root / "a.py")
-            for index, (variant, mutate, cleanup) in enumerate(
-                zip(variants, mutations, cleanup_paths, strict=True)
-            ):
-                tree_mutation = cleanup is not None and cleanup.parent == tree_root
-                if tree_mutation:
-                    tree_root.chmod(0o755)
-                mutate()
-                if tree_mutation:
-                    tree_root.chmod(0o555)
-                try:
-                    rejected = invoke(variant)
-                finally:
-                    if tree_mutation:
-                        tree_root.chmod(0o755)
-                    if cleanup is not None and cleanup.exists():
-                        cleanup.rmdir() if cleanup.is_dir() else cleanup.unlink()
-                    if tree_mutation:
-                        tree_root.chmod(0o555)
-                with self.subTest(index=index):
-                    self.assertEqual(rejected.returncode, 70)
-                    self.assertEqual(rejected.stdout, b"")
-                    self.assertEqual(
-                        rejected.stderr, b"runtime_compatibility_unavailable\n"
-                    )
-            tree_root.chmod(0o755)
-            scope_child.chmod(0o755)
-            scope_root.chmod(0o755)
-            for child in top_root.iterdir():
-                child.chmod(0o755)
-            top_root.chmod(0o755)
 
 
 class InitializerAndStaticContractTests(unittest.TestCase):
@@ -2167,14 +2670,19 @@ class InitializerAndStaticContractTests(unittest.TestCase):
             'ENTRYPOINT ["/opt/erpai/finance_gl_trial_balance_runtime_compatibility_probe.py"]',
             text,
         )
+        self.assertIn("CMD []", text)
         self.assertIn("/home/frappe/frappe-bench/apps/frappe/", text)
         self.assertIn("/home/frappe/frappe-bench/apps/erpnext/", text)
         self.assertNotIn("COPY .", text)
         self.assertIn("--chown=1000:1000", text)
         self.assertIn("--chmod=0555", text)
+        self.assertNotIn("CONTENT_MANIFEST_SHA256", text)
+        self.assertIn(
+            "ERPAI_SOURCE_CONTENT_SHA256=${SOURCE_CONTENT_SHA256}", text
+        )
         for argument in (
             "BUILD_CONTEXT_MANIFEST_SHA256", "BUILD_MANIFEST_SHA256",
-            "CONTENT_MANIFEST_SHA256", "FRAPPE_TREE_SHA256",
+            "SOURCE_CONTENT_SHA256", "FRAPPE_TREE_SHA256",
             "ERPNEXT_TREE_SHA256", "CORE_SHA256", "ADAPTER_SHA256",
             "RUNTIME_SHA256", "PROBE_SHA256", "INITIALIZER_SHA256",
             "RUNNER_PYTHON_VERSION", "RUNNER_PYTHON_SHA256",
@@ -2198,6 +2706,12 @@ class InitializerAndStaticContractTests(unittest.TestCase):
             INITIALIZER_PATH.read_text(encoding="utf-8").splitlines()[0],
             f"#!{PYTHON_PATH}",
         )
+        self.assertEqual(
+            probe._MANIFEST_SCHEMA,
+            controller._EXECUTION_SCHEMA,
+        )
+        self.assertIn("source_content", probe._TOP_KEYS)
+        self.assertNotIn("content_manifest", probe._TOP_KEYS)
 
     def test_compose_is_internal_immutable_and_narrow(self) -> None:
         text = COMPOSE_PATH.read_text(encoding="utf-8")

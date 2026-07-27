@@ -23,8 +23,8 @@ from typing import Final
 
 _GENERIC_FAILURE: Final = "runtime_compatibility_unavailable"
 _FINANCE_FAILURE: Final = "finance_read_unavailable"
-_MANIFEST_SCHEMA: Final = "erpai.gl_tb.runtime_compat.execution.v2"
-_OBSERVATION_SCHEMA: Final = "erpai.gl_tb.runtime_compat.observation.v1"
+_MANIFEST_SCHEMA: Final = "erpai.gl_tb.runtime_compat.execution.v3"
+_OBSERVATION_SCHEMA: Final = "erpai.gl_tb.runtime_compat.observation.v2"
 _VALIDATION_SCHEMA: Final = "erpai.gl_tb.runtime_compat.validation.v1"
 _RUN_ID_RE: Final = re.compile(r"[0-9a-f]{12}")
 _SHA256_RE: Final = re.compile(r"[0-9a-f]{64}")
@@ -37,6 +37,17 @@ _STATE_SQL: Final = (
     "SELECT VERSION(), CONNECTION_ID(), @@in_transaction, "
     "@@tx_isolation, @@tx_read_only"
 )
+_SET_ISOLATION_SQL: Final = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
+_START_SNAPSHOT_SQL: Final = (
+    "START TRANSACTION READ ONLY, WITH CONSISTENT SNAPSHOT"
+)
+_ROLLBACK_SQL: Final = "ROLLBACK AND NO CHAIN"
+_TRANSACTION_CONTROL_SQL: Final = (
+    _SET_ISOLATION_SQL,
+    _START_SNAPSHOT_SQL,
+    _ROLLBACK_SQL,
+)
+
 _REPLICA_KEYS: Final = (
     "read_from_replica",
     "replica_host",
@@ -53,7 +64,7 @@ _TOP_KEYS: Final = (
     "repository",
     "artifacts",
     "docker",
-    "content_manifest",
+    "source_content",
     "compose",
     "site",
     "secrets",
@@ -315,23 +326,47 @@ def _replica_denied(frappe: object, wrapper: object) -> bool:
 
 def _raw_one(raw: object) -> tuple[object, ...]:
     cursor: object | None = None
+    row: object = None
+    failed = False
     try:
         cursor = getattr(raw, "cursor")()
         getattr(cursor, "execute")(_STATE_SQL)
         row = getattr(cursor, "fetchone")()
         if getattr(cursor, "fetchone")() is not None or type(row) not in (tuple, list):
-            _reject()
-        return tuple(row)
-    except ProbeRejected:
-        raise
-    except Exception:
-        raise ProbeRejected() from None
-    finally:
+            raise ValueError
+        getattr(cursor, "close")()
+        cursor = None
+    except BaseException:
+        failed = True
         if cursor is not None:
             try:
                 getattr(cursor, "close")()
-            except Exception:
+            except BaseException:
                 pass
+    if failed:
+        _reject()
+    return tuple(row)
+
+
+def _raw_execute(raw: object, statement: str) -> None:
+    if statement not in _TRANSACTION_CONTROL_SQL:
+        _reject()
+    cursor: object | None = None
+    failed = False
+    try:
+        cursor = getattr(raw, "cursor")()
+        getattr(cursor, "execute")(statement)
+        getattr(cursor, "close")()
+        cursor = None
+    except BaseException:
+        failed = True
+        if cursor is not None:
+            try:
+                getattr(cursor, "close")()
+            except BaseException:
+                pass
+    if failed:
+        _reject()
 
 
 def _db_flag(value: object) -> int:
@@ -348,6 +383,71 @@ def _state(value: tuple[object, ...]) -> dict[str, object]:
         "isolation": _text(value[3]),
         "read_only": _db_flag(value[4]),
     }
+
+
+def _observation_state(
+    value: tuple[object, ...],
+) -> tuple[str, int, dict[str, object]]:
+    if len(value) != 5:
+        _reject()
+    connection_id = value[1]
+    if type(connection_id) is not int or connection_id <= 0:
+        _reject()
+    return _text(value[0]), connection_id, _state(value)
+
+
+def _bound_observation_state(
+    frappe: object,
+    wrapper: object,
+    raw: object,
+) -> tuple[str, int, dict[str, object]]:
+    try:
+        local = getattr(frappe, "local")
+        current_wrapper = getattr(local, "db")
+        current_raw = getattr(current_wrapper, "_conn")
+        if (
+            current_wrapper is not wrapper
+            or current_raw is not raw
+            or not _raw_open(raw)
+            or not _replica_denied(frappe, wrapper)
+        ):
+            _reject()
+        return _observation_state(_raw_one(raw))
+    except ProbeRejected:
+        raise
+    except Exception:
+        raise ProbeRejected() from None
+
+
+def _close_raw(raw: object) -> None:
+    try:
+        getattr(raw, "close")()
+    except Exception:
+        pass
+
+
+def _discard_observation_transaction(
+    frappe: object,
+    wrapper: object,
+    raw: object,
+    server_version: str,
+    connection_id: int,
+) -> None:
+    try:
+        _raw_execute(raw, _ROLLBACK_SQL)
+        final_server, final_connection, final_state = _bound_observation_state(
+            frappe, wrapper, raw
+        )
+        if (
+            final_server != server_version
+            or final_connection != connection_id
+            or final_state["active"] != 0
+        ):
+            _reject()
+    except BaseException:
+        pass
+    finally:
+        _close_raw(raw)
 
 
 def _read_commitment_key() -> bytes:
@@ -420,12 +520,55 @@ def observe(manifest: Mapping[str, object]) -> dict[str, object]:
         local = getattr(frappe, "local")
         wrapper = getattr(local, "db")
         raw = getattr(wrapper, "_conn")
-        if raw is None or not _replica_denied(frappe, wrapper):
+        if (
+            raw is None
+            or not _raw_open(raw)
+            or not _replica_denied(frappe, wrapper)
+        ):
             _reject()
         driver, distribution, driver_version = _driver_identity(wrapper, raw)
-        state_row = _raw_one(raw)
-        if len(state_row) != 5 or _db_flag(state_row[2]) != 0:
+        server_version, connection_id, initial_state = _bound_observation_state(
+            frappe, wrapper, raw
+        )
+        if initial_state["active"] != 0:
             _reject()
+        connection_commitment = _connection_commitment(connection_id)
+
+        transaction_failed = False
+        try:
+            _raw_execute(raw, _SET_ISOLATION_SQL)
+            _raw_execute(raw, _START_SNAPSHOT_SQL)
+            active_server, active_connection, active_state = (
+                _bound_observation_state(frappe, wrapper, raw)
+            )
+            if (
+                active_server != server_version
+                or active_connection != connection_id
+                or active_state["active"] != 1
+                or active_state["isolation"] != "REPEATABLE-READ"
+                or active_state["read_only"] != 1
+            ):
+                _reject()
+
+            _raw_execute(raw, _ROLLBACK_SQL)
+            final_server, final_connection, final_state = (
+                _bound_observation_state(frappe, wrapper, raw)
+            )
+            if (
+                final_server != server_version
+                or final_connection != connection_id
+                or final_state["active"] != 0
+            ):
+                _reject()
+        except BaseException:
+            transaction_failed = True
+
+        if transaction_failed:
+            _discard_observation_transaction(
+                frappe, wrapper, raw, server_version, connection_id
+            )
+            _reject()
+
         return {
             "schema": _OBSERVATION_SCHEMA,
             "mode": "observe",
@@ -439,9 +582,18 @@ def observe(manifest: Mapping[str, object]) -> dict[str, object]:
             "driver": driver,
             "driver_distribution": distribution,
             "driver_version": driver_version,
-            "server_version": _text(state_row[0]),
-            "transaction_state": _state(state_row),
-            "connection_id_commitment": _connection_commitment(state_row[1]),
+            "server_version": server_version,
+            "initial_transaction_inactive": True,
+            "isolation_repeatable_read": True,
+            "transaction_read_only": True,
+            "consistent_snapshot_started": True,
+            "transaction_active": True,
+            "wrapper_stable": True,
+            "raw_connection_stable": True,
+            "server_connection_stable": True,
+            "rollback_no_chain_succeeded": True,
+            "final_transaction_inactive": True,
+            "connection_id_commitment": connection_commitment,
             "primary_route": True,
             "replica_denied": True,
             "partial_output": False,

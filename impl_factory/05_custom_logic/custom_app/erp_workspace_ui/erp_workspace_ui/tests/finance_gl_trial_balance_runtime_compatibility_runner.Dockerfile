@@ -7,7 +7,7 @@ ARG FRAPPE_REVISION
 ARG ERPNEXT_REVISION
 ARG BUILD_CONTEXT_MANIFEST_SHA256
 ARG BUILD_MANIFEST_SHA256
-ARG CONTENT_MANIFEST_SHA256
+ARG SOURCE_CONTENT_SHA256
 ARG FRAPPE_TREE_SHA256
 ARG ERPNEXT_TREE_SHA256
 ARG PACKAGE_INITIALIZER_SHA256
@@ -33,7 +33,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     ERPAI_ERPNEXT_REVISION=${ERPNEXT_REVISION} \
     ERPAI_BUILD_CONTEXT_MANIFEST_SHA256=${BUILD_CONTEXT_MANIFEST_SHA256} \
     ERPAI_BUILD_MANIFEST_SHA256=${BUILD_MANIFEST_SHA256} \
-    ERPAI_CONTENT_MANIFEST_SHA256=${CONTENT_MANIFEST_SHA256} \
+    ERPAI_SOURCE_CONTENT_SHA256=${SOURCE_CONTENT_SHA256} \
     ERPAI_DOCKERFILE_SHA256=${DOCKERFILE_SHA256} \
     ERPAI_FRAPPE_TREE_SHA256=${FRAPPE_TREE_SHA256} \
     ERPAI_ERPNEXT_TREE_SHA256=${ERPNEXT_TREE_SHA256} \
@@ -50,7 +50,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /opt/erpai
 
 # Remove every inherited product tree before any pinned replacement is copied.
-RUN ["/usr/local/bin/python3.14", "-I", "-c", "import hashlib,os,platform,re,shutil,sys; from pathlib import Path; assert sys.executable == '/usr/local/bin/python3.14'; assert sys.version_info[:2] == (3,14); expected={'ERPAI_FRAPPE_REVISION':'4dfcc56090eb3101d18ddb03750391511f163fcf','ERPAI_ERPNEXT_REVISION':'d74a649016d8bb12ee3c5a24361171cebe860bfc','ERPAI_FRONTEND_POLICY':'engine_builtin'}; assert all(os.environ.get(k)==v for k,v in expected.items()); assert re.fullmatch(r'[0-9a-f]{40}',os.environ.get('ERPAI_SOURCE_REPOSITORY_REVISION','')); hash_keys=('ERPAI_BUILD_CONTEXT_MANIFEST_SHA256','ERPAI_BUILD_MANIFEST_SHA256','ERPAI_CONTENT_MANIFEST_SHA256','ERPAI_DOCKERFILE_SHA256','ERPAI_FRAPPE_TREE_SHA256','ERPAI_ERPNEXT_TREE_SHA256','ERPAI_PACKAGE_INITIALIZER_SHA256','ERPAI_FINANCE_INITIALIZER_SHA256','ERPAI_CORE_SHA256','ERPAI_ADAPTER_SHA256','ERPAI_RUNTIME_SHA256','ERPAI_PROBE_SHA256','ERPAI_INITIALIZER_SHA256','ERPAI_RUNNER_PYTHON_SHA256'); assert all(re.fullmatch(r'[0-9a-f]{64}',os.environ.get(k,'')) for k in hash_keys); assert platform.python_version()==os.environ['ERPAI_RUNNER_PYTHON_VERSION']; assert hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest()==os.environ['ERPAI_RUNNER_PYTHON_SHA256']; apps=Path('/home/frappe/frappe-bench/apps'); assert apps.is_dir() and not apps.is_symlink(); [(p.unlink() if p.is_symlink() or p.is_file() else shutil.rmtree(p)) for p in tuple(apps.iterdir())]; opt=Path('/opt/erpai'); [(p.unlink() if p.is_symlink() or p.is_file() else shutil.rmtree(p)) for p in tuple(opt.iterdir())]"]
+RUN ["/usr/local/bin/python3.14", "-I", "-c", "import hashlib,os,platform,re,shutil,sys; from pathlib import Path; assert sys.executable == '/usr/local/bin/python3.14'; assert sys.version_info[:2] == (3,14); expected={'ERPAI_FRAPPE_REVISION':'4dfcc56090eb3101d18ddb03750391511f163fcf','ERPAI_ERPNEXT_REVISION':'d74a649016d8bb12ee3c5a24361171cebe860bfc','ERPAI_FRONTEND_POLICY':'engine_builtin'}; assert all(os.environ.get(k)==v for k,v in expected.items()); assert re.fullmatch(r'[0-9a-f]{40}',os.environ.get('ERPAI_SOURCE_REPOSITORY_REVISION','')); hash_keys=('ERPAI_BUILD_CONTEXT_MANIFEST_SHA256','ERPAI_BUILD_MANIFEST_SHA256','ERPAI_SOURCE_CONTENT_SHA256','ERPAI_DOCKERFILE_SHA256','ERPAI_FRAPPE_TREE_SHA256','ERPAI_ERPNEXT_TREE_SHA256','ERPAI_PACKAGE_INITIALIZER_SHA256','ERPAI_FINANCE_INITIALIZER_SHA256','ERPAI_CORE_SHA256','ERPAI_ADAPTER_SHA256','ERPAI_RUNTIME_SHA256','ERPAI_PROBE_SHA256','ERPAI_INITIALIZER_SHA256','ERPAI_RUNNER_PYTHON_SHA256'); assert all(re.fullmatch(r'[0-9a-f]{64}',os.environ.get(k,'')) for k in hash_keys); assert platform.python_version()==os.environ['ERPAI_RUNNER_PYTHON_VERSION']; assert hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest()==os.environ['ERPAI_RUNNER_PYTHON_SHA256']; apps=Path('/home/frappe/frappe-bench/apps'); assert apps.is_dir() and not apps.is_symlink(); [(p.unlink() if p.is_symlink() or p.is_file() else shutil.rmtree(p)) for p in tuple(apps.iterdir())]; opt=Path('/opt/erpai'); [(p.unlink() if p.is_symlink() or p.is_file() else shutil.rmtree(p)) for p in tuple(opt.iterdir())]"]
 
 COPY --chown=1000:1000 --chmod=0555 frappe/ /home/frappe/frappe-bench/apps/frappe/
 COPY --chown=1000:1000 --chmod=0555 erpnext/ /home/frappe/frappe-bench/apps/erpnext/
@@ -69,3 +69,4 @@ RUN ["/usr/local/bin/python3.14", "-I", "-c", "import hashlib,json,os,shutil,sys
 USER 1000:1000
 
 ENTRYPOINT ["/opt/erpai/finance_gl_trial_balance_runtime_compatibility_probe.py"]
+CMD []
