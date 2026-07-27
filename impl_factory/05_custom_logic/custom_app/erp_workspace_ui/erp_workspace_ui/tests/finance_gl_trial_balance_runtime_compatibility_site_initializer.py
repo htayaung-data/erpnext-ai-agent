@@ -1,4 +1,4 @@
-#!/usr/bin/python3.14
+#!/usr/local/bin/python3.14
 """Create only the disposable Frappe site needed by the GL/TB probe.
 
 The module is inert on import.  It deliberately installs no business app and

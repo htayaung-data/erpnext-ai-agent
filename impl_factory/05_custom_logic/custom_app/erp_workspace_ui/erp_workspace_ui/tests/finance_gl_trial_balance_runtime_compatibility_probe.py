@@ -1,4 +1,4 @@
-#!/usr/bin/python3.14
+#!/usr/local/bin/python3.14
 """One-shot observation and validation probe for the disposable GL/TB stack.
 
 Importing this module is inert: Frappe, the published runtime, the database,
@@ -23,7 +23,7 @@ from typing import Final
 
 _GENERIC_FAILURE: Final = "runtime_compatibility_unavailable"
 _FINANCE_FAILURE: Final = "finance_read_unavailable"
-_MANIFEST_SCHEMA: Final = "erpai.gl_tb.runtime_compat.execution.v1"
+_MANIFEST_SCHEMA: Final = "erpai.gl_tb.runtime_compat.execution.v2"
 _OBSERVATION_SCHEMA: Final = "erpai.gl_tb.runtime_compat.observation.v1"
 _VALIDATION_SCHEMA: Final = "erpai.gl_tb.runtime_compat.validation.v1"
 _RUN_ID_RE: Final = re.compile(r"[0-9a-f]{12}")
@@ -53,6 +53,7 @@ _TOP_KEYS: Final = (
     "repository",
     "artifacts",
     "docker",
+    "content_manifest",
     "compose",
     "site",
     "secrets",
