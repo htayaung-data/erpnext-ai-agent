@@ -267,6 +267,65 @@ class FrappeGLTrialBalanceRuntime:
             _raise_unavailable()
         return raw
 
+    def _require_approved_wrapper_identity(self, wrapper: object) -> None:
+        supported = _SUPPORTED_DRIVERS.get(self._policy.expected_driver)
+        if supported is None:
+            _raise_unavailable()
+        expected_wrapper_module = supported[2]
+        if self._class_identity(wrapper) != (
+            expected_wrapper_module,
+            "MariaDBDatabase",
+        ):
+            _raise_unavailable()
+
+    @staticmethod
+    def _close_new_connection_handles(
+        wrapper: object, returned: object
+    ) -> None:
+        candidates: list[object] = []
+        if returned is not None:
+            candidates.append(returned)
+        try:
+            bound = getattr(wrapper, "_conn")
+        except Exception:
+            bound = None
+        if bound is not None and not any(
+            bound is candidate for candidate in candidates
+        ):
+            candidates.append(bound)
+        for candidate in candidates:
+            try:
+                close = getattr(candidate, "close")
+                if callable(close):
+                    close()
+            except Exception:
+                pass
+
+    def _begin_raw_connection(self, wrapper: object) -> object:
+        self._require_approved_wrapper_identity(wrapper)
+        self._deny_replica(wrapper)
+        raw = getattr(wrapper, "_conn")
+        if raw is not None:
+            return raw
+
+        returned: object = None
+        try:
+            connect = getattr(wrapper, "connect")
+            if not callable(connect):
+                raise ValueError
+            returned = connect()
+            if returned is not None:
+                raise ValueError
+            rebound_wrapper = self._wrapper()
+            if rebound_wrapper is not wrapper:
+                raise ValueError
+            self._require_approved_wrapper_identity(rebound_wrapper)
+            self._deny_replica(rebound_wrapper)
+            return self._raw_connection(rebound_wrapper)
+        except Exception:
+            self._close_new_connection_handles(wrapper, returned)
+            _raise_unavailable()
+
     @staticmethod
     def _class_identity(value: object) -> tuple[str, str]:
         cls = type(value)
@@ -410,12 +469,8 @@ class FrappeGLTrialBalanceRuntime:
         supported = _SUPPORTED_DRIVERS.get(context.driver)
         if supported is None:
             _raise_unavailable()
-        _, _, expected_wrapper_module, expected_raw_module = supported
-        if self._class_identity(wrapper) != (
-            expected_wrapper_module,
-            "MariaDBDatabase",
-        ):
-            _raise_unavailable()
+        _, _, _expected_wrapper_module, expected_raw_module = supported
+        self._require_approved_wrapper_identity(wrapper)
         if self._class_identity(raw) != (expected_raw_module, "Connection"):
             _raise_unavailable()
         if wrapper is not context.wrapper or raw is not context.raw_connection:
@@ -500,7 +555,7 @@ class FrappeGLTrialBalanceRuntime:
                 raise ValueError
             wrapper = self._wrapper()
             self._snapshot_phase("snapshot_raw_connection")
-            raw = self._raw_connection(wrapper)
+            raw = self._begin_raw_connection(wrapper)
             self._snapshot_phase("snapshot_driver_identity")
             self._deny_replica(wrapper)
             driver, connection_id = self._detect_environment(wrapper, raw)

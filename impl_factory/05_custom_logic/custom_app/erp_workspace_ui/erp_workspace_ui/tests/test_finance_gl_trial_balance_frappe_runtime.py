@@ -302,7 +302,11 @@ class FrappeRuntimeTests(unittest.TestCase):
         for driver in ("pymysql", "mysqlclient"):
             with self.subTest(driver=driver):
                 runtime, frappe, _ = _runtime(driver)
+                frappe.local.db.connect = mock.Mock(
+                    side_effect=AssertionError("eager_connection_must_not_connect")
+                )
                 snapshot = _begin(runtime)
+                frappe.local.db.connect.assert_not_called()
                 self.assertEqual(snapshot.transaction_isolation, "REPEATABLE READ")
                 runtime.close_read_snapshot(snapshot)
                 probe = "SELECT VERSION(), CONNECTION_ID(), @@in_transaction"
@@ -327,6 +331,251 @@ class FrappeRuntimeTests(unittest.TestCase):
                 )
                 self.assertFalse(frappe.raw.active)
                 self.assertFalse(frappe.raw.closed)
+
+    def test_begin_only_lazy_connection_for_both_drivers(self) -> None:
+        expected_phases = [
+            "snapshot_runtime_construct",
+            "snapshot_wrapper_bind",
+            "snapshot_raw_connection",
+            "snapshot_driver_identity",
+            "snapshot_preflight_query",
+            "snapshot_server_identity",
+            "snapshot_connection_identity",
+            "snapshot_transaction_idle",
+            "snapshot_set_isolation",
+            "snapshot_start",
+            "snapshot_state",
+            "snapshot_evidence_build",
+        ]
+        for driver, distribution in (
+            ("pymysql", "PyMySQL"),
+            ("mysqlclient", "mysqlclient"),
+        ):
+            with self.subTest(driver=driver):
+                phases: list[str] = []
+                runtime, frappe, _ = _runtime(
+                    driver, snapshot_phase_hook=phases.append
+                )
+                wrapper = frappe.local.db
+                raw = frappe.raw
+                wrapper._conn = None
+                connect = mock.Mock(
+                    side_effect=lambda: setattr(wrapper, "_conn", raw)
+                )
+                wrapper.connect = connect
+
+                self.assertEqual(phases, ["snapshot_runtime_construct"])
+                self.assertEqual(runtime.current_user(), USER)
+                connect.assert_not_called()
+
+                snapshot = _begin(runtime)
+                connect.assert_called_once_with()
+                self.assertIs(wrapper._conn, raw)
+                self.assertEqual(phases, expected_phases)
+                self.assertEqual(frappe.distribution_calls, [distribution])
+                self.assertEqual(
+                    [statement for statement, _parameters in raw.statements[:4]],
+                    [
+                        "SELECT VERSION(), CONNECTION_ID(), @@in_transaction",
+                        "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ",
+                        "START TRANSACTION READ ONLY, WITH CONSISTENT SNAPSHOT",
+                        "SELECT VERSION(), CONNECTION_ID(), @@in_transaction",
+                    ],
+                )
+
+                runtime.final_snapshot_evidence(snapshot)
+                runtime.close_read_snapshot(snapshot)
+                runtime.close_read_snapshot(snapshot)
+                connect.assert_called_once_with()
+                self.assertFalse(raw.closed)
+
+    def test_lazy_connection_failures_close_partial_bind_without_retry(self) -> None:
+        probe = "SELECT VERSION(), CONNECTION_ID(), @@in_transaction"
+        cases = (
+            "missing",
+            "noncallable",
+            "raising",
+            "partial",
+            "no_bind",
+            "abnormal_return",
+            "wrong_wrapper",
+            "replica_before",
+            "wrapper_replacing",
+            "replica_after",
+            "wrong_raw",
+            "preflight",
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                phases: list[str] = []
+                runtime, frappe, _ = _runtime(
+                    snapshot_phase_hook=phases.append
+                )
+                wrapper = frappe.local.db
+                raw = frappe.raw
+                wrapper._conn = None
+                connect: mock.Mock | None = None
+                partial: object | None = None
+                untouched: object | None = None
+
+                if case == "missing":
+                    pass
+                elif case == "noncallable":
+                    wrapper.connect = object()
+                elif case == "raising":
+                    connect = mock.Mock(
+                        side_effect=RuntimeError("LEAK_CONNECT COMPANY_A")
+                    )
+                    wrapper.connect = connect
+                elif case == "partial":
+                    def bind_then_raise() -> None:
+                        wrapper._conn = raw
+                        raise RuntimeError("LEAK_PARTIAL COMPANY_A")
+
+                    connect = mock.Mock(side_effect=bind_then_raise)
+                    wrapper.connect = connect
+                    partial = raw
+                elif case == "no_bind":
+                    connect = mock.Mock(return_value=None)
+                    wrapper.connect = connect
+                elif case == "abnormal_return":
+                    connect = mock.Mock(return_value=raw)
+                    wrapper.connect = connect
+                    partial = raw
+                elif case == "wrong_wrapper":
+                    wrong_type = type(
+                        "MariaDBDatabase",
+                        (),
+                        {"__module__": "unapproved.wrapper"},
+                    )
+                    wrong_wrapper = wrong_type()
+                    wrong_wrapper._conn = None
+                    connect = mock.Mock(
+                        side_effect=AssertionError(
+                            "wrong_wrapper_must_not_connect"
+                        )
+                    )
+                    wrong_wrapper.connect = connect
+                    frappe.local.db = wrong_wrapper
+                elif case == "replica_before":
+                    connect = mock.Mock(
+                        side_effect=AssertionError(
+                            "replica_uncertainty_must_not_connect"
+                        )
+                    )
+                    wrapper.connect = connect
+                    frappe.local.conf["read_from_replica"] = True
+                elif case == "wrapper_replacing":
+                    wrapper_type, raw_type = _driver_types("pymysql")
+                    replacement = wrapper_type()
+                    replacement_raw = raw_type()
+                    replacement._conn = replacement_raw
+
+                    def bind_and_replace_wrapper() -> None:
+                        wrapper._conn = raw
+                        frappe.local.db = replacement
+
+                    connect = mock.Mock(side_effect=bind_and_replace_wrapper)
+                    wrapper.connect = connect
+                    partial = raw
+                    untouched = replacement_raw
+                elif case == "replica_after":
+                    def bind_and_enable_replica() -> None:
+                        wrapper._conn = raw
+                        frappe.local.conf["read_from_replica"] = True
+
+                    connect = mock.Mock(side_effect=bind_and_enable_replica)
+                    wrapper.connect = connect
+                    partial = raw
+                elif case == "wrong_raw":
+                    wrong_type = type(
+                        "Connection", (_RawBase,), {"__module__": "wrong.raw"}
+                    )
+                    wrong_raw = wrong_type()
+                    connect = mock.Mock(
+                        side_effect=lambda: setattr(
+                            wrapper, "_conn", wrong_raw
+                        )
+                    )
+                    wrapper.connect = connect
+                    partial = wrong_raw
+                else:
+                    raw.fail_execute = (probe, 1)
+                    connect = mock.Mock(
+                        side_effect=lambda: setattr(wrapper, "_conn", raw)
+                    )
+                    wrapper.connect = connect
+                    partial = raw
+
+                self.assertUnavailable(lambda: _begin(runtime))
+                expected_calls = (
+                    0
+                    if case in (
+                        "missing",
+                        "noncallable",
+                        "wrong_wrapper",
+                        "replica_before",
+                    )
+                    else 1
+                )
+                if connect is not None:
+                    self.assertEqual(connect.call_count, expected_calls)
+                expected_phase = (
+                    "snapshot_driver_identity"
+                    if case == "wrong_raw"
+                    else "snapshot_preflight_query"
+                    if case == "preflight"
+                    else "snapshot_raw_connection"
+                )
+                self.assertEqual(phases[-1], expected_phase)
+                self.assertIsNone(runtime._context)
+                expected_probe_count = 1 if case == "preflight" else 0
+                self.assertEqual(raw.statement_counts.get(probe, 0), expected_probe_count)
+                if partial is not None:
+                    self.assertTrue(partial.closed)
+                    self.assertFalse(partial.active)
+                else:
+                    self.assertFalse(raw.closed)
+                if untouched is not None:
+                    self.assertFalse(untouched.closed)
+
+    def test_active_snapshot_binding_loss_never_reconnects(self) -> None:
+        for driver in ("pymysql", "mysqlclient"):
+            for operation in ("validate", "close"):
+                with self.subTest(driver=driver, operation=operation):
+                    runtime, frappe, _ = _runtime(driver)
+                    wrapper = frappe.local.db
+                    raw = frappe.raw
+                    wrapper._conn = None
+                    initial_connect = mock.Mock(
+                        side_effect=lambda: setattr(wrapper, "_conn", raw)
+                    )
+                    wrapper.connect = initial_connect
+                    snapshot = _begin(runtime)
+                    initial_connect.assert_called_once_with()
+
+                    wrapper._conn = None
+                    reconnect = mock.Mock(
+                        side_effect=RuntimeError(
+                            "LEAK_RECONNECT COMPANY_A"
+                        )
+                    )
+                    wrapper.connect = reconnect
+                    if operation == "validate":
+                        self.assertUnavailable(
+                            lambda: runtime.final_snapshot_evidence(snapshot)
+                        )
+                    else:
+                        self.assertUnavailable(
+                            lambda: runtime.close_read_snapshot(snapshot)
+                        )
+                    reconnect.assert_not_called()
+                    self.assertTrue(raw.closed)
+                    self.assertFalse(raw.active)
+                    self.assertIsNone(runtime._context)
+                    self.assertIsNone(wrapper._conn)
+                    runtime.close_read_snapshot(snapshot)
+                    reconnect.assert_not_called()
 
     def test_snapshot_phase_hook_exact_order_and_inert_default(self) -> None:
         expected = [
