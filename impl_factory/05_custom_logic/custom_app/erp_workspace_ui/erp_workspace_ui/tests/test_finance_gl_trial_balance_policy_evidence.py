@@ -774,27 +774,15 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         frappe.local.request.method = "POST"
         frappe.form_dict = {"cmd": DIAGNOSTIC_METHOD}
 
-    def test_environment_and_authority_failures_are_phase_only(
+    def test_non_snapshot_failures_return_no_phase_document(
         self,
     ) -> None:
         frappe.local.conf.pop(endpoint._CONFIG_KEY)
-        self.assertEqual(
-            diagnose_gl_trial_balance_policy_evidence_failure_phase(),
-            {
-                "code": "finance_read_unavailable",
-                "phase": "environment_policy",
-            },
-        )
+        self._assert_generic()
 
         frappe.local.conf[endpoint._CONFIG_KEY] = _policy()
         frappe_permissions.get_user_permissions = lambda user: {}
-        self.assertEqual(
-            diagnose_gl_trial_balance_policy_evidence_failure_phase(),
-            {
-                "code": "finance_read_unavailable",
-                "phase": "authority_initial",
-            },
-        )
+        self._assert_generic()
 
     def test_ineligible_callers_receive_no_phase_document(self) -> None:
         for user, roles in (
@@ -826,21 +814,13 @@ class DiagnosticBoundaryTests(unittest.TestCase):
             return ["Accounts Manager"]
 
         frappe.get_roles = noisy_roles
-        result = diagnose_gl_trial_balance_policy_evidence_failure_phase()
-        self.assertEqual(
-            result,
-            {
-                "code": "finance_read_unavailable",
-                "phase": "message_log_integrity",
-            },
-        )
+        self._assert_generic()
         self.assertEqual(frappe.local.message_log, [])
-        self.assertNotIn(canary, json.dumps(result, sort_keys=True))
 
     def test_only_closed_phase_documents_can_leave_the_boundary(
         self,
     ) -> None:
-        observable_phases = endpoint._DIAGNOSTIC_PHASES - {"cleanup"}
+        observable_phases = endpoint._DIAGNOSTIC_PHASES - {"complete"}
         for phase in observable_phases:
             with self.subTest(phase=phase), patch.object(
                 endpoint,
@@ -858,18 +838,13 @@ class DiagnosticBoundaryTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(tuple(result), ("code", "phase"))
-        with patch.object(
-            endpoint,
-            "_execute_policy_evidence",
-            return_value=(None, "identity-canary", True, True),
-        ):
-            self.assertEqual(
-                diagnose_gl_trial_balance_policy_evidence_failure_phase(),
-                {
-                    "code": "finance_read_unavailable",
-                    "phase": "internal",
-                },
-            )
+        for invalid_phase in ("complete", "internal", "identity-canary"):
+            with self.subTest(invalid_phase=invalid_phase), patch.object(
+                endpoint,
+                "_execute_policy_evidence",
+                return_value=(None, invalid_phase, True, True),
+            ):
+                self._assert_generic()
 
     def test_success_discards_the_full_evidence_document(self) -> None:
         with patch.object(
@@ -908,18 +883,9 @@ class DiagnosticBoundaryTests(unittest.TestCase):
             raise RuntimeError("SELECT voucher-canary")
 
         with patch.object(endpoint, "_collect_company", collect):
-            result = (
-                diagnose_gl_trial_balance_policy_evidence_failure_phase()
-            )
-        self.assertEqual(
-            result,
-            {
-                "code": "finance_read_unavailable",
-                "phase": "gl_cohort",
-            },
-        )
+            self._assert_generic()
         self.assertEqual(frappe.local.message_log, [])
-        encoded = json.dumps(result, sort_keys=True)
+        encoded = json.dumps(frappe.local.message_log, sort_keys=True)
         for canary in (
             USER,
             COMPANY_A,
@@ -945,10 +911,133 @@ class DiagnosticBoundaryTests(unittest.TestCase):
 
     def test_phase_recorder_rejects_dynamic_values(self) -> None:
         recorder = endpoint._PhaseRecorder()
-        recorder.enter("accounting_read")
-        self.assertEqual(recorder.phase, "accounting_read")
-        recorder.enter("accounting_read:" + COMPANY_A)
+        recorder.enter("snapshot_state")
+        self.assertEqual(recorder.phase, "snapshot_state")
+        recorder.enter("snapshot_state:" + COMPANY_A)
         self.assertEqual(recorder.phase, "internal")
+
+    def test_snapshot_phase_allowlist_is_exact(self) -> None:
+        self.assertEqual(
+            endpoint._DIAGNOSTIC_PHASES,
+            frozenset(
+                {
+                    "snapshot_runtime_construct",
+                    "snapshot_wrapper_bind",
+                    "snapshot_raw_connection",
+                    "snapshot_driver_identity",
+                    "snapshot_preflight_query",
+                    "snapshot_server_identity",
+                    "snapshot_connection_identity",
+                    "snapshot_transaction_idle",
+                    "snapshot_set_isolation",
+                    "snapshot_start",
+                    "snapshot_state",
+                    "snapshot_evidence_build",
+                    "snapshot_validate",
+                    "complete",
+                }
+            ),
+        )
+
+    def test_snapshot_phase_order_and_validation_boundary(
+        self,
+    ) -> None:
+        expected = [
+            "snapshot_runtime_construct",
+            "snapshot_wrapper_bind",
+            "snapshot_raw_connection",
+            "snapshot_driver_identity",
+            "snapshot_preflight_query",
+            "snapshot_server_identity",
+            "snapshot_connection_identity",
+            "snapshot_transaction_idle",
+            "snapshot_set_isolation",
+            "snapshot_start",
+            "snapshot_state",
+            "snapshot_evidence_build",
+            "snapshot_validate",
+            "complete",
+        ]
+        observed: list[str] = []
+
+        class ProbeRuntime:
+            def __init__(self, *, snapshot_phase_hook, **_kwargs):
+                self.hook = snapshot_phase_hook
+                self.closed = 0
+                self._snapshot_phase("snapshot_runtime_construct")
+
+            def _snapshot_phase(self, phase):
+                observed.append(phase)
+                if self.hook is not None:
+                    self.hook(phase)
+
+            def begin_read_snapshot(self, _user, _company):
+                for phase in expected[1:12]:
+                    self._snapshot_phase(phase)
+                return _snapshot()
+
+            def close_read_snapshot(self, _snapshot_value):
+                self.closed += 1
+                raise RuntimeError("cleanup identity-canary")
+
+        recorder = endpoint._PhaseRecorder()
+        authority = endpoint._AuthorityEvidence(
+            user=USER,
+            roles=("Accounts Manager",),
+            user_permissions=(),
+            companies=(COMPANY_A,),
+        )
+        with patch.object(
+            endpoint, "_EvidenceRuntime", ProbeRuntime
+        ), patch.object(
+            endpoint,
+            "_validate_snapshot",
+            side_effect=RuntimeError("validation identity-canary"),
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "finance_read_unavailable"
+            ):
+                endpoint._collect_company(
+                    authority=authority,
+                    company=COMPANY_A,
+                    runtime_policy=endpoint.GLTrialBalanceRuntimePolicy(
+                        "pymysql", "1.1.2", "server"
+                    ),
+                    phase_recorder=recorder,
+                )
+        self.assertEqual(observed, expected[:12])
+        self.assertEqual(recorder.phase, "snapshot_validate")
+        self.assertEqual(observed + [recorder.phase], expected[:13])
+
+    def test_normal_collection_passes_no_snapshot_hook(self) -> None:
+        hooks = []
+
+        class InertProbeRuntime:
+            def __init__(self, *, snapshot_phase_hook, **_kwargs):
+                hooks.append(snapshot_phase_hook)
+
+            def begin_read_snapshot(self, _user, _company):
+                raise RuntimeError("stop")
+
+        authority = endpoint._AuthorityEvidence(
+            user=USER,
+            roles=("Accounts Manager",),
+            user_permissions=(),
+            companies=(COMPANY_A,),
+        )
+        with patch.object(endpoint, "_EvidenceRuntime", InertProbeRuntime):
+            with self.assertRaisesRegex(
+                ValueError, "finance_read_unavailable"
+            ):
+                endpoint._collect_company(
+                    authority=authority,
+                    company=COMPANY_A,
+                    runtime_policy=endpoint.GLTrialBalanceRuntimePolicy(
+                        "pymysql", "1.1.2", "server"
+                    ),
+                    phase_recorder=None,
+                )
+        self.assertEqual(hooks, [None])
 
 
 class EvidenceRuntimeQueryTests(unittest.TestCase):
@@ -1993,7 +2082,7 @@ class CollectorOrchestrationTests(unittest.TestCase):
                 self.assertNotIn("session-drift-canary", str(error))
                 self.assertGreaterEqual(len(runtime.closed), 1)
 
-    def test_diagnostic_phases_cover_bounded_collector_failures(
+    def test_non_snapshot_collector_failures_are_not_phase_visible(
         self,
     ) -> None:
         def missing_finance_book(runtime):
@@ -2028,13 +2117,13 @@ class CollectorOrchestrationTests(unittest.TestCase):
                 ),
             ),
         )
-        for expected_phase, mutate in cases:
+        for former_phase, mutate in cases:
             runtime = self._runtime()
             mutate(runtime)
             recorder = endpoint._PhaseRecorder()
-            with self.subTest(expected_phase=expected_phase):
+            with self.subTest(former_phase=former_phase):
                 with self.assertRaisesRegex(
                     ValueError, "finance_read_unavailable"
                 ):
                     self._collect(runtime, recorder)
-                self.assertEqual(recorder.phase, expected_phase)
+                self.assertEqual(recorder.phase, "internal")

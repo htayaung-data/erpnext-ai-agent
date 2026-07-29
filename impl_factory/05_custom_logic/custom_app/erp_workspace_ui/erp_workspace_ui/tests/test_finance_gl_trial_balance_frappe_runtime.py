@@ -248,6 +248,7 @@ def _runtime(
     *,
     server: str = SERVER,
     actual_distribution: str | None = None,
+    snapshot_phase_hook=None,
 ) -> tuple[FrappeGLTrialBalanceRuntime, _Frappe, _Permissions]:
     frappe = _Frappe(driver)
     permissions = _Permissions()
@@ -262,6 +263,7 @@ def _runtime(
             expected_server_version=server,
         ),
         distribution_version=lambda name: (frappe.distribution_calls.append(name), installed_version)[1],
+        snapshot_phase_hook=snapshot_phase_hook,
     )
     return runtime, frappe, permissions
 
@@ -325,6 +327,184 @@ class FrappeRuntimeTests(unittest.TestCase):
                 )
                 self.assertFalse(frappe.raw.active)
                 self.assertFalse(frappe.raw.closed)
+
+    def test_snapshot_phase_hook_exact_order_and_inert_default(self) -> None:
+        expected = [
+            "snapshot_runtime_construct",
+            "snapshot_wrapper_bind",
+            "snapshot_raw_connection",
+            "snapshot_driver_identity",
+            "snapshot_preflight_query",
+            "snapshot_server_identity",
+            "snapshot_connection_identity",
+            "snapshot_transaction_idle",
+            "snapshot_set_isolation",
+            "snapshot_start",
+            "snapshot_state",
+            "snapshot_evidence_build",
+        ]
+        phases: list[str] = []
+        runtime, _, _ = _runtime(snapshot_phase_hook=phases.append)
+        snapshot = _begin(runtime)
+        self.assertEqual(phases, expected)
+        runtime.close_read_snapshot(snapshot)
+        self.assertEqual(phases, expected)
+
+        runtime, frappe, _ = _runtime()
+        self.assertIsNone(runtime._snapshot_phase_hook)
+        snapshot = _begin(runtime)
+        runtime.close_read_snapshot(snapshot)
+        self.assertFalse(frappe.raw.closed)
+
+    def test_each_snapshot_gate_has_one_fixed_failure_phase(self) -> None:
+        probe = "SELECT VERSION(), CONNECTION_ID(), @@in_transaction"
+        set_isolation = (
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
+        )
+        start = (
+            "START TRANSACTION READ ONLY, WITH CONSISTENT SNAPSHOT"
+        )
+        ordered = (
+            "snapshot_runtime_construct",
+            "snapshot_wrapper_bind",
+            "snapshot_raw_connection",
+            "snapshot_driver_identity",
+            "snapshot_preflight_query",
+            "snapshot_server_identity",
+            "snapshot_connection_identity",
+            "snapshot_transaction_idle",
+            "snapshot_set_isolation",
+            "snapshot_start",
+            "snapshot_state",
+            "snapshot_evidence_build",
+        )
+
+        phases: list[str] = []
+        frappe = _Frappe()
+        permissions = _Permissions()
+        self.assertUnavailable(
+            lambda: FrappeGLTrialBalanceRuntime(
+                frappe_module=frappe,
+                permissions_module=permissions,
+                policy=GLTrialBalanceRuntimePolicy(
+                    "unsupported", "1", SERVER
+                ),
+                snapshot_phase_hook=phases.append,
+            )
+        )
+        self.assertEqual(phases, ["snapshot_runtime_construct"])
+
+        def run_case(expected, configure, *, distribution=None):
+            observed: list[str] = []
+            runtime, case_frappe, _ = _runtime(
+                actual_distribution=distribution,
+                snapshot_phase_hook=observed.append,
+            )
+            configure(runtime, case_frappe)
+            self.assertUnavailable(lambda: _begin(runtime))
+            self.assertEqual(
+                observed,
+                list(ordered[: ordered.index(expected) + 1]),
+            )
+
+        def remove_wrapper(_runtime, case_frappe):
+            del case_frappe.local.db
+
+        def remove_raw(_runtime, case_frappe):
+            case_frappe.local.db._conn = None
+
+        def no_change(_runtime, _frappe):
+            return None
+
+        def fail_preflight(_runtime, case_frappe):
+            case_frappe.raw.fail_execute = (probe, 1)
+
+        def wrong_server(_runtime, case_frappe):
+            case_frappe.raw.server = "wrong"
+
+        def wrong_connection(_runtime, case_frappe):
+            case_frappe.raw.connection_id = 0
+
+        def active_transaction(_runtime, case_frappe):
+            case_frappe.raw.active = True
+
+        def fail_isolation(_runtime, case_frappe):
+            case_frappe.raw.fail_statement = set_isolation
+            case_frappe.raw.close = mock.Mock(
+                side_effect=RuntimeError("LEAK_CLOSE COMPANY_A")
+            )
+
+        def fail_start(_runtime, case_frappe):
+            case_frappe.raw.fail_statement = start
+
+        def fail_state(_runtime, case_frappe):
+            case_frappe.raw.state_overrides[2] = (
+                SERVER,
+                CONNECTION_ID,
+                0,
+            )
+
+        cases = (
+            ("snapshot_wrapper_bind", remove_wrapper, None),
+            ("snapshot_raw_connection", remove_raw, None),
+            ("snapshot_driver_identity", no_change, "0.0"),
+            ("snapshot_preflight_query", fail_preflight, None),
+            ("snapshot_server_identity", wrong_server, None),
+            (
+                "snapshot_connection_identity",
+                wrong_connection,
+                None,
+            ),
+            (
+                "snapshot_transaction_idle",
+                active_transaction,
+                None,
+            ),
+            ("snapshot_set_isolation", fail_isolation, None),
+            ("snapshot_start", fail_start, None),
+            ("snapshot_state", fail_state, None),
+        )
+        for expected, configure, distribution in cases:
+            with self.subTest(expected=expected):
+                run_case(
+                    expected,
+                    configure,
+                    distribution=distribution,
+                )
+
+        observed: list[str] = []
+        runtime, _, _ = _runtime(snapshot_phase_hook=observed.append)
+        with mock.patch.object(
+            runtime,
+            "_snapshot_evidence",
+            side_effect=RuntimeError("LEAK_EVIDENCE COMPANY_A"),
+        ):
+            self.assertUnavailable(lambda: _begin(runtime))
+        self.assertEqual(observed, list(ordered))
+
+    def test_snapshot_phase_hook_rejects_dynamic_content_generically(self) -> None:
+        phases: list[str] = []
+        runtime, _, _ = _runtime(snapshot_phase_hook=phases.append)
+        self.assertUnavailable(
+            lambda: runtime._snapshot_phase(
+                "snapshot_raw_connection:" + COMPANY
+            )
+        )
+        self.assertEqual(phases, ["snapshot_runtime_construct"])
+
+        def leaking_hook(_phase):
+            raise RuntimeError("LEAK_PHASE " + COMPANY)
+
+        self.assertUnavailable(
+            lambda: FrappeGLTrialBalanceRuntime(
+                frappe_module=_Frappe(),
+                permissions_module=_Permissions(),
+                policy=GLTrialBalanceRuntimePolicy(
+                    "pymysql", "1.1.2", SERVER
+                ),
+                snapshot_phase_hook=leaking_hook,
+            )
+        )
 
     def test_unknown_driver_and_environment_mismatches_fail_closed(self) -> None:
         for mutation in ("unknown", "driver-version", "server", "preexisting"):

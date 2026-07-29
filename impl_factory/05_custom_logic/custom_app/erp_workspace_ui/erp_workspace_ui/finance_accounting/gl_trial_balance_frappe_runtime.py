@@ -46,6 +46,22 @@ _SUPPORTED_DRIVERS: Final = {
         "MySQLdb.connections",
     ),
 }
+_SNAPSHOT_PHASES: Final = frozenset(
+    {
+        "snapshot_runtime_construct",
+        "snapshot_wrapper_bind",
+        "snapshot_raw_connection",
+        "snapshot_driver_identity",
+        "snapshot_preflight_query",
+        "snapshot_server_identity",
+        "snapshot_connection_identity",
+        "snapshot_transaction_idle",
+        "snapshot_set_isolation",
+        "snapshot_start",
+        "snapshot_state",
+        "snapshot_evidence_build",
+    }
+)
 
 # MariaDB's @@tx_isolation and @@tx_read_only expose default/session state,
 # not authoritative state for the transaction currently in progress.  The
@@ -185,7 +201,14 @@ class FrappeGLTrialBalanceRuntime:
         permissions_module: object,
         policy: GLTrialBalanceRuntimePolicy,
         distribution_version: Callable[[str], str] = metadata.version,
+        snapshot_phase_hook: Callable[[str], None] | None = None,
     ) -> None:
+        if snapshot_phase_hook is not None and not callable(
+            snapshot_phase_hook
+        ):
+            _raise_unavailable()
+        self._snapshot_phase_hook = snapshot_phase_hook
+        self._snapshot_phase("snapshot_runtime_construct")
         if type(policy) is not GLTrialBalanceRuntimePolicy:
             _raise_unavailable()
         driver = _text(policy.expected_driver)
@@ -203,6 +226,21 @@ class FrappeGLTrialBalanceRuntime:
         self._context: _SnapshotContext | None = None
         self._last_closed_token: str | None = None
         self._generation = 0
+
+    def _snapshot_phase(self, phase: str) -> None:
+        if type(phase) is not str or phase not in _SNAPSHOT_PHASES:
+            _raise_unavailable()
+        hook = self._snapshot_phase_hook
+        if hook is None:
+            return
+        failed = False
+        result: object = None
+        try:
+            result = hook(phase)
+        except Exception:
+            failed = True
+        if failed or result is not None:
+            _raise_unavailable()
 
     @staticmethod
     def _protected(call: Callable[[], object]) -> object:
@@ -337,18 +375,21 @@ class FrappeGLTrialBalanceRuntime:
                 break
         if selected_driver is None or selected_driver != self._policy.expected_driver:
             _raise_unavailable()
+        self._snapshot_phase("snapshot_preflight_query")
         preflight = self._raw_one(raw, _PREFLIGHT_SQL)
         if len(preflight) != 3:
             _raise_unavailable()
+        self._snapshot_phase("snapshot_server_identity")
         server_version = _text(preflight[0])
+        if server_version != self._policy.expected_server_version:
+            _raise_unavailable()
+        self._snapshot_phase("snapshot_connection_identity")
         connection_id = preflight[1]
+        if type(connection_id) is not int or connection_id <= 0:
+            _raise_unavailable()
+        self._snapshot_phase("snapshot_transaction_idle")
         in_transaction = preflight[2]
-        if (
-            server_version != self._policy.expected_server_version
-            or type(connection_id) is not int
-            or connection_id <= 0
-            or _db_flag(in_transaction) != 0
-        ):
+        if _db_flag(in_transaction) != 0:
             _raise_unavailable()
         return selected_driver, connection_id
 
@@ -454,14 +495,18 @@ class FrappeGLTrialBalanceRuntime:
         connection_id: int | None = None
         mutation_attempted = False
         try:
+            self._snapshot_phase("snapshot_wrapper_bind")
             if user != self._current_user() or self._context is not None:
                 raise ValueError
             wrapper = self._wrapper()
+            self._snapshot_phase("snapshot_raw_connection")
             raw = self._raw_connection(wrapper)
+            self._snapshot_phase("snapshot_driver_identity")
             self._deny_replica(wrapper)
             driver, connection_id = self._detect_environment(wrapper, raw)
             # A failed SET may still have reached the server; cleanup must not
             # treat a cursor-close failure as proof that no mutation occurred.
+            self._snapshot_phase("snapshot_set_isolation")
             mutation_attempted = True
             self._raw_execute(raw, _SET_ISOLATION_SQL)
             # The SET applies to the next transaction; the immediately
@@ -469,8 +514,10 @@ class FrappeGLTrialBalanceRuntime:
             # with a consistent snapshot.  _state then proves that it remains
             # active on the same wrapper, raw connection, and server session.
             # No session-default variable is treated as current-state proof.
+            self._snapshot_phase("snapshot_start")
             self._raw_execute(raw, _START_SNAPSHOT_SQL)
             self._generation += 1
+            self._snapshot_phase("snapshot_state")
             context = _SnapshotContext(
                 token=f"gl_tb_snapshot_{self._generation}",
                 user=user,
@@ -481,6 +528,7 @@ class FrappeGLTrialBalanceRuntime:
                 driver=driver,
             )
             self._state(context)
+            self._snapshot_phase("snapshot_evidence_build")
             self._context = context
             return self._snapshot_evidence(context)
         except Exception:

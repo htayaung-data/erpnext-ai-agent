@@ -77,26 +77,20 @@ _CONFIG_KEYS: Final = frozenset(
 _DIAGNOSTIC_CONFIG_KEYS: Final = frozenset({"enabled"})
 _DIAGNOSTIC_PHASES: Final = frozenset(
     {
-        "request_boundary",
-        "environment_policy",
-        "authority_initial",
-        "snapshot_begin",
-        "permission_initial",
-        "company_scope",
-        "fiscal_scope",
-        "precision",
-        "account_manifest",
-        "gl_cohort",
-        "statement_schema",
-        "accounting_read",
-        "canonical_size",
-        "permission_final",
-        "snapshot_finalize",
-        "authority_final",
-        "result_build",
-        "message_log_integrity",
-        "cleanup",
-        "internal",
+        "snapshot_runtime_construct",
+        "snapshot_wrapper_bind",
+        "snapshot_raw_connection",
+        "snapshot_driver_identity",
+        "snapshot_preflight_query",
+        "snapshot_server_identity",
+        "snapshot_connection_identity",
+        "snapshot_transaction_idle",
+        "snapshot_set_isolation",
+        "snapshot_start",
+        "snapshot_state",
+        "snapshot_evidence_build",
+        "snapshot_validate",
+        "complete",
     }
 )
 _PRIVILEGED_ROLES: Final = frozenset(
@@ -1068,12 +1062,16 @@ def _collect_company(
     runtime_policy: GLTrialBalanceRuntimePolicy,
     phase_recorder: _PhaseRecorder | None = None,
 ) -> _CompanyMeasurement:
-    _enter_phase(phase_recorder, "snapshot_begin")
     started_ns = time.monotonic_ns()
     runtime = _EvidenceRuntime(
         frappe_module=frappe,
         permissions_module=frappe_permissions,
         policy=runtime_policy,
+        snapshot_phase_hook=(
+            phase_recorder.enter
+            if phase_recorder is not None
+            else None
+        ),
     )
     snapshot: ReadSnapshotEvidence | None = None
     result: _CompanyMeasurement | None = None
@@ -1083,12 +1081,16 @@ def _collect_company(
         _enter_phase(phase_recorder, "permission_initial")
         if company not in authority.companies:
             _fail()
-        _enter_phase(phase_recorder, "snapshot_begin")
+        snapshot_candidate = runtime.begin_read_snapshot(
+            authority.user, company
+        )
+        _enter_phase(phase_recorder, "snapshot_validate")
         snapshot = _validate_snapshot(
-            runtime.begin_read_snapshot(authority.user, company),
+            snapshot_candidate,
             user=authority.user,
             company=company,
         )
+        _enter_phase(phase_recorder, "complete")
         _enter_phase(phase_recorder, "permission_initial")
         if _authority_snapshot() != authority:
             _fail()
@@ -1353,7 +1355,8 @@ def _collect_company(
             runtime.close_read_snapshot(snapshot)
         except Exception:
             failed = True
-            failure_phase = "snapshot_finalize"
+            if failure_phase is None:
+                failure_phase = "snapshot_finalize"
     if failed or result is None:
         if phase_recorder is not None:
             phase_recorder.enter(failure_phase or "internal")
@@ -1649,7 +1652,11 @@ def _execute_policy_evidence(
             cleanup_safe = _restore_message_log(
                 local, message_log, original_messages
             )
-        if not cleanup_safe and phase_recorder is not None:
+        if (
+            not cleanup_safe
+            and phase_recorder is not None
+            and failure_phase is None
+        ):
             phase_recorder.enter("cleanup")
             failure_phase = phase_recorder.phase
         return response, failure_phase, cleanup_safe, phase_visible
@@ -1695,9 +1702,9 @@ def diagnose_gl_trial_balance_policy_evidence_failure_phase():
         raise GLTrialBalancePolicyEvidenceError()
     if response is not None:
         return {"code": "diagnostic_complete", "phase": "complete"}
-    phase = (
-        failure_phase
-        if failure_phase in _DIAGNOSTIC_PHASES
-        else "internal"
-    )
-    return {"code": _GENERIC_ERROR, "phase": phase}
+    if (
+        failure_phase not in _DIAGNOSTIC_PHASES
+        or failure_phase == "complete"
+    ):
+        raise GLTrialBalancePolicyEvidenceError()
+    return {"code": _GENERIC_ERROR, "phase": failure_phase}
