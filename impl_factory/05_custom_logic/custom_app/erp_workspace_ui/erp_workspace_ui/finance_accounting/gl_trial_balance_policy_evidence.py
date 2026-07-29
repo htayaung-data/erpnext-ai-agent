@@ -49,6 +49,7 @@ from .gl_trial_balance_service import (
 __all__ = [
     "GLTrialBalancePolicyEvidenceError",
     "collect_gl_trial_balance_policy_evidence",
+    "diagnose_gl_trial_balance_policy_evidence_failure_phase",
 ]
 
 _GENERIC_ERROR: Final = "finance_read_unavailable"
@@ -56,7 +57,14 @@ _METHOD_PATH: Final = (
     "erp_workspace_ui.finance_accounting.gl_trial_balance_policy_evidence."
     "collect_gl_trial_balance_policy_evidence"
 )
+_DIAGNOSTIC_METHOD_PATH: Final = (
+    "erp_workspace_ui.finance_accounting.gl_trial_balance_policy_evidence."
+    "diagnose_gl_trial_balance_policy_evidence_failure_phase"
+)
 _CONFIG_KEY: Final = "finance_gl_trial_balance_policy_evidence"
+_DIAGNOSTIC_CONFIG_KEY: Final = (
+    "finance_gl_trial_balance_policy_evidence_diagnostic"
+)
 _EVIDENCE_SCHEMA_VERSION: Final = "finance-gl-trial-balance.policy-evidence.v1"
 _CONFIG_KEYS: Final = frozenset(
     {
@@ -64,6 +72,31 @@ _CONFIG_KEYS: Final = frozenset(
         "expected_driver",
         "expected_driver_version",
         "expected_server_version",
+    }
+)
+_DIAGNOSTIC_CONFIG_KEYS: Final = frozenset({"enabled"})
+_DIAGNOSTIC_PHASES: Final = frozenset(
+    {
+        "request_boundary",
+        "environment_policy",
+        "authority_initial",
+        "snapshot_begin",
+        "permission_initial",
+        "company_scope",
+        "fiscal_scope",
+        "precision",
+        "account_manifest",
+        "gl_cohort",
+        "statement_schema",
+        "accounting_read",
+        "canonical_size",
+        "permission_final",
+        "snapshot_finalize",
+        "authority_final",
+        "result_build",
+        "message_log_integrity",
+        "cleanup",
+        "internal",
     }
 )
 _PRIVILEGED_ROLES: Final = frozenset(
@@ -171,6 +204,14 @@ class GLTrialBalancePolicyEvidenceError(RuntimeError):
         super().__init__(_GENERIC_ERROR)
 
 
+@dataclass(slots=True)
+class _PhaseRecorder:
+    phase: str = "internal"
+
+    def enter(self, phase: str) -> None:
+        self.phase = phase if phase in _DIAGNOSTIC_PHASES else "internal"
+
+
 @dataclass(frozen=True, slots=True)
 class _AuthorityEvidence:
     user: str
@@ -197,6 +238,14 @@ class _CompanyMeasurement:
 
 def _fail() -> None:
     raise ValueError(_GENERIC_ERROR)
+
+
+def _enter_phase(
+    recorder: _PhaseRecorder | None,
+    phase: str,
+) -> None:
+    if recorder is not None:
+        recorder.enter(phase)
 
 
 def _strict_text(value: object, *, allow_empty: bool = False) -> str:
@@ -267,7 +316,7 @@ def _elapsed_microseconds(started_ns: int) -> int:
     return _nonnegative_int(value)
 
 
-def _request_policy() -> GLTrialBalanceRuntimePolicy:
+def _request_shape(method_path: str) -> None:
     local = getattr(frappe, "local")
     request = getattr(local, "request")
     if _strict_text(getattr(request, "method")) != "POST":
@@ -280,9 +329,17 @@ def _request_policy() -> GLTrialBalanceRuntimePolicy:
     keys = frozenset(form_dict)
     if keys not in (frozenset(), frozenset({"cmd"})):
         _fail()
-    if "cmd" in form_dict and _strict_text(form_dict["cmd"]) != _METHOD_PATH:
+    if "cmd" in form_dict and _strict_text(form_dict["cmd"]) != method_path:
         _fail()
 
+
+def _request_policy(
+    *,
+    method_path: str = _METHOD_PATH,
+) -> GLTrialBalanceRuntimePolicy:
+    _request_shape(method_path)
+
+    local = getattr(frappe, "local")
     conf = getattr(local, "conf")
     if isinstance(conf, Mapping):
         raw = conf.get(_CONFIG_KEY)
@@ -299,6 +356,43 @@ def _request_policy() -> GLTrialBalanceRuntimePolicy:
         expected_driver_version=_strict_text(document["expected_driver_version"]),
         expected_server_version=_strict_text(document["expected_server_version"]),
     )
+
+
+def _diagnostic_enabled() -> None:
+    _request_shape(_DIAGNOSTIC_METHOD_PATH)
+    local = getattr(frappe, "local")
+    conf = getattr(local, "conf")
+    if isinstance(conf, Mapping):
+        raw = conf.get(_DIAGNOSTIC_CONFIG_KEY)
+    else:
+        getter = getattr(conf, "get", None)
+        if not callable(getter):
+            _fail()
+        raw = getter(_DIAGNOSTIC_CONFIG_KEY)
+    document = _closed_mapping(raw, _DIAGNOSTIC_CONFIG_KEYS)
+    if type(document["enabled"]) is not bool or document["enabled"] is not True:
+        _fail()
+
+
+def _diagnostic_caller_authorized() -> None:
+    local = getattr(frappe, "local")
+    session = getattr(local, "session")
+    user = _strict_text(_mapping_value(session, "user"))
+    if user in {"Guest", "Administrator"}:
+        _fail()
+    roles_value = getattr(frappe, "get_roles")(user)
+    if isinstance(roles_value, (str, bytes, bytearray)) or not isinstance(
+        roles_value, Sequence
+    ):
+        _fail()
+    roles = tuple(_strict_text(role) for role in roles_value)
+    role_set = set(roles)
+    if (
+        len(role_set) != len(roles)
+        or "Accounts Manager" not in role_set
+        or role_set & _PRIVILEGED_ROLES
+    ):
+        _fail()
 
 
 def _authority_snapshot() -> _AuthorityEvidence:
@@ -390,13 +484,17 @@ def _restore_message_log(
     local: object,
     message_log: list[object],
     original: tuple[object, ...],
-) -> None:
+) -> bool:
     try:
         message_log[:] = original
         if getattr(local, "message_log", None) is not message_log:
             setattr(local, "message_log", message_log)
+        return (
+            getattr(local, "message_log", None) is message_log
+            and tuple(message_log) == original
+        )
     except Exception:
-        pass
+        return False
 
 
 def _checkpoint(
@@ -968,7 +1066,9 @@ def _collect_company(
     authority: _AuthorityEvidence,
     company: str,
     runtime_policy: GLTrialBalanceRuntimePolicy,
+    phase_recorder: _PhaseRecorder | None = None,
 ) -> _CompanyMeasurement:
+    _enter_phase(phase_recorder, "snapshot_begin")
     started_ns = time.monotonic_ns()
     runtime = _EvidenceRuntime(
         frappe_module=frappe,
@@ -978,14 +1078,18 @@ def _collect_company(
     snapshot: ReadSnapshotEvidence | None = None
     result: _CompanyMeasurement | None = None
     failed = False
+    failure_phase: str | None = None
     try:
+        _enter_phase(phase_recorder, "permission_initial")
         if company not in authority.companies:
             _fail()
+        _enter_phase(phase_recorder, "snapshot_begin")
         snapshot = _validate_snapshot(
             runtime.begin_read_snapshot(authority.user, company),
             user=authority.user,
             company=company,
         )
+        _enter_phase(phase_recorder, "permission_initial")
         if _authority_snapshot() != authority:
             _fail()
         _checkpoint(runtime, snapshot, authority.user, company)
@@ -998,6 +1102,7 @@ def _collect_company(
         )
         _validate_permissions(runtime, snapshot, authority.user)
 
+        _enter_phase(phase_recorder, "company_scope")
         company_count = runtime.count_company(snapshot, company)
         if company_count != 1:
             _fail()
@@ -1024,6 +1129,7 @@ def _collect_company(
             company_rows[0]["default_finance_book"]
         )
 
+        _enter_phase(phase_recorder, "fiscal_scope")
         active_fiscal_count = runtime.count_active_fiscal_years(
             snapshot
         )
@@ -1031,6 +1137,7 @@ def _collect_company(
             runtime, snapshot, _positive_int(active_fiscal_count)
         )
         first_name, first_start, first_end = fiscal_rows[0]
+        _enter_phase(phase_recorder, "precision")
         precision_evidence = _precision_evidence(
             runtime,
             snapshot,
@@ -1050,6 +1157,7 @@ def _collect_company(
             max_accounts=max(1, active_fiscal_count),
             max_gl_entries=1,
         )
+        _enter_phase(phase_recorder, "fiscal_scope")
         fiscal_manifest, applicability = _validate_fiscal_applicability(
             runtime.complete_fiscal_year_applicability(
                 snapshot, company, active_fiscal_count
@@ -1067,6 +1175,7 @@ def _collect_company(
         ):
             _fail()
 
+        _enter_phase(phase_recorder, "company_scope")
         selected_link_count = runtime.count_fiscal_year_company(
             snapshot, company
         )
@@ -1080,6 +1189,7 @@ def _collect_company(
         )
         if active_dimension_count != 0:
             _fail()
+        _enter_phase(phase_recorder, "account_manifest")
         account_count = _positive_int(
             runtime.count_accounts(snapshot, company)
         )
@@ -1134,6 +1244,7 @@ def _collect_company(
             _fail()
         max_accounts = max(source_floors.values())
 
+        _enter_phase(phase_recorder, "gl_cohort")
         gl_counts = [
             runtime.count_gl_entries(
                 snapshot,
@@ -1144,6 +1255,7 @@ def _collect_company(
             for _name, _start, fiscal_end in fiscal_rows
         ]
         max_gl_entries = max(gl_counts)
+        _enter_phase(phase_recorder, "statement_schema")
         statement_ceiling = runtime.statement_ceiling(snapshot)
         database_shape = runtime.numeric_shape(snapshot)
         identifier_envelopes = runtime.identifier_envelopes(
@@ -1161,12 +1273,14 @@ def _collect_company(
                 max_accounts=max_accounts,
                 max_gl_entries=max(max_gl_entries, 1),
             )
+            _enter_phase(phase_recorder, "accounting_read")
             trial_balance = _read_with_snapshot(
                 adapter_request,
                 runtime,
                 snapshot,
                 authority.user,
             )
+            _enter_phase(phase_recorder, "canonical_size")
             response_measurements.append(
                 _response_measurement(
                     result=trial_balance,
@@ -1187,6 +1301,7 @@ def _collect_company(
                 )
             )
 
+        _enter_phase(phase_recorder, "permission_final")
         final_effective = runtime.effective_permission_evidence(
             snapshot
         )
@@ -1229,14 +1344,21 @@ def _collect_company(
         )
     except Exception:
         failed = True
+        if phase_recorder is not None:
+            failure_phase = phase_recorder.phase
     if snapshot is not None:
         try:
+            _enter_phase(phase_recorder, "snapshot_finalize")
             runtime.close_read_snapshot(snapshot)
             runtime.close_read_snapshot(snapshot)
         except Exception:
             failed = True
+            failure_phase = "snapshot_finalize"
     if failed or result is None:
+        if phase_recorder is not None:
+            phase_recorder.enter(failure_phase or "internal")
         _fail()
+    _enter_phase(phase_recorder, "canonical_size")
     return _CompanyMeasurement(
         source_floors=result.source_floors,
         max_gl_entries=result.max_gl_entries,
@@ -1461,35 +1583,56 @@ def _result_document(
     return document
 
 
-@frappe.whitelist(allow_guest=False, methods=["POST"])
-def collect_gl_trial_balance_policy_evidence():
-    """Return sanitized current-floor evidence from the active session."""
-
-    started_ns = time.monotonic_ns()
+def _execute_policy_evidence(
+    *,
+    method_path: str,
+    phase_recorder: _PhaseRecorder | None,
+    require_diagnostic_authority: bool,
+) -> tuple[dict[str, object] | None, str | None, bool, bool]:
+    started_ns = 0
     local: object | None = None
     message_log: list[object] | None = None
     original_messages: tuple[object, ...] = ()
     response: dict[str, object] | None = None
     failed = False
+    failure_phase: str | None = None
+    phase_visible = not require_diagnostic_authority
     try:
+        _enter_phase(phase_recorder, "request_boundary")
+        started_ns = time.monotonic_ns()
         local, message_log, original_messages = _message_log()
-        runtime_policy = _request_policy()
+        if require_diagnostic_authority:
+            _diagnostic_caller_authorized()
+            phase_visible = True
+            _enter_phase(phase_recorder, "message_log_integrity")
+            if (
+                getattr(local, "message_log", None) is not message_log
+                or tuple(message_log) != original_messages
+            ):
+                _fail()
+        _enter_phase(phase_recorder, "environment_policy")
+        runtime_policy = _request_policy(method_path=method_path)
+        _enter_phase(phase_recorder, "authority_initial")
         authority = _authority_snapshot()
         measurements = [
             _collect_company(
                 authority=authority,
                 company=company,
                 runtime_policy=runtime_policy,
+                phase_recorder=phase_recorder,
             )
             for company in authority.companies
         ]
+        _enter_phase(phase_recorder, "authority_final")
         if _authority_snapshot() != authority:
             _fail()
+        _enter_phase(phase_recorder, "message_log_integrity")
         if (
             getattr(local, "message_log", None) is not message_log
             or tuple(message_log) != original_messages
         ):
             _fail()
+        _enter_phase(phase_recorder, "result_build")
         response = _result_document(
             authority=authority,
             runtime_policy=runtime_policy,
@@ -1498,10 +1641,63 @@ def collect_gl_trial_balance_policy_evidence():
         )
     except Exception:
         failed = True
+        if phase_recorder is not None:
+            failure_phase = phase_recorder.phase
     if failed or response is None:
+        cleanup_safe = local is not None and message_log is not None
         if local is not None and message_log is not None:
-            _restore_message_log(
+            cleanup_safe = _restore_message_log(
                 local, message_log, original_messages
             )
+        if not cleanup_safe and phase_recorder is not None:
+            phase_recorder.enter("cleanup")
+            failure_phase = phase_recorder.phase
+        return response, failure_phase, cleanup_safe, phase_visible
+    return response, None, True, phase_visible
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def collect_gl_trial_balance_policy_evidence():
+    """Return sanitized current-floor evidence from the active session."""
+
+    response, _phase, _cleanup_safe, _phase_visible = _execute_policy_evidence(
+        method_path=_METHOD_PATH,
+        phase_recorder=None,
+        require_diagnostic_authority=False,
+    )
+    if response is None:
         raise GLTrialBalancePolicyEvidenceError()
     return response
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def diagnose_gl_trial_balance_policy_evidence_failure_phase():
+    """Return one closed, non-identifying collector phase only."""
+
+    enabled = False
+    try:
+        _diagnostic_enabled()
+        enabled = True
+    except Exception:
+        pass
+    if not enabled:
+        raise GLTrialBalancePolicyEvidenceError()
+
+    recorder = _PhaseRecorder()
+    response, failure_phase, cleanup_safe, phase_visible = (
+        _execute_policy_evidence(
+            method_path=_DIAGNOSTIC_METHOD_PATH,
+            phase_recorder=recorder,
+            require_diagnostic_authority=True,
+        )
+    )
+    if not cleanup_safe or not phase_visible:
+        raise GLTrialBalancePolicyEvidenceError()
+    if response is not None:
+        return {"code": "diagnostic_complete", "phase": "complete"}
+    phase = (
+        failure_phase
+        if failure_phase in _DIAGNOSTIC_PHASES
+        else "internal"
+    )
+    return {"code": _GENERIC_ERROR, "phase": phase}

@@ -23,6 +23,10 @@ METHOD = (
     "erp_workspace_ui.finance_accounting.gl_trial_balance_policy_evidence."
     "collect_gl_trial_balance_policy_evidence"
 )
+DIAGNOSTIC_METHOD = (
+    "erp_workspace_ui.finance_accounting.gl_trial_balance_policy_evidence."
+    "diagnose_gl_trial_balance_policy_evidence_failure_phase"
+)
 IMPORT_EVENTS: list[tuple[object, ...]] = []
 
 
@@ -73,6 +77,7 @@ from erp_workspace_ui.finance_accounting.gl_trial_balance_core import (  # noqa:
 from erp_workspace_ui.finance_accounting.gl_trial_balance_policy_evidence import (  # noqa: E402
     GLTrialBalancePolicyEvidenceError,
     collect_gl_trial_balance_policy_evidence,
+    diagnose_gl_trial_balance_policy_evidence_failure_phase,
 )
 from erp_workspace_ui.finance_accounting.gl_trial_balance_service import (  # noqa: E402
     GLTrialBalanceServiceRequest,
@@ -321,7 +326,11 @@ class EndpointBoundaryAndAuthorityTests(unittest.TestCase):
         self,
     ) -> None:
         self.assertEqual(
-            IMPORT_EVENTS, [("whitelist", False, ("POST",))]
+            IMPORT_EVENTS,
+            [
+                ("whitelist", False, ("POST",)),
+                ("whitelist", False, ("POST",)),
+            ],
         )
         self.assertIs(
             collect_gl_trial_balance_policy_evidence.__allow_guest__,
@@ -335,6 +344,22 @@ class EndpointBoundaryAndAuthorityTests(unittest.TestCase):
             tuple(
                 inspect.signature(
                     collect_gl_trial_balance_policy_evidence
+                ).parameters
+            ),
+            (),
+        )
+        self.assertIs(
+            diagnose_gl_trial_balance_policy_evidence_failure_phase.__allow_guest__,
+            False,
+        )
+        self.assertEqual(
+            diagnose_gl_trial_balance_policy_evidence_failure_phase.__http_methods__,
+            ("POST",),
+        )
+        self.assertEqual(
+            tuple(
+                inspect.signature(
+                    diagnose_gl_trial_balance_policy_evidence_failure_phase
                 ).parameters
             ),
             (),
@@ -680,6 +705,251 @@ class EndpointBoundaryAndAuthorityTests(unittest.TestCase):
                 self.assertNotIn(token, _SOURCE)
         self.assertNotIn("max_accounts", json.dumps(_policy()))
         self.assertNotIn("currency_precision", json.dumps(_policy()))
+
+class DiagnosticBoundaryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        frappe.local = types.SimpleNamespace(
+            request=types.SimpleNamespace(method="POST"),
+            session={"user": USER},
+            conf={
+                endpoint._CONFIG_KEY: _policy(),
+                endpoint._DIAGNOSTIC_CONFIG_KEY: {"enabled": True},
+            },
+            message_log=[],
+        )
+        frappe.form_dict = {"cmd": DIAGNOSTIC_METHOD}
+        frappe.get_roles = lambda user: [
+            "Accounts Manager",
+            "Accounts User",
+        ]
+        frappe_permissions.get_user_permissions = (
+            lambda user: _permissions()
+        )
+
+    def _assert_generic(self) -> None:
+        with self.assertRaises(
+            GLTrialBalancePolicyEvidenceError
+        ) as captured:
+            diagnose_gl_trial_balance_policy_evidence_failure_phase()
+        self.assertEqual(
+            str(captured.exception), "finance_read_unavailable"
+        )
+        self.assertIsNone(captured.exception.__cause__)
+        self.assertIsNone(captured.exception.__context__)
+
+    def test_diagnostic_is_absent_by_default_closed_and_post_only(
+        self,
+    ) -> None:
+        invalid_documents = (
+            None,
+            {},
+            {"enabled": False},
+            {"enabled": 1},
+            {"enabled": True, "unknown": True},
+        )
+        for document in invalid_documents:
+            with self.subTest(document=document), patch.object(
+                endpoint, "_execute_policy_evidence"
+            ) as execute:
+                frappe.local.conf = {endpoint._CONFIG_KEY: _policy()}
+                if document is not None:
+                    frappe.local.conf[
+                        endpoint._DIAGNOSTIC_CONFIG_KEY
+                    ] = document
+                self._assert_generic()
+                execute.assert_not_called()
+
+        frappe.local.conf[
+            endpoint._DIAGNOSTIC_CONFIG_KEY
+        ] = {"enabled": True}
+        for method, form_dict in (
+            ("GET", {"cmd": DIAGNOSTIC_METHOD}),
+            ("POST", {"cmd": METHOD}),
+            ("POST", {"cmd": DIAGNOSTIC_METHOD, "extra": 1}),
+        ):
+            with self.subTest(method=method, form_dict=form_dict):
+                frappe.local.request.method = method
+                frappe.form_dict = form_dict
+                self._assert_generic()
+        frappe.local.request.method = "POST"
+        frappe.form_dict = {"cmd": DIAGNOSTIC_METHOD}
+
+    def test_environment_and_authority_failures_are_phase_only(
+        self,
+    ) -> None:
+        frappe.local.conf.pop(endpoint._CONFIG_KEY)
+        self.assertEqual(
+            diagnose_gl_trial_balance_policy_evidence_failure_phase(),
+            {
+                "code": "finance_read_unavailable",
+                "phase": "environment_policy",
+            },
+        )
+
+        frappe.local.conf[endpoint._CONFIG_KEY] = _policy()
+        frappe_permissions.get_user_permissions = lambda user: {}
+        self.assertEqual(
+            diagnose_gl_trial_balance_policy_evidence_failure_phase(),
+            {
+                "code": "finance_read_unavailable",
+                "phase": "authority_initial",
+            },
+        )
+
+    def test_ineligible_callers_receive_no_phase_document(self) -> None:
+        for user, roles in (
+            ("Guest", ["Accounts Manager"]),
+            ("Administrator", ["Accounts Manager"]),
+            (USER, ["Accounts User"]),
+            (USER, ["Accounts Manager", "System Manager"]),
+        ):
+            with self.subTest(user=user, roles=roles):
+                frappe.local.session = {"user": user}
+                frappe.get_roles = lambda _user, value=roles: value
+                self._assert_generic()
+
+    def test_role_preflight_messages_are_contained_and_restored(
+        self,
+    ) -> None:
+        canary = "identity-canary " + USER
+
+        def failing_roles(_user):
+            frappe.local.message_log.append(canary)
+            raise RuntimeError(canary)
+
+        frappe.get_roles = failing_roles
+        self._assert_generic()
+        self.assertEqual(frappe.local.message_log, [])
+
+        def noisy_roles(_user):
+            frappe.local.message_log.append(canary)
+            return ["Accounts Manager"]
+
+        frappe.get_roles = noisy_roles
+        result = diagnose_gl_trial_balance_policy_evidence_failure_phase()
+        self.assertEqual(
+            result,
+            {
+                "code": "finance_read_unavailable",
+                "phase": "message_log_integrity",
+            },
+        )
+        self.assertEqual(frappe.local.message_log, [])
+        self.assertNotIn(canary, json.dumps(result, sort_keys=True))
+
+    def test_only_closed_phase_documents_can_leave_the_boundary(
+        self,
+    ) -> None:
+        observable_phases = endpoint._DIAGNOSTIC_PHASES - {"cleanup"}
+        for phase in observable_phases:
+            with self.subTest(phase=phase), patch.object(
+                endpoint,
+                "_execute_policy_evidence",
+                return_value=(None, phase, True, True),
+            ):
+                result = (
+                    diagnose_gl_trial_balance_policy_evidence_failure_phase()
+                )
+                self.assertEqual(
+                    result,
+                    {
+                        "code": "finance_read_unavailable",
+                        "phase": phase,
+                    },
+                )
+                self.assertEqual(tuple(result), ("code", "phase"))
+        with patch.object(
+            endpoint,
+            "_execute_policy_evidence",
+            return_value=(None, "identity-canary", True, True),
+        ):
+            self.assertEqual(
+                diagnose_gl_trial_balance_policy_evidence_failure_phase(),
+                {
+                    "code": "finance_read_unavailable",
+                    "phase": "internal",
+                },
+            )
+
+    def test_success_discards_the_full_evidence_document(self) -> None:
+        with patch.object(
+            endpoint,
+            "_execute_policy_evidence",
+            return_value=(
+                {
+                    "state": "evidence_ready",
+                    "identity-canary": COMPANY_A,
+                },
+                None,
+                True,
+                True,
+            ),
+        ):
+            self.assertEqual(
+                diagnose_gl_trial_balance_policy_evidence_failure_phase(),
+                {"code": "diagnostic_complete", "phase": "complete"},
+            )
+
+    def test_partial_company_and_message_data_are_discarded(self) -> None:
+        frappe_permissions.get_user_permissions = (
+            lambda user: _permissions((COMPANY_A, COMPANY_B))
+        )
+        calls = 0
+
+        def collect(*, phase_recorder, **_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return _measurement()
+            phase_recorder.enter("gl_cohort")
+            frappe.local.message_log.append(
+                "identity-canary " + COMPANY_B
+            )
+            raise RuntimeError("SELECT voucher-canary")
+
+        with patch.object(endpoint, "_collect_company", collect):
+            result = (
+                diagnose_gl_trial_balance_policy_evidence_failure_phase()
+            )
+        self.assertEqual(
+            result,
+            {
+                "code": "finance_read_unavailable",
+                "phase": "gl_cohort",
+            },
+        )
+        self.assertEqual(frappe.local.message_log, [])
+        encoded = json.dumps(result, sort_keys=True)
+        for canary in (
+            USER,
+            COMPANY_A,
+            COMPANY_B,
+            "SELECT",
+            "voucher-canary",
+        ):
+            self.assertNotIn(canary, encoded)
+
+    def test_uncertain_message_cleanup_returns_only_generic_error(
+        self,
+    ) -> None:
+        def collect(*, phase_recorder, **_kwargs):
+            phase_recorder.enter("accounting_read")
+            raise RuntimeError("identity-canary " + COMPANY_A)
+
+        with patch.object(
+            endpoint, "_collect_company", collect
+        ), patch.object(
+            endpoint, "_restore_message_log", return_value=False
+        ):
+            self._assert_generic()
+
+    def test_phase_recorder_rejects_dynamic_values(self) -> None:
+        recorder = endpoint._PhaseRecorder()
+        recorder.enter("accounting_read")
+        self.assertEqual(recorder.phase, "accounting_read")
+        recorder.enter("accounting_read:" + COMPANY_A)
+        self.assertEqual(recorder.phase, "internal")
+
 
 class EvidenceRuntimeQueryTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1436,7 +1706,7 @@ class ResultSchemaAndContainmentTests(unittest.TestCase):
         for token in forbidden_calls:
             self.assertNotIn(token, _SOURCE)
         self.assertEqual(
-            _SOURCE.count("@frappe.whitelist("), 1
+            _SOURCE.count("@frappe.whitelist("), 2
         )
 
     def test_existing_runtime_not_modified_by_evidence_subclass(self) -> None:
@@ -1524,7 +1794,7 @@ class CollectorOrchestrationTests(unittest.TestCase):
         )
         return runtime
 
-    def _collect(self, runtime):
+    def _collect(self, runtime, phase_recorder=None):
         precision = {
             "precision": 2,
             "system_settings_agreement": True,
@@ -1550,6 +1820,7 @@ class CollectorOrchestrationTests(unittest.TestCase):
                 authority=self.authority,
                 company=COMPANY_A,
                 runtime_policy=self.policy,
+                phase_recorder=phase_recorder,
             )
 
     def test_selected_and_global_fiscal_states_execute_complete_glue(
@@ -1721,3 +1992,49 @@ class CollectorOrchestrationTests(unittest.TestCase):
                 self.assertNotIn("OTHER_BOOK_CANARY", str(error))
                 self.assertNotIn("session-drift-canary", str(error))
                 self.assertGreaterEqual(len(runtime.closed), 1)
+
+    def test_diagnostic_phases_cover_bounded_collector_failures(
+        self,
+    ) -> None:
+        def missing_finance_book(runtime):
+            runtime.count_finance_book.return_value = 0
+
+        def missing_accounts(runtime):
+            runtime.count_accounts.return_value = 0
+
+        def gl_count_failure(runtime):
+            runtime.count_gl_entries.side_effect = RuntimeError(
+                "SELECT identity-canary"
+            )
+
+        def statement_failure(runtime):
+            runtime.statement_ceiling.side_effect = RuntimeError(
+                "connection-canary"
+            )
+
+        def cancelled(runtime):
+            runtime.rows["GL Entry"][0]["is_cancelled"] = 1
+
+        cases = (
+            ("company_scope", missing_finance_book),
+            ("account_manifest", missing_accounts),
+            ("gl_cohort", gl_count_failure),
+            ("statement_schema", statement_failure),
+            ("accounting_read", cancelled),
+            (
+                "snapshot_finalize",
+                lambda runtime: setattr(
+                    runtime, "close_failure", True
+                ),
+            ),
+        )
+        for expected_phase, mutate in cases:
+            runtime = self._runtime()
+            mutate(runtime)
+            recorder = endpoint._PhaseRecorder()
+            with self.subTest(expected_phase=expected_phase):
+                with self.assertRaisesRegex(
+                    ValueError, "finance_read_unavailable"
+                ):
+                    self._collect(runtime, recorder)
+                self.assertEqual(recorder.phase, expected_phase)
