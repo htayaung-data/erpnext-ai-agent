@@ -75,7 +75,7 @@ _CONFIG_KEYS: Final = frozenset(
     }
 )
 _DIAGNOSTIC_CONFIG_KEYS: Final = frozenset({"enabled"})
-_DIAGNOSTIC_PHASES: Final = frozenset(
+_DIAGNOSTIC_FAILURE_PHASES: Final = frozenset(
     {
         "snapshot_runtime_construct",
         "snapshot_wrapper_bind",
@@ -90,7 +90,30 @@ _DIAGNOSTIC_PHASES: Final = frozenset(
         "snapshot_state",
         "snapshot_evidence_build",
         "snapshot_validate",
-        "complete",
+        "snapshot_subphase_complete",
+    }
+)
+_DIAGNOSTIC_SUCCESS_PHASE: Final = "complete"
+_NON_SNAPSHOT_COLLECTOR_PHASES: Final = frozenset(
+    {
+        "request_boundary",
+        "message_log_integrity",
+        "environment_policy",
+        "authority_initial",
+        "permission_initial",
+        "company_scope",
+        "fiscal_scope",
+        "precision",
+        "account_manifest",
+        "gl_cohort",
+        "statement_schema",
+        "accounting_read",
+        "canonical_size",
+        "permission_final",
+        "snapshot_finalize",
+        "authority_final",
+        "result_build",
+        "cleanup",
     }
 )
 _PRIVILEGED_ROLES: Final = frozenset(
@@ -201,9 +224,28 @@ class GLTrialBalancePolicyEvidenceError(RuntimeError):
 @dataclass(slots=True)
 class _PhaseRecorder:
     phase: str = "internal"
+    _invalid: bool = False
 
-    def enter(self, phase: str) -> None:
-        self.phase = phase if phase in _DIAGNOSTIC_PHASES else "internal"
+    def reset(self) -> None:
+        self.phase = "internal"
+        self._invalid = False
+
+    def enter(self, phase: object) -> None:
+        if self._invalid:
+            return
+        if type(phase) is str and phase in _DIAGNOSTIC_FAILURE_PHASES:
+            self.phase = phase
+            return
+        self.phase = "internal"
+        self._invalid = True
+
+    def enter_collector(self, phase: object) -> None:
+        if (
+            type(phase) is str
+            and phase in _NON_SNAPSHOT_COLLECTOR_PHASES
+        ):
+            return
+        self.enter(phase)
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,7 +281,7 @@ def _enter_phase(
     phase: str,
 ) -> None:
     if recorder is not None:
-        recorder.enter(phase)
+        recorder.enter_collector(phase)
 
 
 def _strict_text(value: object, *, allow_empty: bool = False) -> str:
@@ -1062,6 +1104,8 @@ def _collect_company(
     runtime_policy: GLTrialBalanceRuntimePolicy,
     phase_recorder: _PhaseRecorder | None = None,
 ) -> _CompanyMeasurement:
+    if phase_recorder is not None:
+        phase_recorder.reset()
     started_ns = time.monotonic_ns()
     runtime = _EvidenceRuntime(
         frappe_module=frappe,
@@ -1090,7 +1134,7 @@ def _collect_company(
             user=authority.user,
             company=company,
         )
-        _enter_phase(phase_recorder, "complete")
+        _enter_phase(phase_recorder, "snapshot_subphase_complete")
         _enter_phase(phase_recorder, "permission_initial")
         if _authority_snapshot() != authority:
             _fail()
@@ -1356,7 +1400,11 @@ def _collect_company(
         except Exception:
             failed = True
             if failure_phase is None:
-                failure_phase = "snapshot_finalize"
+                failure_phase = (
+                    phase_recorder.phase
+                    if phase_recorder is not None
+                    else "internal"
+                )
     if failed or result is None:
         if phase_recorder is not None:
             phase_recorder.enter(failure_phase or "internal")
@@ -1657,7 +1705,6 @@ def _execute_policy_evidence(
             and phase_recorder is not None
             and failure_phase is None
         ):
-            phase_recorder.enter("cleanup")
             failure_phase = phase_recorder.phase
         return response, failure_phase, cleanup_safe, phase_visible
     return response, None, True, phase_visible
@@ -1701,10 +1748,10 @@ def diagnose_gl_trial_balance_policy_evidence_failure_phase():
     if not cleanup_safe or not phase_visible:
         raise GLTrialBalancePolicyEvidenceError()
     if response is not None:
-        return {"code": "diagnostic_complete", "phase": "complete"}
-    if (
-        failure_phase not in _DIAGNOSTIC_PHASES
-        or failure_phase == "complete"
-    ):
+        return {
+            "code": "diagnostic_complete",
+            "phase": _DIAGNOSTIC_SUCCESS_PHASE,
+        }
+    if failure_phase not in _DIAGNOSTIC_FAILURE_PHASES:
         raise GLTrialBalancePolicyEvidenceError()
     return {"code": _GENERIC_ERROR, "phase": failure_phase}

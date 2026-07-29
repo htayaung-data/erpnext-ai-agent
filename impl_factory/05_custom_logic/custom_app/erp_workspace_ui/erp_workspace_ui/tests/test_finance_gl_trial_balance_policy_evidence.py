@@ -820,7 +820,7 @@ class DiagnosticBoundaryTests(unittest.TestCase):
     def test_only_closed_phase_documents_can_leave_the_boundary(
         self,
     ) -> None:
-        observable_phases = endpoint._DIAGNOSTIC_PHASES - {"complete"}
+        observable_phases = endpoint._DIAGNOSTIC_FAILURE_PHASES
         for phase in observable_phases:
             with self.subTest(phase=phase), patch.object(
                 endpoint,
@@ -899,13 +899,26 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         self,
     ) -> None:
         def collect(*, phase_recorder, **_kwargs):
-            phase_recorder.enter("accounting_read")
+            phase_recorder.enter("snapshot_subphase_complete")
             raise RuntimeError("identity-canary " + COMPANY_A)
 
+        recorder = endpoint._PhaseRecorder()
         with patch.object(
             endpoint, "_collect_company", collect
         ), patch.object(
             endpoint, "_restore_message_log", return_value=False
+        ):
+            result = endpoint._execute_policy_evidence(
+                method_path=DIAGNOSTIC_METHOD,
+                phase_recorder=recorder,
+                require_diagnostic_authority=True,
+            )
+        self.assertIsNone(result[0])
+        self.assertEqual(result[1], "snapshot_subphase_complete")
+        self.assertFalse(result[2])
+        self.assertTrue(result[3])
+        with patch.object(
+            endpoint, "_execute_policy_evidence", return_value=result
         ):
             self._assert_generic()
 
@@ -915,10 +928,28 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         self.assertEqual(recorder.phase, "snapshot_state")
         recorder.enter("snapshot_state:" + COMPANY_A)
         self.assertEqual(recorder.phase, "internal")
+        recorder.enter("snapshot_validate")
+        self.assertEqual(recorder.phase, "internal")
+        recorder.reset()
+        recorder.enter("snapshot_state")
+        recorder.enter(["snapshot_state"])
+        self.assertEqual(recorder.phase, "internal")
+        recorder.enter("snapshot_validate")
+        self.assertEqual(recorder.phase, "internal")
+
+    def test_known_collector_markers_preserve_snapshot_phase(self) -> None:
+        recorder = endpoint._PhaseRecorder()
+        recorder.enter("snapshot_state")
+        for phase in endpoint._NON_SNAPSHOT_COLLECTOR_PHASES:
+            with self.subTest(phase=phase):
+                endpoint._enter_phase(recorder, phase)
+                self.assertEqual(recorder.phase, "snapshot_state")
+        endpoint._enter_phase(recorder, "dynamic:" + COMPANY_A)
+        self.assertEqual(recorder.phase, "internal")
 
     def test_snapshot_phase_allowlist_is_exact(self) -> None:
         self.assertEqual(
-            endpoint._DIAGNOSTIC_PHASES,
+            endpoint._DIAGNOSTIC_FAILURE_PHASES,
             frozenset(
                 {
                     "snapshot_runtime_construct",
@@ -934,9 +965,14 @@ class DiagnosticBoundaryTests(unittest.TestCase):
                     "snapshot_state",
                     "snapshot_evidence_build",
                     "snapshot_validate",
-                    "complete",
+                    "snapshot_subphase_complete",
                 }
             ),
+        )
+        self.assertEqual(endpoint._DIAGNOSTIC_SUCCESS_PHASE, "complete")
+        self.assertNotIn(
+            endpoint._DIAGNOSTIC_SUCCESS_PHASE,
+            endpoint._DIAGNOSTIC_FAILURE_PHASES,
         )
 
     def test_snapshot_phase_order_and_validation_boundary(
@@ -956,7 +992,6 @@ class DiagnosticBoundaryTests(unittest.TestCase):
             "snapshot_state",
             "snapshot_evidence_build",
             "snapshot_validate",
-            "complete",
         ]
         observed: list[str] = []
 
@@ -1008,6 +1043,31 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         self.assertEqual(observed, expected[:12])
         self.assertEqual(recorder.phase, "snapshot_validate")
         self.assertEqual(observed + [recorder.phase], expected[:13])
+
+    def test_company_collection_resets_phase_before_any_work(self) -> None:
+        recorder = endpoint._PhaseRecorder()
+        recorder.enter("snapshot_state")
+        authority = endpoint._AuthorityEvidence(
+            user=USER,
+            roles=("Accounts Manager",),
+            user_permissions=(),
+            companies=(COMPANY_A,),
+        )
+        with patch.object(
+            endpoint.time,
+            "monotonic_ns",
+            side_effect=RuntimeError("identity-canary"),
+        ):
+            with self.assertRaises(RuntimeError):
+                endpoint._collect_company(
+                    authority=authority,
+                    company=COMPANY_A,
+                    runtime_policy=endpoint.GLTrialBalanceRuntimePolicy(
+                        "pymysql", "1.1.2", "server"
+                    ),
+                    phase_recorder=recorder,
+                )
+        self.assertEqual(recorder.phase, "internal")
 
     def test_normal_collection_passes_no_snapshot_hook(self) -> None:
         hooks = []
@@ -2082,9 +2142,13 @@ class CollectorOrchestrationTests(unittest.TestCase):
                 self.assertNotIn("session-drift-canary", str(error))
                 self.assertGreaterEqual(len(runtime.closed), 1)
 
-    def test_non_snapshot_collector_failures_are_not_phase_visible(
+    def test_downstream_and_cleanup_failures_preserve_snapshot_phase(
         self,
     ) -> None:
+        def downstream_and_cleanup(runtime):
+            runtime.count_finance_book.return_value = 0
+            runtime.close_failure = True
+
         def missing_finance_book(runtime):
             runtime.count_finance_book.return_value = 0
 
@@ -2116,6 +2180,7 @@ class CollectorOrchestrationTests(unittest.TestCase):
                     runtime, "close_failure", True
                 ),
             ),
+            ("downstream_and_cleanup", downstream_and_cleanup),
         )
         for former_phase, mutate in cases:
             runtime = self._runtime()
@@ -2126,4 +2191,6 @@ class CollectorOrchestrationTests(unittest.TestCase):
                     ValueError, "finance_read_unavailable"
                 ):
                     self._collect(runtime, recorder)
-                self.assertEqual(recorder.phase, "internal")
+                self.assertEqual(
+                    recorder.phase, "snapshot_subphase_complete"
+                )
