@@ -35,8 +35,12 @@ _ROOT_TYPE_ORDER = {
 }
 _BALANCE_SHEET_ROOTS = frozenset({"Asset", "Liability", "Equity"})
 _PROFIT_AND_LOSS_ROOTS = frozenset({"Income", "Expense"})
-_CANONICAL_FINANCE_BOOK_SCOPE = (
+_NAMED_FINANCE_BOOK_SCOPE = (
     "company_default",
+    "blank_unbooked",
+    "null_unbooked",
+)
+_UNBOOKED_FINANCE_BOOK_SCOPE = (
     "blank_unbooked",
     "null_unbooked",
 )
@@ -59,7 +63,7 @@ class TrialBalanceContext:
     fiscal_year_end: date
     from_date: date
     to_date: date
-    default_finance_book: str
+    default_finance_book: str | None
     finance_book_cohort: tuple[str | None, ...]
     active_dimensions: int = 0
 
@@ -108,8 +112,8 @@ class TrialBalanceScope:
     fiscal_year_end: date
     from_date: date
     to_date: date
-    default_finance_book: str
-    finance_book_cohort: tuple[str, str, str]
+    default_finance_book: str | None
+    finance_book_cohort: tuple[str, ...]
     active_dimensions: int
 
 
@@ -239,7 +243,8 @@ def _validate_context(context: object) -> TrialBalanceContext:
         _reject("context_invalid")
     _strict_text(context.company, "company_invalid")
     _strict_text(context.base_currency, "currency_invalid")
-    _strict_text(context.default_finance_book, "finance_book_invalid")
+    if context.default_finance_book is not None:
+        _strict_text(context.default_finance_book, "finance_book_invalid")
     if type(context.precision) is not int or context.precision < 0:
         _reject("precision_invalid")
     if type(context.active_dimensions) is not int or context.active_dimensions != 0:
@@ -260,16 +265,23 @@ def _validate_context(context: object) -> TrialBalanceContext:
     ):
         _reject("date_range_invalid")
     cohort = _strict_sequence(context.finance_book_cohort, "finance_book_cohort_invalid")
-    if (
+    if context.default_finance_book is None:
+        if (
+            len(cohort) != 2
+            or sum(type(value) is str and value == "" for value in cohort) != 1
+            or sum(value is None for value in cohort) != 1
+            or any(value is not None and value != "" for value in cohort)
+        ):
+            _reject("finance_book_cohort_invalid")
+    elif (
         len(cohort) != 3
         or sum(value == context.default_finance_book for value in cohort) != 1
         or sum(type(value) is str and value == "" for value in cohort) != 1
         or sum(value is None for value in cohort) != 1
-    ):
-        _reject("finance_book_cohort_invalid")
-    if any(
-        value is not None and value not in ("", context.default_finance_book)
-        for value in cohort
+        or any(
+            value is not None and value not in ("", context.default_finance_book)
+            for value in cohort
+        )
     ):
         _reject("finance_book_cohort_invalid")
     return context
@@ -390,14 +402,14 @@ def _validate_chart(
     return chart, children, depths, tuple(ordered_ids)
 
 
-def _book_tag(value: object, default_finance_book: str) -> str:
+def _book_tag(value: object, default_finance_book: str | None) -> str:
     if value is None:
         return "unbooked"
     if type(value) is not str:
         _reject("finance_book_cohort_invalid")
     if value == "":
         return "unbooked"
-    if value == default_finance_book:
+    if default_finance_book is not None and value == default_finance_book:
         return "company_default"
     _reject("finance_book_cohort_invalid")
 
@@ -445,10 +457,9 @@ def _load_entries(
         for account_id, account in chart.items()
         if not account.is_group
     }
-    cohort_totals = {
-        "company_default": _MinorAmounts(),
-        "unbooked": _MinorAmounts(),
-    }
+    cohort_totals = {"unbooked": _MinorAmounts()}
+    if context.default_finance_book is not None:
+        cohort_totals["company_default"] = _MinorAmounts()
     seen_entry_ids: set[str] = set()
     for entry in entries:
         if type(entry) is not NormalizedGLEntry:
@@ -588,7 +599,11 @@ def build_trial_balance(
         from_date=validated_context.from_date,
         to_date=validated_context.to_date,
         default_finance_book=validated_context.default_finance_book,
-        finance_book_cohort=_CANONICAL_FINANCE_BOOK_SCOPE,
+        finance_book_cohort=(
+            _UNBOOKED_FINANCE_BOOK_SCOPE
+            if validated_context.default_finance_book is None
+            else _NAMED_FINANCE_BOOK_SCOPE
+        ),
         active_dimensions=0,
     )
     return TrialBalanceResult(

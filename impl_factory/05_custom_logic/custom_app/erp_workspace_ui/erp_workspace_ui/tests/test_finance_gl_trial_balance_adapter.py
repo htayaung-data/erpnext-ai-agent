@@ -305,6 +305,7 @@ class SyntheticPermissionedRuntime:
         self.fail_operation: str | None = None
         self.fail_doctype: str | None = None
         self.close_failure = False
+        self.respect_gl_or_filters = False
         self.calls: list[tuple[object, ...]] = []
         self.closed: list[ReadSnapshotEvidence] = []
         self._manifest_index = 0
@@ -379,7 +380,15 @@ class SyntheticPermissionedRuntime:
         )
         if self.fail_operation == "get_list" or self.fail_doctype == doctype:
             raise RuntimeError(f"LEAK_DATABASE_{doctype}_{COMPANY}")
-        return [dict(row) for row in self.rows[doctype]]
+        rows = [dict(row) for row in self.rows[doctype]]
+        if doctype == "GL Entry" and self.respect_gl_or_filters:
+            allowed_books = (
+                ("", None)
+                if len(or_filters) == 2
+                else (or_filters[0][2], "", None)
+            )
+            rows = [row for row in rows if row["finance_book"] in allowed_books]
+        return rows
 
     def complete_account_manifest(
         self,
@@ -881,6 +890,78 @@ class TestFinanceGLTrialBalancePermissionedAdapter(unittest.TestCase):
         unknown.rows["GL Entry"][0]["finance_book"] = "BOOK_UNKNOWN_SECRET"
         error = _assert_unavailable(self, unknown)
         self.assertNotIn("BOOK_UNKNOWN_SECRET", str(error))
+
+    def test_blank_and_null_company_defaults_use_only_unbooked_rows(self):
+        for raw_default in ("", None):
+            with self.subTest(raw_default=raw_default):
+                runtime = SyntheticPermissionedRuntime()
+                runtime.respect_gl_or_filters = True
+                runtime.rows["Company"][0]["default_finance_book"] = raw_default
+                runtime.rows["GL Entry"].extend(
+                    (
+                        _gl_entry(
+                            "OTHER_BOOK_DEBIT",
+                            "CASH",
+                            date(2026, 5, 1),
+                            "999",
+                            "0",
+                            finance_book="BOOK_OTHER",
+                        ),
+                        _gl_entry(
+                            "OTHER_BOOK_CREDIT",
+                            "EQUITY",
+                            date(2026, 5, 1),
+                            "0",
+                            "999",
+                            finance_book="BOOK_OTHER",
+                        ),
+                    )
+                )
+
+                result = _read(runtime)
+
+                self.assertIsNone(result.scope.default_finance_book)
+                self.assertEqual(
+                    result.scope.finance_book_cohort,
+                    ("blank_unbooked", "null_unbooked"),
+                )
+                self.assertEqual(result.gross_totals.opening_debit, Decimal("0.00"))
+                self.assertEqual(result.gross_totals.opening_credit, Decimal("0.00"))
+                self.assertEqual(result.gross_totals.movement_debit, Decimal("15.00"))
+                self.assertEqual(result.gross_totals.movement_credit, Decimal("15.00"))
+
+                finance_book_reads = [
+                    call
+                    for call in runtime.calls
+                    if call[0] == "get_list" and call[2] == "Finance Book"
+                ]
+                self.assertEqual(finance_book_reads, [])
+                gl_query = next(
+                    call
+                    for call in runtime.calls
+                    if call[0] == "get_list" and call[2] == "GL Entry"
+                )
+                self.assertEqual(
+                    gl_query[5],
+                    (
+                        ("finance_book", "=", ""),
+                        ("finance_book", "is", "not set"),
+                    ),
+                )
+                permission_calls = [
+                    call
+                    for call in runtime.calls
+                    if call[0] == "has_permission"
+                    and call[3:5] == ("Finance Book", "read")
+                ]
+                self.assertEqual(len(permission_calls), 2)
+
+    def test_malformed_company_default_finance_book_fails_closed(self):
+        for raw_default in (" ", " BOOK_DEFAULT", 7, False, ("BOOK_DEFAULT",)):
+            with self.subTest(raw_default=raw_default):
+                runtime = SyntheticPermissionedRuntime()
+                runtime.rows["Company"][0]["default_finance_book"] = raw_default
+                _assert_unavailable(self, runtime)
 
     def test_fiscal_year_company_and_requested_date_contracts(self):
         runtime = SyntheticPermissionedRuntime()

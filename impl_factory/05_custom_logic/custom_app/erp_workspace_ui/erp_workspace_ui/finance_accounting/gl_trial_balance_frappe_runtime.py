@@ -84,13 +84,20 @@ _ACCOUNT_COUNT_SQL: Final = (
     "SELECT COUNT(DISTINCT `name`) FROM `tabAccount` "
     "WHERE `company` = %(company)s"
 )
-_GL_COUNT_SQL: Final = (
+_GL_COUNT_NAMED_SQL: Final = (
     "SELECT COUNT(DISTINCT `name`) FROM `tabGL Entry` "
     "WHERE `company` = %(company)s "
     "AND `posting_date` <= %(to_date)s "
     "AND `is_cancelled` = 0 "
     "AND (`finance_book` = %(finance_book)s "
     "OR `finance_book` = '' OR `finance_book` IS NULL)"
+)
+_GL_COUNT_UNBOOKED_SQL: Final = (
+    "SELECT COUNT(DISTINCT `name`) FROM `tabGL Entry` "
+    "WHERE `company` = %(company)s "
+    "AND `posting_date` <= %(to_date)s "
+    "AND `is_cancelled` = 0 "
+    "AND (`finance_book` = '' OR `finance_book` IS NULL)"
 )
 _FISCAL_APPLICABILITY_SQL: Final = (
     "SELECT EXISTS(SELECT 1 FROM `tabFiscal Year Company` "
@@ -809,7 +816,7 @@ class FrappeGLTrialBalanceRuntime:
         )
         self._deny_cross_company(context, doctype, rows)
         if doctype == "GL Entry":
-            finance_book = or_filters[0][2]
+            finance_book = or_filters[0][2] if len(or_filters) == 3 else None
             aggregate = self._count_gl_entries(
                 snapshot,
                 context.company,
@@ -917,7 +924,7 @@ class FrappeGLTrialBalanceRuntime:
         elif doctype == "Account":
             valid = filters == (("company", "=", context.company),) and not or_filters
         else:
-            valid = (
+            named_scope = (
                 len(filters) == 3
                 and filters[0] == ("company", "=", context.company)
                 and filters[1][0:2] == ("posting_date", "<=")
@@ -926,8 +933,20 @@ class FrappeGLTrialBalanceRuntime:
                 and or_filters[0][0:2] == ("finance_book", "=")
                 and type(or_filters[0][2]) is str
                 and bool(or_filters[0][2])
+                and or_filters[0][2] == or_filters[0][2].strip()
                 and or_filters[1] == ("finance_book", "=", "")
                 and or_filters[2] == ("finance_book", "is", "not set")
+            )
+            unbooked_scope = or_filters == (
+                ("finance_book", "=", ""),
+                ("finance_book", "is", "not set"),
+            )
+            valid = (
+                len(filters) == 3
+                and filters[0] == ("company", "=", context.company)
+                and filters[1][0:2] == ("posting_date", "<=")
+                and filters[2] == ("is_cancelled", "=", 0)
+                and (named_scope or unbooked_scope)
             )
         if not valid:
             _raise_unavailable()
@@ -980,16 +999,23 @@ class FrappeGLTrialBalanceRuntime:
         snapshot: ReadSnapshotEvidence,
         company: str,
         to_date: object,
-        finance_book: object,
+        finance_book: str | None,
     ) -> int:
+        sql = (
+            _GL_COUNT_UNBOOKED_SQL
+            if finance_book is None
+            else _GL_COUNT_NAMED_SQL
+        )
+        parameters: dict[str, object] = {
+            "company": company,
+            "to_date": to_date,
+        }
+        if finance_book is not None:
+            parameters["finance_book"] = finance_book
         row = self._aggregate_one(
             snapshot,
-            _GL_COUNT_SQL,
-            {
-                "company": company,
-                "to_date": to_date,
-                "finance_book": finance_book,
-            },
+            sql,
+            parameters,
         )
         if len(row) != 1 or type(row[0]) is not int or row[0] < 0:
             _raise_unavailable()

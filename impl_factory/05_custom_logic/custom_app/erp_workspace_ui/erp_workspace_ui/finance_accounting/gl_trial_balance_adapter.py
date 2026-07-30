@@ -438,11 +438,17 @@ def _require_keys(row: Mapping[str, object], fields: tuple[str, ...]) -> None:
         _fail()
 
 
+def _optional_default_finance_book(value: object) -> str | None:
+    if value is None or (type(value) is str and value == ""):
+        return None
+    return _strict_text(value)
+
+
 def _load_company(
     runtime: PermissionedSnapshotRuntime,
     snapshot: ReadSnapshotEvidence,
     request: GLTrialBalanceReadRequest,
-) -> tuple[str, str]:
+) -> tuple[str, str | None]:
     rows = _read_rows(
         runtime,
         snapshot,
@@ -458,7 +464,7 @@ def _load_company(
     _require_keys(row, _COMPANY_FIELDS)
     if _strict_text(row["name"]) != request.company:
         _fail()
-    return _strict_text(row["default_currency"]), _strict_text(
+    return _strict_text(row["default_currency"]), _optional_default_finance_book(
         row["default_finance_book"]
     )
 
@@ -729,10 +735,27 @@ def _load_entries(
     request: GLTrialBalanceReadRequest,
     *,
     base_currency: str,
-    default_finance_book: str,
+    default_finance_book: str | None,
     fiscal_year_start: date,
     accounts_by_id: Mapping[str, AccountNode],
 ) -> tuple[NormalizedGLEntry, ...]:
+    finance_book_filters = (
+        (
+            ("finance_book", "=", ""),
+            ("finance_book", "is", "not set"),
+        )
+        if default_finance_book is None
+        else (
+            ("finance_book", "=", default_finance_book),
+            ("finance_book", "=", ""),
+            ("finance_book", "is", "not set"),
+        )
+    )
+    allowed_finance_books = (
+        ("", None)
+        if default_finance_book is None
+        else (default_finance_book, "", None)
+    )
     rows = _read_rows(
         runtime,
         snapshot,
@@ -743,11 +766,7 @@ def _load_entries(
             ("posting_date", "<=", request.to_date),
             ("is_cancelled", "=", 0),
         ),
-        or_filters=(
-            ("finance_book", "=", default_finance_book),
-            ("finance_book", "=", ""),
-            ("finance_book", "is", "not set"),
-        ),
+        or_filters=finance_book_filters,
         order_by="posting_date asc, name asc",
         maximum=request.max_gl_entries,
     )
@@ -773,7 +792,7 @@ def _load_entries(
             or type(credit) is not Decimal
             or _strict_flag(is_cancelled, (0, 1)) != 0
             or is_opening not in ("Yes", "No")
-            or finance_book not in (default_finance_book, "", None)
+            or finance_book not in allowed_finance_books
         ):
             _fail()
         seen_names.add(name)
@@ -827,9 +846,10 @@ def _read_with_snapshot(
         request,
         applicability=fiscal_applicability,
     )
-    _validate_finance_book(
-        runtime, snapshot, request, default_finance_book
-    )
+    if default_finance_book is not None:
+        _validate_finance_book(
+            runtime, snapshot, request, default_finance_book
+        )
     _reject_active_dimensions(runtime, snapshot, request)
     manifest = _validate_manifest(
         runtime.complete_account_manifest(
@@ -864,7 +884,11 @@ def _read_with_snapshot(
             from_date=request.from_date,
             to_date=request.to_date,
             default_finance_book=default_finance_book,
-            finance_book_cohort=(default_finance_book, "", None),
+            finance_book_cohort=(
+                ("", None)
+                if default_finance_book is None
+                else (default_finance_book, "", None)
+            ),
             active_dimensions=0,
         ),
         expected_account_ids=manifest.account_ids,

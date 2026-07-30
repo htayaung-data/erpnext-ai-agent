@@ -35,9 +35,13 @@ __all__ = [
 
 
 _GENERIC_ERROR = "finance_read_unavailable"
-_SCHEMA_VERSION = "finance-gl-trial-balance.internal.v1"
-_CANONICAL_FINANCE_BOOK_SCOPE = (
+_SCHEMA_VERSION = "finance-gl-trial-balance.internal.v2"
+_NAMED_FINANCE_BOOK_SCOPE = (
     "company_default",
+    "blank_unbooked",
+    "null_unbooked",
+)
+_UNBOOKED_FINANCE_BOOK_SCOPE = (
     "blank_unbooked",
     "null_unbooked",
 )
@@ -177,7 +181,13 @@ def _validate_scope(
         _fail()
     _strict_text(value.company)
     _strict_text(value.base_currency)
-    _strict_text(value.default_finance_book)
+    if value.default_finance_book is None:
+        if value.finance_book_cohort != _UNBOOKED_FINANCE_BOOK_SCOPE:
+            _fail()
+    else:
+        _strict_text(value.default_finance_book)
+        if value.finance_book_cohort != _NAMED_FINANCE_BOOK_SCOPE:
+            _fail()
     if value.company != request.company or value.precision != policy.currency_precision:
         _fail()
     if type(value.precision) is not int or value.precision < 0:
@@ -198,8 +208,6 @@ def _validate_scope(
     ):
         _fail()
     if value.from_date != request.from_date or value.to_date != request.to_date:
-        _fail()
-    if value.finance_book_cohort != _CANONICAL_FINANCE_BOOK_SCOPE:
         _fail()
     if type(value.active_dimensions) is not int or value.active_dimensions != 0:
         _fail()

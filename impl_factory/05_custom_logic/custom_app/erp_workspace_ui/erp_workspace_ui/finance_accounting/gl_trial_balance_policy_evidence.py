@@ -286,6 +286,7 @@ class _CompanyMeasurement:
     database_shape: Mapping[str, int]
     identifier_envelopes: Mapping[str, Mapping[str, int]]
     byte_evidence: Mapping[str, object]
+    default_finance_book_present: bool
     elapsed_microseconds: int
 
 
@@ -309,6 +310,12 @@ def _strict_text(value: object, *, allow_empty: bool = False) -> str:
     if any(ord(character) < 32 or ord(character) == 127 for character in value):
         _fail()
     return value
+
+
+def _optional_default_finance_book(value: object) -> str | None:
+    if value is None or (type(value) is str and value == ""):
+        return None
+    return _strict_text(value)
 
 
 def _strict_flag(value: object) -> int:
@@ -669,7 +676,7 @@ class _EvidenceRuntime(FrappeGLTrialBalanceRuntime):
         snapshot: ReadSnapshotEvidence,
         company: str,
         to_date: date,
-        finance_book: str,
+        finance_book: str | None,
     ) -> int:
         return self._count_gl_entries(
             snapshot, company, to_date, finance_book
@@ -985,8 +992,9 @@ def _response_measurement(
         request.company,
         request.fiscal_year,
         scope_payload["base_currency"],
-        scope_payload["default_finance_book"],
     ]
+    if scope_payload["default_finance_book"] is not None:
+        identifiers.append(scope_payload["default_finance_book"])
     parents: list[str] = []
     max_depth = 0
     fixed_values: list[str] = []
@@ -1188,7 +1196,7 @@ def _collect_company(
         base_currency = _strict_text(
             company_rows[0]["default_currency"]
         )
-        default_finance_book = _strict_text(
+        default_finance_book = _optional_default_finance_book(
             company_rows[0]["default_finance_book"]
         )
 
@@ -1242,11 +1250,13 @@ def _collect_company(
         selected_link_count = runtime.count_fiscal_year_company(
             snapshot, company
         )
-        finance_book_count = runtime.count_finance_book(
-            snapshot, default_finance_book
-        )
-        if finance_book_count != 1:
-            _fail()
+        finance_book_count = 0
+        if default_finance_book is not None:
+            finance_book_count = runtime.count_finance_book(
+                snapshot, default_finance_book
+            )
+            if finance_book_count != 1:
+                _fail()
         active_dimension_count = runtime.count_active_dimensions(
             snapshot
         )
@@ -1403,6 +1413,7 @@ def _collect_company(
             byte_evidence=_aggregate_response_measurements(
                 response_measurements
             ),
+            default_finance_book_present=default_finance_book is not None,
             elapsed_microseconds=0,
         )
     except Exception:
@@ -1439,6 +1450,7 @@ def _collect_company(
         database_shape=result.database_shape,
         identifier_envelopes=result.identifier_envelopes,
         byte_evidence=result.byte_evidence,
+        default_finance_book_present=result.default_finance_book_present,
         elapsed_microseconds=_elapsed_microseconds(started_ns),
     )
 
@@ -1576,7 +1588,9 @@ def _result_document(
             "base_currency_present_all": True,
         },
         "accounting_shape": {
-            "default_finance_book_present_all": True,
+            "default_finance_book_present_all": all(
+                item.default_finance_book_present for item in measurements
+            ),
             "applicable_fiscal_state_valid": True,
             "active_dimensions_zero": True,
             "complete_hierarchy": True,

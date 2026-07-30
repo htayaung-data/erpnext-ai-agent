@@ -96,7 +96,8 @@ _AMOUNT_KEYS = frozenset(
     }
 )
 _ROOT_TYPES = frozenset({"Asset", "Liability", "Equity", "Income", "Expense"})
-_FINANCE_BOOK_SCOPE = ["company_default", "blank_unbooked", "null_unbooked"]
+_NAMED_FINANCE_BOOK_SCOPE = ["company_default", "blank_unbooked", "null_unbooked"]
+_UNBOOKED_FINANCE_BOOK_SCOPE = ["blank_unbooked", "null_unbooked"]
 
 
 class GLTrialBalanceHTTPError(RuntimeError):
@@ -321,7 +322,7 @@ def _validate_document(
     response = _closed_mapping(document, _TOP_LEVEL_KEYS)
     boundary = _closed_mapping(response["boundary"], frozenset(_BOUNDARY))
     if (
-        response["schema_version"] != "finance-gl-trial-balance.internal.v1"
+        response["schema_version"] != "finance-gl-trial-balance.internal.v2"
         or response["state"] != "ready"
         or boundary != _BOUNDARY
         or any(type(item) is not bool for item in boundary.values())
@@ -338,12 +339,17 @@ def _validate_document(
         or type(scope["currency_precision"]) is not int
         or scope["active_dimensions"] != 0
         or type(scope["active_dimensions"]) is not int
-        or scope["finance_book_scope"] != _FINANCE_BOOK_SCOPE
     ):
         _fail()
+    if scope["default_finance_book"] is None:
+        if scope["finance_book_scope"] != _UNBOOKED_FINANCE_BOOK_SCOPE:
+            _fail()
+    else:
+        _strict_text(scope["default_finance_book"])
+        if scope["finance_book_scope"] != _NAMED_FINANCE_BOOK_SCOPE:
+            _fail()
     for key in (
         "base_currency",
-        "default_finance_book",
         "fiscal_year_start",
         "fiscal_year_end",
     ):

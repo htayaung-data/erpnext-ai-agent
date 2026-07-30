@@ -120,7 +120,7 @@ def _document() -> dict[str, object]:
                 "root_type": "Asset",
             },
         ],
-        "schema_version": "finance-gl-trial-balance.internal.v1",
+        "schema_version": "finance-gl-trial-balance.internal.v2",
         "scope": {
             "active_dimensions": 0,
             "base_currency": "MMK",
@@ -246,6 +246,27 @@ class GLTrialBalanceHTTPTests(unittest.TestCase):
         self.assertEqual(
             bridge_kwargs["service_policy"],
             GLTrialBalanceServicePolicy(2, 20, 200, 4096, 32768),
+        )
+
+    def test_unbooked_only_v2_response_is_accepted(self) -> None:
+        document = _document()
+        document["scope"]["default_finance_book"] = None  # type: ignore[index]
+        document["scope"]["finance_book_scope"] = [  # type: ignore[index]
+            "blank_unbooked",
+            "null_unbooked",
+        ]
+        with patch.object(
+            endpoint, "FrappeGLTrialBalanceRuntime", return_value=object()
+        ), patch.object(
+            endpoint,
+            "read_authenticated_gl_trial_balance",
+            return_value=_canonical(document),
+        ):
+            response = self._invoke()
+        self.assertIsNone(response["scope"]["default_finance_book"])
+        self.assertEqual(
+            response["scope"]["finance_book_scope"],
+            ["blank_unbooked", "null_unbooked"],
         )
 
     def test_each_call_constructs_a_new_runtime(self) -> None:
@@ -417,6 +438,9 @@ class GLTrialBalanceHTTPTests(unittest.TestCase):
         schema = _document()
         schema["schema_version"] = "native-report"
         documents.append(schema)
+        prior_schema = _document()
+        prior_schema["schema_version"] = "finance-gl-trial-balance.internal.v1"
+        documents.append(prior_schema)
         company = _document()
         company["scope"]["company"] = "OTHER_COMPANY"  # type: ignore[index]
         documents.append(company)
@@ -429,6 +453,26 @@ class GLTrialBalanceHTTPTests(unittest.TestCase):
         totals = _document()
         totals["totals"]["gross"]["sql"] = "SELECT secret"  # type: ignore[index]
         documents.append(totals)
+        cross_mode_named = _document()
+        cross_mode_named["scope"]["finance_book_scope"] = [  # type: ignore[index]
+            "blank_unbooked",
+            "null_unbooked",
+        ]
+        documents.append(cross_mode_named)
+        cross_mode_unbooked = _document()
+        cross_mode_unbooked["scope"]["default_finance_book"] = None  # type: ignore[index]
+        documents.append(cross_mode_unbooked)
+        for malformed_default in ("", " ", False):
+            malformed = _document()
+            malformed["scope"]["default_finance_book"] = malformed_default  # type: ignore[index]
+            documents.append(malformed)
+        reordered = _document()
+        reordered["scope"]["default_finance_book"] = None  # type: ignore[index]
+        reordered["scope"]["finance_book_scope"] = [  # type: ignore[index]
+            "null_unbooked",
+            "blank_unbooked",
+        ]
+        documents.append(reordered)
         for document in documents:
             with self.subTest(keys=tuple(document)), patch.object(
                 endpoint, "FrappeGLTrialBalanceRuntime", return_value=object()

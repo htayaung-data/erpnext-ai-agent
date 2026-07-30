@@ -36,7 +36,7 @@ from erp_workspace_ui.finance_accounting.gl_trial_balance_service import (
 
 USER = "accounts.manager@example.test"
 COMPANY = "COMPANY_A"
-CANONICAL = b'{"schema_version":"finance-gl-trial-balance.internal.v1"}\n'
+CANONICAL = b'{"schema_version":"finance-gl-trial-balance.internal.v2"}\n'
 _UNSET = object()
 
 
@@ -90,7 +90,7 @@ def _zero_amounts() -> AccountingAmounts:
     return AccountingAmounts(zero, zero, zero, zero, zero, zero)
 
 
-def _canonical_result() -> TrialBalanceResult:
+def _canonical_result(*, unbooked_only: bool = False) -> TrialBalanceResult:
     scope = TrialBalanceScope(
         company=COMPANY,
         base_currency="MMK",
@@ -99,11 +99,15 @@ def _canonical_result() -> TrialBalanceResult:
         fiscal_year_end=date(2026, 12, 31),
         from_date=date(2026, 1, 1),
         to_date=date(2026, 12, 31),
-        default_finance_book="DEFAULT_BOOK",
+        default_finance_book=None if unbooked_only else "DEFAULT_BOOK",
         finance_book_cohort=(
-            "company_default",
-            "blank_unbooked",
-            "null_unbooked",
+            ("blank_unbooked", "null_unbooked")
+            if unbooked_only
+            else (
+                "company_default",
+                "blank_unbooked",
+                "null_unbooked",
+            )
         ),
         active_dimensions=0,
     )
@@ -286,12 +290,48 @@ class AuthenticatedGLTrialBalanceTests(unittest.TestCase):
         adapter.assert_called_once()
         self.assertTrue(response.endswith(b"\n"))
         self.assertEqual(
-            hashlib.sha256(response).hexdigest(),
+            hashlib.sha256(
+                response.replace(
+                    b"finance-gl-trial-balance.internal.v2",
+                    b"finance-gl-trial-balance.internal.v1",
+                )
+            ).hexdigest(),
             "6d324fdaf19e1c1fb3d8c4178cd8529e422b7bcaa73df633650edeb6052a112a",
         )
         self.assertIn(
-            b'"schema_version":"finance-gl-trial-balance.internal.v1"', response
+            b'"schema_version":"finance-gl-trial-balance.internal.v2"', response
         )
+
+    def test_real_service_accepts_unbooked_v2_and_rejects_cross_mode_scope(self) -> None:
+        with patch(
+            "erp_workspace_ui.finance_accounting.gl_trial_balance_service."
+            "read_gl_trial_balance",
+            return_value=_canonical_result(unbooked_only=True),
+        ):
+            response = self._read()
+        self.assertIn(b'"default_finance_book":null', response)
+        self.assertIn(
+            b'"finance_book_scope":["blank_unbooked","null_unbooked"]',
+            response,
+        )
+        self.assertNotIn(b"company_default", response)
+
+        malformed_scope = replace(
+            _canonical_result(unbooked_only=True).scope,
+            finance_book_cohort=(
+                "company_default",
+                "blank_unbooked",
+                "null_unbooked",
+            ),
+        )
+        with patch(
+            "erp_workspace_ui.finance_accounting.gl_trial_balance_service."
+            "read_gl_trial_balance",
+            return_value=replace(
+                _canonical_result(unbooked_only=True), scope=malformed_scope
+            ),
+        ):
+            self._assert_generic(lambda: self._read())
 
     def test_active_session_is_the_only_user_authority(self) -> None:
         signature = inspect.signature(read_authenticated_gl_trial_balance)

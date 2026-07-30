@@ -33,7 +33,7 @@ from erp_workspace_ui.finance_accounting.gl_trial_balance_service import (
 )
 
 
-_CANONICAL_RESPONSE_SHA256 = (
+_CANONICAL_V1_RESPONSE_SHA256 = (
     "32fbb7a70bf3d5f669861e125cfba8772dd0ed992373a334aee00d544974520c"
 )
 
@@ -163,7 +163,15 @@ class GLTrialBalanceServiceTests(unittest.TestCase):
         second, second_reader = _invoke()
         self.assertEqual(first, second)
         self.assertTrue(first.endswith(b"\n"))
-        self.assertEqual(hashlib.sha256(first).hexdigest(), _CANONICAL_RESPONSE_SHA256)
+        self.assertEqual(first.count(b"finance-gl-trial-balance.internal.v2"), 1)
+        prior_schema_projection = first.replace(
+            b"finance-gl-trial-balance.internal.v2",
+            b"finance-gl-trial-balance.internal.v1",
+        )
+        self.assertEqual(
+            hashlib.sha256(prior_schema_projection).hexdigest(),
+            _CANONICAL_V1_RESPONSE_SHA256,
+        )
         self.assertEqual(first_reader.call_count, 1)
         self.assertEqual(second_reader.call_count, 1)
 
@@ -175,7 +183,7 @@ class GLTrialBalanceServiceTests(unittest.TestCase):
             {"boundary", "lines", "schema_version", "scope", "state", "totals"},
         )
         self.assertEqual(
-            decoded["schema_version"], "finance-gl-trial-balance.internal.v1"
+            decoded["schema_version"], "finance-gl-trial-balance.internal.v2"
         )
         self.assertEqual(decoded["state"], "ready")
         self.assertEqual(
@@ -223,6 +231,25 @@ class GLTrialBalanceServiceTests(unittest.TestCase):
                 "to_date": "2026-12-31",
             },
         )
+
+    def test_unbooked_only_scope_serializes_as_closed_v2_variant(self) -> None:
+        payload, _ = _invoke(
+            result=_result(
+                default_finance_book=None,
+                finance_book_cohort=("blank_unbooked", "null_unbooked"),
+            )
+        )
+        decoded = json.loads(payload)
+
+        self.assertEqual(
+            decoded["schema_version"], "finance-gl-trial-balance.internal.v2"
+        )
+        self.assertIsNone(decoded["scope"]["default_finance_book"])
+        self.assertEqual(
+            decoded["scope"]["finance_book_scope"],
+            ["blank_unbooked", "null_unbooked"],
+        )
+        self.assertNotIn("company_default", decoded["scope"]["finance_book_scope"])
 
     def test_financial_values_are_fixed_strings_without_float_or_exponent(self) -> None:
         payload, _ = _invoke()
@@ -408,9 +435,23 @@ class GLTrialBalanceServiceTests(unittest.TestCase):
             _result(to_date=date(2026, 12, 30)),
             _result(fiscal_year_start=date(2026, 2, 1)),
             _result(finance_book_cohort=("company_default", "blank_unbooked", "other")),
+            _result(finance_book_cohort=("blank_unbooked", "null_unbooked")),
+            _result(
+                default_finance_book=None,
+                finance_book_cohort=(
+                    "company_default",
+                    "blank_unbooked",
+                    "null_unbooked",
+                ),
+            ),
+            _result(
+                default_finance_book=None,
+                finance_book_cohort=("null_unbooked", "blank_unbooked"),
+            ),
             _result(active_dimensions=1),
             _result(base_currency=""),
             _result(default_finance_book=""),
+            _result(default_finance_book=" "),
         )
         for candidate in invalid:
             with self.subTest(scope=candidate.scope):

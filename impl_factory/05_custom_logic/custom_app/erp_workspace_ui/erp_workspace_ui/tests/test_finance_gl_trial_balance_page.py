@@ -72,7 +72,7 @@ def _payload() -> dict[str, object]:
                 "root_type": "Asset",
             },
         ],
-        "schema_version": "finance-gl-trial-balance.internal.v1",
+        "schema_version": "finance-gl-trial-balance.internal.v2",
         "scope": {
             "active_dimensions": 0,
             "base_currency": "MMK",
@@ -177,6 +177,9 @@ process.stdout.write(JSON.stringify({
         boundary_integer = _payload()
         boundary_integer["boundary"]["mutation_enabled"] = 0  # type: ignore[index]
         cases.append(boundary_integer)
+        prior_schema = _payload()
+        prior_schema["schema_version"] = "finance-gl-trial-balance.internal.v1"
+        cases.append(prior_schema)
         for amount in ("-1.00", "01.00", "1e2", "1.0", "1.000", ""):
             malformed = _payload()
             malformed["lines"][0]["amounts"]["opening_debit"] = amount  # type: ignore[index]
@@ -231,12 +234,48 @@ process.stdout.write(JSON.stringify({
             "blank_unbooked",
         ]
         cases.append((cohort, _QUERY))
+        named_with_unbooked_scope = _payload()
+        named_with_unbooked_scope["scope"]["finance_book_scope"] = [  # type: ignore[index]
+            "blank_unbooked",
+            "null_unbooked",
+        ]
+        cases.append((named_with_unbooked_scope, _QUERY))
+        null_with_named_scope = _payload()
+        null_with_named_scope["scope"]["default_finance_book"] = None  # type: ignore[index]
+        cases.append((null_with_named_scope, _QUERY))
+        for malformed_default in ("", " ", False):
+            malformed = _payload()
+            malformed["scope"]["default_finance_book"] = malformed_default  # type: ignore[index]
+            cases.append((malformed, _QUERY))
         fiscal = _payload()
         fiscal["scope"]["fiscal_year_start"] = "2026-02-01"  # type: ignore[index]
         cases.append((fiscal, _QUERY))
         for payload, query in cases:
             with self.subTest(payload=payload, query=query):
                 self.assertFalse(_validate(payload, query))
+
+    def test_unbooked_only_v2_uses_fixed_non_named_label(self) -> None:
+        payload = _payload()
+        payload["scope"]["default_finance_book"] = None  # type: ignore[index]
+        payload["scope"]["finance_book_scope"] = [  # type: ignore[index]
+            "blank_unbooked",
+            "null_unbooked",
+        ]
+        script = """
+const ui = require(process.argv[1]);
+const payload = JSON.parse(process.argv[2]);
+const query = JSON.parse(process.argv[3]);
+process.stdout.write(JSON.stringify({
+  valid: ui.validateGLTBPayload(payload, query),
+  html: ui.renderGLTBReady(payload),
+}));
+"""
+        result = json.loads(_node(script, payload, _QUERY))
+
+        self.assertTrue(result["valid"])
+        self.assertIn("Unbooked only (blank or no Finance Book)", result["html"])
+        self.assertNotIn("company_default", result["html"])
+        self.assertNotIn("null |", result["html"])
 
     def test_renderer_escapes_account_and_finance_book_text(self) -> None:
         payload = _payload()

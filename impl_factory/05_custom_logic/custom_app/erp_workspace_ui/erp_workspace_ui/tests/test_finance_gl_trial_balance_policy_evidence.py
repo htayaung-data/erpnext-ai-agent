@@ -174,6 +174,7 @@ def _measurement(
     precision: int = 2,
     response_bytes: int = 4_096,
     elapsed: int = 1_000,
+    default_finance_book_present: bool = True,
 ) -> endpoint._CompanyMeasurement:
     return endpoint._CompanyMeasurement(
         source_floors=floors or _source_floors(),
@@ -210,6 +211,7 @@ def _measurement(
         byte_evidence=_byte_evidence(
             current_response_floor_bytes=response_bytes
         ),
+        default_finance_book_present=default_finance_book_present,
         elapsed_microseconds=elapsed,
     )
 
@@ -230,6 +232,7 @@ def _result(
     *,
     child_name: str = '1110 - Cash "Main"',
     child_parent: str = "1000 - Assets",
+    unbooked_only: bool = False,
 ) -> TrialBalanceResult:
     scope = TrialBalanceScope(
         company=COMPANY_A,
@@ -239,11 +242,15 @@ def _result(
         fiscal_year_end=date(2026, 12, 31),
         from_date=date(2026, 1, 1),
         to_date=date(2026, 12, 31),
-        default_finance_book="DEFAULT_BOOK",
+        default_finance_book=None if unbooked_only else "DEFAULT_BOOK",
         finance_book_cohort=(
-            "company_default",
-            "blank_unbooked",
-            "null_unbooked",
+            ("blank_unbooked", "null_unbooked")
+            if unbooked_only
+            else (
+                "company_default",
+                "blank_unbooked",
+                "null_unbooked",
+            )
         ),
         active_dimensions=0,
     )
@@ -1356,13 +1363,20 @@ class EvidenceRuntimeQueryTests(unittest.TestCase):
         )
         self.assertIn(
             "`posting_date` <= %(to_date)s AND `is_cancelled` = 0",
-            runtime_source._GL_COUNT_SQL,
+            runtime_source._GL_COUNT_NAMED_SQL,
         )
-        self.assertNotIn("from_date", runtime_source._GL_COUNT_SQL)
+        self.assertNotIn("from_date", runtime_source._GL_COUNT_NAMED_SQL)
         self.assertIn(
             "`finance_book` = %(finance_book)s OR `finance_book` = '' "
             "OR `finance_book` IS NULL",
-            runtime_source._GL_COUNT_SQL,
+            runtime_source._GL_COUNT_NAMED_SQL,
+        )
+        self.assertIn(
+            "(`finance_book` = '' OR `finance_book` IS NULL)",
+            runtime_source._GL_COUNT_UNBOOKED_SQL,
+        )
+        self.assertNotIn(
+            "%(finance_book)s", runtime_source._GL_COUNT_UNBOOKED_SQL
         )
 
 
@@ -1528,6 +1542,16 @@ class PrecisionAndSizingTests(unittest.TestCase):
         self.assertIn(UNICODE_CANARY.encode("utf-8"), encoded)
         self.assertIn(b'\\"Main\\"', encoded)
         self.assertIn(b"\\\\Cash", encoded)
+
+        unbooked_measurement = endpoint._response_measurement(
+            result=_result(unbooked_only=True),
+            request=request,
+            max_accounts=2,
+            max_gl_entries=120,
+            numeric_precision=21,
+            numeric_scale=9,
+        )
+        self.assertGreater(unbooked_measurement["response_bytes"], 0)
 
     def test_metadata_excludes_hierarchy_and_current_floor_is_not_maximum(
         self,
@@ -2096,6 +2120,64 @@ class CollectorOrchestrationTests(unittest.TestCase):
                         ("finance_book", "is", "not set"),
                     ),
                 )
+
+    def test_blank_and_null_defaults_collect_only_unbooked_mode(self) -> None:
+        for raw_default in ("", None):
+            with self.subTest(raw_default=raw_default):
+                runtime = self._runtime()
+                runtime.respect_gl_or_filters = True
+                runtime.rows["Company"][0]["default_finance_book"] = raw_default
+
+                measurement = self._collect(runtime)
+
+                self.assertFalse(measurement.default_finance_book_present)
+                self.assertEqual(
+                    measurement.source_floors["finance_book_rows"], 0
+                )
+                runtime.count_finance_book.assert_not_called()
+                runtime.count_gl_entries.assert_called_once_with(
+                    runtime.snapshot,
+                    COMPANY_A,
+                    date(2026, 12, 31),
+                    None,
+                )
+                gl_call = next(
+                    call
+                    for call in runtime.calls
+                    if call[0] == "get_list" and call[2] == "GL Entry"
+                )
+                self.assertEqual(
+                    gl_call[5],
+                    (
+                        ("finance_book", "=", ""),
+                        ("finance_book", "is", "not set"),
+                    ),
+                )
+                document = endpoint._result_document(
+                    authority=self.authority,
+                    runtime_policy=self.policy,
+                    measurements=(measurement,),
+                    started_ns=endpoint.time.monotonic_ns(),
+                )
+                self.assertFalse(
+                    document["accounting_shape"][
+                        "default_finance_book_present_all"
+                    ]
+                )
+                self.assertTrue(
+                    document["accounting_shape"]["finance_book_cohort_exact"]
+                )
+
+    def test_malformed_company_default_remains_generic_and_fail_closed(self) -> None:
+        for raw_default in (" ", " BOOK_DEFAULT", 7, False):
+            with self.subTest(raw_default=raw_default):
+                runtime = self._runtime()
+                runtime.rows["Company"][0]["default_finance_book"] = raw_default
+                with self.assertRaisesRegex(
+                    ValueError, "finance_read_unavailable"
+                ):
+                    self._collect(runtime)
+                runtime.count_finance_book.assert_not_called()
 
     def test_orchestration_failure_matrix_discards_and_closes(
         self,

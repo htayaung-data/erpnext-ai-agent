@@ -1146,6 +1146,75 @@ class FrappeRuntimeTests(unittest.TestCase):
             self.assertFalse(kwargs["as_list"])
             self.assertNotIn("ignore_user_permissions", kwargs)
 
+    def test_unbooked_gl_list_contract_is_exact_and_fail_closed(self) -> None:
+        fields = (
+            "name", "company", "posting_date", "account", "debit",
+            "credit", "is_cancelled", "is_opening", "finance_book",
+        )
+        filters = (
+            ("company", "=", COMPANY),
+            ("posting_date", "<=", date(2026, 12, 31)),
+            ("is_cancelled", "=", 0),
+        )
+        unbooked = (
+            ("finance_book", "=", ""),
+            ("finance_book", "is", "not set"),
+        )
+        runtime, frappe, _ = _runtime()
+        frappe.rows["GL Entry"][0]["finance_book"] = ""
+        snapshot = _begin(runtime)
+
+        rows = runtime.get_list(
+            snapshot,
+            "GL Entry",
+            fields,
+            filters,
+            unbooked,
+            "posting_date asc, name asc",
+            4,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(frappe.list_calls[-1][1]["or_filters"], [list(item) for item in unbooked])
+
+        invalid_scopes = (
+            tuple(reversed(unbooked)),
+            unbooked + (("finance_book", "=", "BOOK_OTHER"),),
+            (("finance_book", "=", " "), ("finance_book", "=", ""), ("finance_book", "is", "not set")),
+            (("finance_book", "=", ""),),
+        )
+        for invalid_scope in invalid_scopes:
+            with self.subTest(or_filters=invalid_scope):
+                runtime, _, _ = _runtime()
+                snapshot = _begin(runtime)
+                self.assertUnavailable(
+                    lambda runtime=runtime, snapshot=snapshot, invalid_scope=invalid_scope: runtime.get_list(
+                        snapshot,
+                        "GL Entry",
+                        fields,
+                        filters,
+                        invalid_scope,
+                        "posting_date asc, name asc",
+                        4,
+                    )
+                )
+
+        runtime, frappe, _ = _runtime()
+        frappe.rows["GL Entry"][0]["finance_book"] = None
+        frappe.raw.gl_count = 2
+        snapshot = _begin(runtime)
+        self.assertUnavailable(
+            lambda: runtime.get_list(
+                snapshot,
+                "GL Entry",
+                fields,
+                filters,
+                unbooked,
+                "posting_date asc, name asc",
+                4,
+            )
+        )
+
     def test_multi_company_permission_and_company_isolation(self) -> None:
         runtime, frappe, permissions = _runtime()
         permissions.value["Company"].append(
@@ -1334,6 +1403,13 @@ class FrappeRuntimeTests(unittest.TestCase):
             "AND (`finance_book` = %(finance_book)s "
             "OR `finance_book` = '' OR `finance_book` IS NULL)"
         )
+        unbooked_gl_sql = (
+            "SELECT COUNT(DISTINCT `name`) FROM `tabGL Entry` "
+            "WHERE `company` = %(company)s "
+            "AND `posting_date` <= %(to_date)s "
+            "AND `is_cancelled` = 0 "
+            "AND (`finance_book` = '' OR `finance_book` IS NULL)"
+        )
         fiscal_sql = (
             "SELECT EXISTS(SELECT 1 FROM `tabFiscal Year Company` "
             "WHERE `parenttype` = 'Fiscal Year' "
@@ -1386,6 +1462,41 @@ class FrappeRuntimeTests(unittest.TestCase):
                         "company": COMPANY,
                         "to_date": to_date,
                         "finance_book": "BOOK",
+                    },
+                )
+            ],
+        )
+
+        runtime, frappe, _ = _runtime()
+        frappe.rows["GL Entry"][0]["finance_book"] = None
+        snapshot = _begin(runtime)
+        runtime.get_list(
+            snapshot,
+            "GL Entry",
+            (
+                "name", "company", "posting_date", "account", "debit",
+                "credit", "is_cancelled", "is_opening", "finance_book",
+            ),
+            (
+                ("company", "=", COMPANY),
+                ("posting_date", "<=", to_date),
+                ("is_cancelled", "=", 0),
+            ),
+            (
+                ("finance_book", "=", ""),
+                ("finance_book", "is", "not set"),
+            ),
+            "posting_date asc, name asc",
+            3,
+        )
+        self.assertEqual(
+            [item for item in frappe.raw.statements if item[0] == unbooked_gl_sql],
+            [
+                (
+                    unbooked_gl_sql,
+                    {
+                        "company": COMPANY,
+                        "to_date": to_date,
                     },
                 )
             ],

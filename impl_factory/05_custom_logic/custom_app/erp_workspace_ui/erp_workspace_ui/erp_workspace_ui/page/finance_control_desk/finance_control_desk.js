@@ -6,7 +6,7 @@
   const OVERVIEW_CONTEXT_TIMEOUT_MS = 30000;
   const GL_TRIAL_BALANCE_METHOD = "erp_workspace_ui.finance_accounting.gl_trial_balance_http.get_gl_trial_balance";
   const GL_TRIAL_BALANCE_TIMEOUT_MS = 30000;
-  const GL_TRIAL_BALANCE_SCHEMA_VERSION = "finance-gl-trial-balance.internal.v1";
+  const GL_TRIAL_BALANCE_SCHEMA_VERSION = "finance-gl-trial-balance.internal.v2";
   const GL_TRIAL_BALANCE_TOP_LEVEL_KEYS = Object.freeze([
     "boundary", "lines", "schema_version", "scope", "state", "totals",
   ]);
@@ -29,9 +29,13 @@
   const GL_TRIAL_BALANCE_ROOT_TYPES = Object.freeze([
     "Asset", "Liability", "Equity", "Income", "Expense",
   ]);
-  const GL_TRIAL_BALANCE_FINANCE_BOOK_SCOPE = Object.freeze([
+  const GL_TRIAL_BALANCE_NAMED_FINANCE_BOOK_SCOPE = Object.freeze([
     "company_default", "blank_unbooked", "null_unbooked",
   ]);
+  const GL_TRIAL_BALANCE_UNBOOKED_FINANCE_BOOK_SCOPE = Object.freeze([
+    "blank_unbooked", "null_unbooked",
+  ]);
+  const GL_TRIAL_BALANCE_UNBOOKED_LABEL = "Unbooked only (blank or no Finance Book)";
   const GL_TRIAL_BALANCE_PRIVILEGED_ROLES = Object.freeze([
     "System Manager", "Administrator", "Bypass Finance Scope",
   ]);
@@ -1805,8 +1809,12 @@
       || value.to_date !== query.to_date) return false;
     if (!isSafeGLTBText(value.company)
       || !isSafeGLTBText(value.fiscal_year)
-      || !isSafeGLTBText(value.base_currency)
-      || !isSafeGLTBText(value.default_finance_book)) return false;
+      || !isSafeGLTBText(value.base_currency)) return false;
+    const expectedFinanceBookScope = value.default_finance_book === null
+      ? GL_TRIAL_BALANCE_UNBOOKED_FINANCE_BOOK_SCOPE
+      : GL_TRIAL_BALANCE_NAMED_FINANCE_BOOK_SCOPE;
+    if (value.default_finance_book !== null
+      && !isSafeGLTBText(value.default_finance_book)) return false;
     if (!Number.isInteger(value.currency_precision) || value.currency_precision < 0) return false;
     if (!Number.isInteger(value.active_dimensions) || value.active_dimensions !== 0) return false;
     if (!isValidCalendarDate(value.fiscal_year_start)
@@ -1815,9 +1823,9 @@
       || value.from_date > value.to_date
       || value.to_date > value.fiscal_year_end) return false;
     return Array.isArray(value.finance_book_scope)
-      && value.finance_book_scope.length === GL_TRIAL_BALANCE_FINANCE_BOOK_SCOPE.length
+      && value.finance_book_scope.length === expectedFinanceBookScope.length
       && value.finance_book_scope.every(
-        (item, index) => item === GL_TRIAL_BALANCE_FINANCE_BOOK_SCOPE[index]
+        (item, index) => item === expectedFinanceBookScope[index]
       );
   }
 
@@ -1931,8 +1939,9 @@
     )).join("");
     const totals = payload.totals.presentation;
     const period = scope.from_date + " to " + scope.to_date;
-    const financeBook = scope.default_finance_book + " | "
-      + scope.finance_book_scope.join(" | ");
+    const financeBook = scope.default_finance_book === null
+      ? GL_TRIAL_BALANCE_UNBOOKED_LABEL
+      : scope.default_finance_book + " | " + scope.finance_book_scope.join(" | ");
     return '<div data-finance-gltb-state="ready">'
       + '<div class="finance-gltb-summary-grid">'
       + renderGLTBSummaryCard("Accounting period", period)

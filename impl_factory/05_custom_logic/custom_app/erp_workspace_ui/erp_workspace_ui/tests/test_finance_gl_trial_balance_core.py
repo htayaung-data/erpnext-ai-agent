@@ -316,6 +316,80 @@ class TestFinanceGLTrialBalanceCore(unittest.TestCase):
             _build(entries=(replace(ENTRIES[0], finance_book="BOOK_OTHER"),))
         self.assertEqual(raised.exception.code, "finance_book_cohort_invalid")
 
+    def test_unbooked_only_mode_accepts_exact_blank_null_cohort(self):
+        context = _context(
+            default_finance_book=None,
+            finance_book_cohort=("", None),
+        )
+        entries = (
+            _entry(
+                "OPEN_UNBOOKED_DEBIT",
+                "CASH",
+                date(2026, 1, 1),
+                "25.00",
+                "0",
+                finance_book="",
+                is_opening=True,
+            ),
+            _entry(
+                "OPEN_UNBOOKED_CREDIT",
+                "EQUITY",
+                date(2026, 1, 1),
+                "0",
+                "25.00",
+                finance_book=None,
+                is_opening=True,
+            ),
+            _entry(
+                "MOVE_UNBOOKED_DEBIT",
+                "CASH",
+                date(2026, 5, 1),
+                "10.00",
+                "0",
+                finance_book=None,
+            ),
+            _entry(
+                "MOVE_UNBOOKED_CREDIT",
+                "EQUITY",
+                date(2026, 5, 1),
+                "0",
+                "10.00",
+                finance_book="",
+            ),
+        )
+
+        result = _build(context=context, entries=entries)
+
+        self.assertIsNone(result.scope.default_finance_book)
+        self.assertEqual(
+            result.scope.finance_book_cohort,
+            ("blank_unbooked", "null_unbooked"),
+        )
+        self.assertEqual(result.gross_totals.opening_debit, Decimal("25.00"))
+        self.assertEqual(result.gross_totals.opening_credit, Decimal("25.00"))
+        self.assertEqual(result.gross_totals.movement_debit, Decimal("10.00"))
+        self.assertEqual(result.gross_totals.movement_credit, Decimal("10.00"))
+        self.assertEqual(result.gross_totals.closing_debit, Decimal("35.00"))
+        self.assertEqual(result.gross_totals.closing_credit, Decimal("35.00"))
+
+        invalid_contexts = (
+            _context(default_finance_book="", finance_book_cohort=("", None)),
+            _context(default_finance_book=" ", finance_book_cohort=("", None)),
+            _context(default_finance_book=None, finance_book_cohort=(DEFAULT_BOOK, "", None)),
+            _context(default_finance_book=None, finance_book_cohort=("", None, None)),
+        )
+        for invalid_context in invalid_contexts:
+            with self.subTest(context=invalid_context):
+                with self.assertRaises(GLTrialBalanceInputError):
+                    _build(context=invalid_context, entries=entries)
+
+        with self.assertRaises(GLTrialBalanceInputError) as raised:
+            _build(
+                context=context,
+                entries=(replace(entries[0], finance_book="BOOK_OTHER"),),
+            )
+        self.assertEqual(raised.exception.code, "finance_book_cohort_invalid")
+
     def test_finance_book_cohorts_must_balance_independently(self):
         aggregate_balanced_but_cohorts_unbalanced = (
             _entry("DEFAULT_DEBIT", "CASH", date(2026, 5, 1), "10.00", "0"),
