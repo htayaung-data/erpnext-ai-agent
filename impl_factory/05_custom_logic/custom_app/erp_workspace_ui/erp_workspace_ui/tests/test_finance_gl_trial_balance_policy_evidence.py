@@ -936,38 +936,81 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         self.assertEqual(recorder.phase, "internal")
         recorder.enter("snapshot_validate")
         self.assertEqual(recorder.phase, "internal")
+        recorder.reset()
+        recorder.enter("snapshot_subphase_complete")
+        endpoint._enter_phase(recorder, "dynamic:" + COMPANY_A)
+        self.assertEqual(recorder.phase, "internal")
+        endpoint._enter_phase(recorder, "company_scope")
+        self.assertEqual(recorder.phase, "internal")
 
-    def test_known_collector_markers_preserve_snapshot_phase(self) -> None:
+    def test_downstream_markers_require_snapshot_completion(self) -> None:
         recorder = endpoint._PhaseRecorder()
         recorder.enter("snapshot_state")
-        for phase in endpoint._NON_SNAPSHOT_COLLECTOR_PHASES:
+        for phase in endpoint._DIAGNOSTIC_DOWNSTREAM_PHASES:
             with self.subTest(phase=phase):
                 endpoint._enter_phase(recorder, phase)
                 self.assertEqual(recorder.phase, "snapshot_state")
+        recorder.enter("snapshot_subphase_complete")
+        for phase in endpoint._DIAGNOSTIC_DOWNSTREAM_PHASES:
+            with self.subTest(phase=phase):
+                endpoint._enter_phase(recorder, phase)
+                self.assertEqual(recorder.phase, phase)
+        preserved_phase = recorder.phase
+        for phase in endpoint._NON_DIAGNOSTIC_COLLECTOR_PHASES:
+            with self.subTest(phase=phase):
+                endpoint._enter_phase(recorder, phase)
+                self.assertEqual(recorder.phase, preserved_phase)
         endpoint._enter_phase(recorder, "dynamic:" + COMPANY_A)
         self.assertEqual(recorder.phase, "internal")
 
-    def test_snapshot_phase_allowlist_is_exact(self) -> None:
+    def test_diagnostic_phase_allowlists_are_exact(self) -> None:
+        snapshot_phases = frozenset(
+            {
+                "snapshot_runtime_construct",
+                "snapshot_wrapper_bind",
+                "snapshot_raw_connection",
+                "snapshot_driver_identity",
+                "snapshot_preflight_query",
+                "snapshot_server_identity",
+                "snapshot_connection_identity",
+                "snapshot_transaction_idle",
+                "snapshot_set_isolation",
+                "snapshot_start",
+                "snapshot_state",
+                "snapshot_evidence_build",
+                "snapshot_validate",
+                "snapshot_subphase_complete",
+            }
+        )
+        downstream_phases = frozenset(
+            {
+                "permission_initial",
+                "company_scope",
+                "fiscal_scope",
+                "precision",
+                "account_manifest",
+                "gl_cohort",
+                "statement_schema",
+                "accounting_read",
+                "canonical_size",
+                "permission_final",
+                "snapshot_finalize",
+                "authority_final",
+                "message_log_integrity",
+                "result_build",
+            }
+        )
+        self.assertEqual(
+            endpoint._SNAPSHOT_DIAGNOSTIC_PHASES,
+            snapshot_phases,
+        )
+        self.assertEqual(
+            endpoint._DIAGNOSTIC_DOWNSTREAM_PHASES,
+            downstream_phases,
+        )
         self.assertEqual(
             endpoint._DIAGNOSTIC_FAILURE_PHASES,
-            frozenset(
-                {
-                    "snapshot_runtime_construct",
-                    "snapshot_wrapper_bind",
-                    "snapshot_raw_connection",
-                    "snapshot_driver_identity",
-                    "snapshot_preflight_query",
-                    "snapshot_server_identity",
-                    "snapshot_connection_identity",
-                    "snapshot_transaction_idle",
-                    "snapshot_set_isolation",
-                    "snapshot_start",
-                    "snapshot_state",
-                    "snapshot_evidence_build",
-                    "snapshot_validate",
-                    "snapshot_subphase_complete",
-                }
-            ),
+            snapshot_phases | downstream_phases,
         )
         self.assertEqual(endpoint._DIAGNOSTIC_SUCCESS_PHASE, "complete")
         self.assertNotIn(
@@ -2142,7 +2185,7 @@ class CollectorOrchestrationTests(unittest.TestCase):
                 self.assertNotIn("session-drift-canary", str(error))
                 self.assertGreaterEqual(len(runtime.closed), 1)
 
-    def test_downstream_and_cleanup_failures_preserve_snapshot_phase(
+    def test_downstream_and_cleanup_failures_preserve_first_failure_phase(
         self,
     ) -> None:
         def downstream_and_cleanup(runtime):
@@ -2182,15 +2225,18 @@ class CollectorOrchestrationTests(unittest.TestCase):
             ),
             ("downstream_and_cleanup", downstream_and_cleanup),
         )
-        for former_phase, mutate in cases:
+        for expected_phase, mutate in cases:
             runtime = self._runtime()
             mutate(runtime)
             recorder = endpoint._PhaseRecorder()
-            with self.subTest(former_phase=former_phase):
+            with self.subTest(expected_phase=expected_phase):
                 with self.assertRaisesRegex(
                     ValueError, "finance_read_unavailable"
                 ):
                     self._collect(runtime, recorder)
-                self.assertEqual(
-                    recorder.phase, "snapshot_subphase_complete"
+                reported_phase = (
+                    "company_scope"
+                    if expected_phase == "downstream_and_cleanup"
+                    else expected_phase
                 )
+                self.assertEqual(recorder.phase, reported_phase)

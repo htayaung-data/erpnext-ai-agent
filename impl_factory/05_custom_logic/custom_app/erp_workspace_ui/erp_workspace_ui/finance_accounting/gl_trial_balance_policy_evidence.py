@@ -75,7 +75,7 @@ _CONFIG_KEYS: Final = frozenset(
     }
 )
 _DIAGNOSTIC_CONFIG_KEYS: Final = frozenset({"enabled"})
-_DIAGNOSTIC_FAILURE_PHASES: Final = frozenset(
+_SNAPSHOT_DIAGNOSTIC_PHASES: Final = frozenset(
     {
         "snapshot_runtime_construct",
         "snapshot_wrapper_bind",
@@ -93,13 +93,8 @@ _DIAGNOSTIC_FAILURE_PHASES: Final = frozenset(
         "snapshot_subphase_complete",
     }
 )
-_DIAGNOSTIC_SUCCESS_PHASE: Final = "complete"
-_NON_SNAPSHOT_COLLECTOR_PHASES: Final = frozenset(
+_DIAGNOSTIC_DOWNSTREAM_PHASES: Final = frozenset(
     {
-        "request_boundary",
-        "message_log_integrity",
-        "environment_policy",
-        "authority_initial",
         "permission_initial",
         "company_scope",
         "fiscal_scope",
@@ -112,7 +107,19 @@ _NON_SNAPSHOT_COLLECTOR_PHASES: Final = frozenset(
         "permission_final",
         "snapshot_finalize",
         "authority_final",
+        "message_log_integrity",
         "result_build",
+    }
+)
+_DIAGNOSTIC_FAILURE_PHASES: Final = (
+    _SNAPSHOT_DIAGNOSTIC_PHASES | _DIAGNOSTIC_DOWNSTREAM_PHASES
+)
+_DIAGNOSTIC_SUCCESS_PHASE: Final = "complete"
+_NON_DIAGNOSTIC_COLLECTOR_PHASES: Final = frozenset(
+    {
+        "request_boundary",
+        "environment_policy",
+        "authority_initial",
         "cleanup",
     }
 )
@@ -225,25 +232,35 @@ class GLTrialBalancePolicyEvidenceError(RuntimeError):
 class _PhaseRecorder:
     phase: str = "internal"
     _invalid: bool = False
+    _snapshot_complete: bool = False
 
     def reset(self) -> None:
         self.phase = "internal"
         self._invalid = False
+        self._snapshot_complete = False
 
     def enter(self, phase: object) -> None:
         if self._invalid:
             return
-        if type(phase) is str and phase in _DIAGNOSTIC_FAILURE_PHASES:
+        if type(phase) is str and phase in _SNAPSHOT_DIAGNOSTIC_PHASES:
             self.phase = phase
+            if phase == "snapshot_subphase_complete":
+                self._snapshot_complete = True
             return
         self.phase = "internal"
         self._invalid = True
 
     def enter_collector(self, phase: object) -> None:
+        if self._invalid:
+            return
         if (
             type(phase) is str
-            and phase in _NON_SNAPSHOT_COLLECTOR_PHASES
+            and phase in _NON_DIAGNOSTIC_COLLECTOR_PHASES
         ):
+            return
+        if type(phase) is str and phase in _DIAGNOSTIC_DOWNSTREAM_PHASES:
+            if self._snapshot_complete:
+                self.phase = phase
             return
         self.enter(phase)
 
@@ -1407,7 +1424,7 @@ def _collect_company(
                 )
     if failed or result is None:
         if phase_recorder is not None:
-            phase_recorder.enter(failure_phase or "internal")
+            _enter_phase(phase_recorder, failure_phase or "internal")
         _fail()
     _enter_phase(phase_recorder, "canonical_size")
     return _CompanyMeasurement(
