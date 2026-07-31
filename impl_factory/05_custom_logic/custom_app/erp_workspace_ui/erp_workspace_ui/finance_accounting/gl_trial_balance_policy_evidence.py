@@ -111,15 +111,22 @@ _DIAGNOSTIC_DOWNSTREAM_PHASES: Final = frozenset(
         "result_build",
     }
 )
+_DIAGNOSTIC_PRE_SNAPSHOT_PHASES: Final = frozenset(
+    {
+        "message_log_integrity",
+        "environment_policy",
+        "authority_initial",
+    }
+)
 _DIAGNOSTIC_FAILURE_PHASES: Final = (
-    _SNAPSHOT_DIAGNOSTIC_PHASES | _DIAGNOSTIC_DOWNSTREAM_PHASES
+    _DIAGNOSTIC_PRE_SNAPSHOT_PHASES
+    | _SNAPSHOT_DIAGNOSTIC_PHASES
+    | _DIAGNOSTIC_DOWNSTREAM_PHASES
 )
 _DIAGNOSTIC_SUCCESS_PHASE: Final = "complete"
 _NON_DIAGNOSTIC_COLLECTOR_PHASES: Final = frozenset(
     {
         "request_boundary",
-        "environment_policy",
-        "authority_initial",
         "cleanup",
     }
 )
@@ -232,12 +239,18 @@ class GLTrialBalancePolicyEvidenceError(RuntimeError):
 class _PhaseRecorder:
     phase: str = "internal"
     _invalid: bool = False
+    _pre_snapshot_authorized: bool = False
     _snapshot_complete: bool = False
 
     def reset(self) -> None:
         self.phase = "internal"
         self._invalid = False
+        self._pre_snapshot_authorized = False
         self._snapshot_complete = False
+
+    def authorize_pre_snapshot(self) -> None:
+        if not self._invalid and not self._snapshot_complete:
+            self._pre_snapshot_authorized = True
 
     def enter(self, phase: object) -> None:
         if self._invalid:
@@ -257,6 +270,21 @@ class _PhaseRecorder:
             type(phase) is str
             and phase in _NON_DIAGNOSTIC_COLLECTOR_PHASES
         ):
+            return
+        if type(phase) is str and phase in _DIAGNOSTIC_PRE_SNAPSHOT_PHASES:
+            if self._snapshot_complete and phase in _DIAGNOSTIC_DOWNSTREAM_PHASES:
+                self.phase = phase
+                return
+            if (
+                phase in _DIAGNOSTIC_DOWNSTREAM_PHASES
+                and self.phase in _SNAPSHOT_DIAGNOSTIC_PHASES
+            ):
+                return
+            if self._pre_snapshot_authorized and not self._snapshot_complete:
+                self.phase = phase
+                return
+            self.phase = "internal"
+            self._invalid = True
             return
         if type(phase) is str and phase in _DIAGNOSTIC_DOWNSTREAM_PHASES:
             if self._snapshot_complete:
@@ -1685,6 +1713,8 @@ def _execute_policy_evidence(
         local, message_log, original_messages = _message_log()
         if require_diagnostic_authority:
             _diagnostic_caller_authorized()
+            if phase_recorder is not None:
+                phase_recorder.authorize_pre_snapshot()
             phase_visible = True
             _enter_phase(phase_recorder, "message_log_integrity")
             if (

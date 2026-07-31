@@ -781,15 +781,59 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         frappe.local.request.method = "POST"
         frappe.form_dict = {"cmd": DIAGNOSTIC_METHOD}
 
-    def test_non_snapshot_failures_return_no_phase_document(
+    def test_eligible_pre_snapshot_failures_return_fixed_phases(
         self,
     ) -> None:
-        frappe.local.conf.pop(endpoint._CONFIG_KEY)
-        self._assert_generic()
+        for document in (None, {"enabled": True}):
+            with self.subTest(document=document):
+                frappe.local.conf = {
+                    endpoint._DIAGNOSTIC_CONFIG_KEY: {"enabled": True}
+                }
+                if document is not None:
+                    frappe.local.conf[endpoint._CONFIG_KEY] = document
+                result = (
+                    diagnose_gl_trial_balance_policy_evidence_failure_phase()
+                )
+                self.assertEqual(
+                    result,
+                    {
+                        "code": "finance_read_unavailable",
+                        "phase": "environment_policy",
+                    },
+                )
+                self.assertEqual(tuple(result), ("code", "phase"))
 
-        frappe.local.conf[endpoint._CONFIG_KEY] = _policy()
-        frappe_permissions.get_user_permissions = lambda user: {}
-        self._assert_generic()
+        restrictive = _permissions()
+        restrictive["Account"] = [
+            _permission_entry("identity-canary")
+        ]
+        frappe.local.conf = {
+            endpoint._CONFIG_KEY: _policy(),
+            endpoint._DIAGNOSTIC_CONFIG_KEY: {"enabled": True},
+        }
+        for permissions in ({}, restrictive):
+            with self.subTest(permissions=permissions):
+                frappe_permissions.get_user_permissions = (
+                    lambda user, value=permissions: value
+                )
+                result = (
+                    diagnose_gl_trial_balance_policy_evidence_failure_phase()
+                )
+                self.assertEqual(
+                    result,
+                    {
+                        "code": "finance_read_unavailable",
+                        "phase": "authority_initial",
+                    },
+                )
+                encoded = json.dumps(result, sort_keys=True)
+                self.assertNotIn("identity-canary", encoded)
+                self.assertEqual(tuple(result), ("code", "phase"))
+
+        frappe.local.conf.pop(endpoint._CONFIG_KEY)
+        frappe.form_dict = {"cmd": METHOD}
+        with self.assertRaises(GLTrialBalancePolicyEvidenceError):
+            collect_gl_trial_balance_policy_evidence()
 
     def test_ineligible_callers_receive_no_phase_document(self) -> None:
         for user, roles in (
@@ -797,6 +841,9 @@ class DiagnosticBoundaryTests(unittest.TestCase):
             ("Administrator", ["Accounts Manager"]),
             (USER, ["Accounts User"]),
             (USER, ["Accounts Manager", "System Manager"]),
+            (USER, ["Accounts Manager", "Administrator"]),
+            (USER, ["Accounts Manager", "Bypass Finance Scope"]),
+            (USER, ["Accounts Manager", "Accounts Manager"]),
         ):
             with self.subTest(user=user, roles=roles):
                 frappe.local.session = {"user": user}
@@ -821,7 +868,15 @@ class DiagnosticBoundaryTests(unittest.TestCase):
             return ["Accounts Manager"]
 
         frappe.get_roles = noisy_roles
-        self._assert_generic()
+        result = diagnose_gl_trial_balance_policy_evidence_failure_phase()
+        self.assertEqual(
+            result,
+            {
+                "code": "finance_read_unavailable",
+                "phase": "message_log_integrity",
+            },
+        )
+        self.assertNotIn(canary, json.dumps(result, sort_keys=True))
         self.assertEqual(frappe.local.message_log, [])
 
     def test_only_closed_phase_documents_can_leave_the_boundary(
@@ -929,6 +984,14 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         ):
             self._assert_generic()
 
+        for phase in endpoint._DIAGNOSTIC_FAILURE_PHASES:
+            with self.subTest(phase=phase), patch.object(
+                endpoint,
+                "_execute_policy_evidence",
+                return_value=(None, phase, False, True),
+            ):
+                self._assert_generic()
+
     def test_phase_recorder_rejects_dynamic_values(self) -> None:
         recorder = endpoint._PhaseRecorder()
         recorder.enter("snapshot_state")
@@ -950,6 +1013,52 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         endpoint._enter_phase(recorder, "company_scope")
         self.assertEqual(recorder.phase, "internal")
 
+    def test_pre_snapshot_markers_require_caller_authorization(
+        self,
+    ) -> None:
+        recorder = endpoint._PhaseRecorder()
+        endpoint._enter_phase(recorder, "environment_policy")
+        self.assertEqual(recorder.phase, "internal")
+        recorder.reset()
+        recorder.authorize_pre_snapshot()
+        for phase in endpoint._DIAGNOSTIC_PRE_SNAPSHOT_PHASES:
+            with self.subTest(phase=phase):
+                endpoint._enter_phase(recorder, phase)
+                self.assertEqual(recorder.phase, phase)
+        preserved_phase = recorder.phase
+        for phase in endpoint._NON_DIAGNOSTIC_COLLECTOR_PHASES:
+            with self.subTest(phase=phase):
+                endpoint._enter_phase(recorder, phase)
+                self.assertEqual(recorder.phase, preserved_phase)
+        endpoint._enter_phase(recorder, "identity-canary:" + USER)
+        self.assertEqual(recorder.phase, "internal")
+
+    def test_pre_snapshot_authorization_scope_cannot_be_reopened(
+        self,
+    ) -> None:
+        reset_recorder = endpoint._PhaseRecorder()
+        reset_recorder.authorize_pre_snapshot()
+        reset_recorder.reset()
+        endpoint._enter_phase(reset_recorder, "environment_policy")
+        self.assertEqual(reset_recorder.phase, "internal")
+
+        invalid_recorder = endpoint._PhaseRecorder()
+        invalid_recorder.enter("identity-canary")
+        self.assertEqual(invalid_recorder.phase, "internal")
+        invalid_recorder.authorize_pre_snapshot()
+        endpoint._enter_phase(invalid_recorder, "authority_initial")
+        self.assertEqual(invalid_recorder.phase, "internal")
+
+        for phase in ("environment_policy", "authority_initial"):
+            with self.subTest(phase=phase):
+                complete_recorder = endpoint._PhaseRecorder()
+                complete_recorder.enter("snapshot_subphase_complete")
+                complete_recorder.authorize_pre_snapshot()
+                endpoint._enter_phase(complete_recorder, phase)
+                self.assertEqual(
+                    complete_recorder.phase, "internal"
+                )
+
     def test_downstream_markers_require_snapshot_completion(self) -> None:
         recorder = endpoint._PhaseRecorder()
         recorder.enter("snapshot_state")
@@ -958,6 +1067,12 @@ class DiagnosticBoundaryTests(unittest.TestCase):
                 endpoint._enter_phase(recorder, phase)
                 self.assertEqual(recorder.phase, "snapshot_state")
         recorder.enter("snapshot_subphase_complete")
+        endpoint._enter_phase(recorder, "company_scope")
+        self.assertEqual(recorder.phase, "company_scope")
+        endpoint._enter_phase(recorder, "message_log_integrity")
+        self.assertEqual(
+            recorder.phase, "message_log_integrity"
+        )
         for phase in endpoint._DIAGNOSTIC_DOWNSTREAM_PHASES:
             with self.subTest(phase=phase):
                 endpoint._enter_phase(recorder, phase)
@@ -971,6 +1086,13 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         self.assertEqual(recorder.phase, "internal")
 
     def test_diagnostic_phase_allowlists_are_exact(self) -> None:
+        pre_snapshot_phases = frozenset(
+            {
+                "message_log_integrity",
+                "environment_policy",
+                "authority_initial",
+            }
+        )
         snapshot_phases = frozenset(
             {
                 "snapshot_runtime_construct",
@@ -1008,6 +1130,10 @@ class DiagnosticBoundaryTests(unittest.TestCase):
             }
         )
         self.assertEqual(
+            endpoint._DIAGNOSTIC_PRE_SNAPSHOT_PHASES,
+            pre_snapshot_phases,
+        )
+        self.assertEqual(
             endpoint._SNAPSHOT_DIAGNOSTIC_PHASES,
             snapshot_phases,
         )
@@ -1017,7 +1143,11 @@ class DiagnosticBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(
             endpoint._DIAGNOSTIC_FAILURE_PHASES,
-            snapshot_phases | downstream_phases,
+            pre_snapshot_phases | snapshot_phases | downstream_phases,
+        )
+        self.assertEqual(
+            endpoint._NON_DIAGNOSTIC_COLLECTOR_PHASES,
+            frozenset({"request_boundary", "cleanup"}),
         )
         self.assertEqual(endpoint._DIAGNOSTIC_SUCCESS_PHASE, "complete")
         self.assertNotIn(
