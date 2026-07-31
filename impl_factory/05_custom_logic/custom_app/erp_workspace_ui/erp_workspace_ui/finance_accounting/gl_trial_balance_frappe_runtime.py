@@ -303,15 +303,55 @@ class FrappeGLTrialBalanceRuntime:
 
         # Database.close() is the pinned lifecycle boundary: it closes the
         # owned DB-API handle and then clears both wrapper ownership fields.
-        # Do not recreate that lifecycle manually or suppress a failed close.
+        # If its raw close raises before those assignments, quarantine only
+        # the original binding by identity.  A replacement installed during
+        # close is never cleared or closed, and the failed lifecycle remains
+        # a generic failure rather than being reported as successful cleanup.
+        try:
+            original_cursor = getattr(wrapper, "_cursor")
+        except Exception:
+            raise ValueError from None
         close_wrapper = getattr(wrapper, "close")
-        if not callable(close_wrapper) or close_wrapper() is not None:
+        if not callable(close_wrapper):
             raise ValueError
-        if (
-            getattr(wrapper, "_conn") is not None
-            or getattr(wrapper, "_cursor", None) is not None
-        ):
+        if getattr(wrapper, "_conn") is not raw:
             raise ValueError
+
+        close_failed = False
+        close_result: object = None
+        try:
+            close_result = close_wrapper()
+        except Exception:
+            close_failed = True
+
+        if not close_failed and close_result is None:
+            try:
+                if (
+                    getattr(wrapper, "_conn") is None
+                    and getattr(wrapper, "_cursor", None) is None
+                ):
+                    return
+            except Exception:
+                pass
+
+        try:
+            if (
+                original_cursor is not None
+                and getattr(wrapper, "_cursor", None) is original_cursor
+            ):
+                setattr(wrapper, "_cursor", None)
+            if getattr(wrapper, "_conn") is raw:
+                setattr(wrapper, "_conn", None)
+            if getattr(wrapper, "_conn") is raw:
+                raise ValueError
+            if (
+                original_cursor is not None
+                and getattr(wrapper, "_cursor", None) is original_cursor
+            ):
+                raise ValueError
+        except Exception:
+            raise ValueError from None
+        raise ValueError
 
     def _close_new_connection_handles(
         self, wrapper: object, returned: object

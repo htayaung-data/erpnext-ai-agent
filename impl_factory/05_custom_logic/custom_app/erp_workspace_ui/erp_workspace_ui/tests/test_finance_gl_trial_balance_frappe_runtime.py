@@ -1094,6 +1094,161 @@ class FrappeRuntimeTests(unittest.TestCase):
         self.assertTrue(raw.closed)
         self.assertFalse(raw.active)
 
+    def test_exceptional_retirement_quarantines_preclear_close_failure(self) -> None:
+        for driver in ("pymysql", "mysqlclient"):
+            for final_statement in ("commit and chain", "rollback and chain"):
+                for closed_before_raise in (False, True):
+                    with self.subTest(
+                        driver=driver,
+                        final_statement=final_statement,
+                        closed_before_raise=closed_before_raise,
+                    ):
+                        self._assert_preclear_close_failure_quarantined(
+                            driver,
+                            final_statement,
+                            closed_before_raise,
+                        )
+
+    def _assert_preclear_close_failure_quarantined(
+        self,
+        driver: str,
+        final_statement: str,
+        closed_before_raise: bool,
+    ) -> None:
+        runtime, frappe, _ = _runtime(driver)
+        wrapper = frappe.local.db
+        raw = frappe.raw
+        original_cursor = wrapper._cursor
+        snapshot = _begin(runtime)
+        raw.fail_statement = "ROLLBACK AND NO CHAIN"
+
+        def fail_before_clear() -> None:
+            if closed_before_raise:
+                raw.closed = True
+                raw.active = False
+            raise RuntimeError(
+                "LEAK_CLOSE OperationalError ROLLBACK "
+                "replica_db_password=SECRET COMPANY_A 731"
+            )
+
+        raw.close = mock.Mock(side_effect=fail_before_clear)
+        pinned_close = wrapper.close
+        wrapper.close = mock.Mock(side_effect=pinned_close)
+        wrapper.connect = mock.Mock(
+            side_effect=AssertionError("cleanup_must_not_reconnect")
+        )
+
+        self.assertUnavailable(
+            lambda: runtime.close_read_snapshot(snapshot)
+        )
+
+        wrapper.connect.assert_not_called()
+        wrapper.close.assert_called_once_with()
+        raw.close.assert_called_once_with()
+        self.assertIsNone(runtime._context)
+        self.assertIsNone(wrapper._conn)
+        self.assertIsNone(wrapper._cursor)
+        self.assertIsNot(wrapper._cursor, original_cursor)
+        self.assertEqual(raw.closed, closed_before_raise)
+        self.assertEqual(raw.active, not closed_before_raise)
+        old_statements = tuple(raw.statements)
+
+        runtime.close_read_snapshot(snapshot)
+        wrapper.close.assert_called_once_with()
+        raw.close.assert_called_once_with()
+        wrapper.connect.assert_not_called()
+
+        _, raw_type = _driver_types(driver)
+        replacement = raw_type()
+
+        def connect_replacement() -> None:
+            wrapper._conn = replacement
+            wrapper._cursor = replacement.cursor()
+
+        reconnect = mock.Mock(side_effect=connect_replacement)
+        wrapper.connect = reconnect
+        self.assertIs(
+            _frappe_style_finalize(wrapper, final_statement), replacement
+        )
+        reconnect.assert_called_once_with()
+        self.assertIs(wrapper._conn, replacement)
+        self.assertFalse(replacement.closed)
+        self.assertEqual(
+            replacement.statements[-1],
+            (final_statement, None),
+        )
+        self.assertEqual(tuple(raw.statements), old_statements)
+        raw.close.assert_called_once_with()
+
+    def test_exceptional_retirement_preserves_replacement_binding(self) -> None:
+        for driver in ("pymysql", "mysqlclient"):
+            for final_statement in ("commit and chain", "rollback and chain"):
+                with self.subTest(driver=driver, final_statement=final_statement):
+                    runtime, frappe, _ = _runtime(driver)
+                    wrapper = frappe.local.db
+                    raw = frappe.raw
+                    original_cursor = wrapper._cursor
+                    _, raw_type = _driver_types(driver)
+                    replacement = raw_type()
+                    replacement_cursor = replacement.cursor()
+                    snapshot = _begin(runtime)
+                    raw.fail_statement = "ROLLBACK AND NO CHAIN"
+
+                    def replace_then_raise() -> None:
+                        self.assertIs(wrapper._conn, raw)
+                        self.assertIs(wrapper._cursor, original_cursor)
+                        wrapper._conn = replacement
+                        wrapper._cursor = replacement_cursor
+                        raise RuntimeError(
+                            "LEAK_REPLACEMENT OperationalError "
+                            "replica_db_password=SECRET COMPANY_A 731"
+                        )
+
+                    raw.close = mock.Mock(side_effect=replace_then_raise)
+                    pinned_close = wrapper.close
+                    wrapper.close = mock.Mock(side_effect=pinned_close)
+                    wrapper.connect = mock.Mock(
+                        side_effect=AssertionError(
+                            "cleanup_must_not_reconnect"
+                        )
+                    )
+
+                    self.assertUnavailable(
+                        lambda: runtime.close_read_snapshot(snapshot)
+                    )
+
+                    wrapper.close.assert_called_once_with()
+                    raw.close.assert_called_once_with()
+                    wrapper.connect.assert_not_called()
+                    self.assertIsNone(runtime._context)
+                    self.assertIs(wrapper._conn, replacement)
+                    self.assertIs(wrapper._cursor, replacement_cursor)
+                    self.assertFalse(replacement.closed)
+                    self.assertFalse(raw.closed)
+                    self.assertTrue(raw.active)
+                    old_statements = tuple(raw.statements)
+
+                    runtime.close_read_snapshot(snapshot)
+                    wrapper.close.assert_called_once_with()
+                    raw.close.assert_called_once_with()
+                    wrapper.connect.assert_not_called()
+                    self.assertIs(wrapper._conn, replacement)
+                    self.assertIs(wrapper._cursor, replacement_cursor)
+
+                    self.assertIs(
+                        _frappe_style_finalize(wrapper, final_statement),
+                        replacement,
+                    )
+                    wrapper.connect.assert_not_called()
+                    self.assertIs(wrapper._conn, replacement)
+                    self.assertFalse(replacement.closed)
+                    self.assertEqual(
+                        replacement.statements[-1],
+                        (final_statement, None),
+                    )
+                    self.assertEqual(tuple(raw.statements), old_statements)
+                    raw.close.assert_called_once_with()
+
     def test_retirement_unknown_ownership_never_closes_raw_directly(self) -> None:
         runtime, _, _ = _runtime()
         raw = mock.Mock()
