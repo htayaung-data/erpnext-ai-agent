@@ -286,8 +286,35 @@ class FrappeGLTrialBalanceRuntime:
             _raise_unavailable()
 
     @staticmethod
+    def _retire_frappe_connection(wrapper: object, raw: object) -> None:
+        """Retire one uncertain handle without leaving it bound to Frappe."""
+        try:
+            bound = getattr(wrapper, "_conn")
+        except Exception:
+            # Unknown ownership is not proof that the raw handle is detached.
+            # Never close it directly when Frappe's binding cannot be read.
+            raise ValueError from None
+
+        if bound is not raw:
+            close_raw = getattr(raw, "close")
+            if not callable(close_raw) or close_raw() is not None:
+                raise ValueError
+            return
+
+        # Database.close() is the pinned lifecycle boundary: it closes the
+        # owned DB-API handle and then clears both wrapper ownership fields.
+        # Do not recreate that lifecycle manually or suppress a failed close.
+        close_wrapper = getattr(wrapper, "close")
+        if not callable(close_wrapper) or close_wrapper() is not None:
+            raise ValueError
+        if (
+            getattr(wrapper, "_conn") is not None
+            or getattr(wrapper, "_cursor", None) is not None
+        ):
+            raise ValueError
+
     def _close_new_connection_handles(
-        wrapper: object, returned: object
+        self, wrapper: object, returned: object
     ) -> None:
         candidates: list[object] = []
         if returned is not None:
@@ -295,18 +322,13 @@ class FrappeGLTrialBalanceRuntime:
         try:
             bound = getattr(wrapper, "_conn")
         except Exception:
-            bound = None
+            raise ValueError from None
         if bound is not None and not any(
             bound is candidate for candidate in candidates
         ):
             candidates.append(bound)
         for candidate in candidates:
-            try:
-                close = getattr(candidate, "close")
-                if callable(close):
-                    close()
-            except Exception:
-                pass
+            self._retire_frappe_connection(wrapper, candidate)
 
     def _begin_raw_connection(self, wrapper: object) -> object:
         self._require_approved_wrapper_identity(wrapper)
@@ -490,6 +512,7 @@ class FrappeGLTrialBalanceRuntime:
             self._context = None
         self._last_closed_token = context.token
         self._exceptional_teardown(
+            context.wrapper,
             context.raw_connection,
             context.connection_id,
             mutation_attempted=True,
@@ -553,6 +576,7 @@ class FrappeGLTrialBalanceRuntime:
     def _begin_read_snapshot(self, user: str, company: str) -> ReadSnapshotEvidence:
         user = _text(user)
         company = _text(company)
+        wrapper: object | None = None
         raw: object | None = None
         connection_id: int | None = None
         mutation_attempted = False
@@ -594,14 +618,18 @@ class FrappeGLTrialBalanceRuntime:
             self._context = context
             return self._snapshot_evidence(context)
         except Exception:
-            if raw is not None:
+            if wrapper is not None and raw is not None:
                 self._exceptional_teardown(
-                    raw, connection_id, mutation_attempted=mutation_attempted
+                    wrapper,
+                    raw,
+                    connection_id,
+                    mutation_attempted=mutation_attempted,
                 )
             _raise_unavailable()
 
     def _exceptional_teardown(
         self,
+        wrapper: object,
         raw: object,
         connection_id: int | None,
         *,
@@ -621,12 +649,10 @@ class FrappeGLTrialBalanceRuntime:
                         raise ValueError
             except Exception:
                 pass
-        # Exceptional uncertainty must not leave a reconnectable Frappe-owned
-        # raw connection available to later code in the request.
-        try:
-            getattr(raw, "close")()
-        except Exception:
-            pass
+        # Exceptional uncertainty is retired through the owning Frappe
+        # wrapper.  Its normal request finalizer may reconnect only after the
+        # GL/TB snapshot context has been invalidated.
+        self._retire_frappe_connection(wrapper, raw)
 
     def effective_permission_evidence(
         self, snapshot: ReadSnapshotEvidence
@@ -1196,7 +1222,21 @@ class FrappeGLTrialBalanceRuntime:
         self._last_closed_token = context.token
         if failed:
             try:
-                getattr(context.raw_connection, "close")()
+                wrapper_owns_raw = (
+                    getattr(context.wrapper, "_conn")
+                    is context.raw_connection
+                )
             except Exception:
-                pass
+                wrapper_owns_raw = True
+            if wrapper_owns_raw:
+                self._retire_frappe_connection(
+                    context.wrapper, context.raw_connection
+                )
+            else:
+                # Direct close is safe only after identity proves that this
+                # handle is already detached from the Frappe wrapper.
+                try:
+                    getattr(context.raw_connection, "close")()
+                except Exception:
+                    pass
             _raise_unavailable()
