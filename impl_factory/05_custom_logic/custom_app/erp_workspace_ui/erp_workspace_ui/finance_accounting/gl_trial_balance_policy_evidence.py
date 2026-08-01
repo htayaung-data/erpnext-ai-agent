@@ -399,6 +399,23 @@ def _exact_integer(value: object) -> int:
     return result
 
 
+def _effective_precision_setting(value: object, *, effective: int) -> int:
+    if value is None or (type(value) is str and value == ""):
+        return effective
+    if type(value) is int:
+        if value == 0:
+            return effective
+        if 1 <= value <= 9:
+            return value
+        _fail()
+    if type(value) is str:
+        if value == "0":
+            return effective
+        if len(value) == 1 and value in "123456789":
+            return int(value)
+    _fail()
+
+
 def _elapsed_microseconds(started_ns: int) -> int:
     value = (time.monotonic_ns() - started_ns) // 1_000
     return _nonnegative_int(value)
@@ -836,19 +853,19 @@ def _precision_evidence(
     )
     _checkpoint(runtime, snapshot, user, company)
 
-    values = tuple(
+    effective_values = tuple(
         _exact_integer(value)
-        for value in (
-            system_database_value,
-            system_api_value,
-            global_value,
-            debit_value,
-            credit_value,
-        )
+        for value in (global_value, debit_value, credit_value)
     )
-    if len(set(values)) != 1:
+    if len(set(effective_values)) != 1:
         _fail()
-    precision = values[0]
+    precision = effective_values[0]
+    settings_values = tuple(
+        _effective_precision_setting(value, effective=precision)
+        for value in (system_database_value, system_api_value)
+    )
+    if any(value != precision for value in settings_values):
+        _fail()
     if precision > 8 or rounding_method not in _ROUNDING_METHODS:
         _fail()
 
@@ -1235,7 +1252,7 @@ def _collect_company(
         fiscal_rows = _active_fiscal_rows(
             runtime, snapshot, _positive_int(active_fiscal_count)
         )
-        first_name, first_start, first_end = fiscal_rows[0]
+        probe_name, probe_start, probe_end = fiscal_rows[0]
         _enter_phase(phase_recorder, "precision")
         precision_evidence = _precision_evidence(
             runtime,
@@ -1249,9 +1266,9 @@ def _collect_company(
         )
         provisional = GLTrialBalanceReadRequest(
             company=company,
-            fiscal_year=first_name,
-            from_date=first_start,
-            to_date=first_end,
+            fiscal_year=probe_name,
+            from_date=probe_start,
+            to_date=probe_end,
             currency_precision=precision,
             max_accounts=max(1, active_fiscal_count),
             max_gl_entries=1,
@@ -1269,10 +1286,18 @@ def _collect_company(
         ):
             _fail()
         if any(
-            state not in {"global", "selected_company"}
+            state not in {"global", "selected_company", "excluded"}
             for state in applicability.values()
         ):
             _fail()
+        applicable_fiscal_rows = tuple(
+            item
+            for item in fiscal_rows
+            if applicability[item[0]] in {"global", "selected_company"}
+        )
+        if not applicable_fiscal_rows:
+            _fail()
+        first_name, first_start, first_end = applicable_fiscal_rows[0]
 
         _enter_phase(phase_recorder, "company_scope")
         selected_link_count = runtime.count_fiscal_year_company(
@@ -1353,7 +1378,7 @@ def _collect_company(
                 fiscal_end,
                 default_finance_book,
             )
-            for _name, _start, fiscal_end in fiscal_rows
+            for _name, _start, fiscal_end in applicable_fiscal_rows
         ]
         max_gl_entries = max(gl_counts)
         _enter_phase(phase_recorder, "statement_schema")
@@ -1364,7 +1389,7 @@ def _collect_company(
         )
 
         response_measurements: list[Mapping[str, object]] = []
-        for fiscal_name, fiscal_start, fiscal_end in fiscal_rows:
+        for fiscal_name, fiscal_start, fiscal_end in applicable_fiscal_rows:
             adapter_request = GLTrialBalanceReadRequest(
                 company=company,
                 fiscal_year=fiscal_name,
@@ -1423,16 +1448,16 @@ def _collect_company(
         result = _CompanyMeasurement(
             source_floors=source_floors,
             max_gl_entries=max_gl_entries,
-            fiscal_endpoints=len(fiscal_rows),
+            fiscal_endpoints=len(applicable_fiscal_rows),
             minimum_fiscal_start=min(
-                item[1] for item in fiscal_rows
+                item[1] for item in applicable_fiscal_rows
             ),
             maximum_fiscal_end=max(
-                item[2] for item in fiscal_rows
+                item[2] for item in applicable_fiscal_rows
             ),
             maximum_fiscal_span_days=max(
                 (item[2] - item[1]).days + 1
-                for item in fiscal_rows
+                for item in applicable_fiscal_rows
             ),
             precision=precision,
             statement_ceiling=statement_ceiling,

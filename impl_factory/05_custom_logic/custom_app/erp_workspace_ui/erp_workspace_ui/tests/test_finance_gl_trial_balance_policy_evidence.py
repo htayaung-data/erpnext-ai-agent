@@ -1612,6 +1612,81 @@ class PrecisionAndSizingTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self._precision_evidence(**changes)
 
+    def test_unset_precision_uses_pinned_effective_fallback(self) -> None:
+        unset_values = (None, "", 0, "0")
+        cases = tuple(
+            (database_value, settings_value)
+            for database_value in unset_values
+            for settings_value in unset_values
+        ) + ((None, "3"), (3, ""))
+        for database_value, settings_value in cases:
+            with self.subTest(
+                database_value=database_value,
+                settings_value=settings_value,
+            ):
+                evidence = self._precision_evidence(
+                    database_value=database_value,
+                    settings_value=settings_value,
+                    global_value=3,
+                    debit_value=3,
+                    credit_value=3,
+                    currency_metadata=(1000, Decimal("0.001")),
+                )
+                self.assertEqual(
+                    evidence,
+                    {
+                        "precision": 3,
+                        "system_settings_agreement": True,
+                        "effective_debit_agreement": True,
+                        "effective_credit_agreement": True,
+                        "currency_rounding_agreement": True,
+                        "rounding_method_recognized": True,
+                    },
+                )
+
+    def test_malformed_unset_precision_remains_generic(self) -> None:
+        for malformed in (
+            False,
+            " ",
+            "00",
+            "02",
+            "+2",
+            "2.0",
+            2.0,
+            Decimal("2"),
+            "1.5",
+            -1,
+            "identity-canary",
+        ):
+            for field in ("database_value", "settings_value"):
+                with self.subTest(field=field, malformed=malformed):
+                    with self.assertRaisesRegex(
+                        ValueError, "^finance_read_unavailable$"
+                    ) as captured:
+                        self._precision_evidence(**{field: malformed})
+                    self.assertNotIn("identity-canary", str(captured.exception))
+
+        for field in ("database_value", "settings_value"):
+            with self.subTest(field=field, malformed="00", effective=0):
+                other = (
+                    "settings_value"
+                    if field == "database_value"
+                    else "database_value"
+                )
+                with self.assertRaisesRegex(
+                    ValueError, "^finance_read_unavailable$"
+                ):
+                    self._precision_evidence(
+                        **{
+                            field: "00",
+                            other: 0,
+                            "global_value": 0,
+                            "debit_value": 0,
+                            "credit_value": 0,
+                            "currency_metadata": (1, Decimal("1")),
+                        }
+                    )
+
     def test_canonical_response_measurement_matches_service_contract(
         self,
     ) -> None:
@@ -1969,7 +2044,8 @@ class ResultSchemaAndContainmentTests(unittest.TestCase):
             "_validate_manifest",
             "_read_with_snapshot",
             "final_effective != effective",
-            'state not in {"global", "selected_company"}',
+            'state not in {"global", "selected_company", "excluded"}',
+            "applicable_fiscal_rows",
             "active_dimension_count != 0",
             "finance_book_count != 1",
             "runtime.count_gl_entries",
@@ -2250,6 +2326,128 @@ class CollectorOrchestrationTests(unittest.TestCase):
                         ("finance_book", "is", "not set"),
                     ),
                 )
+
+    def test_mixed_fiscal_manifest_measures_only_applicable_years(self) -> None:
+        runtime = self._runtime()
+        fiscal_rows = (
+            {
+                "name": "FY-EXCLUDED-2024",
+                "year_start_date": date(2024, 1, 1),
+                "year_end_date": date(2024, 12, 31),
+                "disabled": 0,
+            },
+            {
+                "name": "FY-GLOBAL-2025",
+                "year_start_date": date(2025, 1, 1),
+                "year_end_date": date(2025, 12, 31),
+                "disabled": 0,
+            },
+            {
+                "name": "FY-SELECTED-2026",
+                "year_start_date": date(2026, 1, 1),
+                "year_end_date": date(2026, 12, 31),
+                "disabled": 0,
+            },
+        )
+        runtime.rows["Fiscal Year"] = [dict(row) for row in fiscal_rows]
+        runtime.rows["Fiscal Year Company"] = [
+            {"parent": "FY-SELECTED-2026", "company": COMPANY_A}
+        ]
+        runtime.count_active_fiscal_years.return_value = 3
+        runtime.count_fiscal_year_company.return_value = 1
+        manifest = _adapter_fiscal_manifest(
+            company=COMPANY_A,
+            fiscal_year_applicability=(
+                ("FY-EXCLUDED-2024", "excluded"),
+                ("FY-GLOBAL-2025", "global"),
+                ("FY-SELECTED-2026", "selected_company"),
+            ),
+        )
+        runtime.fiscal_manifests = [manifest, manifest]
+        runtime.count_gl_entries.side_effect = (4, 6)
+
+        def applicable_result(request, *_args):
+            result = _result()
+            return replace(
+                result,
+                scope=replace(
+                    result.scope,
+                    fiscal_year_start=request.from_date,
+                    fiscal_year_end=request.to_date,
+                    from_date=request.from_date,
+                    to_date=request.to_date,
+                ),
+            )
+
+        with patch.object(
+            endpoint, "_read_with_snapshot", side_effect=applicable_result
+        ) as accounting_read:
+            measurement = self._collect(runtime)
+
+        self.assertEqual(
+            measurement.source_floors["active_fiscal_year_rows"], 3
+        )
+        self.assertEqual(
+            measurement.source_floors["fiscal_applicability_rows"], 3
+        )
+        self.assertEqual(
+            measurement.source_floors["final_fiscal_applicability_rows"], 3
+        )
+        self.assertEqual(
+            [
+                item
+                for item in runtime.calls
+                if item[0] == "complete_fiscal_year_applicability"
+            ],
+            [
+                (
+                    "complete_fiscal_year_applicability",
+                    runtime.snapshot.token,
+                    COMPANY_A,
+                    3,
+                )
+            ],
+        )
+        self.assertEqual(
+            [item.args[2] for item in runtime.count_gl_entries.call_args_list],
+            [date(2025, 12, 31), date(2026, 12, 31)],
+        )
+        self.assertEqual(
+            [item.args[0].fiscal_year for item in accounting_read.call_args_list],
+            ["FY-GLOBAL-2025", "FY-SELECTED-2026"],
+        )
+        self.assertEqual(measurement.max_gl_entries, 6)
+        self.assertEqual(measurement.fiscal_endpoints, 2)
+        self.assertEqual(measurement.minimum_fiscal_start, date(2025, 1, 1))
+        self.assertEqual(measurement.maximum_fiscal_end, date(2026, 12, 31))
+
+    def test_all_excluded_fiscal_years_fail_before_accounting_reads(self) -> None:
+        runtime = self._runtime("excluded")
+        runtime.rows["Fiscal Year Company"] = []
+        runtime.count_fiscal_year_company.return_value = 0
+        with patch.object(endpoint, "_read_with_snapshot") as accounting_read:
+            with self.assertRaisesRegex(
+                ValueError, "^finance_read_unavailable$"
+            ):
+                self._collect(runtime)
+        runtime.count_gl_entries.assert_not_called()
+        runtime.count_finance_book.assert_not_called()
+        runtime.count_accounts.assert_not_called()
+        runtime.statement_ceiling.assert_not_called()
+        runtime.numeric_shape.assert_not_called()
+        runtime.identifier_envelopes.assert_not_called()
+        accounting_read.assert_not_called()
+        self.assertFalse(
+            any(
+                item[0] == "complete_account_manifest"
+                or (
+                    item[0] == "get_list"
+                    and item[2] in {"Account", "GL Entry"}
+                )
+                for item in runtime.calls
+            )
+        )
+        self.assertEqual(len(runtime.closed), 2)
 
     def test_blank_and_null_defaults_collect_only_unbooked_mode(self) -> None:
         for raw_default in ("", None):
