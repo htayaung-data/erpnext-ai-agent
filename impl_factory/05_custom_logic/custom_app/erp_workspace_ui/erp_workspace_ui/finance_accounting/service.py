@@ -1456,7 +1456,8 @@ def _payables_parent_eligibility(
         raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
     if _payables_value(document, "docstatus") not in (1, "1"):
         raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
-    if _payables_required_text(_payables_value(document, "status")) not in PAYABLES_OPEN_STATUSES:
+    parent_status = _payables_required_text(_payables_value(document, "status"))
+    if parent_status not in PAYABLES_OPEN_STATUSES:
         raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
     if _payables_checked(_payables_value(document, "is_return")):
         raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
@@ -1477,6 +1478,8 @@ def _payables_parent_eligibility(
         if _payables_optional_text(_payables_value(document, "payment_terms_template")):
             raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
         return payment_schedule
+    if parent_status == "Partly Paid":
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
     if _payables_optional_text(_payables_value(document, "amended_from")):
         raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
     if _payables_checked(_payables_value(document, "is_paid")):

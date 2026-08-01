@@ -221,7 +221,7 @@ def _frontend_guard_payload(payables_posture: dict[str, object]) -> dict[str, ob
         card_detail = f"Open payable obligation count buckets only. Current / not overdue includes obligations due today or later. {counts}. No supplier names, invoice IDs, schedule rows, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable."
         card_value = "Aggregate counts only"
     elif posture["policy"]["reason"] == "payment_schedule_integrity_unavailable":
-        card_detail = "Payables counts are unavailable because the complete payable-obligation schedule could not be proven. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments."
+        card_detail = "Payables counts are unavailable because the complete payable-obligation schedule could not be proven. No supplier detail, invoice detail, schedule rows, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments."
         card_value = "Unavailable"
     elif posture["policy"]["reason"] == "accounts_manager_required":
         card_detail = "Manager-only payables posture. AP count posture is available only to Accounts Manager in this phase. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown."
@@ -771,6 +771,38 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertNotIn("resolver_not_scoped", receivables_card["detail"])
         self.assertIn("complete payable-obligation schedule could not be proven", payables_card["detail"])
         self.assertNotIn("payment_schedule_integrity_unavailable", payables_card["detail"])
+
+    def test_real_backend_schedule_integrity_card_passes_frontend_and_renders_unavailable(self):
+        payload = _frontend_guard_payload({
+            "state": "unavailable",
+            "policy": {"reason": "payment_schedule_integrity_unavailable"},
+        })
+        cards = service._overview_cards(
+            payload["company_scope"],
+            payload["period_scope"],
+            receivables_posture=payload["receivables_posture"],
+            receivables_amount_summary=payload["receivables_amount_summary"],
+            payables_count_posture=payload["payables_count_posture"],
+        )
+        backend_card = next(card for card in cards if card["key"] == "payables_posture")
+        expected_detail = (
+            "Payables counts are unavailable because the complete payable-obligation schedule could not be proven. "
+            "No supplier detail, invoice detail, schedule rows, amounts, native reports, exports, or payment actions "
+            "are returned or shown. This overview does not approve or initiate payments."
+        )
+        self.assertEqual(backend_card["detail"], expected_detail)
+        payload["posture_cards"] = [backend_card]
+        payload["lanes"] = [dict(backend_card)]
+
+        self.assertTrue(_frontend_contract_valid(payload))
+        result = _frontend_guard_probe(payload)
+        self.assertFalse(result["raw_forbidden"])
+        self.assertFalse(result["normalized_forbidden"])
+        self.assertFalse(result["policy_violation"])
+        self.assertTrue(result["ready"])
+        self.assertIn(expected_detail, result["rendered_html"])
+        self.assertIn(">Unavailable<", result["rendered_html"])
+        self.assertNotIn("payment_schedule_integrity_unavailable", result["rendered_html"])
 
     def test_overview_context_restricts_non_finance_roles_without_rows(self):
         with patch.object(service.frappe, "get_roles", return_value=["Sales User"]), patch.object(

@@ -1509,6 +1509,7 @@
   const RECEIVABLES_CARD_UNAVAILABLE_DETAIL = "Receivables posture is unavailable. Aggregate receivables counts and manager-only amount posture are not shown. No customer, invoice, voucher, account, report, export, or action data is shown.";
   const RECEIVABLES_NO_ROW_DETAIL = "No row-level customer, invoice, voucher, account, Payment Ledger, route, report, export, or action detail is returned, shown, linked, exported, or actionable.";
   const PAYABLES_NO_ROW_DETAIL = "No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown.";
+  const PAYABLES_SCHEDULE_INTEGRITY_UNAVAILABLE_DETAIL = "Payables counts are unavailable because the complete payable-obligation schedule could not be proven. No supplier detail, invoice detail, schedule rows, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments.";
 
   function bucketCountParts(posture, keys, labels) {
     const counts = posture && posture.bucket_counts;
@@ -1544,7 +1545,7 @@
     }
     const reason = posture.policy && posture.policy.reason;
     if (reason === "payment_schedule_integrity_unavailable") {
-      return `Payables counts are unavailable because the complete payable-obligation schedule could not be proven. ${PAYABLES_NO_ROW_DETAIL} This overview does not approve or initiate payments.`;
+      return PAYABLES_SCHEDULE_INTEGRITY_UNAVAILABLE_DETAIL;
     }
     if (reason === "accounts_manager_required") {
       return `Manager-only payables posture. AP count posture is available only to Accounts Manager in this phase. ${PAYABLES_NO_ROW_DETAIL}`;

@@ -788,6 +788,45 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertEqual(payload["policy"]["reason"], service.PAYABLES_SCHEDULE_INVALID_REASON)
         self.assertEqual(payload["bucket_counts"], {})
 
+    def test_scheduleless_partly_paid_counts_once_by_parent_due_date(self):
+        record = {
+            **_RECORDS[1],
+            "name": "PINV-SCHEDULELESS-PARTLY-PAID",
+        }
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], records=[record]),
+        )
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "ready")
+        self.assertEqual(payload["bucket_counts"], {
+            "not_due": 1,
+            "overdue_1_30": 0,
+            "overdue_31_60": 0,
+            "overdue_61_90": 0,
+            "overdue_over_90": 0,
+        })
+
+    def test_scheduled_partly_paid_status_fails_closed_even_when_fully_outstanding(self):
+        record = _scheduled_record(status="Partly Paid")
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], records=[record]),
+        )
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["policy"]["reason"], service.PAYABLES_SCHEDULE_INVALID_REASON)
+        self.assertEqual(payload["bucket_counts"], {})
+        self.assertIsNone(payload["company_scope"])
+
     def test_malformed_schedule_totals_dates_precision_currency_and_allocations_fail_closed(self):
         cases = []
         cases.append(("missing_due_date", _scheduled_record(rows=[_schedule_row(due_date=None)], due_date=date(2026, 7, 9))))
