@@ -1213,9 +1213,9 @@
       && value.due_date_basis_only === true
       && value.posting_date_fallback_enabled === false
       && value.due_soon_enabled === false
-      && value.payment_terms_supported === false
-      && value.payment_schedule_supported === false
-      && value.payment_schedule_presence_gate_required === true
+      && value.payment_terms_supported === true
+      && value.payment_schedule_supported === true
+      && value.payment_schedule_presence_gate_required === false
       && value.payment_schedule_rows_returned === false
       && value.on_hold_supported === false
       && value.returns_supported === false
@@ -1540,11 +1540,11 @@
     const posture = payload.payables_count_posture || {};
     if (posture.state === "ready") {
       const countParts = bucketCountParts(posture, PAYABLES_BUCKET_KEYS, PAYABLES_BUCKET_LABELS);
-      return `Purchase Invoice aggregate count buckets only. Current / not overdue includes invoices due today or later. ${countParts}. No supplier names, invoice IDs, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable.`;
+      return `Open payable obligation count buckets only. Current / not overdue includes obligations due today or later. ${countParts}. No supplier names, invoice IDs, schedule rows, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable.`;
     }
     const reason = posture.policy && posture.policy.reason;
-    if (["payment_schedule_not_supported", "payment_terms_not_supported"].includes(reason)) {
-      return `Payables counts are unavailable because some supplier invoices use payment schedules that this overview does not interpret. ${PAYABLES_NO_ROW_DETAIL} This overview does not approve or initiate payments.`;
+    if (reason === "payment_schedule_integrity_unavailable") {
+      return `Payables counts are unavailable because the complete payable-obligation schedule could not be proven. ${PAYABLES_NO_ROW_DETAIL} This overview does not approve or initiate payments.`;
     }
     if (reason === "accounts_manager_required") {
       return `Manager-only payables posture. AP count posture is available only to Accounts Manager in this phase. ${PAYABLES_NO_ROW_DETAIL}`;
@@ -2112,7 +2112,7 @@
               <div class="finance-control-state-label">Read-only</div>
               <div class="finance-control-state-text">
                 <strong>Payables stays count-only and fail-closed</strong>
-                <span>Counts appear only when Finance can prove that candidate invoices do not use payment schedules. Otherwise Payables remains unavailable. AP amounts, supplier/invoice rows, cash truth, ledger rows, reports, exports, and payment actions remain blocked.</span>
+                <span>Counts represent proven open obligations, including supported installment schedules. If any schedule, permission, allocation, or total is ambiguous, all Payables buckets remain unavailable. AP amounts, supplier/invoice/schedule rows, cash truth, ledger rows, reports, exports, and payment actions remain blocked.</span>
               </div>
             </div>
             <div class="finance-control-state-row">

@@ -43,6 +43,10 @@ PAYABLES_FUTURE_ACTIVITY_SOURCE = "Payment Ledger Entry"
 PAYABLES_COUNT_QUERY_FIELD = {"COUNT": "name", "as": "count"}
 PAYABLES_COUNT_SOURCE_INVALID_REASON = "purchase_invoice_count_source_invalid"
 PAYABLES_FUTURE_ACTIVITY_SOURCE_INVALID_REASON = "payment_ledger_future_activity_source_invalid"
+PAYABLES_SCHEDULE_CANDIDATE_MAX_ROWS = 2000
+PAYABLES_SCHEDULE_MAX_ROWS = 2000
+PAYABLES_SCHEDULE_INVALID_REASON = "payment_schedule_integrity_unavailable"
+PAYABLES_SCHEDULE_TOTAL_TOLERANCE = Decimal("0.1")
 PAYABLES_COUNT_BUCKETS = (
     {"key": "not_due", "label": "Current / not overdue", "from_days": None, "to_days": 0},
     {"key": "overdue_1_30", "label": "1-30 overdue", "from_days": 1, "to_days": 30},
@@ -1243,6 +1247,431 @@ def _permission_preserving_payables_count(filters: list[list[object]], list_gett
     return _extract_payables_count(records)
 
 
+_PAYABLES_MISSING = object()
+
+
+def _payables_value(record: object, fieldname: str) -> object:
+    if isinstance(record, dict):
+        return record.get(fieldname, _PAYABLES_MISSING)
+    if hasattr(record, fieldname):
+        return getattr(record, fieldname)
+    return _PAYABLES_MISSING
+
+
+def _payables_required_text(value: object) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return value
+
+
+def _payables_optional_text(value: object) -> str:
+    if value is _PAYABLES_MISSING:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if value in (None, ""):
+        return ""
+    if not isinstance(value, str) or value != value.strip():
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return value
+
+
+def _payables_checked(value: object) -> bool:
+    if type(value) is bool:
+        return value
+    if type(value) is int and value in (0, 1):
+        return bool(value)
+    if type(value) is str and value in ("0", "1"):
+        return value == "1"
+    raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+
+
+def _payables_date(value: object) -> date:
+    if isinstance(value, datetime):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str) or value != value.strip() or len(value) != 10:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if parsed.isoformat() != value:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return parsed
+
+
+def _payables_decimal(value: object, *, optional_zero: bool = False) -> Decimal:
+    if optional_zero and value in (None, ""):
+        return Decimal("0")
+    if value is _PAYABLES_MISSING or isinstance(value, bool) or value in (None, ""):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if not amount.is_finite():
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return amount
+
+
+def _payables_precision(record: object, fieldname: str) -> int:
+    provider = getattr(record, "precision", None)
+    if not callable(provider):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    try:
+        value = provider(fieldname)
+    except Exception:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > 8:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return value
+
+
+def _payables_erpnext_rounded(value: Decimal, precision: int) -> Decimal:
+    try:
+        from frappe.utils import flt
+
+        rounded_value = flt(str(value), precision)
+        rounded_decimal = Decimal(str(rounded_value))
+    except Exception:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if not rounded_decimal.is_finite():
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return rounded_decimal
+
+
+def _payables_permission_safe_call(callback: object) -> object:
+    if not callable(callback):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    local = getattr(frappe, "local", None)
+    message_log = getattr(local, "message_log", None)
+    message_count = len(message_log) if isinstance(message_log, list) else None
+    flags = getattr(frappe, "flags", None)
+    had_error_message = bool(flags is not None and hasattr(flags, "error_message"))
+    prior_error_message = getattr(flags, "error_message", None) if had_error_message else None
+    try:
+        return callback()
+    finally:
+        if message_count is not None and isinstance(message_log, list):
+            del message_log[message_count:]
+            if local is not None and getattr(local, "message_log", message_log) is not message_log:
+                setattr(local, "message_log", message_log)
+        if flags is not None:
+            if had_error_message:
+                setattr(flags, "error_message", prior_error_message)
+            elif hasattr(flags, "error_message"):
+                delattr(flags, "error_message")
+
+
+def _permission_preserving_payables_candidate_names(
+    company_name: str,
+    list_getter: object = None,
+) -> tuple[str, ...]:
+    getter = list_getter or getattr(frappe, "get_list", None)
+    if not callable(getter):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    try:
+        records = _permission_preserving_list_call(
+            getter,
+            PAYABLES_COUNT_SOURCE,
+            filters=_payables_open_count_filters(company_name),
+            fields=["name"],
+            order_by="name asc",
+            limit_start=0,
+            limit_page_length=PAYABLES_SCHEDULE_CANDIDATE_MAX_ROWS + 1,
+        )
+    except Exception:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if not isinstance(records, list) or len(records) > PAYABLES_SCHEDULE_CANDIDATE_MAX_ROWS:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    names: list[str] = []
+    for row in records:
+        if not isinstance(row, dict) or set(row) != {"name"}:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        name = _payables_required_text(row.get("name"))
+        if name in names:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        names.append(name)
+    if names != sorted(names):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return tuple(names)
+
+
+def _payables_record_permission(
+    checker: object,
+    name: str,
+    user: str,
+) -> bool:
+    if not callable(checker):
+        return False
+    try:
+        result = _payables_permission_safe_call(
+            lambda: checker(
+                PAYABLES_COUNT_SOURCE,
+                ptype="read",
+                doc=name,
+                user=user or None,
+                throw=False,
+            )
+        )
+    except Exception:
+        return False
+    return result is True
+
+
+def _payables_document_permission(document: object, user: str) -> bool:
+    checker = getattr(document, "has_permission", None)
+    if not callable(checker):
+        return False
+    try:
+        result = _payables_permission_safe_call(lambda: checker("read", user=user or None))
+    except Exception:
+        return False
+    return result is True
+
+
+def _payables_apply_field_permissions(document: object) -> None:
+    apply_permissions = getattr(document, "apply_fieldlevel_read_permissions", None)
+    if not callable(apply_permissions):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    try:
+        result = _payables_permission_safe_call(apply_permissions)
+    except Exception:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if result is not None:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+
+
+def _payables_parent_eligibility(
+    document: object,
+    expected_name: str,
+    company_name: str,
+    as_of: date,
+) -> list[object]:
+    if _payables_required_text(_payables_value(document, "doctype")) != PAYABLES_COUNT_SOURCE:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_required_text(_payables_value(document, "name")) != expected_name:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_required_text(_payables_value(document, "company")) != company_name:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_value(document, "docstatus") not in (1, "1"):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_required_text(_payables_value(document, "status")) not in PAYABLES_OPEN_STATUSES:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_checked(_payables_value(document, "is_return")):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_optional_text(_payables_value(document, "return_against")):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_checked(_payables_value(document, "on_hold")):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_date(_payables_value(document, "posting_date")) > as_of:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_decimal(_payables_value(document, "outstanding_amount")) <= 0:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_decimal(_payables_value(document, "total_advance"), optional_zero=True) != 0:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    payment_schedule = _payables_value(document, "payment_schedule")
+    if not isinstance(payment_schedule, list):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if not payment_schedule:
+        if _payables_optional_text(_payables_value(document, "payment_terms_template")):
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        return payment_schedule
+    if _payables_optional_text(_payables_value(document, "amended_from")):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_checked(_payables_value(document, "is_paid")):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_required_text(_payables_value(document, "is_opening")) != "No":
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    for fieldname in ("write_off_amount", "base_write_off_amount"):
+        if _payables_decimal(_payables_value(document, fieldname), optional_zero=True) != 0:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return payment_schedule
+
+
+def _payables_schedule_due_dates(
+    document: object,
+    expected_name: str,
+    schedule: list[object],
+) -> tuple[date, ...]:
+    if not schedule:
+        return (_payables_date(_payables_value(document, "due_date")),)
+    if len(schedule) > PAYABLES_SCHEDULE_MAX_ROWS:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    currency = _payables_required_text(_payables_value(document, "currency"))
+    company_currency = _payables_required_text(_payables_value(document, "company_currency"))
+    party_account_currency = _payables_required_text(_payables_value(document, "party_account_currency"))
+    if not (
+        currency == FINANCE_APPROVED_COMPANY_CURRENCY
+        and company_currency == FINANCE_APPROVED_COMPANY_CURRENCY
+        and party_account_currency == FINANCE_APPROVED_COMPANY_CURRENCY
+    ):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_decimal(_payables_value(document, "conversion_rate")) != Decimal("1"):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+
+    rounded_total = _payables_decimal(_payables_value(document, "rounded_total"), optional_zero=True)
+    grand_total = _payables_decimal(_payables_value(document, "grand_total"))
+    base_rounded_total = _payables_decimal(_payables_value(document, "base_rounded_total"), optional_zero=True)
+    base_grand_total = _payables_decimal(_payables_value(document, "base_grand_total"))
+    expected_total = rounded_total if rounded_total else grand_total
+    expected_base_total = base_rounded_total if base_rounded_total else base_grand_total
+    parent_total_precision = _payables_precision(document, "grand_total")
+    parent_base_precision = _payables_precision(document, "base_grand_total")
+    parent_outstanding_precision = _payables_precision(document, "outstanding_amount")
+    if _payables_erpnext_rounded(expected_total, parent_total_precision) <= 0:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_erpnext_rounded(expected_base_total, parent_base_precision) <= 0:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+
+    seen_names: set[str] = set()
+    seen_indexes: set[int] = set()
+    seen_dates: set[date] = set()
+    seen_terms: set[str] = set()
+    due_dates: list[date] = []
+    transaction_total = Decimal("0")
+    base_total = Decimal("0")
+    portion_total = Decimal("0")
+    for row in schedule:
+        if _payables_required_text(_payables_value(row, "doctype")) != PAYABLES_SCHEDULE_CHILD_SOURCE:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if _payables_required_text(_payables_value(row, "parent")) != expected_name:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if _payables_required_text(_payables_value(row, "parenttype")) != PAYABLES_COUNT_SOURCE:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if _payables_required_text(_payables_value(row, "parentfield")) != "payment_schedule":
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        row_name = _payables_required_text(_payables_value(row, "name"))
+        row_index = _payables_value(row, "idx")
+        if isinstance(row_index, bool) or not isinstance(row_index, int) or row_index <= 0:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        due_date = _payables_date(_payables_value(row, "due_date"))
+        payment_term = _payables_optional_text(_payables_value(row, "payment_term"))
+        if row_name in seen_names or row_index in seen_indexes or due_date in seen_dates:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if payment_term and payment_term in seen_terms:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if not payment_term and len(schedule) != 1:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        seen_names.add(row_name)
+        seen_indexes.add(row_index)
+        seen_dates.add(due_date)
+        if payment_term:
+            seen_terms.add(payment_term)
+        due_dates.append(due_date)
+
+        invoice_portion = _payables_decimal(_payables_value(row, "invoice_portion"))
+        payment_amount = _payables_decimal(_payables_value(row, "payment_amount"))
+        base_payment_amount = _payables_decimal(_payables_value(row, "base_payment_amount"))
+        outstanding = _payables_decimal(_payables_value(row, "outstanding"))
+        base_outstanding = _payables_decimal(_payables_value(row, "base_outstanding"))
+        paid_amount = _payables_decimal(_payables_value(row, "paid_amount"), optional_zero=True)
+        base_paid_amount = _payables_decimal(_payables_value(row, "base_paid_amount"), optional_zero=True)
+        discounted_amount = _payables_decimal(_payables_value(row, "discounted_amount"), optional_zero=True)
+        discount = _payables_decimal(_payables_value(row, "discount"), optional_zero=True)
+        if invoice_portion <= 0 or payment_amount <= 0 or base_payment_amount <= 0:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if paid_amount != 0 or base_paid_amount != 0 or discounted_amount != 0 or discount != 0:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+
+        payment_precision = _payables_precision(row, "payment_amount")
+        base_payment_precision = _payables_precision(row, "base_payment_amount")
+        outstanding_precision = _payables_precision(row, "outstanding")
+        base_outstanding_precision = _payables_precision(row, "base_outstanding")
+        portion_precision = _payables_precision(row, "invoice_portion")
+        if _payables_erpnext_rounded(outstanding, outstanding_precision) != _payables_erpnext_rounded(
+            payment_amount, payment_precision
+        ):
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if _payables_erpnext_rounded(base_outstanding, base_outstanding_precision) != _payables_erpnext_rounded(
+            base_payment_amount, base_payment_precision
+        ):
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        transaction_total += _payables_erpnext_rounded(payment_amount, payment_precision)
+        base_total += _payables_erpnext_rounded(base_payment_amount, base_payment_precision)
+        portion_total += _payables_erpnext_rounded(invoice_portion, portion_precision)
+
+    if _payables_erpnext_rounded(portion_total, 2) != Decimal("100"):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if abs(
+        _payables_erpnext_rounded(transaction_total, parent_total_precision)
+        - _payables_erpnext_rounded(expected_total, parent_total_precision)
+    ) > PAYABLES_SCHEDULE_TOTAL_TOLERANCE:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if abs(
+        _payables_erpnext_rounded(base_total, parent_base_precision)
+        - _payables_erpnext_rounded(expected_base_total, parent_base_precision)
+    ) > PAYABLES_SCHEDULE_TOTAL_TOLERANCE:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_erpnext_rounded(
+        _payables_decimal(_payables_value(document, "outstanding_amount")),
+        parent_outstanding_precision,
+    ) != _payables_erpnext_rounded(expected_base_total, parent_base_precision):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    if _payables_date(_payables_value(document, "due_date")) != max(due_dates):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return tuple(due_dates)
+
+
+def _payables_bucket_for_due_date(due_date: date, as_of: date) -> str:
+    if due_date >= as_of:
+        return "not_due"
+    overdue_days = (as_of - due_date).days
+    if overdue_days <= 30:
+        return "overdue_1_30"
+    if overdue_days <= 60:
+        return "overdue_31_60"
+    if overdue_days <= 90:
+        return "overdue_61_90"
+    return "overdue_over_90"
+
+
+def _permission_preserving_payables_obligation_counts(
+    company_name: str,
+    as_of: date,
+    context: dict[str, object],
+    permission_checker: object = None,
+    list_getter: object = None,
+    doc_getter: object = None,
+) -> dict[str, int]:
+    checker = permission_checker or getattr(frappe, "has_permission", None)
+    loader = doc_getter or getattr(frappe, "get_doc", None)
+    user = cstr(context.get("user") or getattr(frappe.session, "user", None) or "").strip()
+    if not user or not callable(checker) or not callable(loader):
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    initial_names = _permission_preserving_payables_candidate_names(company_name, list_getter=list_getter)
+    bucket_counts = {cstr(bucket.get("key")): 0 for bucket in PAYABLES_COUNT_BUCKETS}
+    loaded_documents: list[tuple[str, object]] = []
+    schedule_row_count = 0
+    for name in initial_names:
+        if not _payables_record_permission(checker, name, user):
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        try:
+            document = _payables_permission_safe_call(lambda: loader(PAYABLES_COUNT_SOURCE, name))
+        except Exception:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if not _payables_document_permission(document, user):
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        _payables_apply_field_permissions(document)
+        schedule = _payables_parent_eligibility(document, name, company_name, as_of)
+        schedule_row_count += len(schedule)
+        if schedule_row_count > PAYABLES_SCHEDULE_MAX_ROWS:
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        for due_date in _payables_schedule_due_dates(document, name, schedule):
+            bucket_counts[_payables_bucket_for_due_date(due_date, as_of)] += 1
+        loaded_documents.append((name, document))
+
+    final_names = _permission_preserving_payables_candidate_names(company_name, list_getter=list_getter)
+    if final_names != initial_names:
+        raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    for name, document in loaded_documents:
+        if not _payables_record_permission(checker, name, user):
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+        if not _payables_document_permission(document, user):
+            raise _PayablesCountUnavailable(PAYABLES_SCHEDULE_INVALID_REASON)
+    return bucket_counts
+
+
 def verify_payables_future_activity_source_permission(
     context: dict[str, object] | None = None,
     permission_checker: object = None,
@@ -1303,18 +1732,6 @@ def _payables_count_with_extra_filter(company_name: str, extra_filter: list[obje
     return _permission_preserving_payables_count(filters, list_getter=list_getter)
 
 
-def _permission_preserving_payables_schedule_presence_count(company_name: str, list_getter: object = None) -> int:
-    filters = _payables_open_count_filters(company_name)
-    filters.extend(
-        (
-            [PAYABLES_SCHEDULE_CHILD_SOURCE, "parent", "is", "set"],
-            [PAYABLES_SCHEDULE_CHILD_SOURCE, "parenttype", "=", PAYABLES_COUNT_SOURCE],
-            [PAYABLES_SCHEDULE_CHILD_SOURCE, "parentfield", "=", "payment_schedule"],
-        )
-    )
-    return _permission_preserving_payables_count(filters, list_getter=list_getter)
-
-
 def _safe_payables_policy(
     resolver: dict[str, object],
     permission: dict[str, object],
@@ -1342,9 +1759,9 @@ def _safe_payables_policy(
         "due_date_basis_only": True,
         "posting_date_fallback_enabled": False,
         "due_soon_enabled": False,
-        "payment_terms_supported": False,
-        "payment_schedule_supported": False,
-        "payment_schedule_presence_gate_required": True,
+        "payment_terms_supported": True,
+        "payment_schedule_supported": True,
+        "payment_schedule_presence_gate_required": False,
         "payment_schedule_rows_returned": False,
         "on_hold_supported": False,
         "returns_supported": False,
@@ -1395,6 +1812,7 @@ def build_payables_count_posture(
     as_of_date: object = None,
     permission_checker: object = None,
     list_getter: object = None,
+    doc_getter: object = None,
     browser_filters: dict[str, object] | None = None,
 ) -> dict[str, object]:
     active_context = context or build_context()
@@ -1472,12 +1890,9 @@ def build_payables_count_posture(
                 permission,
                 as_of,
             )
-        if _permission_preserving_payables_schedule_presence_count(company_name, list_getter=list_getter) > 0:
-            return _payables_count_payload("unavailable", "payment_schedule_not_supported", active_resolver, permission, as_of)
         complexity_checks = (
             ("missing_due_date_policy_not_ready", ["due_date", "is", "not set"], "open"),
             ("future_posting_date_not_supported", ["posting_date", ">", as_of.isoformat()], "open"),
-            ("payment_terms_not_supported", ["payment_terms_template", "is", "set"], "open"),
             ("advances_not_supported", ["total_advance", ">", 0], "open"),
             ("on_hold_not_supported", ["on_hold", "=", 1], "open"),
             ("returns_debit_notes_not_supported", ["is_return", "=", 1], "submitted"),
@@ -1494,13 +1909,14 @@ def build_payables_count_posture(
                 permission,
                 as_of,
             )
-        bucket_counts = {
-            cstr(bucket.get("key")): _permission_preserving_payables_count(
-                _payables_bucket_filters(company_name, cstr(bucket.get("key")), as_of),
-                list_getter=list_getter,
-            )
-            for bucket in PAYABLES_COUNT_BUCKETS
-        }
+        bucket_counts = _permission_preserving_payables_obligation_counts(
+            company_name,
+            as_of,
+            active_context,
+            permission_checker=permission_checker,
+            list_getter=list_getter,
+            doc_getter=doc_getter,
+        )
     except _PayablesCountUnavailable as exc:
         return _payables_count_payload("unavailable", exc.reason, active_resolver, permission, as_of)
     except Exception:
@@ -2718,13 +3134,13 @@ def _overview_cards(
             f"{payables_label_by_key.get(key, key)}: {payables_counts.get(key, 0)}"
             for key in ("not_due", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90")
         )
-        payables_detail = f"Purchase Invoice aggregate count buckets only. Current / not overdue includes invoices due today or later. {payables_detail}. No supplier names, invoice IDs, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable."
+        payables_detail = f"Open payable obligation count buckets only. Current / not overdue includes obligations due today or later. {payables_detail}. No supplier names, invoice IDs, schedule rows, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable."
         payables_value = "Aggregate counts only"
         payables_state = "ready"
     elif payables_count_posture:
         reason = cstr((payables_count_posture.get('policy') or {}).get('reason') or 'policy gate not ready')
-        if reason in {'payment_schedule_not_supported', 'payment_terms_not_supported'}:
-            payables_detail = 'Payables counts are unavailable because some supplier invoices use payment schedules that this overview does not interpret. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments.'
+        if reason == PAYABLES_SCHEDULE_INVALID_REASON:
+            payables_detail = 'Payables counts are unavailable because the complete payable-obligation schedule could not be proven. No supplier detail, invoice detail, schedule rows, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments.'
             payables_value = 'Unavailable'
         elif reason == 'accounts_manager_required':
             payables_detail = 'Manager-only payables posture. AP count posture is available only to Accounts Manager in this phase. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown.'

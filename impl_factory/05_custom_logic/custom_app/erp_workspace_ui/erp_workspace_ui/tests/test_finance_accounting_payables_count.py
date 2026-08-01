@@ -12,6 +12,9 @@ class _FrappePermissionError(Exception):
     pass
 
 
+_TEST_DOCS = {}
+
+
 def _install_frappe_stub() -> None:
     if "frappe" in sys.modules:
         return
@@ -21,6 +24,9 @@ def _install_frappe_stub() -> None:
     frappe_stub.session = types.SimpleNamespace(user=None)
     frappe_stub.get_roles = lambda user=None: []
     frappe_stub.defaults = types.SimpleNamespace(get_user_default=lambda key: None)
+    frappe_stub.local = types.SimpleNamespace(message_log=[])
+    frappe_stub.flags = types.SimpleNamespace()
+    frappe_stub.get_doc = lambda doctype, name: _TEST_DOCS[name]
     frappe_stub._ = lambda value: value
     frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn) if not args else args[0]
 
@@ -32,6 +38,7 @@ def _install_frappe_stub() -> None:
     utils_stub = types.ModuleType("frappe.utils")
     utils_stub.cstr = lambda value="": "" if value is None else str(value)
     utils_stub.now_datetime = lambda: datetime(2026, 7, 4, 0, 0, 0)
+    utils_stub.flt = lambda value, precision=None: round(float(str(value).replace(",", "")), precision) if precision is not None else float(value)
 
     sys.modules["frappe"] = frappe_stub
     sys.modules["frappe.utils"] = utils_stub
@@ -109,6 +116,126 @@ _RECORDS = [
     {"company": _COMPANY_SCOPE["name"], "docstatus": 2, "outstanding_amount": 100, "status": "Cancelled", "is_return": 0, "return_against": "", "due_date": date(2026, 7, 8), "payment_terms_template": "", "on_hold": 0},
     {"company": "Other Company", "docstatus": 1, "outstanding_amount": 100, "status": "Overdue", "is_return": 0, "return_against": "", "due_date": date(2026, 7, 8), "payment_terms_template": "", "on_hold": 0},
 ]
+for _record_index, _record in enumerate(_RECORDS, 1):
+    _record.setdefault("name", f"PINV-{_record_index:04d}")
+
+
+class _SyntheticDocument:
+    def __init__(self, **values):
+        self.__dict__.update(values)
+        self._permission = values.get("_permission", True)
+        self._precision_map = values.get("_precision_map", {})
+        self._field_permissions_applied = False
+
+    def has_permission(self, permtype, *, user=None):
+        return self._permission
+
+    def apply_fieldlevel_read_permissions(self):
+        self._field_permissions_applied = True
+
+    def precision(self, fieldname):
+        return self._precision_map.get(fieldname, 2)
+
+
+def _schedule_row(
+    *,
+    name="PS-0001",
+    idx=1,
+    parent="PINV-SCHEDULED",
+    due_date=date(2026, 7, 9),
+    payment_term="",
+    invoice_portion=100,
+    payment_amount="100.00",
+    **overrides,
+):
+    values = {
+        "doctype": "Payment Schedule",
+        "name": name,
+        "idx": idx,
+        "parent": parent,
+        "parenttype": "Purchase Invoice",
+        "parentfield": "payment_schedule",
+        "due_date": due_date,
+        "payment_term": payment_term,
+        "invoice_portion": invoice_portion,
+        "payment_amount": payment_amount,
+        "base_payment_amount": payment_amount,
+        "outstanding": payment_amount,
+        "base_outstanding": payment_amount,
+        "paid_amount": 0,
+        "base_paid_amount": 0,
+        "discounted_amount": 0,
+        "discount": 0,
+        "_precision_map": {
+            "invoice_portion": 2,
+            "payment_amount": 2,
+            "base_payment_amount": 2,
+            "outstanding": 2,
+            "base_outstanding": 2,
+        },
+    }
+    values.update(overrides)
+    return _SyntheticDocument(**values)
+
+
+def _document_from_record(record):
+    schedule = list(record.get("_payment_schedule") or [])
+    total = sum(float(getattr(row, "payment_amount", 0) or 0) for row in schedule) if schedule else 100.0
+    due_date = record.get("due_date")
+    values = {
+        "doctype": "Purchase Invoice",
+        "name": record["name"],
+        "company": record.get("company"),
+        "docstatus": record.get("docstatus"),
+        "status": record.get("status"),
+        "is_return": record.get("is_return", 0),
+        "return_against": record.get("return_against"),
+        "on_hold": record.get("on_hold", 0),
+        "amended_from": record.get("amended_from"),
+        "is_paid": record.get("is_paid", 0),
+        "is_opening": record.get("is_opening", "No"),
+        "posting_date": record.get("posting_date", date(2026, 7, 1)),
+        "due_date": due_date,
+        "outstanding_amount": record.get("outstanding_amount"),
+        "total_advance": record.get("total_advance", 0),
+        "write_off_amount": record.get("write_off_amount", 0),
+        "base_write_off_amount": record.get("base_write_off_amount", 0),
+        "payment_terms_template": record.get("payment_terms_template", ""),
+        "payment_schedule": schedule,
+        "currency": record.get("currency", "MMK"),
+        "company_currency": record.get("company_currency", "MMK"),
+        "party_account_currency": record.get("party_account_currency", "MMK"),
+        "conversion_rate": record.get("conversion_rate", 1),
+        "rounded_total": record.get("rounded_total", total),
+        "grand_total": record.get("grand_total", total),
+        "base_rounded_total": record.get("base_rounded_total", total),
+        "base_grand_total": record.get("base_grand_total", total),
+        "_permission": record.get("_document_permission", True),
+        "_precision_map": record.get("_precision_map", {
+            "grand_total": 2,
+            "base_grand_total": 2,
+            "outstanding_amount": 2,
+        }),
+    }
+    values.update(record.get("_document_overrides") or {})
+    return _SyntheticDocument(**values)
+
+
+def _scheduled_record(*, name="PINV-SCHEDULED", rows=None, **overrides):
+    active_rows = list(rows or [_schedule_row(parent=name)])
+    record = {
+        **_RECORDS[0],
+        "name": name,
+        "due_date": max(getattr(row, "due_date") for row in active_rows),
+        "outstanding_amount": 100.0,
+        "rounded_total": "100.00",
+        "grand_total": "100.00",
+        "base_rounded_total": "100.00",
+        "base_grand_total": "100.00",
+        "_payment_schedule": active_rows,
+    }
+    record.update(overrides)
+    return record
 
 
 def _resolver(state="scoped", role_category="manager", selected_company=None, reason="single_enabled_company_without_company_permission"):
@@ -190,7 +317,11 @@ def _matches_filter(record, item):
 
 
 def _counting_getter(calls, records=None, future_activity_records=None):
-    source_records = list(_RECORDS if records is None else records)
+    source_records = [dict(record) for record in (_RECORDS if records is None else records)]
+    for index, record in enumerate(source_records, 1):
+        record.setdefault("name", f"PINV-CUSTOM-{index:04d}")
+    _TEST_DOCS.clear()
+    _TEST_DOCS.update({record["name"]: _document_from_record(record) for record in source_records})
     future_records = list(future_activity_records or [])
 
     def getter(doctype, **kwargs):
@@ -205,6 +336,12 @@ def _counting_getter(calls, records=None, future_activity_records=None):
             return [{"count": count}]
         if doctype != service.PAYABLES_COUNT_SOURCE:
             raise AssertionError(f"Unexpected Payables source: {doctype!r}")
+        if kwargs.get("fields") == ["name"]:
+            return [
+                {"name": record["name"]}
+                for record in sorted(source_records, key=lambda item: item["name"])
+                if all(_matches_filter(record, item) for item in filters)
+            ]
         child_join = any(len(item) == 4 and item[0] == "Payment Schedule" for item in filters)
         count = sum(
             int(record.get("_payment_schedule_count", 1)) if child_join else 1
@@ -287,11 +424,62 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertEqual(payload["policy"]["accounts_user_counts_enabled"], False)
         self.assertEqual(payload["policy"]["runtime_count_enabled"], True)
         self.assertEqual(payload["policy"]["reason"], "payables_count_posture_ready")
-        self.assertEqual(permission_calls, [
+        self.assertEqual(permission_calls[:2], [
             ("Purchase Invoice", {"ptype": "read", "user": "finance.lead@meet.com"}),
             ("Payment Ledger Entry", {"ptype": "read", "user": "finance.lead@meet.com"}),
         ])
-        self.assertEqual(len(calls), 16)
+        record_checks = permission_calls[2:]
+        self.assertEqual(len(record_checks), 18)
+        self.assertTrue(all(doctype == "Purchase Invoice" for doctype, _kwargs in record_checks))
+        self.assertTrue(
+            all(
+                kwargs["ptype"] == "read"
+                and kwargs["throw"] is False
+                and "print_logs" not in kwargs
+                for _doctype, kwargs in record_checks
+            )
+        )
+        self.assertEqual(len(calls), 11)
+
+    def test_record_permission_call_matches_pinned_frappe_signature(self):
+        calls = []
+
+        def pinned_has_permission(
+            doctype=None,
+            ptype="read",
+            doc=None,
+            user=None,
+            throw=False,
+            *,
+            parent_doctype=None,
+            debug=False,
+            ignore_share_permissions=False,
+        ):
+            calls.append((doctype, ptype, doc, user, throw, parent_doctype, debug, ignore_share_permissions))
+            return True
+
+        self.assertTrue(
+            service._payables_record_permission(
+                pinned_has_permission,
+                "PINV-PINNED-SIGNATURE",
+                "finance.manager@example.invalid",
+            )
+        )
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "Purchase Invoice",
+                    "read",
+                    "PINV-PINNED-SIGNATURE",
+                    "finance.manager@example.invalid",
+                    False,
+                    None,
+                    False,
+                    False,
+                )
+            ],
+        )
 
     def test_invalid_supplied_as_of_values_fail_closed_before_source_reads(self):
         invalid_values = (
@@ -333,7 +521,9 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertEqual(service.PAYABLES_COUNT_QUERY_FIELD, {"COUNT": "name", "as": "count"})
         purchase_calls = [(doctype, kwargs) for doctype, kwargs in calls if doctype == "Purchase Invoice"]
         future_calls = [(doctype, kwargs) for doctype, kwargs in calls if doctype == "Payment Ledger Entry"]
-        for doctype, kwargs in purchase_calls:
+        count_calls = [(doctype, kwargs) for doctype, kwargs in purchase_calls if kwargs["fields"] == [service.PAYABLES_COUNT_QUERY_FIELD]]
+        manifest_calls = [(doctype, kwargs) for doctype, kwargs in purchase_calls if kwargs["fields"] == ["name"]]
+        for doctype, kwargs in count_calls:
             self.assertEqual(doctype, "Purchase Invoice")
             self.assertEqual(kwargs["fields"], [service.PAYABLES_COUNT_QUERY_FIELD])
             self.assertEqual(kwargs["limit_page_length"], 1)
@@ -353,25 +543,21 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
             ["delinked", "=", 0],
             ["posting_date", ">", "2026-07-09"],
         ])
-        self.assertNotIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], purchase_calls[0][1]["filters"])
-        self.assertIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], purchase_calls[1][1]["filters"])
-        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parent", "is", "set"], purchase_calls[2][1]["filters"])
-        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parenttype", "=", "Purchase Invoice"], purchase_calls[2][1]["filters"])
-        self.assertIn([service.PAYABLES_SCHEDULE_CHILD_SOURCE, "parentfield", "=", "payment_schedule"], purchase_calls[2][1]["filters"])
-        bucket_filters = [kwargs["filters"][-1] for _doctype, kwargs in purchase_calls[-5:]]
-        self.assertEqual(bucket_filters, [
-            ["due_date", ">=", "2026-07-09"],
-            ["due_date", "between", ["2026-06-09", "2026-07-08"]],
-            ["due_date", "between", ["2026-05-10", "2026-06-08"]],
-            ["due_date", "between", ["2026-04-10", "2026-05-09"]],
-            ["due_date", "<=", "2026-04-09"],
-        ])
-        for _doctype, kwargs in purchase_calls[-5:]:
+        self.assertNotIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], count_calls[0][1]["filters"])
+        self.assertIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], count_calls[1][1]["filters"])
+        self.assertEqual(len(manifest_calls), 2)
+        for _doctype, kwargs in manifest_calls:
+            self.assertEqual(kwargs["order_by"], "name asc")
+            self.assertEqual(kwargs["limit_start"], 0)
+            self.assertEqual(kwargs["limit_page_length"], service.PAYABLES_SCHEDULE_CANDIDATE_MAX_ROWS + 1)
+            self.assertNotIn("parent_doctype", kwargs)
+            self.assertNotIn("ignore_permissions", kwargs)
             filters = kwargs["filters"]
             self.assertIn(["outstanding_amount", ">", 0], filters)
             self.assertIn(["status", "in", list(service.PAYABLES_OPEN_STATUSES)], filters)
             self.assertIn(["is_return", "=", 0], filters)
             self.assertIn(["return_against", "is", "not set"], filters)
+        self.assertFalse(any(doctype == "Payment Schedule" for doctype, _kwargs in calls))
 
     def test_accounts_user_and_non_finance_do_not_call_permission_or_adapter(self):
         cases = [
@@ -438,44 +624,290 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertEqual(payload["policy"]["reason"], "browser_filters_not_allowed")
         self.assertEqual(permission_calls, [])
 
-    def test_any_selected_company_payment_schedule_presence_fails_closed_before_aging(self):
-        scenarios = (
-            ("one_default_row", 1, "Unpaid"),
-            ("multiple_rows", 2, "Unpaid"),
-            ("missing_child_due_date", 1, "Unpaid"),
-            ("malformed_child", 1, "Unpaid"),
-            ("schedule_total_mismatch", 2, "Unpaid"),
-            ("partly_paid_with_schedule", 1, "Partly Paid"),
+    def test_template_and_template_less_schedules_count_open_obligations_by_child_due_date(self):
+        template_less = {
+            **_RECORDS[0],
+            "name": "PINV-TEMPLATE-LESS",
+            "due_date": date(2026, 7, 9),
+            "_payment_schedule": [_schedule_row(parent="PINV-TEMPLATE-LESS")],
+        }
+        template_rows = [
+            _schedule_row(
+                name="PS-TEMPLATE-1",
+                idx=1,
+                parent="PINV-TEMPLATE",
+                due_date=date(2026, 7, 8),
+                payment_term="Term 1",
+                invoice_portion=50,
+                payment_amount="50.00",
+            ),
+            _schedule_row(
+                name="PS-TEMPLATE-2",
+                idx=2,
+                parent="PINV-TEMPLATE",
+                due_date=date(2026, 5, 9),
+                payment_term="Term 2",
+                invoice_portion=50,
+                payment_amount="50.00",
+            ),
+        ]
+        templated = {
+            **_RECORDS[0],
+            "name": "PINV-TEMPLATE",
+            "due_date": date(2026, 7, 8),
+            "payment_terms_template": "Net split",
+            "_payment_schedule": template_rows,
+        }
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], records=[template_less, templated]),
         )
-        for label, schedule_count, status in scenarios:
-            with self.subTest(label=label):
-                records = list(_RECORDS) + [{
-                    "company": _COMPANY_SCOPE["name"],
-                    "docstatus": 1,
-                    "outstanding_amount": 100,
-                    "status": status,
-                    "is_return": 0,
-                    "return_against": "",
-                    "due_date": date(2026, 7, 8),
-                    "payment_terms_template": "",
-                    "on_hold": 0,
-                    "_payment_schedule_count": schedule_count,
-                }]
-                calls = []
-                payload = service.build_payables_count_posture(
-                    context=_context(),
-                    resolver=_resolver(),
-                    as_of_date="2026-07-09",
-                    permission_checker=_permission_checker(True),
-                    list_getter=_counting_getter(calls, records=records),
-                )
 
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "ready")
+        self.assertEqual(payload["bucket_counts"], {
+            "not_due": 1,
+            "overdue_1_30": 1,
+            "overdue_31_60": 0,
+            "overdue_61_90": 1,
+            "overdue_over_90": 0,
+        })
+        self.assertTrue(payload["policy"]["payment_terms_supported"])
+        self.assertTrue(payload["policy"]["payment_schedule_supported"])
+        self.assertFalse(payload["policy"]["payment_schedule_presence_gate_required"])
+        self.assertFalse(payload["policy"]["payment_schedule_rows_returned"])
+
+    def test_schedule_boundaries_and_permitted_total_residual_are_deterministic(self):
+        dates = (
+            date(2026, 7, 9),
+            date(2026, 7, 8),
+            date(2026, 6, 9),
+            date(2026, 6, 8),
+            date(2026, 5, 10),
+            date(2026, 5, 9),
+            date(2026, 4, 10),
+            date(2026, 4, 9),
+        )
+        portions = ("12.50",) * 8
+        amounts = ("12.51", "12.50", "12.50", "12.50", "12.50", "12.50", "12.50", "12.50")
+        rows = [
+            _schedule_row(
+                name=f"PS-BOUNDARY-{index}",
+                idx=index,
+                parent="PINV-BOUNDARY",
+                due_date=due,
+                payment_term=f"Term {index}",
+                invoice_portion=portions[index - 1],
+                payment_amount=amounts[index - 1],
+            )
+            for index, due in enumerate(dates, 1)
+        ]
+        record = {
+            **_RECORDS[0],
+            "name": "PINV-BOUNDARY",
+            "due_date": max(dates),
+            "outstanding_amount": 100.0,
+            "rounded_total": "100.00",
+            "grand_total": "100.00",
+            "base_rounded_total": "100.00",
+            "base_grand_total": "100.00",
+            "_payment_schedule": rows,
+        }
+        payload = service.build_payables_count_posture(
+            context=_context(), resolver=_resolver(), as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True), list_getter=_counting_getter([], records=[record]),
+        )
+
+        self.assertEqual(payload["state"], "ready")
+        self.assertEqual(payload["bucket_counts"], {
+            "not_due": 1,
+            "overdue_1_30": 2,
+            "overdue_31_60": 2,
+            "overdue_61_90": 2,
+            "overdue_over_90": 1,
+        })
+
+    def test_scheduleless_invoices_preserve_existing_parent_due_date_cohort(self):
+        records = [
+            {
+                **_RECORDS[0],
+                "name": "PINV-SCHEDULELESS-OPENING",
+                "is_opening": "Yes",
+            },
+            {
+                **_RECORDS[0],
+                "name": "PINV-SCHEDULELESS-AMENDED",
+                "amended_from": "PINV-SCHEDULELESS-OLD",
+            },
+            {
+                **_RECORDS[0],
+                "name": "PINV-SCHEDULELESS-WRITEOFF",
+                "status": "Partly Paid",
+                "outstanding_amount": 75,
+                "write_off_amount": 25,
+                "base_write_off_amount": 25,
+            },
+        ]
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], records=records),
+        )
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "ready")
+        self.assertEqual(payload["bucket_counts"], {
+            "not_due": 3,
+            "overdue_1_30": 0,
+            "overdue_31_60": 0,
+            "overdue_61_90": 0,
+            "overdue_over_90": 0,
+        })
+
+    def test_scheduleless_template_without_rows_fails_closed_as_stale(self):
+        record = {
+            **_RECORDS[0],
+            "name": "PINV-SCHEDULELESS-STALE-TEMPLATE",
+            "payment_terms_template": "Net split",
+        }
+        payload = service.build_payables_count_posture(
+            context=_context(),
+            resolver=_resolver(),
+            as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], records=[record]),
+        )
+
+        self.assert_safe_payables_response(payload)
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["policy"]["reason"], service.PAYABLES_SCHEDULE_INVALID_REASON)
+        self.assertEqual(payload["bucket_counts"], {})
+
+    def test_malformed_schedule_totals_dates_precision_currency_and_allocations_fail_closed(self):
+        cases = []
+        cases.append(("missing_due_date", _scheduled_record(rows=[_schedule_row(due_date=None)], due_date=date(2026, 7, 9))))
+        cases.append(("invalid_due_date", _scheduled_record(rows=[_schedule_row(due_date="2026-02-30")], due_date=date(2026, 7, 9))))
+        cases.append(("total_mismatch", _scheduled_record(rows=[_schedule_row(payment_amount="99.89", outstanding="99.89", base_payment_amount="99.89", base_outstanding="99.89")])))
+        cases.append(("malformed_amount", _scheduled_record(rows=[_schedule_row(payment_amount="NaN")])))
+        cases.append(("bad_precision", _scheduled_record(rows=[_schedule_row(_precision_map={"invoice_portion": 2, "payment_amount": 9, "base_payment_amount": 2, "outstanding": 2, "base_outstanding": 2})])))
+        cases.append(("transaction_currency", _scheduled_record(currency="USD")))
+        cases.append(("party_currency", _scheduled_record(party_account_currency="USD")))
+        cases.append(("conversion_rate", _scheduled_record(conversion_rate="0.5")))
+        cases.append(("partial_paid", _scheduled_record(rows=[_schedule_row(paid_amount="10.00", outstanding="90.00")], outstanding_amount=90.0, status="Partly Paid")))
+        cases.append(("base_partial_paid", _scheduled_record(rows=[_schedule_row(base_paid_amount="10.00", base_outstanding="90.00")])))
+        cases.append(("discounted", _scheduled_record(rows=[_schedule_row(discounted_amount="1.00")])))
+        cases.append(("discount_offer", _scheduled_record(rows=[_schedule_row(discount="2.00")])))
+        cases.append(("child_outstanding", _scheduled_record(rows=[_schedule_row(outstanding="99.00")])))
+        cases.append(("parent_outstanding", _scheduled_record(outstanding_amount=99.0)))
+        cases.append(("parent_due_date", _scheduled_record(due_date=date(2026, 7, 10))))
+        cases.append(("portion_total", _scheduled_record(rows=[_schedule_row(invoice_portion="99.00")])))
+        cases.append(("amended", _scheduled_record(amended_from="PINV-OLD")))
+        cases.append(("opening", _scheduled_record(is_opening="Yes")))
+        cases.append(("paid_flag", _scheduled_record(is_paid=1)))
+        cases.append(("write_off", _scheduled_record(write_off_amount="1.00")))
+        cases.append(("base_write_off", _scheduled_record(base_write_off_amount="1.00")))
+
+        for label, record in cases:
+            with self.subTest(label=label):
+                payload = service.build_payables_count_posture(
+                    context=_context(), resolver=_resolver(), as_of_date="2026-07-09",
+                    permission_checker=_permission_checker(True),
+                    list_getter=_counting_getter([], records=[record]),
+                )
                 self.assert_safe_payables_response(payload)
                 self.assertEqual(payload["state"], "unavailable")
-                self.assertEqual(payload["policy"]["reason"], "payment_schedule_not_supported")
+                self.assertEqual(payload["policy"]["reason"], service.PAYABLES_SCHEDULE_INVALID_REASON)
                 self.assertEqual(payload["bucket_counts"], {})
                 self.assertIsNone(payload["company_scope"])
-                self.assertEqual(len(calls), 3)
+                self.assertNotIn("'NaN'", repr(payload))
+
+    def test_duplicate_or_ambiguous_schedule_rows_fail_closed_without_partial_buckets(self):
+        first = _schedule_row(
+            name="PS-DUP-1", idx=1, parent="PINV-DUP", due_date=date(2026, 7, 8),
+            payment_term="Term 1", invoice_portion=50, payment_amount="50.00",
+        )
+        valid_second = dict(
+            name="PS-DUP-2", idx=2, parent="PINV-DUP", due_date=date(2026, 8, 8),
+            payment_term="Term 2", invoice_portion=50, payment_amount="50.00",
+        )
+        cases = (
+            ("name", _schedule_row(**{**valid_second, "name": "PS-DUP-1"})),
+            ("index", _schedule_row(**{**valid_second, "idx": 1})),
+            ("date", _schedule_row(**{**valid_second, "due_date": date(2026, 7, 8)})),
+            ("term", _schedule_row(**{**valid_second, "payment_term": "Term 1"})),
+            ("blank_term", _schedule_row(**{**valid_second, "payment_term": ""})),
+        )
+        for label, second in cases:
+            with self.subTest(label=label):
+                record = _scheduled_record(name="PINV-DUP", rows=[first, second])
+                payload = service.build_payables_count_posture(
+                    context=_context(), resolver=_resolver(), as_of_date="2026-07-09",
+                    permission_checker=_permission_checker(True),
+                    list_getter=_counting_getter([], records=[record]),
+                )
+                self.assertEqual(payload["state"], "unavailable")
+                self.assertEqual(payload["bucket_counts"], {})
+                self.assertEqual(payload["policy"]["reason"], service.PAYABLES_SCHEDULE_INVALID_REASON)
+
+    def test_record_permission_ambiguity_document_denial_and_manifest_drift_are_all_or_nothing(self):
+        records = [
+            _scheduled_record(name="PINV-A", rows=[_schedule_row(name="PS-A", parent="PINV-A")]),
+            _scheduled_record(name="PINV-B", rows=[_schedule_row(name="PS-B", parent="PINV-B")]),
+        ]
+
+        def ambiguous_checker(doctype, **kwargs):
+            if "doc" in kwargs:
+                service.frappe.local.message_log.append("SECRET-PINV-A")
+                service.frappe.flags.error_message = "SECRET-PINV-A"
+                return {"allowed": True}
+            return True
+
+        service.frappe.local.message_log[:] = ["existing"]
+        service.frappe.flags.error_message = "existing-error"
+        payload = service.build_payables_count_posture(
+            context=_context(), resolver=_resolver(), as_of_date="2026-07-09",
+            permission_checker=ambiguous_checker,
+            list_getter=_counting_getter([], records=records),
+        )
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["bucket_counts"], {})
+        self.assertEqual(service.frappe.local.message_log, ["existing"])
+        self.assertEqual(service.frappe.flags.error_message, "existing-error")
+        self.assertNotIn("secret", repr(payload).lower())
+
+        denied = [dict(records[0], _document_permission=False)]
+        denied_payload = service.build_payables_count_posture(
+            context=_context(), resolver=_resolver(), as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True),
+            list_getter=_counting_getter([], records=denied),
+        )
+        self.assertEqual(denied_payload["state"], "unavailable")
+        self.assertEqual(denied_payload["bucket_counts"], {})
+
+        calls = []
+        base_getter = _counting_getter(calls, records=records)
+        manifest_reads = 0
+
+        def drifting_getter(doctype, **kwargs):
+            nonlocal manifest_reads
+            result = base_getter(doctype, **kwargs)
+            if doctype == "Purchase Invoice" and kwargs.get("fields") == ["name"]:
+                manifest_reads += 1
+                if manifest_reads == 2:
+                    return list(reversed(result))
+            return result
+
+        drift_payload = service.build_payables_count_posture(
+            context=_context(), resolver=_resolver(), as_of_date="2026-07-09",
+            permission_checker=_permission_checker(True), list_getter=drifting_getter,
+        )
+        self.assertEqual(drift_payload["state"], "unavailable")
+        self.assertEqual(drift_payload["bucket_counts"], {})
 
     def test_missing_or_unsupported_status_fails_closed_before_schedule_and_aging(self):
         for status in ("Submitted", "Internal Transfer", None, ""):
@@ -490,7 +922,6 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
                     "due_date": date(2026, 7, 8),
                     "payment_terms_template": "",
                     "on_hold": 0,
-                    "_payment_schedule_count": 1,
                 }]
                 calls = []
                 payload = service.build_payables_count_posture(
@@ -508,9 +939,12 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
                 self.assertIsNone(payload["company_scope"])
                 self.assertEqual(len(calls), 2)
 
-    def test_wrong_company_schedule_does_not_trip_selected_company_gate(self):
+    def test_wrong_company_schedule_is_not_loaded_or_counted(self):
         records = [
-            {**record, "_payment_schedule_count": 2} if record.get("company") == "Other Company" else dict(record)
+            {
+                **record,
+                "_payment_schedule": [_schedule_row(parent=record["name"])],
+            } if record.get("company") == "Other Company" else dict(record)
             for record in _RECORDS
         ]
         payload = service.build_payables_count_posture(
@@ -524,15 +958,20 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assert_safe_payables_response(payload)
         self.assertEqual(payload["state"], "ready")
 
-    def test_wrong_parenttype_or_parentfield_schedule_does_not_join(self):
+    def test_wrong_parenttype_parentfield_or_parent_fails_entire_posture(self):
         cases = (
-            {"_payment_schedule_parenttype": "Sales Invoice"},
-            {"_payment_schedule_parentfield": "other_schedule"},
+            {"parenttype": "Sales Invoice"},
+            {"parentfield": "other_schedule"},
+            {"parent": "PINV-OTHER"},
         )
         for relationship_override in cases:
             with self.subTest(relationship_override=relationship_override):
-                records = [dict(record) for record in _RECORDS]
-                records[0].update({"_payment_schedule_count": 1, **relationship_override})
+                records = [{
+                    **_RECORDS[0],
+                    "name": "PINV-RELATION",
+                    "due_date": date(2026, 7, 9),
+                    "_payment_schedule": [_schedule_row(**{"parent": "PINV-RELATION", **relationship_override})],
+                }]
                 payload = service.build_payables_count_posture(
                     context=_context(),
                     resolver=_resolver(),
@@ -542,14 +981,14 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
                 )
 
                 self.assert_safe_payables_response(payload)
-                self.assertEqual(payload["state"], "ready")
-                self.assertEqual(payload["policy"]["reason"], "payables_count_posture_ready")
+                self.assertEqual(payload["state"], "unavailable")
+                self.assertEqual(payload["policy"]["reason"], service.PAYABLES_SCHEDULE_INVALID_REASON)
+                self.assertEqual(payload["bucket_counts"], {})
 
     def test_fail_closed_complexity_gates(self):
         scenarios = [
             ("missing_due_date_policy_not_ready", {"due_date": None}),
             ("future_posting_date_not_supported", {"posting_date": date(2026, 7, 10)}),
-            ("payment_terms_not_supported", {"payment_terms_template": "Net 30"}),
             ("advances_not_supported", {"total_advance": 1}),
             ("on_hold_not_supported", {"on_hold": 1}),
             ("returns_debit_notes_not_supported", {"is_return": 1}),
@@ -834,7 +1273,7 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         self.assertNotIn('policy gate', payables_card['detail'])
 
     def test_overview_payment_schedule_unavailable_copy_is_business_facing(self):
-        records = [{**record, "_payment_schedule_count": 1} for record in _RECORDS]
+        records = [_scheduled_record(rows=[_schedule_row(outstanding="99.00")])]
         posture = service.build_payables_count_posture(
             context=_context(),
             resolver=_resolver(),
@@ -851,13 +1290,14 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
 
         self.assertEqual(payables_card['state'], 'unavailable')
         self.assertEqual(payables_card['value'], 'Unavailable')
-        self.assertIn('supplier invoices use payment schedules', payables_card['detail'])
+        self.assertIn('complete payable-obligation schedule could not be proven', payables_card['detail'])
         self.assertIn('does not approve or initiate payments', payables_card['detail'])
-        self.assertNotIn('payment_schedule_not_supported', payables_card['detail'])
+        self.assertNotIn(service.PAYABLES_SCHEDULE_INVALID_REASON, payables_card['detail'])
 
     def test_static_payables_readiness_copy_is_fail_closed_not_ready(self):
         source = _FRONTEND_SOURCE.read_text(encoding="utf-8")
         self.assertIn("Payables stays count-only and fail-closed", source)
+        self.assertIn("supported installment schedules", source)
         self.assertNotIn("Payables remains count-only where approved", source)
 
     def test_overview_payables_ready_copy_defines_current_not_overdue(self):
@@ -875,7 +1315,8 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
         )
         payables_card = next(card for card in cards if card['key'] == 'payables_posture')
 
-        self.assertIn('Current / not overdue includes invoices due today or later', payables_card['detail'])
+        self.assertIn('Open payable obligation count buckets only', payables_card['detail'])
+        self.assertIn('Current / not overdue includes obligations due today or later', payables_card['detail'])
         self.assertNotIn('AP balance', payables_card['detail'])
         self.assertNotIn('cash requirement', payables_card['detail'])
         self.assertNotIn('payment approval', payables_card['detail'])
@@ -906,10 +1347,13 @@ class TestFinancePayablesCountPosture(unittest.TestCase):
             self.assertIsNone(re.search(pattern, source), pattern)
         self.assertIn('getattr(frappe, "get_list", None)', source)
         self.assertIn('getattr(frappe, "has_permission", None)', source)
+        self.assertIn('getattr(frappe, "get_doc", None)', source)
+        self.assertIn('apply_fieldlevel_read_permissions', source)
         self.assertIn('PAYABLES_COUNT_SOURCE = "Purchase Invoice"', source)
         self.assertIn('PAYABLES_SCHEDULE_CHILD_SOURCE = "Payment Schedule"', source)
         self.assertIn('PAYABLES_FUTURE_ACTIVITY_SOURCE = "Payment Ledger Entry"', source)
         self.assertIn('PAYABLES_COUNT_QUERY_FIELD = {"COUNT": "name", "as": "count"}', source)
+        self.assertNotIn('getter(\n            PAYABLES_SCHEDULE_CHILD_SOURCE', source)
 
     def test_frontend_guard_contains_ap_specific_forbidden_keys(self):
         source = _FRONTEND_SOURCE.read_text(encoding="utf-8")

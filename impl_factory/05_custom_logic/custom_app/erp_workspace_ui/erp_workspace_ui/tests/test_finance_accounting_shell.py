@@ -184,7 +184,7 @@ def _frontend_payables_posture(overrides):
         "bucket_labels": _bucket_labels(keys),
         "bucket_counts": {key: 0 for key in keys} if ready else {},
         "policy": {
-            "source": "Purchase Invoice", "reason": "payables_count_posture_ready" if ready else "payment_schedule_not_supported",
+            "source": "Purchase Invoice", "reason": "payables_count_posture_ready" if ready else "payment_schedule_integrity_unavailable",
             "resolver_state": "scoped", "resolver_source": "single_company_site_fallback", "role_category": "manager",
             "source_permission_checked": True, "source_permission_verified": True,
             "future_activity_source": "Payment Ledger Entry",
@@ -193,8 +193,8 @@ def _frontend_payables_posture(overrides):
             "future_activity_gate_required": True, "future_payment_ledger_activity_supported": False,
             "source_read_policy_ready": ready, "runtime_count_enabled": ready, "manager_only": True,
             "accounts_user_counts_enabled": False, "aggregate_counts_only": True, "due_date_basis_only": True,
-            "posting_date_fallback_enabled": False, "due_soon_enabled": False, "payment_terms_supported": False,
-            "payment_schedule_supported": False, "payment_schedule_presence_gate_required": True,
+            "posting_date_fallback_enabled": False, "due_soon_enabled": False, "payment_terms_supported": True,
+            "payment_schedule_supported": True, "payment_schedule_presence_gate_required": False,
             "payment_schedule_rows_returned": False, "on_hold_supported": False, "returns_supported": False,
             "identifiers_enabled": False, "monetary_values_enabled": False, "native_navigation_enabled": False,
             "external_output_enabled": False, "execution_enabled": False,
@@ -218,10 +218,10 @@ def _frontend_guard_payload(payables_posture: dict[str, object]) -> dict[str, ob
         counts = "; ".join(f"{labels[key]}: {posture['bucket_counts'][key]}" for key in (
             "not_due", "overdue_1_30", "overdue_31_60", "overdue_61_90", "overdue_over_90"
         ))
-        card_detail = f"Purchase Invoice aggregate count buckets only. Current / not overdue includes invoices due today or later. {counts}. No supplier names, invoice IDs, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable."
+        card_detail = f"Open payable obligation count buckets only. Current / not overdue includes obligations due today or later. {counts}. No supplier names, invoice IDs, schedule rows, amounts, currency totals, native reports, exports, or payment actions are returned, shown, linked, exported, or actionable."
         card_value = "Aggregate counts only"
-    elif posture["policy"]["reason"] in {"payment_schedule_not_supported", "payment_terms_not_supported"}:
-        card_detail = "Payables counts are unavailable because some supplier invoices use payment schedules that this overview does not interpret. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments."
+    elif posture["policy"]["reason"] == "payment_schedule_integrity_unavailable":
+        card_detail = "Payables counts are unavailable because the complete payable-obligation schedule could not be proven. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown. This overview does not approve or initiate payments."
         card_value = "Unavailable"
     elif posture["policy"]["reason"] == "accounts_manager_required":
         card_detail = "Manager-only payables posture. AP count posture is available only to Accounts Manager in this phase. No supplier detail, invoice detail, amounts, native reports, exports, or payment actions are returned or shown."
@@ -759,7 +759,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
             receivables_amount_summary={"state": "unavailable"},
             payables_count_posture={
                 "state": "unavailable",
-                "policy": {"reason": "payment_schedule_not_supported"},
+                "policy": {"reason": "payment_schedule_integrity_unavailable"},
             },
         )
 
@@ -769,8 +769,8 @@ class TestFinanceAccountingShell(unittest.TestCase):
         self.assertIn("No customer, invoice, voucher, account, report, export, or action data is shown.", receivables_card["detail"])
         self.assertNotIn("source_permission_denied", receivables_card["detail"])
         self.assertNotIn("resolver_not_scoped", receivables_card["detail"])
-        self.assertIn("some supplier invoices use payment schedules", payables_card["detail"])
-        self.assertNotIn("payment_schedule_not_supported", payables_card["detail"])
+        self.assertIn("complete payable-obligation schedule could not be proven", payables_card["detail"])
+        self.assertNotIn("payment_schedule_integrity_unavailable", payables_card["detail"])
 
     def test_overview_context_restricts_non_finance_roles_without_rows(self):
         with patch.object(service.frappe, "get_roles", return_value=["Sales User"]), patch.object(
@@ -1187,9 +1187,9 @@ class TestFinanceAccountingShell(unittest.TestCase):
                 "due_date_basis_only": False,
                 "posting_date_fallback_enabled": True,
                 "due_soon_enabled": True,
-                "payment_terms_supported": True,
-                "payment_schedule_supported": True,
-                "payment_schedule_presence_gate_required": False,
+                "payment_terms_supported": False,
+                "payment_schedule_supported": False,
+                "payment_schedule_presence_gate_required": True,
                 "payment_schedule_rows_returned": True,
                 "on_hold_supported": True,
                 "returns_supported": True,
@@ -1459,8 +1459,8 @@ class TestFinanceAccountingShell(unittest.TestCase):
             "state": "unavailable",
             "bucket_counts": {},
             "policy": {
-                "payment_schedule_supported": False,
-                "payment_schedule_presence_gate_required": True,
+                "payment_schedule_supported": True,
+                "payment_schedule_presence_gate_required": False,
                 "payment_schedule_rows_returned": False,
             },
         }
@@ -1489,7 +1489,7 @@ class TestFinanceAccountingShell(unittest.TestCase):
                 "state": "unavailable",
                 "source_state": "unavailable",
                 "bucket_counts": {},
-                "policy": {"payment_schedule_supported": False, "runtime_count_enabled": False},
+                "policy": {"payment_schedule_supported": True, "runtime_count_enabled": False},
             },
         )
         for posture in cases:
